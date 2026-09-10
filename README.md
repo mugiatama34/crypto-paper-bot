@@ -10,8 +10,24 @@ tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLA
 - Her strateji yalnızca `Signal` (yön + giriş/çıkış seviyeleri) üretir; defter yazımı,
   komisyon/funding hesabı ve pozisyon boyutlandırma her zaman `core/` içinde, tüm modeller
   için aynı kurallarla yapılır.
+- Sinyal üretildiği barda dolmaz: **bir sonraki barın açılışından** dolar (kural 13). Bu
+  yüzden emirler koşular arasında defterde bekler.
+- Her barda açık pozisyonlar şu sırayla kontrol edilir: **likidasyon → stop → take-profit.**
+  Stop ve TP aynı mumun aralığındaysa kötü olan (stop) gerçekleşmiş varsayılır.
 - Her stratejinin işlemleri kendi defterine (`ledgers/`) yazılır ve `core/metrics.py`
   tarafından karşılaştırılır.
+
+## Defter formatı (`ledgers/<model>/`)
+
+| Dosya | İçerik |
+|---|---|
+| `positions.json` | Koşular arası taşınan durum: nakit, açık pozisyonlar, bekleyen emirler, işlenmiş son bar. |
+| `trades.csv` | Kapanan her işlem (kısmi çıkışlar dâhil): giriş/çıkış zamanı ve fiyatı, yön, miktar, notional, kaldıraç, marj, komisyon, funding, PnL, çıkış sebebi (`stop`/`tp`/`liquidation`/`signal`) ve stratejinin gerekçesi. |
+| `equity.csv` | Bar başına nakit, kullanılan marj, gerçekleşmemiş PnL, özsermaye ve açık pozisyon sayısı. |
+
+Yazmalar atomiktir (geçici dosya + `rename`); yazılmış bir satır asla değiştirilmez.
+Kapanan işlemlerin `pnl` toplamı bakiyedeki değişime eşittir — defter bu yüzden
+denetlenebilir.
 
 ## Kurulum ve manuel veri kontrolü
 
@@ -55,8 +71,9 @@ Bir stratejinin "tamamlandı" sayılması için:
 Projenin "tamamlandı" sayılması için:
 
 - [ ] 10 strateji de arayüze uygun şekilde çalışıyor.
-- [ ] `core/portfolio.py`, `core/funding.py`, `core/ledger.py` tüm modeller için aynı kuralları
-      uyguladığını kanıtlayan testlere sahip.
+- [x] `core/portfolio.py`, `core/funding.py`, `core/ledger.py` tüm modeller için aynı kuralları
+      uyguladığını kanıtlayan testlere sahip (`tests/test_portfolio.py`, `tests/test_funding.py`,
+      `tests/test_ledger.py`, `tests/test_engine.py`).
 - [ ] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor.
 - [ ] `.github/workflows/run.yml` periyodik çalıştırmayı ve testleri otomatik doğruluyor.
 

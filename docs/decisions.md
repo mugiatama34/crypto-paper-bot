@@ -97,3 +97,96 @@ gecikecek sembolü; çıpa olarak sabit ve dışarıdan denetlenebilir bir tanı
   `OKXError` fırlatılır ve anlık görüntü hiç üretilmez — veri kesintisinde eski bir barı
   yeniymiş gibi işlemek, atlanan bir turdan daha pahalıdır.
 
+
+## 5. Motor, portföy, defter ve funding uygulandı
+
+`core/ledger.py`, `core/portfolio.py`, `core/funding.py` ve `core/engine.py` iskeletten
+çıkarıldı. Alınan kararlar ve gerekçeleri:
+
+### Defter (`core/ledger.py`)
+
+- Model başına `ledgers/<model>/` altında üç dosya: `positions.json` (koşular arası taşınan
+  durum — nakit, açık pozisyonlar, bekleyen emirler, işlenmiş son bar), `trades.csv`
+  (kapanan her işlem/kısmi çıkış) ve `equity.csv` (bar başına bakiye görüntüsü).
+- **Her yazma atomiktir**: geçici dosya + `fsync` + `os.replace`. Cron adımının ortasında
+  düşen bir koşu yarım yazılmış defter bırakırsa, sonraki koşu yanlış bakiyeyle devam eder
+  ve ölçüm sessizce bozulur. Append'ler de aynı yoldan gider; mevcut içerik bayt bayt
+  korunduğu için "append-only" bir kural değil dosya sözleşmesidir.
+- **Şema kayması reddedilir**: CSV başlığı beklenenden farklıysa `LedgerError`. Eski satırlar
+  yeni kolonlarla karışırsa denetim izi sessizce anlamsızlaşır.
+- `initialize_model` mevcut deftere dokunmaz, `reset_model` sıfırdan başlatır: yarışmaya yeni
+  eklenen bir modelin defteri kendiliğinden boş açılır, mevcut bir modelinki elle sıfırlanır.
+
+### Boyutlandırma ve marj (`core/portfolio.py`)
+
+- **Sermaye tanımı**: kural 11'deki "sermaye" hesabın toplam özsermayesidir (nakit + marj +
+  gerçekleşmemiş PnL), yani riske atılan %1 her zaman hesabın %1'idir. Kaldıraç tavanı ise
+  eldeki **nakit** üzerinden uygulanır (marj nakitten fazla olamaz); bu, hesabın toplam
+  notional'ını da `leverage_cap × özsermaye` sınırında tutar.
+- **Kaldıraç bir sonuçtur**: yalnızca gereken notional nakdi aşarsa devreye girer. Tavana
+  takılan işlem atlanmaz, tavana sığacak şekilde küçültülür ve gerekçe `trades.csv`'nin
+  `notes` kolonuna yazılır (kural 11). Marj + komisyon nakdi aşarsa aynı doğrusal ölçekle
+  ikinci bir kırpma yapılır — yine atlama değil.
+- **Likidasyon fiyatı** giriş notional'ı üzerinden hesaplanır: `entry × (1 ± mm) ∓ marj/adet`.
+  Mum içi mark fiyatına göre yeniden hesaplamak her barda farklı bir eşik üretir ve aynı
+  senaryo iki koşuda farklı sonuç verebilirdi; tekrarlanabilirlik önce gelir. Kısmi çıkışta
+  marj ve miktar orantılı azaldığı için `marj/adet` — dolayısıyla likidasyon fiyatı — sabit
+  kalır.
+- **Nakit muhasebesi**: açılışta `nakit -= marj + komisyon`, açıkken funding doğrudan nakde
+  işler, kapanışta `nakit += marj + brüt PnL - komisyon`, likidasyonda hiçbir şey dönmez
+  (marjın tamamı gider). `Trade.pnl` işlemin nakde net etkisidir; kapanan işlemlerin `pnl`
+  toplamı bakiyedeki toplam değişime eşittir (test edilir).
+- **Kayma yorumu**: config yalnızca iki kayma sabiti tanımlar. `slippage_long` her dolumun
+  **taban** kayması olarak, `slippage_short_stop` ise short stop dolumlarının özel hâli
+  olarak uygulanır. Short girişlere/TP'lere kayma uygulamamak, tam da ölçtüğümüz long/short
+  farkını shortlar lehine bozardı; tek asimetri config'in açıkça istediğidir.
+- **Stop boşluklu barda açılıştan dolar** (stop ile açılıştan aleyhte olanı seçilir); TP ise
+  kendi fiyatından dolar ve lehte boşluk kâr yazılmaz — iyimser varsayımdan kaçınılır.
+- Aynı sembolde aynı yönde ikinci pozisyon açılmaz; ters yön ayrı bir pozisyondur.
+  `max_positions` ve `max_short_positions` açılış anında kontrol edilir.
+
+### Funding (`core/funding.py`)
+
+- Kural tek cümle: **pozitif funding'de long öder, short alır**; tutar = oran × notional.
+  Modül maliyeti hesaplar, nakde `core/portfolio.py` işler (kural 2/7).
+- Oranlar **uydurulmaz**: yalnızca tam zaman eşleşmesi kabul edilir, kayıt yoksa o periyot
+  atlanır ve loglanır. `ffill` yapmak veri boşluğunu sentetik maliyete çevirirdi.
+- Notional barın **açılış** fiyatından hesaplanır (mum içi bir fiyat seçmek look-ahead
+  olurdu); funding anında henüz açılmamış pozisyon o periyodu ödemez.
+
+### Tur akışı (`core/engine.py`)
+
+- **Bekleyen emir kuyruğu**: kural 13 sinyalin bir sonraki barın açılışında dolmasını şart
+  koşar; tur `as_of` barında bittiği için dolum bir sonraki turun ilk barıdır. Emirler bu
+  yüzden `positions.json` içinde koşular arası taşınır. `manage_positions` çıkışları da aynı
+  kuyruğa girer ve açılışlardan önce doldurulur (aynı turda kapanıp yeniden açılan sembolde
+  kotanın yapay olarak dolu görünmemesi için).
+- **Zaman ızgarası BTC'nindir**: işlenecek barlar `market.btc.index` üzerinden, son işlenmiş
+  bardan `as_of`'a kadar alınır — `as_of`'un tanımı da odur (karar 4). Bir tur birden fazla
+  bar ilerletebilir (cron kaçırılmışsa), her bar tam olarak bir kez işlenir.
+- **Aynı `as_of` ile ikinci koşu sinyal üretmez**: aksi hâlde elle tekrar ya da cron retry,
+  aynı bar için ikinci bir pozisyon kuyruğa alırdı (çift işlem — karar 4'ün uyardığı hata).
+- **Bar içi sıra**: funding → bekleyen emir dolumu → likidasyon/stop/TP → trailing → özsermaye
+  satırı. Trailing stop kontrolden **sonra** güncellenir: barın high/low'una bakıp aynı barın
+  stop'unu değiştirmek, o barın içinde geçmişe dönük karar vermek olurdu (kural 12).
+- **Trailing stop** chandelier kuralıyla uygulanır (long: en yüksek zirve − ATR × kat) ve
+  yalnızca sıkışır. ATR periyodu config'e eklendi (`trailing.atr_period: 14`): her modelin
+  kendi periyodunu seçmesi, aynı `trailing_atr` değerinin modelden modele farklı stop
+  mesafesi anlamına gelmesi demekti.
+- **Hata izolasyonu** (kural 8): `generate_signals`/doğrulama ya da `manage_positions` hata
+  fırlatırsa yalnızca o model o turu boş geçer, gerekçe loglanır ve `RoundReport`a yazılır;
+  koşu devam eder. Modelin mevcut pozisyonları yine core tarafından işlenir.
+- **Doğrulama referans fiyatı** `as_of` barının kapanışıdır: gerçek dolum fiyatı (bir sonraki
+  barın açılışı) sinyal anında bilinemez. Dolum stop'un ötesine düşerse emir açılışta
+  reddedilir.
+- Bir sonraki barda sembolü görülemeyen emir **iptal** edilir; gecikmeli dolum kural 13'ün
+  tanımına uymaz. Barı olmayan sembolün açık pozisyonuna da dokunulmaz (elde olmayan mumla
+  stop tetiklemek uydurma olurdu).
+
+### Kapsam dışı bırakılanlar
+
+- `core/metrics.py` hâlâ iskelet: `trades.csv` kolonları (yön, giriş/çıkış, komisyon,
+  funding, PnL) long/short ayrıştırmasını besleyecek biçimde tasarlandı ama hesaplama ayrı
+  bir adım.
+- Turu başlatan bir çalıştırıcı (`main.py`/workflow adımı) henüz yok; `config.yaml > models`
+  boş olduğu için çalıştıracak model de yok. İlk strateji eklendiğinde yazılacak.

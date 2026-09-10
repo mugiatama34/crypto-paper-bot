@@ -50,6 +50,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `timeframe` | `"4H"` | Tek zaman dilimi; OKX bar kodu ve bar süresi bundan türetilir. |
 | `universe_size` | `50` | 24s hacme göre seçilen USDT perpetual sayısı. |
 | `universe_refresh_days` | `30` | Evren bu süre dolmadan yeniden hesaplanmaz (kıyas kümesi sabit kalsın). |
+| `trailing.atr_period` | `14` | Trailing stop'un ATR'sini hesapladığı bar sayısı. Uygulama `core/engine.py`'dedir (kural 9); periyot ortak olmalı ki aynı `trailing_atr` değeri her modelde aynı stop mesafesi anlamına gelsin. |
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
 | `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
