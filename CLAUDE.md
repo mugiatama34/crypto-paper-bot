@@ -18,7 +18,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 |---|---|
 | `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, çalışma sıklığı, funding parametreleri ve tüm risk/maliyet sabitleri — `risk_per_trade`, `leverage_cap`, `max_positions`, `max_short_positions`, `fee_rate`, `slippage_long`, `slippage_short_stop`, `maintenance_margin`, `random_seed`. Tüm modeller için tek kaynak; hiçbir modül bu değerlerin kendi kopyasını taşımaz. Değerler için bkz. "config.yaml Değerleri". |
 | `core/config.py` | `config.yaml`'ı okuyan tek kapı. Eksik anahtarda `ConfigError` fırlatır; hiçbir varsayılan değer taşımaz — sessiz varsayılan, modellerin farklı maliyet/risk varsayımlarıyla yarışması demektir. |
-| `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u belirlemek burasının işidir. Strateji mantığı barındırmaz. |
+| `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u BTC referansından belirlemek burasının işidir; `as_of` barına sahip olmayan semboller o tur dışlanır ve loglanır. Strateji mantığı barındırmaz. |
 | `core/engine.py` | Orkestrasyon: her turu **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. |
 | `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. |
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
@@ -52,7 +52,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `universe_refresh_days` | `30` | Evren bu süre dolmadan yeniden hesaplanmaz (kıyas kümesi sabit kalsın). |
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
-| `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars`. |
+| `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
 
 ## Değişmez Kurallar
 
@@ -100,7 +100,8 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
     düşürür ve tam da ölçmeye çalıştığımız karşılaştırmayı bozar.)
 12. **Look-ahead yasağı:** `MarketData` yalnızca **kapanmış** barları içerir. Borsa API'si
     kapanmamış (oluşmakta olan) bir bar dönerse `core/data.py` bu barı atar; `as_of`
-    değerlendirilen son kapanmış barın zamanıdır ve stratejiler "şimdi"yi buradan okur.
+    BTC referans sembolünün son kapanmış barının zamanıdır ve stratejiler "şimdi"yi buradan
+    okur.
     Bu kuralın ihlali tek bir modeli değil, **tüm sonuçları geçersiz kılar.**
 13. **Dolum kuralı:** Sinyaller üretildikleri barda değil, **bir sonraki barın açılışından**
     dolar. Bir barın aralığında hem stop hem take-profit varsa, mum içi sıralama
@@ -230,10 +231,17 @@ Tasarım kararları:
   Kontrolü stop'tan sonra yapmak, yüksek kaldıraçlı modellere gerçekte var olmayan bir
   kurtulma şansı verir ve tam da kıyaslamak istediğimiz risk farkını gizler. Kontrol mum içi
   `high`/`low` ile yapılır; kapanış fiyatıyla yapmak aynı hatanın daha yumuşak hâlidir.
-- **`as_of` tek ve ortak**: `core/data.py` anlık görüntüyü kurarken `as_of`'u sembollerin
-  **ortak** son kapanmış barı (minimum) olarak seçer; bir modelin başkasında olmayan bir barı
-  görmesi asimetri yaratır. Son barı `data.max_staleness_bars` kadar geride kalmış semboller
-  tura hiç alınmaz — aksi hâlde tek bir ölü piyasa herkesin "şimdi"sini geriye çekerdi.
+- **`as_of` sabit bir çıpaya bağlıdır — BTC**: `core/data.py` anlık görüntüyü kurarken
+  `as_of`'u `exchange.btc_reference` sembolünün son kapanmış barından okur. Sembollerin
+  **ortak** (minimum) barını kullanmak iki sorun üretiyordu: (a) döngüsel bağımlılık — bayat
+  sembolü dışlamak için `as_of`, `as_of` için sembol listesi gerekiyordu; (b) tek bir gecikmiş
+  sembol turun "şimdi"sini bir bar geri çekiyordu, bu da zaten işlenmiş bir barı tekrar işlemek
+  (çift işlem) ya da turun hiç ilerlememesi (donmuş sistem) demekti. BTC hem her modelin rejim
+  filtresinde referans hem de en likit ve en az gecikecek sembol. `as_of` barına sahip olmayan
+  semboller **o tur dışlanır ve loglanır** — hangi turda kaç sembolün görülebildiği sonradan
+  denetlenebilsin diye. `data.max_staleness_bars` artık sembol başına tolerans değil, çıpanın
+  kendi tazeliğinin sınırıdır: BTC verisi bundan daha geride kalmışsa anlık görüntü hiç
+  üretilmez (bayat veriyle işlem açmaktansa tur düşer).
 - **Long/short metriklerinin ayrılması**: projenin ana sorusu short işlemlerin görece
   başarısı olduğu için birleşik bir Sharpe ya da win-rate cevabı vermez. Ayrıştırma
   raporlamanın varsayılanıdır, ek bir seçenek değil.

@@ -13,7 +13,8 @@ bu tek bir modeli değil TÜM sonuçları geçersiz kılar. Bu yüzden:
   1) `confirm != "1"` olan her bar atılır,
   2) ek güvenlik olarak bar kapanış zamanı (bar_ts + timeframe) `now`'ı aşan barlar da
      atılır (confirm alanını taşımayan/eski yanıtlara karşı),
-  3) `as_of` ayakta kalan son KAPANMIŞ barın zamanıdır; stratejiler "şimdi"yi buradan okur.
+  3) `as_of` sabit bir çıpadan okunur: BTC referans sembolünün son KAPANMIŞ barı
+     (bkz. `load_market_data`); stratejiler "şimdi"yi buradan okur.
 
 Zaman damgaları her yerde tz-aware UTC'dir (OKX ms epoch döndürür).
 """
@@ -550,10 +551,18 @@ def load_market_data(
 ) -> MarketData:
     """Tüm stratejilerin göreceği tek anlık görüntüyü üretir (CLAUDE.md kural 5).
 
-    `as_of`, sembollerin ortak son kapanmış barıdır: bir sembolün başkasında olmayan
-    bir barı görmesi modeller arasında asimetri yaratır. Son barı `max_staleness_bars`
-    kadar geride kalmış (işlem görmeyen/durdurulmuş) semboller ise tura hiç alınmaz —
-    aksi hâlde tek bir ölü piyasa herkesin "şimdi"sini geriye çekerdi.
+    `as_of` sabit bir çıpaya bağlıdır: BTC referans sembolünün son kapanmış barı.
+    Sembollerin ortak (minimum) barını kullanmak iki sorun üretiyordu: (a) döngüsel
+    bağımlılık — bayat sembolü dışlamak için `as_of`, `as_of` için sembol listesi
+    gerekiyordu; (b) tek bir gecikmiş sembol turun "şimdi"sini bir bar geri çekebiliyordu,
+    bu da zaten işlenmiş bir barın tekrar işlenmesi (çift işlem) ya da turun ilerlememesi
+    (donmuş sistem) demekti. BTC hem her modelin rejim filtresinde referans hem de en likit
+    sembol; en az gecikecek çıpa odur.
+
+    `as_of` barına sahip olmayan semboller o tur dışlanır ve loglanır — hangi turda kaç
+    sembolün görülebildiği sonradan denetlenebilsin diye. `data.max_staleness_bars` artık
+    sembol başına tolerans değil, çıpanın kendi tazeliğinin sınırıdır: BTC verisi bundan
+    daha geride kalmışsa anlık görüntü üretilmez (bayat veriyle işlem açmaktansa tur düşer).
     """
     active_config = config if config is not None else load_config()
     stamp = _utc_now(now)
@@ -585,19 +594,21 @@ def load_market_data(
     if btc_symbol not in frames:
         raise OKXError(f"BTC referansı ({btc_symbol}) olmadan anlık görüntü üretilemez")
 
-    as_of, usable = _snapshot_as_of(
-        frames,
+    as_of = _anchor_as_of(
+        frames[btc_symbol],
+        symbol=btc_symbol,
+        now=stamp,
         duration=duration,
         max_staleness_bars=int(get_setting(active_config, "data.max_staleness_bars")),
-        required=btc_symbol,
     )
+    usable = _symbols_at_anchor(frames, as_of=as_of, duration=duration)
 
     ohlcv = {
         symbol: frames[symbol].loc[:as_of]
         for symbol in usable
         if symbol != btc_symbol or symbol in requested
     }
-    ohlcv = {symbol: frame for symbol, frame in ohlcv.items() if not frame.empty}
+    _log_snapshot_coverage(as_of, requested=requested, visible=ohlcv)
 
     funding: dict[str, pd.Series] = {}
     for symbol in ohlcv:
@@ -616,26 +627,68 @@ def load_market_data(
     )
 
 
-def _snapshot_as_of(
-    frames: dict[str, pd.DataFrame],
+def _anchor_as_of(
+    btc_frame: pd.DataFrame,
     *,
+    symbol: str,
+    now: pd.Timestamp,
     duration: pd.Timedelta,
     max_staleness_bars: int,
-    required: str,
-) -> tuple[pd.Timestamp, list[str]]:
-    last_bars = {symbol: frame.index[-1] for symbol, frame in frames.items()}
-    newest = max(last_bars.values())
-    tolerance = newest - duration * max_staleness_bars
+) -> pd.Timestamp:
+    """Turun "şimdi"si: BTC'nin son kapanmış barı.
 
-    usable = [symbol for symbol, ts in last_bars.items() if ts >= tolerance]
-    for symbol, ts in last_bars.items():
-        if symbol not in usable:
-            logger.warning("%s verisi bayat (son bar %s), tura alınmıyor", symbol, ts)
-    if required not in usable:
-        raise OKXError(f"{required} verisi bayat; anlık görüntü güvenilir değil")
+    Çıpanın kendisi bayatsa hiçbir sembol bunu telafi edemez — bu durumda anlık görüntü
+    üretmek, borsa/veri kesintisi sırasında eski bir barı yeniymiş gibi işlemek olurdu.
+    """
+    as_of = btc_frame.index[-1]
+    expected = now.floor(duration) - duration
+    if as_of < expected - duration * max_staleness_bars:
+        raise OKXError(
+            f"{symbol} çıpası bayat: son kapanmış bar {as_of}, beklenen {expected}"
+        )
+    return as_of
 
-    as_of = min(last_bars[symbol] for symbol in usable)
-    return as_of, usable
+
+def _symbols_at_anchor(
+    frames: dict[str, pd.DataFrame],
+    *,
+    as_of: pd.Timestamp,
+    duration: pd.Timedelta,
+) -> list[str]:
+    """`as_of` barına sahip sembolleri seçer, kalanları gerekçesiyle loglar."""
+    usable: list[str] = []
+    # Sıra `frames`in ekleme sırasıdır (evrenin ciro sıralaması); alfabetik sıralamak
+    # evrenin rank anlamını sessizce değiştirirdi.
+    for symbol, frame in frames.items():
+        if as_of in frame.index:
+            usable.append(symbol)
+            continue
+        last = frame.index[-1]
+        if last < as_of:
+            reason = f"son bar {last}, çıpanın {int((as_of - last) / duration)} bar gerisinde"
+        else:
+            reason = f"seride {as_of} barı yok (son bar {last}, seri boşluklu)"
+        logger.warning("%s tura alınmıyor: %s", symbol, reason)
+    return usable
+
+
+def _log_snapshot_coverage(
+    as_of: pd.Timestamp, *, requested: Sequence[str], visible: dict[str, pd.DataFrame]
+) -> None:
+    """Tur başına tek satırlık kapsama özeti.
+
+    Modellerin o turda kaç sembol görebildiği (ve hangilerini göremediği) sonradan
+    denetlenebilmeli: bir modelin zayıf sonucu stratejiden mi yoksa daralmış bir
+    evrenden mi geldiği ancak böyle ayrılabilir.
+    """
+    missing = [symbol for symbol in requested if symbol not in visible]
+    logger.info(
+        "anlık görüntü as_of=%s: %d/%d sembol görülebilir%s",
+        as_of,
+        len(requested) - len(missing),
+        len(requested),
+        f", dışlanan: {', '.join(missing)}" if missing else "",
+    )
 
 
 # --------------------------------------------------------------------------- #

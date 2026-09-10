@@ -7,6 +7,7 @@ olmadan, tek başına test edilebilir olmalı (CLAUDE.md > Kod Stili).
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -361,11 +362,13 @@ def test_funding_disabled_returns_empty_series_without_requests(tmp_path: Path) 
 # --------------------------------------------------------------------------- #
 # MarketData anlık görüntüsü
 # --------------------------------------------------------------------------- #
-def _market_session(*, sol_lag_bars: int = 0) -> StubSession:
+def _market_session(*, lag_bars: dict[str, int] | None = None) -> StubSession:
+    """Her sembol için 4 barlık seri; `lag_bars` ile sembol başına gecikme verilir."""
     end_ms = int(NOW.timestamp() * 1000) - BAR_MS
+    lags = lag_bars or {}
 
     def candles(params: dict[str, str]) -> list[list[str]]:
-        last = end_ms - (sol_lag_bars * BAR_MS if params["instId"].startswith("SOL") else 0)
+        last = end_ms - lags.get(params["instId"], 0) * BAR_MS
         return _candles(4, end_ms=last)
 
     def funding(params: dict[str, str]) -> list[dict[str, str]]:
@@ -412,9 +415,13 @@ def test_btc_reference_is_fetched_even_when_not_requested(tmp_path: Path) -> Non
     assert not market.btc.empty
 
 
-def test_stale_symbol_is_excluded_instead_of_dragging_as_of_back(tmp_path: Path) -> None:
+@pytest.mark.parametrize("lag", [1, 5])
+def test_lagging_symbol_is_excluded_instead_of_dragging_as_of_back(
+    tmp_path: Path, lag: int
+) -> None:
+    """Tek bir gecikmiş sembol turun "şimdi"sini geri çekemez; kendisi dışlanır."""
     config = _config(tmp_path)
-    session = _market_session(sol_lag_bars=5)
+    session = _market_session(lag_bars={"SOL-USDT-SWAP": lag})
 
     market = load_market_data(
         config,
@@ -425,6 +432,96 @@ def test_stale_symbol_is_excluded_instead_of_dragging_as_of_back(tmp_path: Path)
 
     assert set(market.ohlcv) == {"BTC-USDT-SWAP"}
     assert market.as_of == pd.Timestamp("2024-03-01 08:00:00", tz="UTC")
+
+
+def test_as_of_follows_btc_even_when_other_symbols_are_ahead(tmp_path: Path) -> None:
+    """Çıpa BTC: BTC geride kalırsa as_of geri gider, ileri semboller kırpılır."""
+    config = _config(tmp_path)
+    session = _market_session(lag_bars={"BTC-USDT-SWAP": 1})
+
+    market = load_market_data(
+        config,
+        symbols=["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+        client=_client(session, config),
+        now=NOW,
+    )
+
+    assert market.as_of == pd.Timestamp("2024-03-01 04:00:00", tz="UTC")
+    assert set(market.ohlcv) == {"BTC-USDT-SWAP", "ETH-USDT-SWAP"}
+    for frame in market.ohlcv.values():
+        assert frame.index[-1] == market.as_of
+
+
+def test_symbol_with_a_hole_at_the_anchor_bar_is_excluded(tmp_path: Path) -> None:
+    """Çıpadan ileride olmak yetmez: as_of barı seride yoksa sembol tura girmez."""
+    config = _config(tmp_path)
+    end_ms = int(NOW.timestamp() * 1000) - BAR_MS  # 08:00
+    anchor_ms = end_ms - BAR_MS  # 04:00 — BTC bir bar geride
+
+    def candles(params: dict[str, str]) -> list[list[str]]:
+        if params["instId"].startswith("BTC"):
+            return _candles(4, end_ms=anchor_ms)
+        # ETH'nin 04:00 barı yok (borsa boşluğu), ama daha yeni bir barı var.
+        return [
+            _candle(end_ms, 100.0),
+            *[_candle(anchor_ms - (index + 1) * BAR_MS, 101.0 + index) for index in range(3)],
+        ]
+
+    session = StubSession(
+        {
+            "/market/candles": candles,
+            "/market/history-candles": [],
+            "/public/funding-rate-history": [
+                {"fundingTime": str(anchor_ms), "fundingRate": "0.0001"}
+            ],
+        }
+    )
+
+    market = load_market_data(
+        config,
+        symbols=["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+        client=_client(session, config),
+        now=NOW,
+    )
+
+    assert market.as_of == pd.Timestamp("2024-03-01 04:00:00", tz="UTC")
+    assert set(market.ohlcv) == {"BTC-USDT-SWAP"}
+
+
+def test_excluded_symbols_are_logged_for_audit(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = _config(tmp_path)
+    session = _market_session(lag_bars={"SOL-USDT-SWAP": 3})
+
+    with caplog.at_level(logging.INFO, logger="core.data"):
+        load_market_data(
+            config,
+            symbols=["BTC-USDT-SWAP", "SOL-USDT-SWAP"],
+            client=_client(session, config),
+            now=NOW,
+        )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("SOL-USDT-SWAP tura alınmıyor" in message for message in messages)
+    assert any(
+        "1/2 sembol görülebilir, dışlanan: SOL-USDT-SWAP" in message
+        for message in messages
+    )
+
+
+def test_stale_btc_anchor_aborts_the_snapshot(tmp_path: Path) -> None:
+    """Çıpa bayatsa tur düşer: eski barı yeniymiş gibi işlemek çift işlem üretir."""
+    config = _config(tmp_path)
+    session = _market_session(lag_bars={"BTC-USDT-SWAP": 3})  # max_staleness_bars = 2
+
+    with pytest.raises(OKXError):
+        load_market_data(
+            config,
+            symbols=["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+            client=_client(session, config),
+            now=NOW,
+        )
 
 
 def test_bar_duration_rejects_unsupported_timeframe() -> None:

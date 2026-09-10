@@ -58,9 +58,8 @@ kayıt altına alır.
   döner ve ilk satır genelde kapanmamış bardır (`confirm="0"`). (1) `confirm != "1"` olan bar
   atılır, (2) kapanış zamanı `now`'ı aşan bar da atılır (confirm taşımayan yanıtlara karşı).
   `as_of` ayakta kalan son kapanmış barın zamanıdır.
-- **`as_of` sembollerin ortak son barıdır (minimum).** Bir modelin başkasında olmayan bir barı
-  görmesi asimetri yaratır. `data.max_staleness_bars` kadar geride kalmış semboller tura
-  alınmaz; aksi hâlde tek bir ölü piyasa herkesin "şimdi"sini geriye çekerdi.
+- **`as_of` sembollerin ortak son barıydı (minimum);** bkz. karar 4 — bu yaklaşım BTC
+  çıpasıyla değiştirildi.
 - **Önbellek**: sembol başına parquet (`data/cache/`), her koşuda yalnızca eksik barlar çekilir
   (önbellekteki son bara ulaşıldığında sayfalama durur). Sayfalama `after` imleciyle yeniye
   doğru değil eskiye doğru ilerler; imleç ilerlemezse döngü kırılır. Rate limit (HTTP 429 /
@@ -71,3 +70,30 @@ kayıt altına alır.
   tekrar okuma maliyetini hem tip kaybı riskini düşürür). CI kurulumuna eklendi.
 - **Manuel doğrulama aracı**: `scripts/manual_data_check.py` 3 sembol için veriyi çeker, son
   barları ve funding'i yazdırır, son barın gerçekten kapanmış olduğunu ekrana basar.
+
+## 4. `as_of` sembollerin ortağı değil, BTC çıpasıdır
+
+Karar 3'teki "ortak (minimum) son kapanmış bar" tanımı iki sorun taşıyordu:
+
+- **Döngüsel bağımlılık:** bayat sembolü dışlamak için önce `as_of`'a, `as_of`'u hesaplamak
+  için önce sembol listesine ihtiyaç vardı. `max_staleness_bars` bu döngüyü "en yeni bara
+  göre tolerans" diye kırıyordu, ama tanım kendi kendine dayanıyordu.
+- **Tek gecikmiş sembol bütün turu geri çekiyordu:** tolerans içinde kalan tek bir sembol
+  `as_of`'u bir bar (4 saat) geriye taşıyabiliyordu. O bar zaten işlenmişse sonuç ya çift
+  işlem ya da hiç ilerlemeyen bir tur olurdu — ikisi de ölçümü geçersiz kılar.
+
+**Yeni kural:** `as_of`, `exchange.btc_reference` (BTC-USDT-SWAP) sembolünün son kapanmış
+barıdır. BTC zaten her modelin rejim filtresinde referans, hem de evrenin en likit ve en az
+gecikecek sembolü; çıpa olarak sabit ve dışarıdan denetlenebilir bir tanım verir.
+
+- `as_of` barına sahip olmayan semboller (geç kalan, durdurulan, serisinde boşluk olan) o tur
+  **dışlanır** ve `logger.warning` ile gerekçesi yazılır; ayrıca her tur tek satırlık bir
+  `logger.info` özeti (`as_of`, görülebilen sembol sayısı, dışlananların listesi) düşer —
+  hangi turda modellerin kaç sembol görebildiği sonradan denetlenebilsin diye.
+- BTC'den **ileride** olan semboller dışlanmaz, `as_of`'a kırpılır: çıpa geri gittiğinde tur
+  yine tek bir "şimdi" görür (kural 5).
+- `data.max_staleness_bars` anlamını değiştirdi: artık sembol başına tolerans değil, **çıpanın
+  kendi tazelik sınırı.** BTC verisi beklenen bardan bu kadar barlık gecikmeyi aşarsa
+  `OKXError` fırlatılır ve anlık görüntü hiç üretilmez — veri kesintisinde eski bir barı
+  yeniymiş gibi işlemek, atlanan bir turdan daha pahalıdır.
+

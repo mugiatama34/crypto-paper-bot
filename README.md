@@ -27,7 +27,9 @@ Veri kaynağı **OKX public API v5**'tir (API anahtarı gerekmez). Semboller OKX
 biçimindedir (`BTC-USDT-SWAP`). Evren `data/universe.json`'a, mumlar ve funding geçmişi
 `data/cache/` altına parquet olarak yazılır; `data/` klasörü depoya girmez ve her koşuda
 yalnızca eksik barlar çekilir. Son bar **kapanmamışsa atılır** — `MarketData.as_of` her
-zaman son kapanmış barın zamanıdır (bkz. CLAUDE.md kural 12).
+zaman son kapanmış barın zamanıdır (bkz. CLAUDE.md kural 12). `as_of` sabit bir çıpadan
+okunur: **BTC-USDT-SWAP'ın son kapanmış barı.** Bu bara sahip olmayan semboller o tur
+dışlanır ve loglanır; böylece tek bir gecikmiş sembol turun "şimdi"sini geri çekemez.
 
 ## Model listesi
 
