@@ -9,16 +9,19 @@ ve manipüle edilemez koşullarda kıyaslamaktır. Bu ilke tüm tasarım kararla
 bir değişiklik ölçümün adilliğini bozuyorsa, ne kadar "daha iyi trading" sağlarsa sağlasın
 reddedilir.
 
+Projenin cevaplamaya çalıştığı ana soru: **short işlemler long işlemlerden daha mı
+başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. `core/metrics.py`).
+
 ## Klasör Yapısı ve Modül Sorumlulukları
 
 | Yol | Tek Sorumluluk |
 |---|---|
-| `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, komisyon oranı, funding parametreleri, çalışma sıklığı. Tüm modeller için tek kaynak. |
-| `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding oranlarını çeker, `MarketData` üretir. Strateji mantığı barındırmaz. |
-| `core/engine.py` | Orkestrasyon: her turda tüm stratejileri sırayla çağırır, ürettikleri `Signal` listelerini `portfolio`'ya iletir. Zamanlama/akış kontrolü burada, iş mantığı değil. |
-| `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** |
+| `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, çalışma sıklığı, funding parametreleri ve tüm risk/maliyet sabitleri — `risk_per_trade`, `leverage_cap`, `max_positions`, `max_short_positions`, `fee_rate`, `slippage_long`, `slippage_short_stop`, `maintenance_margin`, `random_seed`. Tüm modeller için tek kaynak; hiçbir modül bu değerlerin kendi kopyasını taşımaz. Değerler için bkz. "config.yaml Değerleri". |
+| `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u belirlemek burasının işidir. Strateji mantığı barındırmaz. |
+| `core/engine.py` | Orkestrasyon: her turu **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. |
+| `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. |
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
-| `core/metrics.py` | PnL, Sharpe, max drawdown, win-rate vb. performans metriklerini hesaplar. Salt okunur — ledger'ı değiştirmez. |
+| `core/metrics.py` | PnL, Sharpe, max drawdown, win-rate vb. performans metriklerini hesaplar. **Her metrik long ve short işlemler için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez). Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bu opsiyonel değil. Salt okunur — ledger'ı değiştirmez. |
 | `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde `ledgers/` altına yazar. Sistemin denetim izi (audit trail) burasıdır. |
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni. Geçersiz sinyalde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
@@ -28,6 +31,20 @@ reddedilir.
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
 | `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. |
 
+### config.yaml Değerleri
+
+| Anahtar | Değer | Anlamı |
+|---|---|---|
+| `risk_per_trade` | `0.01` | İşlem başına riske atılan sermaye oranı (%1). Boyutlandırma formülünün payı. |
+| `leverage_cap` | `5` | İzin verilen azami kaldıraç. Hiçbir koşulda aşılmaz. |
+| `max_positions` | `5` | Bir stratejinin aynı anda taşıyabileceği toplam pozisyon sayısı. |
+| `max_short_positions` | `3` | Bunların en fazla kaçının short olabileceği. |
+| `fee_rate` | `0.001` | Tek yön komisyon oranı; giriş ve çıkışta ayrı ayrı uygulanır. |
+| `slippage_long` | `0.0005` | Long girişlerde/çıkışlarda uygulanan kayma. |
+| `slippage_short_stop` | `0.0015` | Short pozisyonların stop dolumunda uygulanan kayma (short stop'lar yukarı boşluklarda daha kötü dolar). |
+| `maintenance_margin` | `0.005` | Likidasyon eşiği. Pozisyonun mum içi zararı bu seviyeyi geçerse likide edilir. |
+| `random_seed` | (sabit tam sayı) | Rastgelelik kullanan her yol bu tohumdan beslenir; koşular tekrarlanabilir olmalıdır. |
+
 ## Değişmez Kurallar
 
 1. Hiçbir strateji kendi defterine (ledger) doğrudan yazamaz. Strateji yalnızca `Signal`
@@ -36,10 +53,16 @@ reddedilir.
    `core/funding.py` ve `core/portfolio.py` içinde, tüm modeller için birebir aynı kurallarla
    uygulanır.
 3. Hiçbir strateji pozisyon boyutu (miktar/USD tutarı) belirlemez. Boyutlandırma
-   `core/portfolio.py`'de tanımlı ortak bir kurala göre yapılır; strateji yalnızca yön ve
-   giriş/çıkış seviyelerini önerir.
+   `core/portfolio.py`'de tanımlı ortak bir kurala göre yapılır (bkz. kural 11); strateji
+   yalnızca yön ve giriş/çıkış seviyelerini önerir.
 4. Stratejiler birbirinin verisine, pozisyonuna veya iç durumuna erişemez; her biri tam
-   izolasyonla çalışır.
+   izolasyonla çalışır. **Tek istisna — meta-stratejiler:** `is_meta = True` ile işaretlenen
+   bir model, diğer modellerin **o turdaki sinyallerini** salt okunur bir kopya olarak alır.
+   Bunun için `core/engine.py` her turu iki geçişte yürütür: önce normal modeller (kendi
+   aralarında izole), sonra meta modeller. Meta modeller **birbirinin** sinyallerini okuyamaz
+   — meta geçişine giren sinyal kümesi yalnızca normal modellerin çıktısıdır ve her meta
+   model için aynıdır. Meta modeller yine de birbirinin pozisyonuna, bakiyesine veya iç
+   durumuna erişemez; istisna yalnızca "o turda üretilmiş sinyaller" ile sınırlıdır.
 5. Tüm stratejiler aynı `MarketData` anlık görüntüsünü görür; hiçbiri farklı veya gecikmeli
    veri kullanamaz.
 6. Karşılaştırma adil olmalıdır: başlangıç bakiyesi, komisyon oranı ve izin verilen sembol
@@ -55,6 +78,25 @@ reddedilir.
 10. Mevcut pozisyonlarda kapanış/kısmi çıkış kararı yalnızca `Strategy.manage_positions`
     üzerinden verilir; `generate_signals` yalnızca yeni pozisyon açılışı önerir. İkisi
     karıştırılmaz.
+11. **Boyutlandırma kuralı** (tek yetkili uygulayıcı `core/portfolio.py`):
+
+    ```
+    boyut = (risk_per_trade × sermaye) / |giriş fiyatı − stop fiyatı|
+    ```
+
+    Kaldıraç bir hedef değil, bir sonuçtur: yalnızca gereken notional eldeki nakdi aşarsa
+    devreye girer ve **hiçbir koşulda `leverage_cap`'i aşmaz.** Gereken kaldıraç
+    `leverage_cap`'i aşacaksa pozisyon `leverage_cap`'e sığacak şekilde **küçültülür** —
+    işlem atlanmaz. (Atlamak, geniş stop kullanan modellerin işlem sayısını sessizce
+    düşürür ve tam da ölçmeye çalıştığımız karşılaştırmayı bozar.)
+12. **Look-ahead yasağı:** `MarketData` yalnızca **kapanmış** barları içerir. Borsa API'si
+    kapanmamış (oluşmakta olan) bir bar dönerse `core/data.py` bu barı atar; `as_of`
+    değerlendirilen son kapanmış barın zamanıdır ve stratejiler "şimdi"yi buradan okur.
+    Bu kuralın ihlali tek bir modeli değil, **tüm sonuçları geçersiz kılar.**
+13. **Dolum kuralı:** Sinyaller üretildikleri barda değil, **bir sonraki barın açılışından**
+    dolar. Bir barın aralığında hem stop hem take-profit varsa, mum içi sıralama
+    bilinemeyeceği için **kötü olan (stop) gerçekleşmiş varsayılır.** Aynı barda likidasyon
+    seviyesi de dokunulmuşsa likidasyon her ikisinden de önce gelir (bkz. `core/portfolio.py`).
 
 ## Kod Stili
 
@@ -72,10 +114,19 @@ reddedilir.
 class Strategy(ABC):
     name: str
     allowed_directions: list[Direction]   # ["long"], ["short"] veya ["long", "short"]
+    is_meta: bool = False                 # True ise engine'in ikinci geçişinde çalışır
 
     @abstractmethod
-    def generate_signals(self, market: MarketData) -> list[Signal]:
-        """Yeni pozisyon açılışı önerir. Mevcut pozisyonlara dokunmaz."""
+    def generate_signals(
+        self,
+        market: MarketData,
+        peer_signals: Mapping[str, tuple[Signal, ...]] | None = None,
+    ) -> list[Signal]:
+        """Yeni pozisyon açılışı önerir. Mevcut pozisyonlara dokunmaz.
+
+        peer_signals yalnızca is_meta=True modellere doldurulur: strateji adı ->
+        o turda üretilmiş sinyallerin salt okunur kopyası. Normal modellerde None.
+        """
 
     def manage_positions(
         self, market: MarketData, positions: list[Position]
@@ -123,9 +174,10 @@ class ExitInstruction:
 
 @dataclass(frozen=True, kw_only=True)
 class MarketData:
-    ohlcv: dict[str, pd.DataFrame]     # sembol -> 4h OHLCV
-    btc: pd.DataFrame                  # BTC referans verisi
-    funding_rates: dict[str, float]    # sembol -> güncel funding oranı
+    ohlcv: dict[str, pd.DataFrame]     # sembol -> 4h OHLCV, yalnızca KAPANMIŞ barlar
+    btc: pd.DataFrame                  # BTC referans verisi (aynı kural)
+    funding: dict[str, pd.Series]      # sembol -> zaman indeksli funding geçmişi
+    as_of: pd.Timestamp                # değerlendirilen son KAPANMIŞ barın zamanı
 ```
 
 Tasarım kararları:
@@ -135,9 +187,25 @@ Tasarım kararları:
   emri desteklemek "bekleyen emirler", geçerlilik süresi ve mum-içi dokunma kontrolü
   gerektirir; bu da look-ahead hatası için yeni bir kapı açar. Alan sözleşmede duruyor,
   uygulaması ileri bir karar.
+- **`funding` tek oran değil, seri**: bazı modeller son N periyodun funding trendine bakar
+  (funding'in yönü ve hızlanması bir kalabalıklık göstergesidir). Tek bir `float` bu bilgiyi
+  taşıyamadığı için alan zaman indeksli `pd.Series`'e çevrildi. Seri de kural 12'ye tabidir:
+  yalnızca `as_of` ve öncesindeki funding değerlerini içerir.
+- **`as_of` neden sözleşmede**: stratejinin "şimdi"yi `pd.Timestamp.now()` ile ya da
+  DataFrame'in son satırından tahmin ederek okuması, look-ahead hatasının en sık kapısıdır.
+  Tek ve açık bir "şimdi" tanımı, kural 12'yi test edilebilir kılar.
 - **Kapanış sinyali `generate_signals` üzerinden değil**: `generate_signals` sadece açılış,
   `manage_positions` sadece kapanış/kısmi çıkış. Engine'in "bu sinyal yeni pozisyon mu,
   mevcut pozisyona müdahale mi" diye tahmin yürütmesi gerekmez.
+- **Meta-stratejiler ve iki geçişli tur**: bir modelin diğerlerinin sinyallerini okuması
+  (konsensüs sayma, aykırı gitme, sinyal filtreleme) ölçmeye değer bir strateji sınıfıdır,
+  ama izolasyonu kırma riski taşır. Bu yüzden istisna dar tutuldu: meta model **yalnızca o
+  turun sinyallerini**, **yalnızca kopya olarak** görür; pozisyon/bakiye/iç duruma erişimi
+  yoktur ve **başka meta modelleri göremez.** Meta'ların birbirini okuması sıralamaya bağlı
+  sonuç (kim önce çalıştıysa avantajlı) üretirdi — bu da adil karşılaştırmayı bozar.
+  `peer_signals` derin kopya olarak verilir: `Signal` frozen olsa da `take_profits` listesi
+  değiştirilebilir olduğundan, kopyalamadan paylaşmak bir modelin diğerinin sinyalini
+  bozmasına izin verirdi.
 - **`allowed_directions` ihlali → `ValueError`**: bu bir piyasa durumu değil, programlama
   hatasıdır. Sessiz filtreleme, short-only bir modelin aylarca yarı yarıya az işlem yapıp
   bunu kimsenin fark etmemesi demek — tam da ölçmeye çalıştığımız şeyi bozar. CI/çalıştırma
@@ -145,3 +213,10 @@ Tasarım kararları:
 - **`core/validate.py`**: yukarıdaki doğrulamayı (ve stop==entry sıfıra bölme, stop yanlış
   taraf, TP yönü tutarsız, fraction toplamı > 1.0, evren dışı sembol kontrollerini) tek yere
   toplar. Her strateji sinyali motora girmeden bu kapıdan geçer.
+- **Likidasyon stop'tan önce**: gerçek borsada bakım marjı ihlali stop emrini beklemez.
+  Kontrolü stop'tan sonra yapmak, yüksek kaldıraçlı modellere gerçekte var olmayan bir
+  kurtulma şansı verir ve tam da kıyaslamak istediğimiz risk farkını gizler. Kontrol mum içi
+  `high`/`low` ile yapılır; kapanış fiyatıyla yapmak aynı hatanın daha yumuşak hâlidir.
+- **Long/short metriklerinin ayrılması**: projenin ana sorusu short işlemlerin görece
+  başarısı olduğu için birleşik bir Sharpe ya da win-rate cevabı vermez. Ayrıştırma
+  raporlamanın varsayılanıdır, ek bir seçenek değil.
