@@ -13,6 +13,22 @@ tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLA
 - Her stratejinin işlemleri kendi defterine (`ledgers/`) yazılır ve `core/metrics.py`
   tarafından karşılaştırılır.
 
+## Kurulum ve manuel veri kontrolü
+
+```bash
+pip install requests pandas numpy pyyaml pyarrow pytest
+pytest -q
+
+# 3 sembol için veri çekip son 5 barı yazdırır (evrenden ilk 3 sembol için argümansız çalışır)
+python scripts/manual_data_check.py BTC-USDT-SWAP ETH-USDT-SWAP SOL-USDT-SWAP
+```
+
+Veri kaynağı **OKX public API v5**'tir (API anahtarı gerekmez). Semboller OKX `instId`
+biçimindedir (`BTC-USDT-SWAP`). Evren `data/universe.json`'a, mumlar ve funding geçmişi
+`data/cache/` altına parquet olarak yazılır; `data/` klasörü depoya girmez ve her koşuda
+yalnızca eksik barlar çekilir. Son bar **kapanmamışsa atılır** — `MarketData.as_of` her
+zaman son kapanmış barın zamanıdır (bkz. CLAUDE.md kural 12).
+
 ## Model listesi
 
 > Henüz tanımlanmadı — arayüz sözleşmesi onaylandıktan sonra `strategies/` altına eklenecek.
