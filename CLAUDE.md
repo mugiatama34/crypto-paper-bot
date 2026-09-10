@@ -17,6 +17,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | Yol | Tek Sorumluluk |
 |---|---|
 | `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, çalışma sıklığı, funding parametreleri ve tüm risk/maliyet sabitleri — `risk_per_trade`, `leverage_cap`, `max_positions`, `max_short_positions`, `fee_rate`, `slippage_long`, `slippage_short_stop`, `maintenance_margin`, `random_seed`. Tüm modeller için tek kaynak; hiçbir modül bu değerlerin kendi kopyasını taşımaz. Değerler için bkz. "config.yaml Değerleri". |
+| `core/config.py` | `config.yaml`'ı okuyan tek kapı. Eksik anahtarda `ConfigError` fırlatır; hiçbir varsayılan değer taşımaz — sessiz varsayılan, modellerin farklı maliyet/risk varsayımlarıyla yarışması demektir. |
 | `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u belirlemek burasının işidir. Strateji mantığı barındırmaz. |
 | `core/engine.py` | Orkestrasyon: her turu **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. |
 | `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. |
@@ -26,6 +27,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni. Geçersiz sinyalde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
 | `strategies/*.py` (ileride) | `Strategy`'den türeyen, yalnızca `generate_signals` uygulayan bağımsız, birbirinden habersiz modüller. |
+| `data/` | Çalışma zamanı veri deposu (depoya girmez): `data/universe.json` ve `data/cache/<sembol>_<bar>.parquet`. Mum/funding önbelleği burada tutulur, her koşuda yalnızca eksik barlar çekilir. |
 | `ledgers/` | Her stratejinin işlem/bakiye kayıtlarının tutulduğu çıktı klasörü (strateji başına dosya/alt klasör). |
 | `docs/` | Tasarım kararları, metrik tanımları, kabul kriterleri. |
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
@@ -44,6 +46,13 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `slippage_short_stop` | `0.0015` | Short pozisyonların stop dolumunda uygulanan kayma (short stop'lar yukarı boşluklarda daha kötü dolar). |
 | `maintenance_margin` | `0.005` | Likidasyon eşiği. Pozisyonun mum içi zararı bu seviyeyi geçerse likide edilir. |
 | `random_seed` | (sabit tam sayı) | Rastgelelik kullanan her yol bu tohumdan beslenir; koşular tekrarlanabilir olmalıdır. |
+| `initial_capital` | `10000` | Her stratejinin izole sanal hesabının başlangıç bakiyesi (USDT). |
+| `timeframe` | `"4H"` | Tek zaman dilimi; OKX bar kodu ve bar süresi bundan türetilir. |
+| `universe_size` | `50` | 24s hacme göre seçilen USDT perpetual sayısı. |
+| `universe_refresh_days` | `30` | Evren bu süre dolmadan yeniden hesaplanmaz (kıyas kümesi sabit kalsın). |
+| `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
+| `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
+| `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars`. |
 
 ## Değişmez Kurallar
 
@@ -147,7 +156,7 @@ class Signal:
     direction: Direction               # "long" | "short"
     stop_price: float
     entry_type: Literal["market", "limit"] = "market"   # v1'de yalnızca "market" işlenir
-    take_profits: list[TakeProfit] = field(default_factory=list)
+    take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None  # uygulaması core/engine.py'de, strateji yazmaz
     reason: str = ""                   # deftere yazılacak serbest metin
 
@@ -159,8 +168,8 @@ class Position:
     direction: Direction
     entry_price: float
     stop_price: float
-    take_profits: list[TakeProfit]
-    trailing_atr: float | None
+    take_profits: tuple[TakeProfit, ...] = ()
+    trailing_atr: float | None = None
     opened_at: pd.Timestamp
 
 
@@ -206,6 +215,10 @@ Tasarım kararları:
   `peer_signals` derin kopya olarak verilir: `Signal` frozen olsa da `take_profits` listesi
   değiştirilebilir olduğundan, kopyalamadan paylaşmak bir modelin diğerinin sinyalini
   bozmasına izin verirdi.
+- **`take_profits` tuple, liste değil**: `Signal` ve `Position` `frozen=True` ama mutable bir
+  liste taşıdıklarında dondurma yarım kalır — bir strateji (ya da `peer_signals` okuyan bir meta
+  model) kendi veya başkasının sinyalinin hedeflerini yerinde değiştirebilirdi. Tuple, sözleşmeyi
+  gerçekten salt okunur yapar ve `peer_signals` kopyalamasının garantisini tamamlar.
 - **`allowed_directions` ihlali → `ValueError`**: bu bir piyasa durumu değil, programlama
   hatasıdır. Sessiz filtreleme, short-only bir modelin aylarca yarı yarıya az işlem yapıp
   bunu kimsenin fark etmemesi demek — tam da ölçmeye çalıştığımız şeyi bozar. CI/çalıştırma
@@ -217,6 +230,10 @@ Tasarım kararları:
   Kontrolü stop'tan sonra yapmak, yüksek kaldıraçlı modellere gerçekte var olmayan bir
   kurtulma şansı verir ve tam da kıyaslamak istediğimiz risk farkını gizler. Kontrol mum içi
   `high`/`low` ile yapılır; kapanış fiyatıyla yapmak aynı hatanın daha yumuşak hâlidir.
+- **`as_of` tek ve ortak**: `core/data.py` anlık görüntüyü kurarken `as_of`'u sembollerin
+  **ortak** son kapanmış barı (minimum) olarak seçer; bir modelin başkasında olmayan bir barı
+  görmesi asimetri yaratır. Son barı `data.max_staleness_bars` kadar geride kalmış semboller
+  tura hiç alınmaz — aksi hâlde tek bir ölü piyasa herkesin "şimdi"sini geriye çekerdi.
 - **Long/short metriklerinin ayrılması**: projenin ana sorusu short işlemlerin görece
   başarısı olduğu için birleşik bir Sharpe ya da win-rate cevabı vermez. Ayrıştırma
   raporlamanın varsayılanıdır, ek bir seçenek değil.

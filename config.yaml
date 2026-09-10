@@ -1,16 +1,60 @@
-# Evrensel yarışma ayarları — tüm stratejiler için tek kaynak (CLAUDE.md kural 6).
-# Değerler taslaktır, onay sonrası netleştirilecek.
+# Evrensel ölçüm ayarları — tüm modeller için TEK kaynak (CLAUDE.md kural 6 ve 7).
+# Kodda hiçbir sabit hardcoded edilmez; her sayı buradan okunur. Bir değeri değiştirmek
+# tüm modelleri aynı anda ve birebir aynı biçimde etkiler — ölçümün adilliği buna bağlı.
 
-universe:
-  symbols: []          # örn. ["BTCUSDT", "ETHUSDT"]
-  timeframe: "4h"
+# --- Hesap ve risk ---
+initial_capital: 10000      # her stratejinin izole sanal hesabının başlangıç bakiyesi (USDT)
+risk_per_trade: 0.01        # işlem başına riske atılan sermaye oranı; boyutlandırma payı
+leverage_cap: 5             # azami kaldıraç; hiçbir koşulda aşılmaz (CLAUDE.md kural 11)
+max_positions: 5            # bir stratejinin eşzamanlı toplam pozisyon sayısı
+max_short_positions: 3      # bunların en fazla kaçı short olabilir
 
-account:
-  starting_balance_usd: 10000.0
-  commission_rate: 0.0004   # taker, tek yön
+# --- Maliyetler ---
+# fee_rate OKX taker oranıdır: modeller piyasa emriyle (entry_type="market") giriyor,
+# maker oranı kullanmak hiç gerçekleşmeyen bir dolumu varsayıp sonuçları optimist gösterir.
+fee_rate: 0.001             # tek yön komisyon; giriş ve çıkışta ayrı ayrı uygulanır
+slippage_long: 0.0005       # long giriş/çıkışlarında kayma
+slippage_short_stop: 0.0015 # short stop dolumunda kayma (yukarı boşluklarda daha kötü dolar)
+maintenance_margin: 0.005   # likidasyon eşiği; kontrol stop/TP'den ÖNCE yapılır
 
+# --- Zaman ve sembol evreni ---
+timeframe: "4H"             # tek zaman dilimi; OKX bar kodu da bundan türetilir
+universe_size: 50           # 24s hacme göre ilk N USDT perpetual
+universe_refresh_days: 30   # evren bu süre dolmadan yeniden hesaplanmaz (kıyas sabit kalsın)
+
+# Rastgelelik kullanan her yol (retry jitter dâhil) bu tohumdan beslenir: koşular tekrarlanabilir.
+random_seed: 20240217
+
+# Aktif modeller. strategies/ altındaki sınıfların `name` alanlarıyla birebir eşleşir ve
+# yarışmaya giren kümeyi burası tanımlar. Henüz uygulanmış model yok; her model eklendikçe
+# adı buraya yazılır (toplam 10 olacak).
+models: []
+
+# --- Funding / borçlanma ---
 funding:
   enabled: true
+  interval_hours: 8         # OKX perpetual funding periyodu
 
-schedule:
-  run_interval: "4h"
+# --- Borsa erişimi (OKX public API v5; auth gerekmez) ---
+exchange:
+  name: "okx"
+  rest_base: "https://www.okx.com"
+  inst_type: "SWAP"
+  quote_ccy: "USDT"         # evren yalnızca USDT ile takas edilen lineer perpetual'lar
+  btc_reference: "BTC-USDT-SWAP"   # MarketData.btc referans serisi
+  candles_limit: 300        # /market/candles istek başına azami bar
+  history_candles_limit: 100  # /market/history-candles istek başına azami bar
+  funding_limit: 100        # /public/funding-rate-history istek başına azami kayıt
+  request_timeout_sec: 20
+  min_request_interval_sec: 0.15   # basit istemci tarafı throttle (OKX IP limiti ~20-40/2s)
+  max_retries: 5
+  backoff_base_sec: 1.0     # 429/5xx sonrası bekleme: base * 2**deneme (+ jitter)
+  backoff_max_sec: 30.0
+
+# --- Yerel veri deposu ---
+data:
+  cache_dir: "data/cache"           # sembol başına parquet mum önbelleği
+  universe_file: "data/universe.json"
+  history_bars: 600                 # stratejilere verilen azami geçmiş bar sayısı
+  funding_history_periods: 180      # funding serisinde tutulan azami periyot sayısı
+  max_staleness_bars: 2             # son barı bundan daha geride kalan sembol tura alınmaz
