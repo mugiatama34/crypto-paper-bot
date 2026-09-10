@@ -75,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
         return _fail(exc)
     now = pd.Timestamp.now(tz="UTC")
 
-    print(f"\nas_of      : {market.as_of}  (şimdi: {now})")
+    print(f"\nas_of      : {market.as_of}  (şimdi: {now}, çıpa: BTC referansı)")
+    dropped = [symbol for symbol in symbols if symbol not in market.ohlcv]
+    if dropped:
+        print(f"tura alınmayan semboller: {', '.join(dropped)}  (as_of barı yok)")
     closed = market.as_of + duration <= now
     print(f"son bar kapanmış mı: {'EVET' if closed else 'HAYIR — LOOK-AHEAD!'}")
 
