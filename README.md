@@ -51,13 +51,16 @@ Bir stratejinin "tamamlandı" sayılması için:
 - [ ] En az bir tam değerlendirme döngüsünde hatasız `Signal` üretir.
 - [ ] Ürettiği `Signal.reason` alanı boş değildir (deftere yazılan gerekçe).
 - [ ] `allowed_directions` dışında yön içeren sinyal üretmez.
+- [ ] Stop mesafesi 1×–2.5×ATR bandındadır; veriye bağlı stop kuruyorsa
+      `max_stop_atr_multiple` tavanını aşan işlemi atlar ve atlamayı loglar (kural 14).
 
 Projenin "tamamlandı" sayılması için:
 
 - [ ] 10 strateji de arayüze uygun şekilde çalışıyor.
 - [ ] `core/portfolio.py`, `core/funding.py`, `core/ledger.py` tüm modeller için aynı kuralları
       uyguladığını kanıtlayan testlere sahip.
-- [ ] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor.
+- [ ] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor; her metrik
+      long/short ayrı ve `avg_stop_distance_pct` + `cost_per_r` kolonları raporlanıyor.
 - [ ] `.github/workflows/run.yml` periyodik çalıştırmayı ve testleri otomatik doğruluyor.
 
 Bu çıta taslaktır, onay/düzeltme bekliyor.
