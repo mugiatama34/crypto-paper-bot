@@ -52,6 +52,8 @@ TRADE_COLUMNS: tuple[str, ...] = (
     "exit_price",
     "qty",
     "notional",
+    "stop_price",
+    "risk_amount",
     "leverage",
     "margin",
     "fee",

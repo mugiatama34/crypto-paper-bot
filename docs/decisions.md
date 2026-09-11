@@ -190,3 +190,54 @@ gecikecek sembolü; çıpa olarak sabit ve dışarıdan denetlenebilir bir tanı
   bir adım.
 - Turu başlatan bir çalıştırıcı (`main.py`/workflow adımı) henüz yok; `config.yaml > models`
   boş olduğu için çalıştıracak model de yok. İlk strateji eklendiğinde yazılacak.
+
+## 6. Ortalama R birinci sınıf metrik; toplam getiri ikinci sırada
+
+Karar 5'te sermaye tanımı "hesabın toplam özsermayesi (nakit + marj + gerçekleşmemiş PnL)"
+olarak sabitlendi. Bu standart yaklaşım ama bir yan etkisi var: **açık kârı olan model daha
+büyük risk alır.** Yani toplam getiri kısmen "model ne kadar hızlı bileşiklendi"yi ölçer,
+sinyal kalitesini değil. Aynı sinyal kalitesine sahip iki modelden erken kâr yakalayanı
+toplam getiride öne geçer — oysa ölçmek istediğimiz şey bu değil.
+
+Bu yüzden `core/metrics.py`'de **işlem başına ortalama R** birinci sınıf metriktir:
+
+```
+R = işlemin net PnL'i / o işlemde AÇILIŞTA riske edilen tutar
+```
+
+- Payda `trades.csv`'nin **`risk_amount`** kolonudur (`adet × |giriş − ilk stop|`) ve deftere
+  açılış anında yazılır. Türetilmiş olan R'nin kendisi deftere yazılmaz: defter olguları,
+  `metrics.py` türetmeleri tutar — aynı hesabın iki yerde durması, iki yerde bozulması demek.
+- **İlk stop** kullanılır, güncel stop değil: trailing stop sonradan kısaldığında R'nin
+  tabanı değişirse aynı işlem sonradan daha başarılı görünürdü.
+- Kaldıraç tavanına takılıp küçülen pozisyonda payda **gerçekten riske edilen** tutardır,
+  modelin niyeti değil — model kırpma yüzünden ne ödüllendirilir ne cezalandırılır.
+- Likidasyonda R −1'in altına iner (marjın tamamı gider). Bu bir hata değil, tam da ölçmek
+  istediğimiz risk farkının görünür hâlidir; `liquidations` ayrıca sayılır.
+- Karşılaştırma tablosu **ortalama R'ye göre sıralanır** ve kolon sırası bilinçlidir: önce R,
+  sonra USDT getirisi. Toplam getiriye göre sıralamak, ayıklamaya çalıştığımız bileşiklenme
+  etkisini geri sokardı. Toplam getiri atılmaz, ikinci sırada durur.
+
+### Long/short ayrıştırmasının sınırı
+
+İşlem-tabanlı her metrik (R, win-rate, profit factor, PnL) long ve short için ayrı hesaplanır.
+Özsermaye eğrisinden gelenler (hesap getirisi, hesap max drawdown, hesap Sharpe) **yön bazında
+ayrıştırılamaz** — hesapta tek bakiye vardır. Bunlar `AccountStats` altında açıkça hesap
+düzeyi olarak raporlanır; yönlerin kendi risk profili bunun yerine o yönün **kümülatif R
+eğrisinden** ölçülür (`r_sharpe`, `max_drawdown_r`).
+
+### Tanımsız metrik `nan` döner
+
+İşlem yoksa, varyans sıfırsa ya da kazanan işlem yoksa metrik `nan`'dır ve raporda `—` yazılır.
+0.0 döndürmek "ölçüldü ve sıfır çıktı" ile "ölçülemedi"yi aynı sayıya indirger; 10 modelin
+sıralandığı bir tabloda bu sessiz bir sıralama hatasıdır. `risk_amount`'ı olmayan satırlar da
+R ortalamasına girmez, `unmeasured` olarak sayılır ve raporda uyarı satırı düşer.
+
+### Gözlem: bir stop gerçekte 1R'den pahalıdır
+
+İlk uçtan uca koşuda 1R'lik bir stop long'da **−1.04R**, short'ta **−1.16R** ile kapandı.
+Fark maliyetlerden geliyor ve yapısal: komisyon notional ile ölçeklenir, risk ise stop
+mesafesiyle. Dar stop kullanan bir model aynı 1R için daha büyük pozisyon taşır, dolayısıyla
+R başına daha çok komisyon öder; short stop'ların kayması ayrıca 3 kat (`slippage_short_stop`).
+Bu, **stop mesafesi tercihinin ölçüme sızdığı** anlamına gelir: modeller karşılaştırılırken
+ortalama stop mesafesi de bakılması gereken bir değişkendir.

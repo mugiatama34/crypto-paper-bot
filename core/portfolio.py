@@ -89,6 +89,8 @@ class Trade:
     exit_price: float
     qty: float
     notional: float
+    stop_price: float
+    risk_amount: float
     leverage: float
     margin: float
     fee: float
@@ -109,6 +111,8 @@ class Trade:
             "exit_price": self.exit_price,
             "qty": self.qty,
             "notional": self.notional,
+            "stop_price": self.stop_price,
+            "risk_amount": self.risk_amount,
             "leverage": self.leverage,
             "margin": self.margin,
             "fee": self.fee,
@@ -666,6 +670,12 @@ class Portfolio:
             exit_price=exit_price,
             qty=qty,
             notional=qty * position.entry_price,
+            stop_price=position.initial_stop_price,
+            # R'nin paydası: bu dilim için AÇILIŞTA riske edilen tutar. İlk stop kullanılır —
+            # trailing stop sonradan kısaldığında R'nin tabanı değişirse aynı işlem sonradan
+            # daha başarılı görünürdü. Kaldıraç tavanına takılıp küçülen pozisyonda da payda
+            # gerçekten riske edilen tutardır, modelin niyeti değil.
+            risk_amount=qty * abs(position.entry_price - position.initial_stop_price),
             leverage=position.leverage,
             margin=margin_part,
             fee=entry_fee_part + exit_fee,

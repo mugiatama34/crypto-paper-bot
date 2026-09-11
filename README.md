@@ -22,12 +22,30 @@ tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLA
 | Dosya | İçerik |
 |---|---|
 | `positions.json` | Koşular arası taşınan durum: nakit, açık pozisyonlar, bekleyen emirler, işlenmiş son bar. |
-| `trades.csv` | Kapanan her işlem (kısmi çıkışlar dâhil): giriş/çıkış zamanı ve fiyatı, yön, miktar, notional, kaldıraç, marj, komisyon, funding, PnL, çıkış sebebi (`stop`/`tp`/`liquidation`/`signal`) ve stratejinin gerekçesi. |
+| `trades.csv` | Kapanan her işlem (kısmi çıkışlar dâhil): giriş/çıkış zamanı ve fiyatı, yön, miktar, notional, ilk stop, **riske edilen tutar (`risk_amount`)**, kaldıraç, marj, komisyon, funding, PnL, çıkış sebebi (`stop`/`tp`/`liquidation`/`signal`) ve stratejinin gerekçesi. |
 | `equity.csv` | Bar başına nakit, kullanılan marj, gerçekleşmemiş PnL, özsermaye ve açık pozisyon sayısı. |
 
 Yazmalar atomiktir (geçici dosya + `rename`); yazılmış bir satır asla değiştirilmez.
 Kapanan işlemlerin `pnl` toplamı bakiyedeki değişime eşittir — defter bu yüzden
-denetlenebilir.
+denetlenebilir. `risk_amount` (`adet × |giriş − ilk stop|`) deftere yazılır çünkü
+karşılaştırmanın birinci sınıf metriği olan **R** (`pnl / risk_amount`) onun üzerinden
+hesaplanır; R'nin kendisi türetilmiş bir değer olduğu için deftere değil `core/metrics.py`'ye
+aittir.
+
+## Karşılaştırma
+
+```python
+from core.config import load_config
+from core.metrics import compare, format_report
+
+print(format_report(compare(["model_a", "model_b"], config=load_config())))
+```
+
+Tablo **ortalama R'ye göre** sıralanır ve her model için long / short / TOPLAM satırlarını
+ayrı gösterir. Toplam getiri (USDT ve %) ikinci sırada, hesap düzeyinde raporlanır: hesapta
+tek bakiye olduğu için getiri, max drawdown ve Sharpe yön bazında ayrıştırılamaz — yönlerin
+risk profili bunun yerine o yönün kümülatif R eğrisinden ölçülür (`r_sharpe`,
+`max_drawdown_r`). Ölçülemeyen bir metrik `—` yazılır; 0.0 gösterilmez.
 
 ## Kurulum ve manuel veri kontrolü
 
@@ -74,7 +92,7 @@ Projenin "tamamlandı" sayılması için:
 - [x] `core/portfolio.py`, `core/funding.py`, `core/ledger.py` tüm modeller için aynı kuralları
       uyguladığını kanıtlayan testlere sahip (`tests/test_portfolio.py`, `tests/test_funding.py`,
       `tests/test_ledger.py`, `tests/test_engine.py`).
-- [ ] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor.
+- [x] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor (`tests/test_metrics.py`).
 - [ ] `.github/workflows/run.yml` periyodik çalıştırmayı ve testleri otomatik doğruluyor.
 
 Bu çıta taslaktır, onay/düzeltme bekliyor.
