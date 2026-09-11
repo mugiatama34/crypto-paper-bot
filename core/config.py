@@ -35,6 +35,7 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "universe_refresh_days",
     "random_seed",
     "models",
+    "trailing.atr_period",
     "funding.enabled",
     "funding.interval_hours",
     "exchange.rest_base",
