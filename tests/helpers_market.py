@@ -17,9 +17,20 @@ from strategies.base import MarketData
 START = pd.Timestamp("2026-01-01 00:00:00", tz="UTC")
 
 
-def frame(closes: Sequence[float], *, spread: float = 0.5) -> pd.DataFrame:
-    """Kapanış dizisinden OHLCV çerçevesi; high/low kapanışın `spread` kadar uzağında."""
-    index = pd.date_range(START, periods=len(closes), freq="4h", tz="UTC", name="ts")
+def frame(
+    closes: Sequence[float],
+    *,
+    spread: float = 0.5,
+    volumes: Sequence[float] | None = None,
+    start: pd.Timestamp = START,
+) -> pd.DataFrame:
+    """Kapanış dizisinden OHLCV çerçevesi; high/low kapanışın `spread` kadar uzağında.
+
+    `volumes` yalnızca hacim teyidini ölçen modeller için doldurulur (varsayılan sabit 1.0,
+    yani "hacim ayrımı yok"). `start` ise dengeleme barına duyarlı modeller içindir: takvim
+    gününü sabitlemeden Pazartesi 00:00 UTC koşulu test edilemez.
+    """
+    index = pd.date_range(start, periods=len(closes), freq="4h", tz="UTC", name="ts")
     values = [float(close) for close in closes]
     return pd.DataFrame(
         {
@@ -27,7 +38,7 @@ def frame(closes: Sequence[float], *, spread: float = 0.5) -> pd.DataFrame:
             "high": [close + spread for close in values],
             "low": [close - spread for close in values],
             "close": values,
-            "volume": [1.0] * len(values),
+            "volume": [1.0] * len(values) if volumes is None else [float(v) for v in volumes],
         },
         index=index,
     )
