@@ -15,11 +15,15 @@ from typing import Callable, Mapping
 
 from strategies.base import Strategy
 from strategies.buyhold import BuyHold
+from strategies.meanrev import MeanReversion
+from strategies.trend import Trend
 
 StrategyFactory = Callable[[], Strategy]
 
 REGISTRY: Mapping[str, StrategyFactory] = {
     BuyHold.name: BuyHold,
+    Trend.name: Trend,
+    MeanReversion.name: MeanReversion,
 }
 
 

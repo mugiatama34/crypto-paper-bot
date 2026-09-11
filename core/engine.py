@@ -35,12 +35,15 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Iterable, Literal, Mapping, Sequence
 
-import numpy as np
 import pandas as pd
 
 from core import funding as funding_module
 from core.config import get_setting, load_config
 from core.data import bar_duration
+# ATR tanımı core/indicators.py'de tektir: trailing mesafesi (kural 9), stop bandı
+# (kural 14) ve stratejilerin stop'ları aynı sayıyı görmek zorundadır. Ad burada
+# yeniden dışa verilir — motorun ATR'yi "kendi" hesaplaması bu garantiyi bozardı.
+from core.indicators import average_true_range
 from core.ledger import Ledger
 from core.portfolio import SIZING_FAILURES, Bar, Portfolio, Trade
 from core.validate import validate_signal
@@ -600,29 +603,6 @@ class Engine:
 # --------------------------------------------------------------------------- #
 # Yardımcılar
 # --------------------------------------------------------------------------- #
-def average_true_range(frame: pd.DataFrame, period: int) -> float | None:
-    """Son `period` kapanmış barın ortalama gerçek aralığı; yeterli bar yoksa None.
-
-    Basit ortalama kullanılır (Wilder yumuşatması değil): trailing mesafesinin tek amacı
-    tüm modeller için AYNI ve denetlenebilir olması; yumuşatma seçimi ölçümü etkilemez
-    ama tanımın açık olması etkiler.
-    """
-    if period <= 0:
-        raise ValueError(f"atr_period pozitif olmalı: {period}")
-    if len(frame) < period + 1:
-        return None
-    window = frame.tail(period + 1)
-    high = window["high"].to_numpy(dtype="float64")
-    low = window["low"].to_numpy(dtype="float64")
-    close = window["close"].to_numpy(dtype="float64")
-    previous_close = close[:-1]
-    true_range = np.maximum(
-        high[1:] - low[1:],
-        np.maximum(np.abs(high[1:] - previous_close), np.abs(low[1:] - previous_close)),
-    )
-    return float(true_range.mean())
-
-
 def _bars_at(market: MarketData, ts: pd.Timestamp) -> dict[str, Bar]:
     bars: dict[str, Bar] = {}
     for symbol, frame in market.ohlcv.items():
