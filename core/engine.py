@@ -44,7 +44,15 @@ from core.data import bar_duration
 from core.ledger import Ledger
 from core.portfolio import Bar, Portfolio, Trade
 from core.validate import validate_signal
-from strategies.base import Direction, ExitInstruction, MarketData, Signal, Strategy, TakeProfit
+from strategies.base import (
+    Direction,
+    ExitInstruction,
+    MarketData,
+    Signal,
+    SizingMode,
+    Strategy,
+    TakeProfit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +67,10 @@ class PendingOrder:
     symbol: str
     direction: Direction
     created_at: pd.Timestamp
-    stop_price: float = 0.0
+    # Stop'suz referans emirlerinde (kural 15) None kalır; 0.0 "stop sıfırda" demek olurdu.
+    stop_price: float | None = None
+    sizing: SizingMode = "risk"
+    notional_fraction: float | None = None
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
     fraction: float = 1.0
@@ -72,6 +83,8 @@ class PendingOrder:
             "direction": self.direction,
             "created_at": self.created_at.isoformat(),
             "stop_price": self.stop_price,
+            "sizing": self.sizing,
+            "notional_fraction": self.notional_fraction,
             "take_profits": [{"price": tp.price, "fraction": tp.fraction} for tp in self.take_profits],
             "trailing_atr": self.trailing_atr,
             "fraction": self.fraction,
@@ -85,7 +98,11 @@ class PendingOrder:
             symbol=str(payload["symbol"]),
             direction=str(payload["direction"]),  # type: ignore[arg-type]
             created_at=_to_utc(payload["created_at"]),
-            stop_price=float(payload.get("stop_price", 0.0)),
+            # Eski defterlerde alan yoktu: varsayılan "risk", stop 0.0 yerine None'a düşer
+            # ve exit emirlerinde zaten kullanılmaz.
+            stop_price=_opt_float(payload.get("stop_price")),
+            sizing=str(payload.get("sizing", "risk")),  # type: ignore[arg-type]
+            notional_fraction=_opt_float(payload.get("notional_fraction")),
             take_profits=tuple(
                 TakeProfit(price=float(tp["price"]), fraction=float(tp["fraction"]))
                 for tp in payload.get("take_profits", ())
@@ -196,6 +213,8 @@ class Engine:
                     direction=signal.direction,
                     created_at=market.as_of,
                     stop_price=signal.stop_price,
+                    sizing=signal.sizing,
+                    notional_fraction=signal.notional_fraction,
                     take_profits=signal.take_profits,
                     trailing_atr=signal.trailing_atr,
                     reason=signal.reason,
@@ -343,6 +362,8 @@ class Engine:
                 reference_price=bar.open,
                 ts=ts,
                 marks=marks,
+                sizing_mode=order.sizing,
+                notional_fraction=order.notional_fraction,
                 take_profits=order.take_profits,
                 trailing_atr=order.trailing_atr,
                 reason=order.reason,
@@ -446,6 +467,7 @@ class Engine:
                     entry_price=_reference_price(market, signal.symbol),
                     allowed_directions=list(strategy.allowed_directions),
                     symbol_universe=list(universe),
+                    is_benchmark=strategy.is_benchmark,
                 )
         except Exception as exc:
             # Sessiz filtreleme yok: hata loglanır ve modelin o turu boş geçer, koşu sürer.
@@ -471,6 +493,13 @@ class Engine:
         """
         kept: list[Signal] = []
         for signal in signals:
+            if signal.stop_price is None:
+                # Stop'suz referans sinyali (kural 15). Band bir MALİYET ÖLÇEĞİ kuralıdır:
+                # stop mesafesi 1R'yi, 1R de R başına maliyeti tanımlar. Referans modelin
+                # R'si yoktur (metrics'te nan) ve yarışmacılarla aynı tabloda sıralanmaz,
+                # dolayısıyla elenecek bir karşılaştırılamazlık da yoktur.
+                kept.append(signal)
+                continue
             frame = market.ohlcv.get(signal.symbol)
             reference = _reference_price(market, signal.symbol)
             atr = average_true_range(frame.loc[:market.as_of], self._atr_period) if frame is not None else None
@@ -627,6 +656,10 @@ def _assert_unique_names(strategies: Sequence[Strategy]) -> None:
 
 def _join(*notes: str) -> str:
     return "; ".join(note for note in notes if note)
+
+
+def _opt_float(value: Any) -> float | None:
+    return None if value is None or value == "" else float(value)
 
 
 def _to_utc(value: Any) -> pd.Timestamp:

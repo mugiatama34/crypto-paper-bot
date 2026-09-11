@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from core.config import load_config
-from core.engine import Engine, average_true_range
+from core.engine import Engine, PendingOrder, average_true_range
 from core.ledger import Ledger
 from strategies.base import (
     ExitInstruction,
@@ -546,3 +546,123 @@ def test_unverifiable_band_keeps_the_signal_and_warns(
     assert report.by_model("m").skipped_signals == 0  # type: ignore[union-attr]
     assert len(ledger.load_state("m")["pending_orders"]) == 1  # type: ignore[index]
     assert "ATR hesaplanamadı" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
+# Referans modeller (CLAUDE.md kural 15)
+# --------------------------------------------------------------------------- #
+class _Benchmark(_Scripted):
+    is_benchmark = True
+
+
+def test_benchmark_signal_passes_validation_and_fills(tmp_path: Path) -> None:
+    """Stop'suz notional_fraction sinyali motordan geçip 1x pozisyona dönüşür."""
+    market = _market([(100.0, 101.0, 99.0, 100.0)] * 3, bars=2)
+    strategy = _Benchmark(
+        "bench",
+        allowed_directions=("long",),
+        signals={
+            market.as_of: [
+                Signal(
+                    symbol=SYMBOL,
+                    direction="long",
+                    sizing="notional_fraction",
+                    notional_fraction=0.5,
+                    reason="çıpa",
+                )
+            ]
+        },
+    )
+    ledger = Ledger(tmp_path)
+    engine = Engine([strategy], config=_config(), ledger=ledger)
+
+    engine.run_round(market)
+    assert ledger.load_state("bench")["positions"] == []  # kural 13: bir sonraki bar
+
+    full = _market([(100.0, 101.0, 99.0, 100.0)] * 3)
+    Engine([strategy], config=_config(), ledger=ledger).run_round(full)
+
+    position = ledger.load_state("bench")["positions"][0]
+    assert position["stop_price"] is None
+    assert position["leverage"] == pytest.approx(1.0)
+    assert position["qty"] == pytest.approx(50.0)  # 10000 × 0.5 / 100
+
+
+def test_competitor_notional_fraction_signal_skips_only_that_model(
+    tmp_path: Path, caplog: Any
+) -> None:
+    """is_benchmark=False bir model muafiyeti kullanamaz; koşu yine de durmaz (kural 8)."""
+    market = _market([(100.0, 101.0, 99.0, 100.0)] * 3)
+    cheater = _Scripted(
+        "cheater",
+        allowed_directions=("long",),
+        signals={
+            market.as_of: [
+                Signal(
+                    symbol=SYMBOL, direction="long",
+                    sizing="notional_fraction", notional_fraction=0.9,
+                )
+            ]
+        },
+    )
+    honest = _Scripted(
+        "honest",
+        allowed_directions=("long",),
+        signals={market.as_of: [Signal(symbol=SYMBOL, direction="long", stop_price=95.0)]},
+    )
+
+    with caplog.at_level(logging.ERROR):
+        report = Engine([cheater, honest], config=_config(), ledger=Ledger(tmp_path)).run_round(market)
+
+    assert "is_benchmark=True" in (report.by_model("cheater").skipped or "")
+    assert report.by_model("cheater").signals == 0
+    assert report.by_model("honest").signals == 1  # diğer model etkilenmedi
+
+
+def test_stopless_signal_bypasses_the_stop_band(tmp_path: Path) -> None:
+    """Kural 14 bandı stop mesafesi üzerinden tanımlıdır; stop'suz sinyalde uygulanamaz."""
+    market = _market([(100.0, 101.0, 99.0, 100.0)] * 20)
+    strategy = _Benchmark(
+        "bench",
+        allowed_directions=("long",),
+        signals={
+            market.as_of: [
+                Signal(
+                    symbol=SYMBOL, direction="long",
+                    sizing="notional_fraction", notional_fraction=0.5,
+                )
+            ]
+        },
+    )
+    report = Engine([strategy], config=_config(), ledger=Ledger(tmp_path)).run_round(market)
+    assert report.by_model("bench").signals == 1
+    assert report.by_model("bench").skipped_signals == 0
+
+
+def test_pending_order_round_trips_sizing_fields() -> None:
+    order = PendingOrder(
+        kind="open",
+        symbol=SYMBOL,
+        direction="long",
+        created_at=START,
+        sizing="notional_fraction",
+        notional_fraction=0.25,
+    )
+    restored = PendingOrder.from_state(order.as_state())
+    assert restored == order
+
+
+def test_legacy_pending_order_without_sizing_defaults_to_risk() -> None:
+    """Kural 15'ten önce yazılmış defterler okunabilir kalmalı."""
+    restored = PendingOrder.from_state(
+        {
+            "kind": "open",
+            "symbol": SYMBOL,
+            "direction": "long",
+            "created_at": START.isoformat(),
+            "stop_price": 95.0,
+        }
+    )
+    assert restored.sizing == "risk"
+    assert restored.notional_fraction is None
+    assert restored.stop_price == pytest.approx(95.0)

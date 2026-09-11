@@ -13,6 +13,11 @@ Onaylanan tasarım (bkz. CLAUDE.md > "Strateji Arayüz Sözleşmesi"):
 - take_profits bir tuple'dır, liste değil: frozen dataclass içinde mutable liste
   taşımak dondurmayı yarım bırakır ve bir stratejinin (ya da meta modelin) kendi/
   başkasının sinyalini yerinde değiştirmesine izin verirdi.
+- sizing/notional_fraction ve is_benchmark yalnızca REFERANS modeller içindir
+  (CLAUDE.md kural 15). Yarışmacı modeller `sizing="risk"` kullanır ve boyutlarını
+  yine core/portfolio.py belirler (kural 3/11) — bu alanlar strateji başına
+  boyutlandırma yapma kapısı değildir; core/validate.py is_benchmark=False bir modelin
+  notional_fraction kullanmasını ValueError ile reddeder.
 - MarketData.funding tek oran değil zaman indeksli seridir ve as_of sözleşmede yer
   alır: "şimdi"nin tek ve açık tanımı, look-ahead yasağını (kural 12) test edilebilir
   kılar.
@@ -29,6 +34,12 @@ import pandas as pd
 
 Direction = Literal["long", "short"]
 
+# Boyutlandırma modu. "risk" tüm yarışmacı modellerin tek modudur: boyut
+# risk_per_trade × sermaye / |giriş − stop| (kural 11). "notional_fraction" yalnızca
+# is_benchmark=True referans modellere açıktır (kural 15) — stop'u olmayan bir alım-tut
+# çıpası risk formülüne sokulamaz, çünkü paydası yoktur.
+SizingMode = Literal["risk", "notional_fraction"]
+
 
 @dataclass(frozen=True, kw_only=True)
 class TakeProfit:
@@ -40,7 +51,11 @@ class TakeProfit:
 class Signal:
     symbol: str
     direction: Direction
-    stop_price: float
+    # sizing="risk" iken zorunlu, "notional_fraction" iken None OLMALI (core/validate.py).
+    stop_price: float | None = None
+    sizing: SizingMode = "risk"
+    # Yalnızca sizing="notional_fraction" iken anlamlı: sermayenin bu oranı kadar notional.
+    notional_fraction: float | None = None
     entry_type: Literal["market", "limit"] = "market"
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
@@ -54,7 +69,7 @@ class Position:
     symbol: str
     direction: Direction
     entry_price: float
-    stop_price: float
+    stop_price: float | None  # referans modellerde stop yoktur (kural 15)
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
     opened_at: pd.Timestamp
@@ -80,6 +95,10 @@ class Strategy(ABC):
     name: str
     allowed_directions: list[Direction]
     is_meta: bool = False  # True ise engine'in ikinci geçişinde çalışır (CLAUDE.md kural 4)
+    # True ise model bir REFERANS çıpasıdır, yarışmacı değil (CLAUDE.md kural 15):
+    # sizing="notional_fraction" kullanabilir ve metrics tablosunda ayrı bölümde,
+    # R'ye dayalı kolonları nan olarak raporlanır.
+    is_benchmark: bool = False
 
     @abstractmethod
     def generate_signals(

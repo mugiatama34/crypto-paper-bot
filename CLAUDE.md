@@ -16,6 +16,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 
 | Yol | Tek Sorumluluk |
 |---|---|
+| `main.py` | Bir turu uçtan uca çalıştıran giriş noktası: veri çek -> `as_of` -> config'deki modelleri çalıştır -> metrikleri üret -> `docs/data/metrics.json`. İnce bir orkestrasyon katmanıdır, iş mantığı taşımaz. `--dry-run` deftere yazmadan raporlar. Model KURULUMU burada izole edilir (tanınmayan/patlayan model atlanır, koşu hata koduyla biter); defter ve veri hataları izole edilmez — onlar ölçüm hatasıdır, tur düşer. |
 | `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, çalışma sıklığı, funding parametreleri ve tüm risk/maliyet sabitleri — `risk_per_trade`, `leverage_cap`, `max_positions`, `max_short_positions`, `fee_rate`, `slippage_base`, `slippage_short_stop`, `maintenance_margin`, `max_stop_atr_multiple`, `random_seed`. Tüm modeller için tek kaynak; hiçbir modül bu değerlerin kendi kopyasını taşımaz. Değerler için bkz. "config.yaml Değerleri". |
 | `core/config.py` | `config.yaml`'ı okuyan tek kapı. Eksik anahtarda `ConfigError` fırlatır; hiçbir varsayılan değer taşımaz — sessiz varsayılan, modellerin farklı maliyet/risk varsayımlarıyla yarışması demektir. |
 | `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u BTC referansından belirlemek burasının işidir; `as_of` barına sahip olmayan semboller o tur dışlanır ve loglanır. Strateji mantığı barındırmaz. |
@@ -26,6 +27,8 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde `ledgers/` altına yazar. Sistemin denetim izi (audit trail) burasıdır. |
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni. Geçersiz sinyalde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
+| `strategies/buyhold.py` | **Referans çıpası** (kural 15), yarışmacı değil: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınır ve hiç satılmaz. `is_benchmark = True`. |
+| `strategies/registry.py` | Model adı -> strateji sınıfı eşlemesi. `config.yaml`'ın `models` listesi buradan çözülür; tanınmayan ad sessizce atlanmaz. |
 | `strategies/*.py` (ileride) | `Strategy`'den türeyen, yalnızca `generate_signals` uygulayan bağımsız, birbirinden habersiz modüller. |
 | `data/` | Çalışma zamanı veri deposu (depoya girmez): `data/universe.json` ve `data/cache/<sembol>_<bar>.parquet`. Mum/funding önbelleği burada tutulur, her koşuda yalnızca eksik barlar çekilir. |
 | `ledgers/` | Her stratejinin işlem/bakiye kayıtlarının tutulduğu çıktı klasörü (strateji başına dosya/alt klasör). |
@@ -126,6 +129,43 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
       Kural 11'in "atlamak işlem sayısını sessizce düşürür" itirazı burada denetlenebilir kayıtla
       karşılanır; bandın gerçekten tuttuğu ise `avg_stop_distance_pct` kolonundan okunur.
 
+15. **Referans (benchmark) modeller ve boyutlandırma muafiyeti:** `is_benchmark = True` ile
+    işaretlenen bir model **yarışmacı değil, zemindir.** Cevapladığı soru tek: *"model piyasayı
+    yendi mi, yoksa yalnızca yükselen bir piyasada mı durdu?"* On modelin hepsi pozitif getiri
+    üretse bile hiçbiri bu satırı geçemiyorsa ölçümün sonucu "stratejiler işe yarıyor" değildir.
+
+    Böyle bir model `Signal.sizing = "notional_fraction"` kullanabilir ve boyutu şöyle belirlenir
+    (uygulayıcı yine tek yetkili yer, `core/portfolio.py`):
+
+    ```
+    boyut = (notional_fraction × sermaye) / giriş fiyatı      # kaldıraç ZORLA 1x
+    ```
+
+    - **Neden muafiyet gerekiyor:** alım-tut'un tanımı stop'suz olmasıdır. Ona yapay bir stop
+      takmak onu bir trend modeline çevirirdi; kural 11'in formülüne (`risk / |giriş − stop|`)
+      sokmak ise imkânsızdır — paydası yoktur. Muafiyet olmadan çıpa ya var olamaz ya da
+      ölçtüğü şey artık alım-tut olmaz.
+    - **Muafiyet YALNIZCA boyutlandırmadadır.** Komisyon, kayma, funding, likidasyon, evren,
+      `allowed_directions`, dolum kuralı (kural 13) ve defter kuralları (kural 1/2/7) referans
+      modele de birebir aynı uygulanır. Kaldıraç 1x'e **sabitlenir**: `leverage_cap` bir tavandır,
+      çıpa için ise kaldıraç hiç devreye girmez — çıpanın işi "piyasa ne yaptı"yı ölçmek, onu
+      kaldıraçla büyütmek değil.
+    - **Kapı `core/validate.py`'dedir:** `sizing = "notional_fraction"` gelen bir sinyal
+      `is_benchmark = False` bir modelden geliyorsa `ValueError`. Bu kapı olmadan kural 3/11
+      delinir — her model kendi boyutunu "referans gibi" belirlemeye başlar, ortak risk birimi
+      (1R) ortadan kalkar ve modeller artık aynı ölçekte yarışmaz.
+    - **İki alan birbirini dışlar, sessiz düzeltme yoktur:** `sizing = "risk"` iken `stop_price`
+      zorunludur ve `notional_fraction` dolu olamaz; `sizing = "notional_fraction"` iken
+      `stop_price` **None olmalıdır** (dolu gelirse hata — yok saymak, deftere yazılan "ilk
+      stop"u hiç kullanılmayan bir sayı yapardı, oysa `risk_amount` ve `cost_per_r` ondan türer).
+    - **Raporlama:** referans satırı `avg_stop_distance_pct` ve `cost_per_r` kolonlarında `nan`
+      alır — stop'u olmayanın 1R'si, dolayısıyla R başına maliyeti de yoktur. Tabloda ortalama R
+      sıralamasına girmez; ayrı bir **REFERANS** bölümünde durur. Aynı sütunda sıralamak, farklı
+      boyutlandırma kuralıyla çalışan bir satırı risk-birimi yarışının parçasıymış gibi
+      gösterirdi. Referansın taşıdığı bilgi sıralamada değil, **hesap düzeyi getirisindedir.**
+    - Kural 14'ün stop bandı referans modele uygulanmaz: band bir maliyet ölçeği kuralıdır ve
+      stop mesafesi üzerinden tanımlıdır; stop'suz sinyalde uygulanacak bir şey yoktur.
+
 ## Rapor Kolonları
 
 `core/metrics.py` her modeli **aynı tabloda**, her metriği **long / short / toplam** olarak
@@ -146,6 +186,10 @@ Bu kolonlar opsiyonel değildir, çünkü projenin ana sorusunu doğrudan kirlet
 kullanıp R başına daha az maliyet ödemesinden mi? İki modelin `avg_stop_distance_pct` değerleri
 bandın dışında ayrışıyorsa ve `cost_per_r` farkı performans farkını tek başına açıklayabiliyorsa,
 kıyas **geçersiz** sayılır; sonuç yorumlanmaz, modelin stop parametresi düzeltilir.
+
+Referans modeller (kural 15) bu iki kolonu **`nan`** alır ve tablonun ayrı bir bölümünde durur:
+stop'u olmayanın 1R'si yoktur, dolayısıyla "R başına maliyet" de tanımsızdır. Onların taşıdığı
+bilgi bu kolonlarda değil, hesap düzeyi getirisindedir.
 
 Tanım kararları:
 
@@ -180,6 +224,7 @@ class Strategy(ABC):
     name: str
     allowed_directions: list[Direction]   # ["long"], ["short"] veya ["long", "short"]
     is_meta: bool = False                 # True ise engine'in ikinci geçişinde çalışır
+    is_benchmark: bool = False            # True ise yarışmacı değil referans çıpası (kural 15)
 
     @abstractmethod
     def generate_signals(
@@ -206,11 +251,16 @@ class TakeProfit:
     fraction: float          # 0 < fraction <= 1.0; bir Signal içindeki toplam <= 1.0
 
 
+SizingMode = Literal["risk", "notional_fraction"]
+
+
 @dataclass(frozen=True, kw_only=True)
 class Signal:
     symbol: str
     direction: Direction               # "long" | "short"
-    stop_price: float
+    stop_price: float | None = None    # sizing="risk" iken ZORUNLU, aksi hâlde None OLMALI
+    sizing: SizingMode = "risk"        # "notional_fraction" yalnızca is_benchmark (kural 15)
+    notional_fraction: float | None = None   # yalnızca sizing="notional_fraction" iken
     entry_type: Literal["market", "limit"] = "market"   # v1'de yalnızca "market" işlenir
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None  # uygulaması core/engine.py'de, strateji yazmaz
@@ -223,7 +273,7 @@ class Position:
     symbol: str
     direction: Direction
     entry_price: float
-    stop_price: float
+    stop_price: float | None           # referans modellerde stop yoktur (kural 15)
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
     opened_at: pd.Timestamp
@@ -297,6 +347,15 @@ Tasarım kararları:
   denetlenebilsin diye. `data.max_staleness_bars` artık sembol başına tolerans değil, çıpanın
   kendi tazeliğinin sınırıdır: BTC verisi bundan daha geride kalmışsa anlık görüntü hiç
   üretilmez (bayat veriyle işlem açmaktansa tur düşer).
+- **Boyutlandırma muafiyeti neden bir bayrağa bağlandı (kural 15)**: alternatif, alım-tut
+  çıpasına yapay bir stop (örn. girişin %99 altında) takıp kural 11'i hiç değiştirmemekti. O yol
+  daha az kod değiştiriyordu ama iki şeyi bozuyordu: (a) uydurma stop, `risk_amount` üzerinden
+  uydurma bir R üretir ve çıpa yarışmacılarla aynı sütunda sıralanabilir hâle gelirdi — oysa
+  ölçtüğü şey farklı; (b) %1 risk kuralı çıpayı sermayenin küçük bir dilimine hapseder, "piyasa
+  ne yaptı" sorusunun cevabı ise sermayenin tamamının piyasada olmasını gerektirir. Bayrak,
+  muafiyeti **tek bir yerde denetlenebilir** kılar: `core/validate.py`'de bir satır, tablonun
+  ayrı bir bölümü. Muafiyetin gizli kalmadığı, `is_benchmark` alanının hem sözleşmede hem
+  raporda görünmesiyle güvence altındadır.
 - **Long/short metriklerinin ayrılması**: projenin ana sorusu short işlemlerin görece
   başarısı olduğu için birleşik bir Sharpe ya da win-rate cevabı vermez. Ayrıştırma
   raporlamanın varsayılanıdır, ek bir seçenek değil.

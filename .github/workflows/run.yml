@@ -1,22 +1,74 @@
 name: run
 
+# Periyodik paper-trading turu. Testler ci.yml'de koşar; burada yalnızca tur çalışır.
+#
+# Zamanlama: bar 4H, yani barlar 00/04/08/12/16/20 UTC'de KAPANIR. Cron 5 dakika sonra
+# tetiklenir — core/data.py kapanmamış barı atar (kural 12), erken tetiklenen bir koşu
+# bir önceki barı işleyip turu boşa harcardı. GitHub cron'u zaten birkaç dakika
+# gecikebilir; bu pay onu da soğurur.
 on:
-  push:
-    branches: ["main"]
-  pull_request:
+  schedule:
+    - cron: "5 0,4,8,12,16,20 * * *"
   workflow_dispatch:
 
+# Defter koşular arası taşınan DURUMDUR: iki tur aynı anda koşarsa ikisi de aynı
+# `last_processed_bar`dan başlar ve biri diğerinin commit'ini ezer — bakiye sessizce
+# bozulur. cancel-in-progress=false, çünkü yarıda kesilen tur da defteri yarım bırakır.
+concurrency:
+  group: paper-trading-run
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
 jobs:
-  test:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run tests
-        run: pytest -q
+
+      - name: Run round
+        run: python main.py --log-level INFO
+
+      - name: Commit ledgers and metrics
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add ledgers docs/data
+
+          # Değişiklik yoksa boş commit atma: tur `as_of` barına zaten ulaşmışsa
+          # (elle tekrar, cron retry) motor hiçbir şey yazmaz ve geçmiş anlamsız
+          # commit'lerle şişmemelidir.
+          if git diff --cached --quiet; then
+            echo "değişiklik yok, commit atlanıyor"
+            exit 0
+          fi
+
+          AS_OF="$(python -c "import json,pathlib; print(json.loads(pathlib.Path('docs/data/metrics.json').read_text())['as_of'])")"
+          git commit -m "run: ${AS_OF}"
+
+          # Tur uzun sürerse bu arada main'e başka bir commit girmiş olabilir. Defter
+          # append-only olduğu için rebase güvenlidir; yine de birkaç kez denenir.
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız oldu"
+          exit 1

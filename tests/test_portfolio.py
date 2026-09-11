@@ -466,3 +466,139 @@ def test_risk_amount_uses_the_initial_stop_not_the_trailed_one() -> None:
     assert trade is not None
     assert trade.stop_price == pytest.approx(90.0)             # ilk stop deftere yazılır
     assert trade.risk_amount == pytest.approx(100.0)           # 10 birim mesafe × 10 adet
+
+
+# --------------------------------------------------------------------------- #
+# notional_fraction boyutlandırması (CLAUDE.md kural 15)
+# --------------------------------------------------------------------------- #
+def _open_benchmark(
+    portfolio: Portfolio,
+    *,
+    symbol: str = SYMBOL,
+    fraction: float = 0.5,
+    reference_price: float = 100.0,
+    marks: dict[str, float] | None = None,
+) -> Any:
+    return portfolio.open_position(
+        "b",
+        symbol=symbol,
+        direction="long",
+        stop_price=None,
+        reference_price=reference_price,
+        ts=TS,
+        marks=marks if marks is not None else {symbol: reference_price},
+        sizing_mode="notional_fraction",
+        notional_fraction=fraction,
+    )
+
+
+def test_notional_fraction_sizes_from_equity_at_1x() -> None:
+    portfolio = Portfolio(_frictionless())
+    position = _open_benchmark(portfolio).position
+    assert position is not None
+    # sermayenin %50'si = 5000 USDT notional, 100 USDT fiyattan 50 adet
+    assert position.qty == pytest.approx(50.0)
+    assert position.leverage == pytest.approx(1.0)
+    # Kaldıraç 1x: marj notional'ın tamamıdır, nakitten tam o kadar düşer
+    assert position.margin == pytest.approx(5000.0)
+    assert portfolio.cash("b") == pytest.approx(5000.0)
+
+
+def test_notional_fraction_ignores_risk_per_trade_and_leverage_cap() -> None:
+    """Referans boyutu risk formülünden tamamen bağımsızdır."""
+    lean = Portfolio(_frictionless(risk_per_trade=0.5, leverage_cap=20))
+    strict = Portfolio(_frictionless(risk_per_trade=0.001, leverage_cap=1))
+    assert (
+        _open_benchmark(lean).position.qty  # type: ignore[union-attr]
+        == pytest.approx(_open_benchmark(strict).position.qty)  # type: ignore[union-attr]
+    )
+
+
+def test_notional_fraction_position_has_no_stop() -> None:
+    portfolio = Portfolio(_frictionless())
+    position = _open_benchmark(portfolio).position
+    assert position is not None
+    assert position.stop_price is None
+    assert position.initial_stop_price is None
+    assert position.view().stop_price is None
+
+
+def test_notional_fraction_trade_reports_no_risk_amount() -> None:
+    """R'nin paydası yoksa uydurulmaz: defterde boş kalır (metrics'te nan olur)."""
+    portfolio = Portfolio(_frictionless())
+    _open_benchmark(portfolio)
+    trade = portfolio.close_position(
+        "b", symbol=SYMBOL, direction="long", reference_price=120.0, ts=TS
+    )
+    assert trade is not None
+    assert trade.risk_amount is None
+    assert trade.stop_price is None
+    assert trade.as_row()["risk_amount"] is None
+    assert trade.pnl == pytest.approx(1000.0)  # 50 adet × 20 USDT
+
+
+def test_notional_fraction_position_survives_a_deep_crash() -> None:
+    """1x pozisyon pratikte likide olmaz; olsaydı çıpa ölçtüğü şeyi kaybederdi."""
+    portfolio = Portfolio(_frictionless())
+    _open_benchmark(portfolio)
+    trades = portfolio.process_bar(
+        "b", ts=TS, bars={SYMBOL: _bar(100.0, 100.0, 45.0, 50.0)}
+    )
+    assert trades == []
+    assert len(portfolio.positions("b")) == 1
+
+
+def test_notional_fraction_clipped_to_free_cash() -> None:
+    portfolio = Portfolio(_frictionless())
+    _open_benchmark(portfolio, fraction=0.8)  # 8000 notional, nakit 2000 kalır
+    second = _open_benchmark(
+        portfolio, symbol="ETH-USDT-SWAP", fraction=0.8, marks={SYMBOL: 100.0}
+    ).position
+    assert second is not None
+    # İstenen 8000'di ama marj nakdi aşamaz: hesap 1x'in üzerine çıkmaz.
+    assert second.margin == pytest.approx(2000.0)
+    assert second.leverage == pytest.approx(1.0)
+    assert "kırpıldı" in second.notes
+
+
+def test_trailing_stop_cannot_be_attached_to_stopless_position() -> None:
+    portfolio = Portfolio(_frictionless())
+    _open_benchmark(portfolio)
+    assert not portfolio.set_stop_price("b", symbol=SYMBOL, direction="long", stop_price=90.0)
+    assert portfolio.positions("b")[0].stop_price is None
+
+
+def test_stopless_position_round_trips_through_state() -> None:
+    portfolio = Portfolio(_frictionless())
+    _open_benchmark(portfolio)
+    state = portfolio.to_state("b")
+    restored = Portfolio(_frictionless())
+    restored.load_state("b", state)
+    assert restored.positions("b")[0].stop_price is None
+    assert restored.positions("b")[0].initial_stop_price is None
+    assert restored.cash("b") == pytest.approx(portfolio.cash("b"))
+
+
+def test_risk_mode_requires_stop_and_fraction_mode_forbids_it() -> None:
+    """Sessiz düzeltme yok: iki mod birbirinin alanını kullanamaz."""
+    portfolio = Portfolio(_frictionless())
+    with pytest.raises(ValueError, match="stop_price zorunludur"):
+        portfolio.open_position(
+            "b", symbol=SYMBOL, direction="long", stop_price=None,
+            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+        )
+    with pytest.raises(ValueError, match="stop_price verilemez"):
+        portfolio.open_position(
+            "b", symbol=SYMBOL, direction="long", stop_price=95.0,
+            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+            sizing_mode="notional_fraction", notional_fraction=0.5,
+        )
+
+
+def test_notional_fraction_pays_the_same_fees_as_everyone() -> None:
+    """Muafiyet YALNIZCA boyutlandırmadadır: komisyon ve kayma kural 2'ye tabidir."""
+    portfolio = Portfolio(_config())  # gerçek fee_rate/slippage
+    position = _open_benchmark(portfolio).position
+    assert position is not None
+    assert position.entry_price == pytest.approx(100.0 * 1.0005)  # kayma aleyhte
+    assert position.entry_fee == pytest.approx(0.001 * position.qty * position.entry_price)

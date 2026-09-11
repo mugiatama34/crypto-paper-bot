@@ -25,6 +25,16 @@ Nakit muhasebesi (deftere birebir yansır):
 
 `Trade.pnl` işlemin nakde net etkisidir (marj gidiş-dönüşü hariç, likidasyonda marj
 kaybı dâhil): kapanan işlemlerin `pnl` toplamı, bakiyedeki toplam değişime eşittir.
+
+Boyutlandırmanın iki modu vardır ve ikisi de BURADA uygulanır (kural 3 delinmez):
+
+    "risk"             : boyut = risk_per_trade × sermaye / |giriş − stop|   (kural 11)
+    "notional_fraction": boyut = fraction × sermaye / giriş, kaldıraç 1x     (kural 15)
+
+İkincisi yalnızca `is_benchmark=True` referans modellere açıktır ve kapısı
+core/validate.py'dedir. Stop'suz pozisyonun `stop_price`/`initial_stop_price` alanı None
+kalır ve deftere BOŞ yazılır — 0.0 yazmak "stop girişin %100 altındaydı" demek olurdu ve
+`risk_amount` üzerinden R'yi, `avg_stop_distance_pct` üzerinden maliyet ölçeğini uydururdu.
 """
 
 from __future__ import annotations
@@ -36,7 +46,7 @@ from typing import Any, Iterable, Literal, Mapping, Sequence
 import pandas as pd
 
 from core.config import get_setting
-from strategies.base import Direction, Position, TakeProfit
+from strategies.base import Direction, Position, SizingMode, TakeProfit
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +99,9 @@ class Trade:
     exit_price: float
     qty: float
     notional: float
-    stop_price: float
-    risk_amount: float
+    # Referans modellerde (kural 15) stop yoktur: ikisi de None kalır ve deftere boş yazılır.
+    stop_price: float | None
+    risk_amount: float | None
     leverage: float
     margin: float
     fee: float
@@ -139,8 +150,8 @@ class OpenPosition:
     qty: float
     initial_qty: float
     entry_price: float
-    stop_price: float
-    initial_stop_price: float
+    stop_price: float | None
+    initial_stop_price: float | None
     opened_at: pd.Timestamp
     margin: float
     leverage: float
@@ -204,8 +215,8 @@ class OpenPosition:
             qty=float(payload["qty"]),
             initial_qty=float(payload["initial_qty"]),
             entry_price=float(payload["entry_price"]),
-            stop_price=float(payload["stop_price"]),
-            initial_stop_price=float(payload["initial_stop_price"]),
+            stop_price=_opt_float(payload["stop_price"]),
+            initial_stop_price=_opt_float(payload["initial_stop_price"]),
             opened_at=_to_utc(payload["opened_at"]),
             margin=float(payload["margin"]),
             leverage=float(payload["leverage"]),
@@ -306,6 +317,51 @@ def size_position(
         margin=free_cash,
         leverage=float(leverage_cap),
         clipped=True,
+        note=note,
+    )
+
+
+def size_notional_fraction(
+    *,
+    equity: float,
+    free_cash: float,
+    entry_price: float,
+    fraction: float,
+) -> Sizing:
+    """CLAUDE.md kural 15: boyut = (fraction × sermaye) / giriş, kaldıraç ZORLA 1x.
+
+    Bu mod yalnızca `is_benchmark=True` referans modellere açıktır (kapı:
+    core/validate.py). Kaldıraç bir sonuç bile değil, sabittir: referans çıpasının işi
+    "piyasa ne yaptı" sorusuna cevap vermek, kaldıraçla o cevabı büyütmek değil. 1x
+    olduğu için marj = notional'dır ve `liquidation_price` pratikte ulaşılamaz bir
+    seviye üretir — alım-tut çıpasının likide olması ölçtüğü şeyi yok ederdi.
+
+    `free_cash` yine tavandır: marj eldeki nakdi aşamaz, yani hesap toplamda 1x'in
+    üzerine çıkamaz.
+    """
+    if entry_price <= 0.0:
+        raise ValueError(f"geçersiz giriş fiyatı: {entry_price}")
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError(f"notional_fraction 0 ile 1.0 arasında olmalı: {fraction}")
+    if equity <= 0.0 or free_cash <= 0.0:
+        return Sizing(qty=0.0, notional=0.0, margin=0.0, leverage=0.0, clipped=False,
+                      note="sermaye/nakit kalmadı")
+
+    wanted = fraction * equity
+    notional = min(wanted, free_cash)
+    clipped = notional < wanted
+    note = (
+        f"referans boyutu nakde sığsın diye {notional / wanted:.4f} oranında kırpıldı "
+        f"(istenen notional {wanted:.2f}, nakit {free_cash:.2f})"
+        if clipped
+        else ""
+    )
+    return Sizing(
+        qty=notional / entry_price,
+        notional=notional,
+        margin=notional,  # kaldıraç 1x: marj notional'ın tamamıdır
+        leverage=1.0,
+        clipped=clipped,
         note=note,
     )
 
@@ -439,16 +495,24 @@ class Portfolio:
         *,
         symbol: str,
         direction: Direction,
-        stop_price: float,
+        stop_price: float | None,
         reference_price: float,
         ts: pd.Timestamp,
         marks: Mapping[str, float],
+        sizing_mode: SizingMode = "risk",
+        notional_fraction: float | None = None,
         take_profits: Sequence[TakeProfit] = (),
         trailing_atr: float | None = None,
         reason: str = "",
     ) -> OpenResult:
         """Bir sonraki barın açılışından pozisyon açar (kural 13); reddedilirse gerekçe döner."""
         account = self.account(model)
+        if sizing_mode == "notional_fraction" and stop_price is not None:
+            # core/validate.py bunu zaten reddeder; burada da tutmak, doğrulamadan
+            # geçmeyen bir yoldan (test, elle çağrı) sessiz bir tutarsızlık girmesini önler.
+            raise ValueError('sizing_mode="notional_fraction" ile stop_price verilemez')
+        if sizing_mode == "risk" and stop_price is None:
+            raise ValueError('sizing_mode="risk" için stop_price zorunludur')
 
         if account.find(symbol, direction) is not None:
             return OpenResult(rejected=f"{symbol} üzerinde zaten açık {direction} pozisyon var")
@@ -464,19 +528,32 @@ class Portfolio:
         )
         # Sinyal önceki barın kapanışına göre üretildi; bir sonraki bar stop'un ötesinde
         # açtıysa pozisyon doğduğu anda stoplanmış olurdu — böyle bir emir doldurulmaz.
-        if direction == "long" and stop_price >= entry_price:
-            return OpenResult(rejected=f"boşluklu açılış: stop {stop_price} >= dolum {entry_price}")
-        if direction == "short" and stop_price <= entry_price:
-            return OpenResult(rejected=f"boşluklu açılış: stop {stop_price} <= dolum {entry_price}")
+        # Stop'suz referans pozisyonda (kural 15) böyle bir boşluk tanımsızdır.
+        if stop_price is not None:
+            if direction == "long" and stop_price >= entry_price:
+                return OpenResult(rejected=f"boşluklu açılış: stop {stop_price} >= dolum {entry_price}")
+            if direction == "short" and stop_price <= entry_price:
+                return OpenResult(rejected=f"boşluklu açılış: stop {stop_price} <= dolum {entry_price}")
 
-        sizing = size_position(
-            equity=self.equity(model, marks),
-            free_cash=account.cash,
-            entry_price=entry_price,
-            stop_price=stop_price,
-            risk_per_trade=self.risk_per_trade,
-            leverage_cap=self.leverage_cap,
-        )
+        if sizing_mode == "notional_fraction":
+            if notional_fraction is None:
+                raise ValueError('sizing_mode="notional_fraction" için notional_fraction zorunludur')
+            sizing = size_notional_fraction(
+                equity=self.equity(model, marks),
+                free_cash=account.cash,
+                entry_price=entry_price,
+                fraction=notional_fraction,
+            )
+        else:
+            assert stop_price is not None  # yukarıdaki kapı garanti eder
+            sizing = size_position(
+                equity=self.equity(model, marks),
+                free_cash=account.cash,
+                entry_price=entry_price,
+                stop_price=stop_price,
+                risk_per_trade=self.risk_per_trade,
+                leverage_cap=self.leverage_cap,
+            )
         if sizing.qty <= 0.0:
             return OpenResult(rejected=f"boyut sıfır ({sizing.note or 'yetersiz sermaye'})")
 
@@ -569,8 +646,10 @@ class Portfolio:
 
         # 2) Stop. Mum stop'un ötesinde AÇTIYSA dolum stop'ta değil açılışta gerçekleşir
         #    (boşluk); iki fiyattan aleyhte olanı seçilir, üstüne kayma uygulanır.
-        if (long and bar.low <= position.stop_price) or (not long and bar.high >= position.stop_price):
-            reference = min(position.stop_price, bar.open) if long else max(position.stop_price, bar.open)
+        #    Stop'suz referans pozisyonda (kural 15) bu adım tümden atlanır.
+        stop = position.stop_price
+        if stop is not None and ((long and bar.low <= stop) or (not long and bar.high >= stop)):
+            reference = min(stop, bar.open) if long else max(stop, bar.open)
             exit_price = self.fill_price(
                 direction=position.direction, reference_price=reference, side="exit", is_stop=True
             )
@@ -694,7 +773,11 @@ class Portfolio:
             # trailing stop sonradan kısaldığında R'nin tabanı değişirse aynı işlem sonradan
             # daha başarılı görünürdü. Kaldıraç tavanına takılıp küçülen pozisyonda da payda
             # gerçekten riske edilen tutardır, modelin niyeti değil.
-            risk_amount=qty * abs(position.entry_price - position.initial_stop_price),
+            risk_amount=(
+                None
+                if position.initial_stop_price is None
+                else qty * abs(position.entry_price - position.initial_stop_price)
+            ),
             leverage=position.leverage,
             margin=margin_part,
             fee=entry_fee_part + exit_fee,
@@ -736,7 +819,9 @@ class Portfolio:
         büyütmek olurdu; hesabın değişmezi olarak burada engellenir.
         """
         position = self.account(model).find(symbol, direction)
-        if position is None:
+        if position is None or position.stop_price is None:
+            # Stop'suz referans pozisyona (kural 15) stop takmak, modelin sözleşmesini
+            # ("alıp tut") sessizce değiştirmek olurdu.
             return False
         tightened = (
             max(position.stop_price, stop_price)
@@ -772,6 +857,11 @@ def _ordered_take_profits(
 
 def _join_notes(*notes: str) -> str:
     return "; ".join(note for note in notes if note)
+
+
+def _opt_float(value: Any) -> float | None:
+    """Defterde None ya da boş yazılmış stop alanlarını geri okur (kural 15)."""
+    return None if value is None or value == "" else float(value)
 
 
 def _to_utc(value: Any) -> pd.Timestamp:

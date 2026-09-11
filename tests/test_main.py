@@ -1,0 +1,227 @@
+"""main.py: turun uçtan uca akışı, hata izolasyonu ve --dry-run'ın yazmadığı.
+
+Bu dosya canlı borsaya bağlanmaz: `load_market_data` sahte bir anlık görüntüyle
+değiştirilir. Ölçülen şey veri çekme değil, main.py'nin SIRASI — tur koştu mu, metrikler
+defterden mi üretildi, dry-run gerçekten hiçbir şey yazmadı mı.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Sequence
+
+import pandas as pd
+import pytest
+
+import main as main_module
+from core.config import load_config
+from core.ledger import Ledger
+from strategies.base import MarketData, Signal, Strategy
+
+SYMBOLS = ("BTC-USDT-SWAP", "ETH-USDT-SWAP")
+START = pd.Timestamp("2026-01-01 00:00:00", tz="UTC")
+
+_real_build = main_module.build  # monkeypatch'lenmeden önceki hâli
+
+
+def _market(bars: int = 30, *, last_close: float = 100.0) -> MarketData:
+    index = pd.date_range(START, periods=bars, freq="4h", tz="UTC", name="ts")
+    frame = pd.DataFrame(
+        {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1.0},
+        index=index,
+    )
+    frame.iloc[-1, frame.columns.get_loc("close")] = last_close
+    return MarketData(
+        ohlcv={symbol: frame for symbol in SYMBOLS},
+        btc=frame,
+        funding={},
+        as_of=index[-1],
+    )
+
+
+class Sandbox:
+    """İzole bir koşu ortamı: tmp defter + sahte borsa. `bars` turun "şimdi"sini ilerletir."""
+
+    def __init__(self, root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.root = root
+        self.ledgers = root / "ledgers"
+        self.ledgers.mkdir()
+        self._bars = 30
+        monkeypatch.setattr(main_module, "PROJECT_ROOT", root)
+        monkeypatch.setattr(main_module, "project_path", lambda relative: root / relative)
+        monkeypatch.setattr(
+            main_module, "Ledger", lambda ledger_root=None: Ledger(ledger_root or self.ledgers)
+        )
+        monkeypatch.setattr(
+            main_module, "load_market_data", lambda config: _market(bars=self._bars)
+        )
+
+    def advance_to(self, bars: int) -> None:
+        """Anlık görüntüyü `bars` barlık yap: bir sonraki tur yeni bir `as_of` görür."""
+        self._bars = bars
+
+    @property
+    def ledger(self) -> Ledger:
+        return Ledger(self.ledgers)
+
+    def metrics(self) -> dict[str, Any]:
+        return json.loads((self.root / main_module.METRICS_PATH).read_text(encoding="utf-8"))
+
+
+@pytest.fixture()
+def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Sandbox:
+    return Sandbox(tmp_path, monkeypatch)
+
+
+# --------------------------------------------------------------------------- #
+# Normal koşu
+# --------------------------------------------------------------------------- #
+def test_run_writes_ledger_and_metrics(sandbox: Sandbox) -> None:
+    assert main_module.main([]) == 0
+
+    payload = sandbox.metrics()
+    assert payload["as_of"] == _market().as_of.isoformat()
+    assert payload["dry_run"] is False
+    assert payload["benchmarks"] == ["buyhold"]
+    assert [model["name"] for model in payload["models"]] == ["buyhold"]
+    assert payload["settings"]["fee_rate"] == load_config()["fee_rate"]
+    assert (sandbox.ledgers / "buyhold" / "positions.json").is_file()
+
+
+def test_metrics_json_is_valid_json_with_null_not_nan(sandbox: Sandbox) -> None:
+    """`json.dumps` nan'ı `NaN` yazar ve dosya GEÇERSİZ JSON olur; sayfa onu okuyamaz."""
+    main_module.main([])
+    text = (sandbox.root / main_module.METRICS_PATH).read_text(encoding="utf-8")
+    assert "NaN" not in text
+    payload = json.loads(text)  # katı parser: nan görse patlardı
+    total = payload["models"][0]["total"]
+    assert total["cost_per_r"] is None
+    assert total["avg_stop_distance_pct"] is None
+
+
+def test_benchmark_opens_once_then_holds(sandbox: Sandbox) -> None:
+    """İlk tur sinyali kuyruğa alır, ikinci tur doldurur, sonraki turlar hiç işlem açmaz."""
+    main_module.main([])
+    # Kural 13: sinyal üretildiği barda dolmaz, bir sonraki barın açılışında dolar.
+    assert sandbox.ledger.load_state("buyhold")["positions"] == []
+
+    sandbox.advance_to(31)
+    main_module.main([])
+    held = sandbox.ledger.load_state("buyhold")["positions"]
+    assert {position["symbol"] for position in held} == set(SYMBOLS)
+    assert all(position["stop_price"] is None for position in held)
+
+    sandbox.advance_to(32)
+    main_module.main([])
+    sandbox.advance_to(33)
+    main_module.main([])
+
+    still_held = sandbox.ledger.load_state("buyhold")["positions"]
+    assert len(still_held) == 2
+    # Alıp tutuyor: hiçbir işlem kapanmadı, çift pozisyon açılmadı.
+    assert sandbox.ledger.read_trades("buyhold") == []
+
+
+def test_benchmark_splits_capital_at_1x(sandbox: Sandbox) -> None:
+    main_module.main([])
+    sandbox.advance_to(31)
+    main_module.main([])
+
+    positions = sandbox.ledger.load_state("buyhold")["positions"]
+    initial_capital = float(load_config()["initial_capital"])
+    assert len(positions) == 2
+    for position in positions:
+        assert position["leverage"] == pytest.approx(1.0)
+        # Kaldıraç 1x: marj notional'ın tamamıdır
+        assert position["margin"] == pytest.approx(position["qty"] * position["entry_price"])
+    # Çıpa kaldıraçsızdır: iki pozisyonun toplam marjı sermayeyi aşmaz.
+    assert sum(position["margin"] for position in positions) <= initial_capital
+
+
+def test_benchmark_r_columns_stay_undefined_after_filling(sandbox: Sandbox) -> None:
+    """Pozisyon açıldıktan sonra bile R kolonları nan kalır: stop yok, payda yok."""
+    main_module.main([])
+    sandbox.advance_to(31)
+    main_module.main([])
+
+    total = sandbox.metrics()["models"][0]["total"]
+    assert total["avg_r"] is None
+    assert total["cost_per_r"] is None
+    assert sandbox.metrics()["models"][0]["is_benchmark"] is True
+
+
+# --------------------------------------------------------------------------- #
+# --dry-run
+# --------------------------------------------------------------------------- #
+def test_dry_run_writes_nothing(sandbox: Sandbox, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main_module.main(["--dry-run"]) == 0
+
+    assert not (sandbox.root / main_module.METRICS_PATH).exists()
+    assert list(sandbox.ledgers.iterdir()) == []
+    assert "buyhold" in capsys.readouterr().out  # rapor yine de basıldı
+
+
+def test_dry_run_does_not_advance_the_real_ledger(sandbox: Sandbox) -> None:
+    """Dry-run gerçek defteri okur (rapor birikimi göstersin) ama ilerletmez."""
+    main_module.main([])
+    state_path = sandbox.ledgers / "buyhold" / "positions.json"
+    before = state_path.read_text(encoding="utf-8")
+
+    sandbox.advance_to(31)
+    assert main_module.main(["--dry-run"]) == 0
+
+    assert state_path.read_text(encoding="utf-8") == before
+
+
+# --------------------------------------------------------------------------- #
+# Hata izolasyonu
+# --------------------------------------------------------------------------- #
+def test_unknown_model_is_skipped_but_run_fails_loudly(
+    sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tanınmayan model sessizce düşmez: diğerleri koşar, çıkış kodu 1 olur (kural 6)."""
+    config = load_config()
+    config["models"] = ["buyhold", "yok_boyle_bir_model"]
+    monkeypatch.setattr(main_module, "load_config", lambda path=None: config)
+
+    assert main_module.main([]) == 1
+
+    payload = sandbox.metrics()
+    assert "yok_boyle_bir_model" in payload["build_failures"]
+    assert [model["name"] for model in payload["models"]] == ["buyhold"]
+
+
+def test_broken_model_does_not_stop_the_round(
+    sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sinyal üretiminde patlayan model yalnızca kendi turunu kaybeder (kural 8)."""
+
+    class _Broken(Strategy):
+        name = "bozuk"
+        allowed_directions = ["long"]
+
+        def generate_signals(
+            self, market: MarketData, peer_signals: Any = None
+        ) -> list[Signal]:
+            raise RuntimeError("model içi hata")
+
+    config = load_config()
+    config["models"] = ["buyhold", "bozuk"]
+    monkeypatch.setattr(main_module, "load_config", lambda path=None: config)
+    monkeypatch.setattr(
+        main_module, "build", lambda name: _Broken() if name == "bozuk" else _real_build(name)
+    )
+
+    assert main_module.main([]) == 0  # kurulum başarılı, koşu sürdü
+
+    reports = {item["model"]: item for item in sandbox.metrics()["round"]["models"]}
+    assert "model içi hata" in reports["bozuk"]["skipped"]
+    assert reports["buyhold"]["signals"] == 2  # diğer model etkilenmedi
+
+
+def test_empty_model_list_fails(sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = load_config()
+    config["models"] = []
+    monkeypatch.setattr(main_module, "load_config", lambda path=None: config)
+    assert main_module.main([]) == 1

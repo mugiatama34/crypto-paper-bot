@@ -322,3 +322,97 @@ def test_direction_r_series_follows_close_order() -> None:
     ordered = direction_stats([early, late])
     assert shuffled.max_drawdown_r == pytest.approx(ordered.max_drawdown_r)
     assert ordered.max_drawdown_r == pytest.approx(-0.5)  # önce -0.5R, sonra toparlıyor
+
+
+# --------------------------------------------------------------------------- #
+# Referans (benchmark) satırı (CLAUDE.md kural 15)
+# --------------------------------------------------------------------------- #
+def _benchmark_metrics(**overrides: Any) -> Any:
+    """Stop'suz, R'siz bir referans modelin metrikleri."""
+    trades = [
+        _trade(direction="long", pnl=500.0, risk="", stop_price="", entry_price=100.0),
+    ]
+    payload: dict[str, Any] = dict(
+        trades=trades,
+        equity_rows=[{"equity": 10000.0}, {"equity": 10500.0}],
+        initial_capital=10000.0,
+        periods_per_year=periods_per_year(load_config()),
+        is_benchmark=True,
+    )
+    payload.update(overrides)
+    return model_metrics("buyhold", **payload)
+
+
+def test_benchmark_cost_columns_are_nan() -> None:
+    stats = _benchmark_metrics().total
+    assert math.isnan(stats.avg_stop_distance_pct)
+    assert math.isnan(stats.cost_per_r)
+
+
+def test_benchmark_cost_columns_stay_nan_even_with_a_stopped_row() -> None:
+    """Garanti defterin içeriğine bırakılmaz: bayrak koşulsuz kazanır."""
+    stats = _benchmark_metrics(
+        trades=[_trade(direction="long", pnl=50.0, risk=100.0, entry_price=100.0)]
+    ).total
+    assert math.isnan(stats.avg_stop_distance_pct)
+    assert math.isnan(stats.cost_per_r)
+
+
+def test_competitor_cost_columns_are_still_measured() -> None:
+    """Bayrak yalnızca referansı susturur, yarışmacıyı değil.
+
+    Aynı stop'lu satır: is_benchmark=True iken nan, False iken ölçülür.
+    """
+    stopped = [_trade(direction="long", pnl=50.0, risk=100.0, entry_price=100.0)]
+    competitor = _benchmark_metrics(trades=stopped, is_benchmark=False).total
+    reference = _benchmark_metrics(trades=stopped, is_benchmark=True).total
+
+    assert competitor.avg_stop_distance_pct == pytest.approx(5.0)  # |100-95|/100
+    assert not math.isnan(competitor.cost_per_r)
+    assert math.isnan(reference.avg_stop_distance_pct)
+
+
+def test_benchmark_account_return_is_still_reported() -> None:
+    """Çıpanın tek işi budur: hesap getirisi zemin olarak durmalı."""
+    account = _benchmark_metrics().account
+    assert account.total_return == pytest.approx(0.05)
+
+
+def test_benchmark_is_reported_outside_the_ranking() -> None:
+    competitor = model_metrics(
+        "model_a",
+        trades=[_trade(direction="long", pnl=50.0)],
+        equity_rows=[{"equity": 10000.0}, {"equity": 10050.0}],
+        initial_capital=10000.0,
+        periods_per_year=periods_per_year(load_config()),
+    )
+    report = format_report([_benchmark_metrics(), competitor])
+
+    assert "REFERANS" in report
+    # Referans, ortalama R'si nan olmasına rağmen yarışmacının üstüne çıkmaz.
+    assert report.index("model_a") < report.index("REFERANS") < report.index("buyhold")
+
+
+def test_benchmark_has_no_unmeasured_warning() -> None:
+    """Referansta R'siz satır beklenendir; uyarı gerçek anomaliler için saklanır."""
+    assert "UYARI" not in format_report([_benchmark_metrics()])
+
+
+def test_competitor_keeps_the_unmeasured_warning() -> None:
+    report = format_report([_benchmark_metrics(is_benchmark=False)])
+    assert "UYARI" in report
+
+
+def test_compare_marks_named_benchmarks(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path)
+    for model in ("buyhold", "model_a"):
+        ledger.reset_model(model, initial_capital=10000.0)
+        ledger.append_trades(model, [_trade(direction="long", pnl=50.0)])
+
+    results = compare(
+        ["buyhold", "model_a"], ledger=ledger, config=load_config(), benchmarks=["buyhold"]
+    )
+    marked = {item.model: item.is_benchmark for item in results}
+    assert marked == {"buyhold": True, "model_a": False}
+    assert math.isnan(results[0].total.cost_per_r)
+    assert not math.isnan(results[1].total.cost_per_r)
