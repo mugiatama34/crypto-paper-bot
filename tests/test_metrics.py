@@ -18,10 +18,12 @@ from core.metrics import (
     account_stats,
     compare,
     direction_stats,
+    cost_per_r,
     format_report,
     model_metrics,
     periods_per_year,
     r_multiple,
+    stop_distance_pct,
 )
 
 
@@ -254,3 +256,69 @@ def test_compare_handles_a_model_that_never_traded(tmp_path: Path) -> None:
     ledger.initialize_model("sessiz", initial_capital=10_000.0)
     (metrics,) = compare(["sessiz"], ledger=ledger, config=load_config())
     assert metrics.total.trades == 0 and math.isnan(metrics.total.avg_r)
+
+
+# --------------------------------------------------------------------------- #
+# Maliyet ölçeği kolonları (CLAUDE.md > Rapor Kolonları)
+# --------------------------------------------------------------------------- #
+def test_stop_distance_and_cost_per_r_are_computed_per_trade() -> None:
+    row = _trade(pnl=100.0, risk=100.0, entry_price=100.0, stop_price=95.0,
+                 fee=2.0, slippage_cost=1.5)
+    assert stop_distance_pct(row) == pytest.approx(5.0)
+    assert cost_per_r(row) == pytest.approx(0.035)
+
+
+def test_cost_per_r_exposes_the_tight_stop_penalty() -> None:
+    """Dar stop kuran model aynı 1R'yi daha büyük notional ile taşır, R başına daha çok öder.
+
+    Ana soruyu kirleten etki tam olarak budur: iki model eşit R üretse bile, stopu dar olan
+    maliyet yüzünden geride kalır — bu bir sinyal farkı değildir ve tabloda görünmelidir.
+    """
+    wide = direction_stats([
+        _trade(pnl=0.0, risk=100.0, entry_price=100.0, stop_price=95.0, fee=2.0, slippage_cost=1.0)
+    ])
+    tight = direction_stats([
+        _trade(pnl=0.0, risk=100.0, entry_price=100.0, stop_price=99.0, fee=10.0, slippage_cost=5.0)
+    ])
+    assert wide.avg_stop_distance_pct == pytest.approx(5.0)
+    assert tight.avg_stop_distance_pct == pytest.approx(1.0)
+    assert tight.cost_per_r > wide.cost_per_r * 4
+
+
+def test_cost_columns_are_split_per_direction() -> None:
+    trades = [
+        _trade(direction="long", pnl=0.0, risk=100.0, entry_price=100.0, stop_price=90.0,
+               fee=1.0, slippage_cost=0.0),
+        _trade(direction="short", pnl=0.0, risk=100.0, entry_price=100.0, stop_price=102.0,
+               fee=5.0, slippage_cost=0.0),
+    ]
+    assert direction_stats(trades, direction="long").avg_stop_distance_pct == pytest.approx(10.0)
+    assert direction_stats(trades, direction="short").avg_stop_distance_pct == pytest.approx(2.0)
+    assert direction_stats(trades, direction="long").cost_per_r == pytest.approx(0.01)
+    assert direction_stats(trades, direction="short").cost_per_r == pytest.approx(0.05)
+
+
+def test_a_direction_with_no_trades_reports_nan_cost_not_zero() -> None:
+    """0.0 yazmak, hiç short açmamış modeli 'maliyetsiz short yapan model' gibi gösterirdi."""
+    stats = direction_stats([_trade(direction="long", pnl=50.0)], direction="short")
+    assert stats.trades == 0
+    assert math.isnan(stats.cost_per_r) and math.isnan(stats.avg_stop_distance_pct)
+
+
+def test_report_shows_the_cost_scale_columns() -> None:
+    report = format_report([_metrics("m", [
+        _trade(pnl=100.0, risk=100.0, entry_price=100.0, stop_price=95.0,
+               fee=2.0, slippage_cost=1.0)
+    ], 10_100.0)])
+    assert "stopMes.%" in report and "maliyet/R" in report
+    assert report.index("maliyet/R") < report.index("PnL(USDT)")  # maliyet ölçeği getiriden önce
+
+
+def test_direction_r_series_follows_close_order() -> None:
+    """Yön bazlı R-Sharpe kapanış sırasına göre dizilmiş R dizisinden gelir."""
+    late = _trade(pnl=100.0, risk=100.0, closed_at="2026-01-02T00:00:00+00:00")
+    early = _trade(pnl=-50.0, risk=100.0, closed_at="2026-01-01T00:00:00+00:00")
+    shuffled = direction_stats([late, early])
+    ordered = direction_stats([early, late])
+    assert shuffled.max_drawdown_r == pytest.approx(ordered.max_drawdown_r)
+    assert ordered.max_drawdown_r == pytest.approx(-0.5)  # önce -0.5R, sonra toparlıyor

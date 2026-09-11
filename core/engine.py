@@ -9,7 +9,8 @@ Bir TUR şu akıştan ibarettir:
          3. mum içi kontrol: likidasyon -> stop -> TP (core/portfolio.py)
          4. trailing stop güncellemesi (kontrolden SONRA)
          5. bar kapanışında özsermaye kaydı
-    C. `as_of` barında sinyal üret: önce normal modeller, sonra meta modeller (kural 4).
+    C. `as_of` barında sinyal üret: önce normal modeller, sonra meta modeller (kural 4),
+       ardından stop mesafesi bandını aşan sinyalleri ele (kural 14).
     D. manage_positions ile çıkış talimatlarını topla.
     E. C ve D'nin ürettikleri bekleyen emir olarak kuyruğa girer: bir SONRAKİ barın
        açılışında dolarlar. Defter atomik olarak yazılır.
@@ -105,6 +106,7 @@ class ModelReport:
     closed: int = 0
     signals: int = 0
     exits: int = 0
+    skipped_signals: int = 0  # stop bandı nedeniyle elenen sinyal sayısı (kural 14)
     skipped: str = ""
 
 
@@ -135,6 +137,7 @@ class _ModelRun:
     filled: int = 0
     signals: int = 0
     exits: int = 0
+    skipped_signals: int = 0
     skipped: str = ""
 
 
@@ -157,6 +160,7 @@ class Engine:
         self._initial_capital = float(get_setting(self._config, "initial_capital"))
         self._bar_duration = bar_duration(str(get_setting(self._config, "timeframe")))
         self._atr_period = int(get_setting(self._config, "trailing.atr_period"))
+        self._max_stop_atr_multiple = float(get_setting(self._config, "max_stop_atr_multiple"))
         self._funding_enabled, self._funding_interval = funding_module.settings(self._config)
 
     # ------------------------------------------------------------------ #
@@ -183,7 +187,7 @@ class Engine:
                 )
                 self._persist(run, market)
                 continue
-            model_signals = signals.get(run.strategy.name, [])
+            model_signals = self._within_stop_band(run, signals.get(run.strategy.name, []), market)
             run.signals = len(model_signals)
             run.pending.extend(
                 PendingOrder(
@@ -211,6 +215,7 @@ class Engine:
                     closed=len(run.trades),
                     signals=run.signals,
                     exits=run.exits,
+                    skipped_signals=run.skipped_signals,
                     skipped=run.skipped,
                 )
                 for run in runs
@@ -448,6 +453,49 @@ class Engine:
             run.skipped = _join(run.skipped, f"generate_signals: {exc}")
             return []
         return list(signals)
+
+    def _within_stop_band(
+        self, run: _ModelRun, signals: Sequence[Signal], market: MarketData
+    ) -> list[Signal]:
+        """Stop mesafesi `max_stop_atr_multiple`'ı aşan sinyalleri eler (kural 14).
+
+        Stop mesafesi yalnızca bir risk tercihi değil, aynı zamanda maliyet ölçeğidir: boyut
+        `risk / |giriş − stop|` olduğu için dar stop kuran model aynı 1R'yi daha büyük notional
+        ile taşır ve R başına daha çok komisyon+kayma öder. Bandın dışındaki işlem, sinyal
+        farkını maliyet farkının gölgelemesi demektir; kıyaslanamaz.
+
+        Stop tavana ÇEKİLMEZ — bu, modelin "stop fitilin üstünde olmalı" tezini sessizce başka
+        bir modele çevirirdi. `core/validate.py` de burada devreye girmez: geniş stop bir
+        programlama hatası değil, karşılaştırılamayacak bir piyasa durumudur (kural 8 ile
+        karışmaz). Atlama sessiz değildir: her eleme gerekçesiyle loglanır.
+        """
+        kept: list[Signal] = []
+        for signal in signals:
+            frame = market.ohlcv.get(signal.symbol)
+            reference = _reference_price(market, signal.symbol)
+            atr = average_true_range(frame.loc[:market.as_of], self._atr_period) if frame is not None else None
+            if atr is None or atr <= 0.0:
+                # Tavan doğrulanamıyor. Sinyali elemek, ölçülemeyen bir nedenle işlem sayısını
+                # sessizce düşürürdü (kural 11'in itirazı); bandın gerçekten tutup tutmadığı
+                # zaten sonradan `avg_stop_distance_pct` kolonundan denetlenebilir.
+                logger.warning(
+                    "%s %s: ATR hesaplanamadı, stop bandı bu sinyalde doğrulanamadı",
+                    run.strategy.name, signal.symbol,
+                )
+                kept.append(signal)
+                continue
+            multiple = abs(reference - signal.stop_price) / atr
+            if multiple > self._max_stop_atr_multiple:
+                logger.info(
+                    "%s %s: sinyal atlandı, stop mesafesi %.2f×ATR tavanı (%.2f×) aşıyor "
+                    "(stop=%.10g, referans=%.10g, ATR=%.10g)",
+                    run.strategy.name, signal.symbol, multiple,
+                    self._max_stop_atr_multiple, signal.stop_price, reference, atr,
+                )
+                run.skipped_signals += 1
+                continue
+            kept.append(signal)
+        return kept
 
     # ------------------------------------------------------------------ #
     # D) Çıkış talimatları

@@ -27,9 +27,10 @@ def test_repository_config_matches_claude_md_values() -> None:
     assert config["max_positions"] == 5
     assert config["max_short_positions"] == 3
     assert config["fee_rate"] == 0.001
-    assert config["slippage_long"] == 0.0005
+    assert config["slippage_base"] == 0.0005
     assert config["slippage_short_stop"] == 0.0015
     assert config["maintenance_margin"] == 0.005
+    assert config["max_stop_atr_multiple"] == 3.0
     assert config["timeframe"] == "4H"
     assert config["universe_size"] == 50
     assert config["universe_refresh_days"] == 30
@@ -38,8 +39,14 @@ def test_repository_config_matches_claude_md_values() -> None:
 
 
 def test_legacy_key_names_are_gone() -> None:
+    """slippage_long dâhil eski adlar config'te kalmamalı.
+
+    slippage_long adı, kaymanın yalnızca long'lara uygulandığı izlenimini veriyordu; oran
+    aslında short stop dışındaki her dolumda geçerli. Eski ad geri sızarsa iki anahtar bir
+    süre birlikte yaşar ve modeller farklı maliyet varsayımlarıyla yarışır.
+    """
     config = load_config()
-    for legacy in ("commission_rate", "account", "universe", "schedule"):
+    for legacy in ("commission_rate", "account", "universe", "schedule", "slippage_long"):
         assert legacy not in config, f"eski anahtar hâlâ duruyor: {legacy}"
 
 

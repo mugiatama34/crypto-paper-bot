@@ -13,9 +13,19 @@ max_short_positions: 3      # bunların en fazla kaçı short olabilir
 # fee_rate OKX taker oranıdır: modeller piyasa emriyle (entry_type="market") giriyor,
 # maker oranı kullanmak hiç gerçekleşmeyen bir dolumu varsayıp sonuçları optimist gösterir.
 fee_rate: 0.001             # tek yön komisyon; giriş ve çıkışta ayrı ayrı uygulanır
-slippage_long: 0.0005       # long giriş/çıkışlarında kayma
+# slippage_base adı "slippage_long" değildir: bu oran yöne bakmaksızın HER dolumda
+# (long/short giriş, çıkış, TP) uygulanan temel kaymadır. Tek istisna short stop
+# dolumudur; orada slippage_short_stop devreye girer. Eski ad, short girişlerin
+# kaymasız dolduğu izlenimini veriyordu — tam da ölçtüğümüz long/short farkını kirletir.
+slippage_base: 0.0005       # her dolumda uygulanan temel kayma (short stop hariç)
 slippage_short_stop: 0.0015 # short stop dolumunda kayma (yukarı boşluklarda daha kötü dolar)
 maintenance_margin: 0.005   # likidasyon eşiği; kontrol stop/TP'den ÖNCE yapılır
+
+# Stop mesafesi tavanı (ölçüm karşılaştırılabilirliği, CLAUDE.md kural 14). Stop mesafesi
+# aynı zamanda maliyet ölçeğidir: dar stop = küçük R = R başına daha yüksek komisyon/kayma.
+# Veriye bağlı stop kuran modeller (örn. fitil tepesi) bu tavanı aşan işlemi ATLAR; stop'u
+# tavana çekmek modelin fikrini değiştirir, atlamak yalnızca ölçülemeyen işlemi eler.
+max_stop_atr_multiple: 3.0  # stop mesafesi ATR'nin bu katını aşarsa işlem açılmaz
 
 # --- Zaman ve sembol evreni ---
 timeframe: "4H"             # tek zaman dilimi; OKX bar kodu da bundan türetilir

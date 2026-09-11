@@ -22,7 +22,7 @@ tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLA
 | Dosya | İçerik |
 |---|---|
 | `positions.json` | Koşular arası taşınan durum: nakit, açık pozisyonlar, bekleyen emirler, işlenmiş son bar. |
-| `trades.csv` | Kapanan her işlem (kısmi çıkışlar dâhil): giriş/çıkış zamanı ve fiyatı, yön, miktar, notional, ilk stop, **riske edilen tutar (`risk_amount`)**, kaldıraç, marj, komisyon, funding, PnL, çıkış sebebi (`stop`/`tp`/`liquidation`/`signal`) ve stratejinin gerekçesi. |
+| `trades.csv` | Kapanan her işlem (kısmi çıkışlar dâhil): giriş/çıkış zamanı ve fiyatı, yön, miktar, notional, ilk stop, **riske edilen tutar (`risk_amount`)**, kaldıraç, marj, komisyon, funding, **ödenen kayma (`slippage_cost`)**, PnL, çıkış sebebi (`stop`/`tp`/`liquidation`/`signal`) ve stratejinin gerekçesi. |
 | `equity.csv` | Bar başına nakit, kullanılan marj, gerçekleşmemiş PnL, özsermaye ve açık pozisyon sayısı. |
 
 Yazmalar atomiktir (geçici dosya + `rename`); yazılmış bir satır asla değiştirilmez.
@@ -40,6 +40,9 @@ from core.metrics import compare, format_report
 
 print(format_report(compare(["model_a", "model_b"], config=load_config())))
 ```
+
+Kayma dolum fiyatının içine gömülü olduğu için `slippage_cost` deftere ayrıca yazılır:
+`cost_per_r` komisyon **ve** kayma ister, yazılmazsa maliyetin yarısı görünmez kalırdı.
 
 Tablo **ortalama R'ye göre** sıralanır ve her model için long / short / TOPLAM satırlarını
 ayrı gösterir. Toplam getiri (USDT ve %) ikinci sırada, hesap düzeyinde raporlanır: hesapta
@@ -85,6 +88,8 @@ Bir stratejinin "tamamlandı" sayılması için:
 - [ ] En az bir tam değerlendirme döngüsünde hatasız `Signal` üretir.
 - [ ] Ürettiği `Signal.reason` alanı boş değildir (deftere yazılan gerekçe).
 - [ ] `allowed_directions` dışında yön içeren sinyal üretmez.
+- [ ] Stop mesafesi 1×–2.5×ATR bandındadır; veriye bağlı stop kuruyorsa
+      `max_stop_atr_multiple` tavanını aşan işlemi atlar ve atlamayı loglar (kural 14).
 
 Projenin "tamamlandı" sayılması için:
 
@@ -92,7 +97,9 @@ Projenin "tamamlandı" sayılması için:
 - [x] `core/portfolio.py`, `core/funding.py`, `core/ledger.py` tüm modeller için aynı kuralları
       uyguladığını kanıtlayan testlere sahip (`tests/test_portfolio.py`, `tests/test_funding.py`,
       `tests/test_ledger.py`, `tests/test_engine.py`).
-- [x] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor (`tests/test_metrics.py`).
+- [x] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor; her metrik
+      long/short ayrı ve `avg_stop_distance_pct` + `cost_per_r` kolonları raporlanıyor
+      (`tests/test_metrics.py`).
 - [ ] `.github/workflows/run.yml` periyodik çalıştırmayı ve testleri otomatik doğruluyor.
 
 Bu çıta taslaktır, onay/düzeltme bekliyor.

@@ -57,6 +57,7 @@ TRADE_COLUMNS: tuple[str, ...] = (
     "leverage",
     "margin",
     "fee",
+    "slippage_cost",
     "funding",
     "pnl",
     "exit_reason",

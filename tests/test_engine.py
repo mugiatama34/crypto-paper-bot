@@ -7,6 +7,7 @@ turu düşürmez (kural 8).
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -58,7 +59,7 @@ def _market(
 
 def _config(**overrides: Any) -> dict[str, Any]:
     config = load_config()
-    config.update(fee_rate=0.0, slippage_long=0.0, slippage_short_stop=0.0)
+    config.update(fee_rate=0.0, slippage_base=0.0, slippage_short_stop=0.0)
     config.update(overrides)
     return config
 
@@ -176,7 +177,7 @@ def test_fill_price_carries_fee_and_slippage(tmp_path: Path) -> None:
     state = Ledger(tmp_path).load_state("m")
     assert state is not None
     (position,) = state["positions"]
-    entry = 102.0 * (1 + config["slippage_long"])
+    entry = 102.0 * (1 + config["slippage_base"])
     assert position["entry_price"] == pytest.approx(entry)
     notional = position["qty"] * entry
     assert state["cash"] == pytest.approx(
@@ -458,3 +459,90 @@ def test_order_is_cancelled_when_the_symbol_leaves_the_universe(tmp_path: Path) 
     state = ledger.load_state("m")
     assert state is not None
     assert state["positions"] == [] and state["pending_orders"] == []
+
+
+# --------------------------------------------------------------------------- #
+# Stop mesafesi bandı (kural 14)
+# --------------------------------------------------------------------------- #
+# Her barın gerçek aralığı 2.0 ve boşluk yok -> ATR tam olarak 2.0; tavan 3×ATR = 6 birim.
+FLAT = [(100.0, 101.0, 99.0, 100.0)] * 6
+
+
+def _band_engine(strategy: Strategy, ledger: Ledger) -> Engine:
+    return Engine(
+        [strategy],
+        config=_config(**{"trailing": {"atr_period": 3}, "max_stop_atr_multiple": 3.0}),
+        ledger=ledger,
+    )
+
+
+def test_signal_inside_the_stop_band_is_kept(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path)
+    as_of = _frame(FLAT).index[4]
+    strategy = _Scripted("m", signals={as_of: [_long_signal(stop=95.0)]})  # 5 birim = 2.5×ATR
+    engine = _band_engine(strategy, ledger)
+
+    report = engine.run_round(_market(FLAT, bars=5))
+
+    assert report.by_model("m").skipped_signals == 0  # type: ignore[union-attr]
+    assert len(ledger.load_state("m")["pending_orders"]) == 1  # type: ignore[index]
+
+
+def test_signal_wider_than_the_cap_is_skipped_and_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Stop tavana ÇEKİLMEZ, işlem atlanır — çekmek modelin tezini başka bir modele çevirirdi."""
+    ledger = Ledger(tmp_path)
+    as_of = _frame(FLAT).index[4]
+    strategy = _Scripted("m", signals={as_of: [_long_signal(stop=93.0)]})  # 7 birim = 3.5×ATR
+    engine = _band_engine(strategy, ledger)
+
+    with caplog.at_level(logging.INFO, logger="core.engine"):
+        report = engine.run_round(_market(FLAT, bars=5))
+
+    assert report.by_model("m").skipped_signals == 1  # type: ignore[union-attr]
+    assert ledger.load_state("m")["pending_orders"] == []  # type: ignore[index]
+    assert "stop mesafesi" in caplog.text and "3.50" in caplog.text  # atlama sessiz değil
+
+
+def test_wide_stop_is_a_market_condition_not_a_programming_error(tmp_path: Path) -> None:
+    """Kural 14 elemesi kural 8 ile karışmaz: model atlanmaz, yalnızca o sinyal düşer."""
+    ledger = Ledger(tmp_path)
+    as_of = _frame(FLAT).index[4]
+    strategy = _Scripted(
+        "m", signals={as_of: [_long_signal(stop=93.0), _long_signal(stop=96.0)]}
+    )
+    report = _band_engine(strategy, ledger).run_round(_market(FLAT, bars=5))
+
+    assert report.by_model("m").skipped == ""  # type: ignore[union-attr]
+    assert report.by_model("m").signals == 1  # type: ignore[union-attr]
+    assert len(ledger.load_state("m")["pending_orders"]) == 1  # type: ignore[index]
+
+
+def test_band_is_measured_against_the_short_side_too(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path)
+    as_of = _frame(FLAT).index[4]
+    wide = Signal(symbol=SYMBOL, direction="short", stop_price=107.0, reason="geniş")
+    strategy = _Scripted("m", allowed_directions=("short",), signals={as_of: [wide]})
+    report = _band_engine(strategy, ledger).run_round(_market(FLAT, bars=5))
+
+    assert report.by_model("m").skipped_signals == 1  # type: ignore[union-attr]
+
+
+def test_unverifiable_band_keeps_the_signal_and_warns(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """ATR yoksa tavan doğrulanamaz; sinyali elemek işlem sayısını ölçülemeyen nedenle düşürürdü."""
+    ledger = Ledger(tmp_path)
+    strategy = _Scripted("m", signals={START: [_long_signal(stop=95.0)]})
+    engine = Engine(
+        [strategy],
+        config=_config(**{"trailing": {"atr_period": 50}, "max_stop_atr_multiple": 3.0}),
+        ledger=ledger,
+    )
+    with caplog.at_level(logging.WARNING, logger="core.engine"):
+        report = engine.run_round(_market(ROWS, bars=1))
+
+    assert report.by_model("m").skipped_signals == 0  # type: ignore[union-attr]
+    assert len(ledger.load_state("m")["pending_orders"]) == 1  # type: ignore[index]
+    assert "ATR hesaplanamadı" in caplog.text

@@ -31,7 +31,7 @@ def _config(**overrides: Any) -> dict[str, Any]:
 
 
 def _frictionless(**overrides: Any) -> dict[str, Any]:
-    return _config(fee_rate=0.0, slippage_long=0.0, slippage_short_stop=0.0, **overrides)
+    return _config(fee_rate=0.0, slippage_base=0.0, slippage_short_stop=0.0, **overrides)
 
 
 def _bar(open_: float, high: float, low: float, close: float) -> Bar:
@@ -412,3 +412,57 @@ def test_full_lifecycle_reconciles_with_real_costs() -> None:
     assert portfolio.cash("m") == pytest.approx(10_000.0 + sum(trade.pnl for trade in trades))
     assert portfolio.equity("m", {}) == pytest.approx(portfolio.cash("m"))
     assert sum(trade.funding for trade in trades) == pytest.approx(0.05)
+
+
+def test_slippage_cost_is_recorded_so_it_can_be_measured() -> None:
+    """Kayma dolum fiyatının içine gömülü; deftere ayrıca yazılmazsa cost_per_r ölçülemez."""
+    portfolio = Portfolio(_config(fee_rate=0.0, slippage_base=0.001, slippage_short_stop=0.001))
+    result = portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+    )
+    position = result.position
+    assert position is not None
+    assert position.entry_price == pytest.approx(100.1)
+    assert position.entry_slippage == pytest.approx(0.1 * position.qty)
+
+    (trade,) = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 101.0, 94.0, 94.0)})
+    # giriş kayması (0.1/adet) + stop çıkış kayması (95 × 0.001 = 0.095/adet)
+    assert trade.slippage_cost == pytest.approx((0.1 + 0.095) * trade.qty)
+    assert trade.risk_amount == pytest.approx(100.0)
+
+
+def test_liquidation_records_no_exit_slippage() -> None:
+    """Likidasyonda pozisyonun değeri sıfırlanmıştır; üstüne kayma yazmak kaybı marjın ötesine taşırdı."""
+    portfolio = Portfolio(_config(fee_rate=0.0))
+    result = portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=99.9,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+    )
+    assert result.position is not None
+    entry_slippage = result.position.entry_slippage
+
+    (trade,) = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 100.0, 70.0, 75.0)})
+    assert trade.exit_reason == "liquidation"
+    assert trade.slippage_cost == pytest.approx(entry_slippage)  # yalnızca giriş kayması
+
+
+def test_risk_amount_uses_the_initial_stop_not_the_trailed_one() -> None:
+    """R giriş anında üstlenilen risktir; trailing yalnızca kârı korur.
+
+    Yürüyen stop paydaya girseydi iyi giden işlemlerin R'si sonradan büyür, cost_per_r'si
+    şişerdi — üstelik bu şişme yalnızca trailing kullanan modellerde olurdu.
+    """
+    portfolio = Portfolio(_config(fee_rate=0.0, slippage_base=0.0))
+    portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=90.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0}, trailing_atr=2.0,
+    )
+    portfolio.set_stop_price("m", symbol=SYMBOL, direction="long", stop_price=99.0)
+
+    trade = portfolio.close_position(
+        "m", symbol=SYMBOL, direction="long", reference_price=105.0, ts=TS
+    )
+    assert trade is not None
+    assert trade.stop_price == pytest.approx(90.0)             # ilk stop deftere yazılır
+    assert trade.risk_amount == pytest.approx(100.0)           # 10 birim mesafe × 10 adet

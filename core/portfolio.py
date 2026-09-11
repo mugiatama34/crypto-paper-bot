@@ -94,6 +94,7 @@ class Trade:
     leverage: float
     margin: float
     fee: float
+    slippage_cost: float
     funding: float
     pnl: float
     exit_reason: ExitReason
@@ -116,6 +117,7 @@ class Trade:
             "leverage": self.leverage,
             "margin": self.margin,
             "fee": self.fee,
+            "slippage_cost": self.slippage_cost,
             "funding": self.funding,
             "pnl": self.pnl,
             "exit_reason": self.exit_reason,
@@ -143,6 +145,10 @@ class OpenPosition:
     margin: float
     leverage: float
     entry_fee: float
+    # Kayma, dolum fiyatının içine gömülü olduğu için deftere ayrıca yazılmazsa görünmez
+    # kalır; cost_per_r (CLAUDE.md > Rapor Kolonları) komisyon + KAYMA istediğinden giriş
+    # kayması burada USDT olarak taşınır ve kısmi çıkışlarda orantılı azalır.
+    entry_slippage: float
     liq_price: float
     high_water: float
     low_water: float
@@ -177,6 +183,7 @@ class OpenPosition:
             "margin": self.margin,
             "leverage": self.leverage,
             "entry_fee": self.entry_fee,
+            "entry_slippage": self.entry_slippage,
             "liq_price": self.liq_price,
             "high_water": self.high_water,
             "low_water": self.low_water,
@@ -203,6 +210,7 @@ class OpenPosition:
             margin=float(payload["margin"]),
             leverage=float(payload["leverage"]),
             entry_fee=float(payload["entry_fee"]),
+            entry_slippage=float(payload.get("entry_slippage", 0.0)),
             liq_price=float(payload["liq_price"]),
             high_water=float(payload["high_water"]),
             low_water=float(payload["low_water"]),
@@ -341,7 +349,7 @@ class Portfolio:
         self.max_positions = int(get_setting(config_dict, "max_positions"))
         self.max_short_positions = int(get_setting(config_dict, "max_short_positions"))
         self.fee_rate = float(get_setting(config_dict, "fee_rate"))
-        self.slippage_long = float(get_setting(config_dict, "slippage_long"))
+        self.slippage_base = float(get_setting(config_dict, "slippage_base"))
         self.slippage_short_stop = float(get_setting(config_dict, "slippage_short_stop"))
         self.maintenance_margin = float(get_setting(config_dict, "maintenance_margin"))
         self._accounts: dict[str, Account] = {}
@@ -409,16 +417,15 @@ class Portfolio:
     ) -> float:
         """Referans fiyata kaymayı DAİMA aleyhte uygular.
 
-        config yalnızca iki kayma sabiti tanımlar: `slippage_long` her dolumun taban
-        kayması, `slippage_short_stop` ise short stop dolumlarının (yukarı boşluklarda
-        daha kötü dolan) özel hâlidir. Short girişlere/TP'lere kayma uygulamamak, projenin
-        ana sorusunu (short'lar daha mı başarılı) shortlar lehine bozardı; bu yüzden taban
-        kayma yönden bağımsız uygulanır, tek asimetri config'in açıkça istediğidir.
+        `slippage_base` yönden bağımsız olarak her dolumda (long/short giriş, çıkış, TP)
+        geçerlidir; `slippage_short_stop` yalnızca short stop dolumlarında onun yerine
+        geçer. Short girişlere/TP'lere kayma uygulamamak, projenin ana sorusunu (short'lar
+        daha mı başarılı) shortlar lehine bozardı; tek asimetri config'in açıkça istediğidir.
         """
         slippage = (
             self.slippage_short_stop
             if is_stop and direction == "short"
-            else self.slippage_long
+            else self.slippage_base
         )
         adverse = 1.0 if (direction == "long") == (side == "entry") else -1.0
         return reference_price * (1.0 + adverse * slippage)
@@ -502,6 +509,7 @@ class Portfolio:
             margin=margin,
             leverage=sizing.leverage,
             entry_fee=fee,
+            entry_slippage=abs(entry_price - reference_price) * qty,
             liq_price=liquidation_price(
                 direction=direction,
                 entry_price=entry_price,
@@ -553,7 +561,10 @@ class Portfolio:
         # 1) Likidasyon — stop'tan ÖNCE. Bakım marjı ihlali gerçek borsada stop emrini
         #    beklemez; likide olan pozisyon stop'a hiç ulaşmaz (CLAUDE.md kural 13).
         if (long and bar.low <= position.liq_price) or (not long and bar.high >= position.liq_price):
-            return [self._close(account, position, exit_price=position.liq_price, ts=ts,
+            # Likidasyonda dolum kaymasız varsayılır: pozisyonun değeri zaten sıfırlanmıştır,
+            # üstüne kayma yazmak kaybı marjın ötesine taşırdı.
+            return [self._close(account, position, exit_price=position.liq_price,
+                                exit_reference=position.liq_price, ts=ts,
                                 fraction_of_initial=1.0, exit_reason="liquidation")]
 
         # 2) Stop. Mum stop'un ötesinde AÇTIYSA dolum stop'ta değil açılışta gerçekleşir
@@ -563,7 +574,8 @@ class Portfolio:
             exit_price = self.fill_price(
                 direction=position.direction, reference_price=reference, side="exit", is_stop=True
             )
-            return [self._close(account, position, exit_price=exit_price, ts=ts,
+            return [self._close(account, position, exit_price=exit_price,
+                                exit_reference=reference, ts=ts,
                                 fraction_of_initial=1.0, exit_reason="stop")]
 
         # 3) Take-profit. Buraya yalnızca stop AYNI mumda tetiklenmediyse gelinir: stop ve TP
@@ -581,7 +593,8 @@ class Portfolio:
             )
             position.take_profits = tuple(tp for tp in position.take_profits if tp is not take_profit)
             trades.append(
-                self._close(account, position, exit_price=exit_price, ts=ts,
+                self._close(account, position, exit_price=exit_price,
+                            exit_reference=take_profit.price, ts=ts,
                             fraction_of_initial=take_profit.fraction, exit_reason="tp")
             )
             if position.qty <= 0.0:
@@ -611,7 +624,8 @@ class Portfolio:
         exit_price = self.fill_price(
             direction=direction, reference_price=reference_price, side="exit"
         )
-        return self._close(account, position, exit_price=exit_price, ts=ts,
+        return self._close(account, position, exit_price=exit_price,
+                           exit_reference=reference_price, ts=ts,
                            fraction_of_initial=fraction, exit_reason=exit_reason)
 
     def _close(
@@ -620,6 +634,7 @@ class Portfolio:
         position: OpenPosition,
         *,
         exit_price: float,
+        exit_reference: float,
         ts: pd.Timestamp,
         fraction_of_initial: float,
         exit_reason: ExitReason,
@@ -638,6 +653,7 @@ class Portfolio:
 
         margin_part = position.margin * share
         entry_fee_part = position.entry_fee * share
+        entry_slippage_part = position.entry_slippage * share
         funding_part = position.funding * share
         gross = _gross_pnl(position, exit_price, qty)
 
@@ -645,10 +661,12 @@ class Portfolio:
             # Marjın tamamı gider: borsaya geri dönen nakit yoktur, ayrıca çıkış komisyonu
             # da yazılmaz (pozisyonun değeri zaten sıfırlanmıştır).
             exit_fee = 0.0
+            exit_slippage = 0.0
             cash_back = 0.0
             pnl = -(margin_part + entry_fee_part) + funding_part
         else:
             exit_fee = self.fee_rate * qty * exit_price
+            exit_slippage = abs(exit_price - exit_reference) * qty
             cash_back = margin_part + gross - exit_fee
             pnl = gross - entry_fee_part - exit_fee + funding_part
 
@@ -656,6 +674,7 @@ class Portfolio:
         position.qty -= qty
         position.margin -= margin_part
         position.entry_fee -= entry_fee_part
+        position.entry_slippage -= entry_slippage_part
         position.funding -= funding_part
         if position.qty <= position.initial_qty * _DUST_RATIO:
             account.positions.remove(position)
@@ -679,6 +698,7 @@ class Portfolio:
             leverage=position.leverage,
             margin=margin_part,
             fee=entry_fee_part + exit_fee,
+            slippage_cost=entry_slippage_part + exit_slippage,
             funding=funding_part,
             pnl=pnl,
             exit_reason=exit_reason,

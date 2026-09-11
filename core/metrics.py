@@ -17,8 +17,18 @@ hesap Sharpe) yön bazında ayrıştırılamaz — tek bir bakiye vardır — bu
 `AccountStats` altında açıkça "hesap düzeyi" olarak raporlanır. Yönlerin kendi risk profili
 R serisinden ölçülür: `r_sharpe` ve `max_drawdown_r`, o yönün kümülatif R eğrisi üzerinden.
 
+**Maliyet ölçeği kolonları zorunludur** (CLAUDE.md > Rapor Kolonları): `avg_stop_distance_pct`
+ve `cost_per_r`. Bunlar projenin ana sorusunu doğrudan kirleten etkiyi ölçer — "short modeller
+daha iyi" sonucu sinyalden mi geliyor, yoksa short modellerin daha geniş stop kullanıp R başına
+daha az maliyet ödemesinden mi? Boyut `risk / |giriş − stop|` olduğu için dar stop kuran model
+aynı 1R'yi daha büyük notional ile taşır ve R başına daha çok komisyon+kayma öder. İki modelin
+`avg_stop_distance_pct` değerleri banda göre ayrışıyor ve `cost_per_r` farkı performans farkını
+tek başına açıklayabiliyorsa, kıyas geçersiz sayılır.
+
 Tanımsız bir metrik (işlem yok, varyans sıfır) `nan` döner; 0.0 döndürmek "ölçüldü ve
 sıfır çıktı" ile "ölçülemedi"yi aynı sayıya indirger ve karşılaştırmayı sessizce bozar.
+Hiç short açmamış bir modelin `cost_per_r`'si 0.0 olsaydı, "maliyetsiz short yapan model"
+gibi görünür ve model ortalamalarını aşağı çekerdi.
 """
 
 from __future__ import annotations
@@ -56,8 +66,11 @@ class DirectionStats:
     avg_win_r: float
     avg_loss_r: float
     profit_factor: float
+    avg_stop_distance_pct: float
+    cost_per_r: float
     pnl: float
     fees: float
+    slippage_cost: float
     funding: float
     liquidations: int
     unmeasured: int  # risk_amount'ı olmayan, R'ye giremeyen satır sayısı
@@ -103,15 +116,47 @@ def r_multiple(row: Mapping[str, Any]) -> float | None:
     return None if pnl is None else pnl / risk
 
 
+def stop_distance_pct(row: Mapping[str, Any]) -> float | None:
+    """`|giriş − ilk stop| / giriş` (yüzde). Modelin hangi R ölçeğinde işlem yaptığını gösterir."""
+    entry = _to_float(row.get("entry_price"))
+    stop = _to_float(row.get("stop_price"))
+    if entry is None or stop is None or entry <= 0.0:
+        return None
+    return abs(entry - stop) / entry * 100.0
+
+
+def cost_per_r(row: Mapping[str, Any]) -> float | None:
+    """İşlemin tüm dolumlarında ödenen komisyon + kaymanın `risk_amount`'a oranı.
+
+    Payda her zaman İLK stop'tan gelen `risk_amount`'tır, trailing ile güncellenen stop
+    değil: R giriş anında üstlenilen risktir, trailing yalnızca kârı korur. Yürüyen stop'u
+    kullanmak iyi giden işlemlerin paydasını sonradan küçültüp cost_per_r'yi şişirirdi —
+    üstelik bu şişme trailing kullanan modellerde farklı olur, yani tam da kıyaslanmak
+    istenen şeyi bozardı.
+    """
+    risk = _to_float(row.get("risk_amount"))
+    if risk is None or risk <= 0.0:
+        return None
+    fee = _to_float(row.get("fee")) or 0.0
+    slippage = _to_float(row.get("slippage_cost")) or 0.0
+    return (fee + slippage) / risk
+
+
 def direction_stats(
     trades: Iterable[Mapping[str, Any]], *, direction: str = TOTAL
 ) -> DirectionStats:
     """`direction` ("long" | "short" | "total") için işlem metrikleri."""
-    rows = [
-        row
-        for row in trades
-        if direction == TOTAL or str(row.get("direction", "")) == direction
-    ]
+    # Kapanış sırası: yön bazlı R-Sharpe, o yöndeki işlemlerin kapanış sırasına göre dizilmiş
+    # R dizisinden hesaplanır (CLAUDE.md > Rapor Kolonları). Defter zaten bu sırada yazılır;
+    # sıralama, satırların başka bir yoldan gelmesi hâlinde de garantiyi gerçek kılar.
+    rows = sorted(
+        (
+            row
+            for row in trades
+            if direction == TOTAL or str(row.get("direction", "")) == direction
+        ),
+        key=lambda row: str(row.get("closed_at", "")),
+    )
     r_values = [r for r in (r_multiple(row) for row in rows) if r is not None]
     wins = [r for r in r_values if r > 0.0]
     losses = [r for r in r_values if r < 0.0]
@@ -129,8 +174,11 @@ def direction_stats(
         avg_win_r=_mean(wins),
         avg_loss_r=_mean(losses),
         profit_factor=_ratio(sum(wins), loss_total) if r_values else _NAN,
+        avg_stop_distance_pct=_mean(_collect(rows, stop_distance_pct)),
+        cost_per_r=_mean(_collect(rows, cost_per_r)),
         pnl=_sum_column(rows, "pnl"),
         fees=_sum_column(rows, "fee"),
+        slippage_cost=_sum_column(rows, "slippage_cost"),
         funding=_sum_column(rows, "funding"),
         liquidations=sum(1 for row in rows if row.get("exit_reason") == "liquidation"),
         unmeasured=len(rows) - len(r_values),
@@ -258,8 +306,8 @@ def compare(
 # Rapor
 # --------------------------------------------------------------------------- #
 _HEADERS = ("model", "yön", "n", "ort.R", "medyan R", "topl.R", "R-Sharpe",
-            "maxDD(R)", "kazanç%", "PF", "PnL(USDT)", "likid.")
-_WIDTHS = (18, 6, 5, 8, 9, 8, 9, 9, 8, 7, 12, 7)
+            "maxDD(R)", "kazanç%", "PF", "stopMes.%", "maliyet/R", "PnL(USDT)", "likid.")
+_WIDTHS = (18, 6, 5, 8, 9, 8, 9, 9, 8, 7, 10, 10, 12, 7)
 
 
 def format_report(metrics: Sequence[ModelMetrics]) -> str:
@@ -293,8 +341,10 @@ def format_report(metrics: Sequence[ModelMetrics]) -> str:
                 _fmt(stats.max_drawdown_r).rjust(_WIDTHS[7]),
                 _fmt(_pct(stats.win_rate), digits=1).rjust(_WIDTHS[8]),
                 _fmt(stats.profit_factor).rjust(_WIDTHS[9]),
-                _fmt(stats.pnl, digits=2).rjust(_WIDTHS[10]),
-                str(stats.liquidations).rjust(_WIDTHS[11]),
+                _fmt(stats.avg_stop_distance_pct).rjust(_WIDTHS[10]),
+                _fmt(stats.cost_per_r, digits=3).rjust(_WIDTHS[11]),
+                _fmt(stats.pnl, digits=2).rjust(_WIDTHS[12]),
+                str(stats.liquidations).rjust(_WIDTHS[13]),
             )
             lines.append("  ".join(cells))
         account = item.account
@@ -323,6 +373,13 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _collect(
+    rows: Iterable[Mapping[str, Any]], extract: Any
+) -> list[float]:
+    """Hesaplanabilen değerleri toplar; hesaplanamayanlar ortalamaya 0.0 olarak girmez."""
+    return [value for value in (extract(row) for row in rows) if value is not None]
 
 
 def _sum_column(rows: Iterable[Mapping[str, Any]], column: str) -> float:
