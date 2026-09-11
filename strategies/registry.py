@@ -15,7 +15,10 @@ from typing import Callable, Mapping
 
 from strategies.base import Strategy
 from strategies.buyhold import BuyHold
+from strategies.confluence import Confluence
 from strategies.meanrev import MeanReversion
+from strategies.momentum import Momentum
+from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 
 StrategyFactory = Callable[[], Strategy]
@@ -24,6 +27,9 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     BuyHold.name: BuyHold,
     Trend.name: Trend,
     MeanReversion.name: MeanReversion,
+    Momentum.name: Momentum,
+    Squeeze.name: Squeeze,
+    Confluence.name: Confluence,
 }
 
 
