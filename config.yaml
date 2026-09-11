@@ -41,8 +41,13 @@ random_seed: 20240217
 #
 # buyhold bir YARIŞMACI DEĞİL, referans çıpasıdır (is_benchmark=True, CLAUDE.md kural 15):
 # tabloda ayrı bölümde durur ve R'ye dayalı kolonları nan alır. Yarışacak 10 model bunun
-# üzerine eklenir; şu an 5'i kayıtlı (trend, meanrev, momentum, squeeze, confluence).
-models: ["buyhold", "trend", "meanrev", "momentum", "squeeze", "confluence"]
+# üzerine eklenir; şu an 9'u kayıtlı.
+#
+# random_ctrl bir kontrol grubudur ama is_benchmark DEĞİLDİR: boyutlandırması, stop ölçeği
+# ve limitleri yarışmacılarla birebir aynıdır, tek farkı sinyalin bilgisiz olmasıdır. Bu
+# yüzden aynı sütunda ve aynı sıralamada durur — edge'in referansı ancak orada okunabilir.
+models: ["buyhold", "trend", "meanrev", "momentum", "squeeze", "confluence",
+         "failed_breakout", "downtrend_rally", "avwap", "random_ctrl"]
 
 # --- Trailing stop ---
 # Trailing'i core/engine.py uygular (CLAUDE.md kural 9); strateji yalnızca Signal.trailing_atr

@@ -356,3 +356,65 @@ def _merge_short_legs(
                 break
 
     return merged
+
+
+# --------------------------------------------------------------------------- #
+# Çapalı VWAP (anchored VWAP)
+#
+# Neden burada ve neden stratejinin içinde değil: hacim ağırlıklı ortalama ve onun
+# hacim ağırlıklı sapması bir GÖSTERGEDİR, iki kapanışın oranı gibi tek satırlık bir
+# aritmetik değil. Modül docstring'indeki itiraz aynen geçerli — aynı göstergenin
+# strateji içine yazılmış ikinci bir uygulaması, iki modelin aynı barda farklı sayı
+# görmesinin kapısıdır. Şu an tek kullanıcısı `strategies/avwap.py` olsa da tanımın
+# tek ve denetlenebilir yeri burasıdır.
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True, kw_only=True)
+class AnchoredVwap:
+    """Çapadan itibaren hacim ağırlıklı ortalama ve onun hacim ağırlıklı sapması."""
+
+    value: float
+    deviation: float
+    bars: int
+
+
+def typical_price(frame: pd.DataFrame) -> pd.Series:
+    """(high + low + close) / 3 — VWAP'ın klasik fiyat girdisi.
+
+    Yalnızca kapanışı kullanmak barın işlem gördüğü aralığı yok sayar; VWAP'ın iddiası
+    "bu hacim hangi fiyattan el değiştirdi" olduğu için barın ortası daha dürüst bir
+    temsildir. Tanım tek satır ve tek yerde durur ki hangi fiyatın ağırlıklandırıldığı
+    sonradan aranmasın.
+    """
+    return (frame["high"] + frame["low"] + frame["close"]) / 3.0
+
+
+def anchored_vwap(frame: pd.DataFrame, *, anchor: pd.Timestamp) -> AnchoredVwap | None:
+    """`anchor` barı DÂHİL, çerçevenin sonuna kadar hacim ağırlıklı ortalama ve sapma.
+
+    Sapma popülasyon (ddof=0) tanımıyla ve aynı hacim ağırlıklarıyla hesaplanır: Bollinger
+    kararıyla (bkz. modül docstring'i) tutarlı olsun ve "2σ" ifadesi bu depoda tek bir şey
+    ifade etsin diye.
+
+    Çapa çerçevede yoksa, çapadan sonra bar kalmamışsa ya da toplam hacim sıfırsa None
+    döner — kısmi/anlamsız bir pencereyle sayı üretmek, bandı sembolden sembole farklı bir
+    ölçüye çevirirdi.
+    """
+    if anchor not in frame.index:
+        return None
+    window = frame.loc[anchor:]
+    if window.empty:
+        return None
+
+    prices = typical_price(window).to_numpy(dtype="float64")
+    volumes = window["volume"].to_numpy(dtype="float64")
+    total_volume = float(volumes.sum())
+    if total_volume <= 0.0:
+        # Hacimsiz pencerede "hacim ağırlıklı" ortalamanın tanımı yoktur; eşit ağırlığa
+        # düşmek, göstergeyi sessizce başka bir göstergeye (basit ortalama) çevirirdi.
+        return None
+
+    value = float((prices * volumes).sum() / total_volume)
+    variance = float((volumes * (prices - value) ** 2).sum() / total_volume)
+    return AnchoredVwap(value=value, deviation=float(np.sqrt(variance)), bars=len(window))

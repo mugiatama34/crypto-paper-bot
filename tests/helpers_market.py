@@ -49,15 +49,31 @@ def market(
     *,
     btc: pd.DataFrame | None = None,
     as_of: pd.Timestamp | None = None,
+    funding: Mapping[str, pd.Series] | None = None,
 ) -> MarketData:
     frames = dict(ohlcv)
     reference = btc if btc is not None else next(iter(frames.values()))
     return MarketData(
         ohlcv=frames,
         btc=reference,
-        funding={},
+        funding=dict(funding) if funding is not None else {},
         as_of=as_of if as_of is not None else reference.index[-1],
     )
+
+
+def funding_series(
+    rates: Sequence[float], *, end: pd.Timestamp, interval_hours: int = 8
+) -> pd.Series:
+    """Sona `end` anında biten, geriye doğru `interval_hours` adımlı funding geçmişi.
+
+    Seri, funding kapılarını ölçen modeller (failed_breakout önceliği, downtrend_rally'nin
+    squeeze kapısı) için var. `end` çıpası `as_of`tur: kural 12 gereği seri "şimdi"den
+    ileriye uzanamaz, dolayısıyla son kayıt en fazla `as_of` olabilir.
+    """
+    index = pd.date_range(
+        end=end, periods=len(rates), freq=f"{interval_hours}h", tz="UTC", name="ts"
+    )
+    return pd.Series([float(rate) for rate in rates], index=index, dtype="float64")
 
 
 def rising(bars: int = 260, *, start: float = 100.0, step: float = 1.0) -> list[float]:

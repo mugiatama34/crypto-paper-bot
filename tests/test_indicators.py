@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from core.indicators import (
+    anchored_vwap,
     average_true_range,
     bars_until,
     bollinger,
@@ -21,6 +22,7 @@ from core.indicators import (
     fib_levels,
     rsi,
     sma,
+    typical_price,
     zigzag_pivots,
 )
 
@@ -277,3 +279,61 @@ def test_fib_levels_project_upward_from_a_leg_that_started_at_a_high() -> None:
     levels = fib_levels(a_price=200.0, b_price=100.0, a_kind="high", ratios=(0.618, 1.272))
     assert levels[0.618] == pytest.approx(161.8)
     assert levels[1.272] == pytest.approx(227.2)
+
+
+# --------------------------------------------------------------------------- #
+# Çapalı VWAP
+# --------------------------------------------------------------------------- #
+def _volume_frame(
+    rows: list[tuple[float, float, float]], volumes: list[float]
+) -> pd.DataFrame:
+    frame = _frame(rows)
+    frame["volume"] = volumes
+    return frame
+
+
+def test_typical_price_is_the_middle_of_the_bar_not_the_close() -> None:
+    """VWAP'ın iddiası "bu hacim hangi fiyattan el değiştirdi"; kapanış barın aralığını atar."""
+    frame = _volume_frame([(12.0, 6.0, 9.0)], [1.0])
+    assert float(typical_price(frame).iloc[0]) == pytest.approx(9.0)
+
+
+def test_anchored_vwap_weights_by_volume_not_by_bar_count() -> None:
+    """Ağırlık hacimdedir: iki katı hacimli bar ortalamayı iki kat çeker."""
+    frame = _volume_frame([(10.0, 10.0, 10.0), (20.0, 20.0, 20.0)], [1.0, 3.0])
+    result = anchored_vwap(frame, anchor=frame.index[0])
+    assert result is not None
+    assert result.value == pytest.approx(17.5)
+    assert result.bars == 2
+
+
+def test_anchored_vwap_starts_at_the_anchor_bar_inclusive() -> None:
+    """Çapa barı DÂHİLDİR: pivotun kendi barını atmak çizgiyi çapadan koparırdı."""
+    frame = _volume_frame(
+        [(10.0, 10.0, 10.0), (20.0, 20.0, 20.0), (30.0, 30.0, 30.0)], [1.0, 1.0, 1.0]
+    )
+    anchored = anchored_vwap(frame, anchor=frame.index[1])
+    assert anchored is not None
+    assert anchored.value == pytest.approx(25.0)
+    assert anchored.bars == 2
+
+
+def test_anchored_deviation_is_volume_weighted_and_population() -> None:
+    """ddof=0 ve aynı hacim ağırlıkları: "2σ" bu depoda tek bir şey ifade etmeli."""
+    frame = _volume_frame([(10.0, 10.0, 10.0), (20.0, 20.0, 20.0)], [3.0, 1.0])
+    result = anchored_vwap(frame, anchor=frame.index[0])
+    assert result is not None
+    assert result.value == pytest.approx(12.5)
+    expected = np.sqrt((3.0 * 2.5**2 + 1.0 * 7.5**2) / 4.0)
+    assert result.deviation == pytest.approx(float(expected))
+
+
+def test_a_zero_volume_window_has_no_anchored_vwap() -> None:
+    """Eşit ağırlığa düşmek, göstergeyi sessizce basit ortalamaya çevirirdi."""
+    frame = _volume_frame([(10.0, 10.0, 10.0), (20.0, 20.0, 20.0)], [0.0, 0.0])
+    assert anchored_vwap(frame, anchor=frame.index[0]) is None
+
+
+def test_an_anchor_outside_the_frame_has_no_anchored_vwap() -> None:
+    frame = _volume_frame([(10.0, 10.0, 10.0)], [1.0])
+    assert anchored_vwap(frame, anchor=START - pd.Timedelta("4h")) is None
