@@ -21,12 +21,14 @@ Yapı (kaynaktaki sırayla):
 **Kaynaktan bilinçli sapmalar** (hepsi bu projenin değişmez kurallarından doğar; gerekçeler
 `docs/decisions.md` karar 11'de):
 
-- **Confidence kademeleri (low/medium/high) ve 0.5R/1.0R/1.5R çarpanı TAŞINMADI.** Kaynakta
-  confidence'ın tek işlevi pozisyon boyutunu çarpmaktı; bu projede boyutlandırma stratejinin
-  işi değildir (kural 3/11) ve `core/portfolio.py`'nin dışında kimse 1R'yi büyütemez. Kademeyi
-  yalnızca `reason` metnine yazmak, ölçülen hiçbir şeyi değiştirmeyen 300 satırlık Double
-  Bottom/Top + Wyckoff katmanını taşımak olurdu. Kademelerin ölçülmesi isteniyorsa doğru yol
-  ayrı model satırlarıdır (bkz. karar 11).
+- **Confidence kademesi hesaplanır ama HİÇBİR kararı etkilemez.** Kaynakta kademenin tek
+  işlevi pozisyon boyutunu çarpmaktı (0.5R/1.0R/1.5R); bu projede boyutlandırma stratejinin
+  işi değildir (kural 3/11) ve `core/portfolio.py` dışında kimse 1R'yi büyütemez. Kademe
+  yalnızca `reason`ın sonuna `| confidence=low|medium|high` olarak yazılır — defterden
+  (`trades.csv`) gruplanıp "teyit katmanı ayırt ediyor mu" sorusu, ölçüm tablosunu hiç
+  kirletmeden cevaplanabilsin diye. Hesabı `strategies/confluence_confidence.py`'dedir ve
+  oradan buraya yalnızca bir metin gelir; o katman patlarsa etiket `unknown` olur ve sinyal
+  değişmeden üretilir.
 - **RSI ve ATR `core/indicators.py`'den okunur.** Kaynak Wilder yumuşatması kullanıyor
   (`ewm(alpha=1/period)`); bu depo onu açıkça reddediyor (özyineleme sonucu kaç bar geçmiş
   verildiğine bağlı kılar). Sayılar kaynakla birebir aynı çıkmaz; eşikler (35/65) aynıdır.
@@ -51,7 +53,8 @@ from typing import Any, Mapping
 import pandas as pd
 
 from core.config import get_setting, load_config
-from core.indicators import Pivot, PivotKind, average_true_range, bars_until, fib_levels, rsi, zigzag_pivots
+from core.indicators import PivotKind, average_true_range, bars_until, fib_levels, rsi, zigzag_pivots
+from strategies import confluence_confidence
 from strategies.base import Direction, MarketData, Signal, Strategy
 
 logger = logging.getLogger(__name__)
@@ -205,8 +208,26 @@ class Confluence(Strategy):
                 f"zigzag %{self._pct_threshold * 100:g} / {self._min_leg_bars} bar; "
                 f"stop {self._stop_atr_multiple:g}×ATR({self._atr_period})={distance:.6g} "
                 f"uzakta ({stop_price:.6g})"
+                # Etiket serbest cümlenin İÇİNE gömülmez: defterden ayrıştırılabilir olması
+                # (trades.csv'de gruplama) tek amacı.
+                f" | confidence={self._confidence(frame, direction, symbol)}"
             ),
         )
+
+    def _confidence(self, frame: pd.DataFrame, direction: Direction, symbol: str) -> str:
+        """Kademe etiketi. Hesap patlarsa sinyal DEĞİŞMEZ, etiket "unknown" olur.
+
+        Etiketin hiçbir kararı etkilememesi bir tasarım kısıtı: burada bir istisnanın sinyali
+        düşürmesi, süs amaçlı bir katmanın ölçümü etkilemesi demek olurdu.
+        """
+        try:
+            return confluence_confidence.assess(frame, direction).tier
+        except Exception as exc:  # noqa: BLE001 - etiket katmanı ölçümü düşüremez
+            logger.warning(
+                "%s %s: confidence kademesi hesaplanamadı (%s); sinyal etkilenmedi",
+                self.name, symbol, exc,
+            )
+            return "unknown"
 
     def _legs(self, frame: pd.DataFrame) -> list[_Leg]:
         """Ardışık pivot çiftlerinden bacaklar; sıfır genlikli ve negatif seviyeli olanlar elenir."""

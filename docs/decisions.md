@@ -534,3 +534,61 @@ güncel ucunu tümden kaybettirirdi.
 Confluence toleransı geçip RSI'ın nötr bölgede kaldığı durum `logger.info` ile kaydedilir.
 Sessiz geçmek, eşiklerin (35/65) gerçekten mi yoksa geometrinin mi eleme yaptığını sonradan
 ayırt edilemez kılardı.
+
+## 12. Confluence confidence kademesi: hesaplanır, yalnızca deftere yazılır
+
+Karar 11'de kademe hiç taşınmamıştı. Kullanıcı kararıyla üçüncü yol seçildi: **kademe
+hesaplanır ama hiçbir kararı etkilemez**; `reason`ın sonuna ayrıştırılabilir biçimde
+`| confidence=low|medium|high` olarak eklenir ve `trades.csv`in `signal_reason` kolonundan
+gruplanarak sonradan incelenir. Giriş kararı, yön, stop mesafesi, pozisyon boyutu ve ölçüm
+tablosu bundan **etkilenmez.**
+
+Ayrı model açılmadı (`confluence_confirmed`): teyitli kurulumlar `confluence`ın ALT KÜMESİ
+olduğu için iki satır büyük ölçüde aynı işlemleri taşır; korelasyon matrisinde bağımsız bir
+model gibi görünüp 10 modelin birini gereksiz tüketirdi.
+
+### Sınır tek bir dosyada duruyor
+
+Hesap `strategies/confluence_confidence.py`'de; `strategies/confluence.py` oradan yalnızca
+bir string alır. "Kademe hiçbir şeyi etkilemiyor" iddiası böylece tek yerden denetlenebilir.
+İki koruma test altında:
+
+- Kademe zorla değiştirildiğinde sinyalin `stop_price`, `direction`, `sizing`, `take_profits`
+  alanları ve `reason`ın geri kalanı **birebir aynı** kalır.
+- Kademe katmanı istisna fırlatırsa sinyal **değişmeden** üretilir, etiket `unknown` olur ve
+  `logger.warning` düşer. Süs amaçlı bir katmanın ölçümü düşürmesi kabul edilemez.
+
+Etiket serbest cümlenin içine gömülmez (` | confidence=high` olarak sonda durur): gömülü bir
+etiket, defterden gruplama için metin ayrıştırmak zorunda bırakırdı.
+
+### Taşınan kod ve kaynağa karşı doğrulama
+
+Kademe tanımı kaynaktaki `evaluate_confluence_entry` ile aynıdır: `high` = yapı var ve tam
+teyitli, `medium` = yalnızca yapı var, `low` = yapı yok. "Tam teyit" kaynaktaki üç kapıdır
+(çift dip/tepe + kırılım/hacim, RSI diverjansı, fiyatın 0.618-0.786 bandında olması).
+Kaynağın Wyckoff/Elliott/Motor-1 katmanları taşınmadı: onlar `is_valid`i değil yalnızca
+kaynağın kendi confidence/bonus alanlarını etkiliyordu — bu kademede karşılıkları yok.
+
+`signal_validation.py`'ye karşı 800 karşılaştırmada (400 rastgele çerçeve × 2 yön):
+
+| Katman | Sonuç |
+|---|---|
+| Yapı var mı (`structure_present`) | 800/800 aynı |
+| Kırılım + hacim teyidi | 800/800 aynı |
+| Tam teyit (`is_valid`) ve kademe | 799/800 aynı |
+
+Tek fark RSI tanımından geliyor ve beklenen bir farktır (karar 9/11): aynı çift dipte Wilder
+RSI'ı 31.0 -> 34.1 (fark 3.1, "en az 5 puan" eşiğini geçmiyor), pencere-yerel RSI 23.0 -> 40.4
+(fark 17.4, geçiyor). Bu fark **yalnızca etiketi** etkiler; hiçbir işlem, boyut veya metrik
+ondan türemez.
+
+### `core/indicators.py`'ye eklenenler
+
+- **`rsi_series`**: RSI'ın bar bazlı hâli. Diverjans kontrolü "şimdiki" RSI'ı değil, iki
+  PİVOT barının RSI'ını karşılaştırır. `rsi()` artık bu serinin son değeridir — iki ayrı
+  hesap tutmak, aynı modelin pivotta okuduğu RSI ile eşik karşılaştırdığı RSI'ı farklı
+  tanımlardan besleyecekti.
+- **`local_lows` / `local_highs`**: kaynaktaki `find_local_lows`/`find_local_highs` (fraktal,
+  `order=3`). Zigzag'dan **bilerek ayrı** bir pivot tanımıdır — kaynak da çift dip yapısını
+  bununla arar; birini diğerinin yerine kullanmak kaynak modelin ölçtüğü yapıyı değiştirirdi.
+  Son `order` bar hiçbir zaman pivot olamaz: bu bir gecikmedir, look-ahead değil.

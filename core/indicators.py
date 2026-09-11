@@ -99,21 +99,71 @@ def ema(series: pd.Series, period: int) -> float | None:
 def rsi(series: pd.Series, period: int) -> float | None:
     """Son `period` değişimin kazanç/kayıp ortalamasından RSI; yeterli veri yoksa None.
 
-    Kayıp ortalaması sıfırsa (kesintisiz yükseliş) RSI 100.0; her iki ortalama da sıfırsa
-    (fiyat hiç değişmemiş) 50.0 döner — 100 demek, hareketsiz bir seriyi "azami aşırı alım"
-    ilan etmek olurdu.
+    `rsi_series`in son değeridir — iki ayrı hesap tutmamak için oradan türetilir: bar bazlı
+    seri ile "şimdiki" RSI ayrışırsa, aynı modelin pivotta okuduğu RSI ile eşik karşılaştırdığı
+    RSI farklı tanımlardan gelirdi.
+    """
+    strength = rsi_series(series, period)
+    if strength.empty:
+        return None
+    last = float(strength.iloc[-1])
+    return None if np.isnan(last) else last
+
+
+def rsi_series(series: pd.Series, period: int) -> pd.Series:
+    """Her bar için RSI; ilk `period` barda NaN (kısmi pencereyle sayı üretilmez).
+
+    Kayıp ortalaması sıfırsa (kesintisiz yükseliş) 100.0; her iki ortalama da sıfırsa
+    (fiyat hiç değişmemiş) 50.0 — 100 demek, hareketsiz bir seriyi "azami aşırı alım" ilan
+    etmek olurdu.
+
+    Seri hâli, geçmiş bir barın (ör. bir pivotun) RSI'ını okumak zorunda olan modeller için
+    var: diverjans kontrolü iki dibin RSI'ını karşılaştırır. Pencere-yerel basit ortalama
+    burada da korunur (bkz. modül docstring'i) — Wilder yumuşatması, aynı barın RSI'ını
+    çerçeveye kaç bar geçmiş verildiğine bağımlı kılardı.
     """
     _require_positive(period, "period")
-    values = series.to_numpy(dtype="float64")
-    if len(values) < period + 1:
-        return None
-    changes = np.diff(values[-(period + 1):])
-    average_gain = float(np.clip(changes, 0.0, None).mean())
-    average_loss = float(np.clip(-changes, 0.0, None).mean())
-    if average_loss == 0.0:
-        return 50.0 if average_gain == 0.0 else 100.0
-    relative_strength = average_gain / average_loss
-    return 100.0 - 100.0 / (1.0 + relative_strength)
+    values = series.astype("float64")
+    changes = values.diff()
+    average_gain = changes.clip(lower=0.0).rolling(period).mean()
+    average_loss = (-changes).clip(lower=0.0).rolling(period).mean()
+
+    strength = pd.Series(np.nan, index=series.index, dtype="float64")
+    moving = average_loss > 0.0
+    strength[moving] = 100.0 - 100.0 / (1.0 + average_gain[moving] / average_loss[moving])
+    strength[(average_loss == 0.0) & (average_gain > 0.0)] = 100.0
+    strength[(average_loss == 0.0) & (average_gain == 0.0)] = 50.0
+    return strength
+
+
+def local_lows(series: pd.Series, *, order: int) -> list[int]:
+    """Her iki yanında `order` bar daha yüksek olan noktaların KONUM indeksleri.
+
+    Zigzag'dan farklı, ikinci bir pivot tanımıdır: kaynak tarayıcı da (crypto-scanner,
+    `find_local_lows`) çift dip yapısını bununla arar — zigzag "trend dönüşü", bu ise
+    "yerel fraktal" sorar. İkisi bilerek ayrı tutuldu; birini diğerinin yerine kullanmak
+    kaynak modelin ölçtüğü yapıyı değiştirirdi.
+
+    Son `order` bar hiçbir zaman pivot olamaz (sağ yanı henüz oluşmadı) — bu bir gecikmedir,
+    look-ahead değil: karar yalnızca kapanmış barlarla verilir.
+    """
+    return _fractals(series, order=order, extreme="min")
+
+
+def local_highs(series: pd.Series, *, order: int) -> list[int]:
+    """`local_lows`un aynası: her iki yanında `order` bar daha düşük olan noktalar."""
+    return _fractals(series, order=order, extreme="max")
+
+
+def _fractals(series: pd.Series, *, order: int, extreme: Literal["min", "max"]) -> list[int]:
+    _require_positive(order, "order")
+    found: list[int] = []
+    for index in range(order, len(series) - order):
+        window = series.iloc[index - order : index + order + 1]
+        reference = window.min() if extreme == "min" else window.max()
+        if series.iloc[index] == reference:
+            found.append(index)
+    return found
 
 
 def bollinger(series: pd.Series, period: int, num_std: float) -> BollingerBands | None:
