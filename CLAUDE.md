@@ -16,13 +16,13 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 
 | Yol | Tek Sorumluluk |
 |---|---|
-| `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, çalışma sıklığı, funding parametreleri ve tüm risk/maliyet sabitleri — `risk_per_trade`, `leverage_cap`, `max_positions`, `max_short_positions`, `fee_rate`, `slippage_long`, `slippage_short_stop`, `maintenance_margin`, `random_seed`. Tüm modeller için tek kaynak; hiçbir modül bu değerlerin kendi kopyasını taşımaz. Değerler için bkz. "config.yaml Değerleri". |
+| `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, çalışma sıklığı, funding parametreleri ve tüm risk/maliyet sabitleri — `risk_per_trade`, `leverage_cap`, `max_positions`, `max_short_positions`, `fee_rate`, `slippage_base`, `slippage_short_stop`, `maintenance_margin`, `max_stop_atr_multiple`, `random_seed`. Tüm modeller için tek kaynak; hiçbir modül bu değerlerin kendi kopyasını taşımaz. Değerler için bkz. "config.yaml Değerleri". |
 | `core/config.py` | `config.yaml`'ı okuyan tek kapı. Eksik anahtarda `ConfigError` fırlatır; hiçbir varsayılan değer taşımaz — sessiz varsayılan, modellerin farklı maliyet/risk varsayımlarıyla yarışması demektir. |
 | `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u BTC referansından belirlemek burasının işidir; `as_of` barına sahip olmayan semboller o tur dışlanır ve loglanır. Strateji mantığı barındırmaz. |
 | `core/engine.py` | Orkestrasyon: her turu **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. |
 | `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. |
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
-| `core/metrics.py` | PnL, Sharpe, max drawdown, win-rate vb. performans metriklerini hesaplar. **Her metrik long ve short işlemler için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez). Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bu opsiyonel değil. Salt okunur — ledger'ı değiştirmez. |
+| `core/metrics.py` | PnL, Sharpe, max drawdown, win-rate vb. performans metriklerini hesaplar. **Her metrik long ve short işlemler için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez). Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bu opsiyonel değil. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Salt okunur — ledger'ı değiştirmez. |
 | `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde `ledgers/` altına yazar. Sistemin denetim izi (audit trail) burasıdır. |
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni. Geçersiz sinyalde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
@@ -42,8 +42,9 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `max_positions` | `5` | Bir stratejinin aynı anda taşıyabileceği toplam pozisyon sayısı. |
 | `max_short_positions` | `3` | Bunların en fazla kaçının short olabileceği. |
 | `fee_rate` | `0.001` | Tek yön komisyon oranı; giriş ve çıkışta ayrı ayrı uygulanır. |
-| `slippage_long` | `0.0005` | Long girişlerde/çıkışlarda uygulanan kayma. |
-| `slippage_short_stop` | `0.0015` | Short pozisyonların stop dolumunda uygulanan kayma (short stop'lar yukarı boşluklarda daha kötü dolar). |
+| `slippage_base` | `0.0005` | Yönden bağımsız olarak **her** dolumda (long/short giriş, çıkış, TP) uygulanan temel kayma. |
+| `slippage_short_stop` | `0.0015` | Short pozisyonların stop dolumunda `slippage_base` yerine geçen kayma (short stop'lar yukarı boşluklarda daha kötü dolar). |
+| `max_stop_atr_multiple` | `3.0` | Stop mesafesi tavanı: stop mesafesi ATR'nin 3 katını aşan sinyal açılmaz, işlem atlanır (kural 14). |
 | `maintenance_margin` | `0.005` | Likidasyon eşiği. Pozisyonun mum içi zararı bu seviyeyi geçerse likide edilir. |
 | `random_seed` | (sabit tam sayı) | Rastgelelik kullanan her yol bu tohumdan beslenir; koşular tekrarlanabilir olmalıdır. |
 | `initial_capital` | `10000` | Her stratejinin izole sanal hesabının başlangıç bakiyesi (USDT). |
@@ -107,6 +108,59 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
     dolar. Bir barın aralığında hem stop hem take-profit varsa, mum içi sıralama
     bilinemeyeceği için **kötü olan (stop) gerçekleşmiş varsayılır.** Aynı barda likidasyon
     seviyesi de dokunulmuşsa likidasyon her ikisinden de önce gelir (bkz. `core/portfolio.py`).
+
+14. **Stop mesafesi bandı (maliyet karşılaştırılabilirliği):** Stop mesafesi yalnızca bir risk
+    tercihi değil, aynı zamanda **maliyet ölçeğidir.** Boyut `risk / |giriş − stop|` olduğu için
+    dar stop kuran model aynı 1R'yi daha büyük notional ile taşır ve R başına daha çok
+    komisyon+kayma öder. Bu yüzden modellerin stop mesafeleri kabaca aynı bantta — **1×–2.5×
+    ATR** — tutulur: 2×ATR ile 2.5×ATR kıyaslanabilir, 0.5×ATR ile 3×ATR kıyaslanamaz, çünkü
+    maliyet farkı sinyal farkını gölgeler. Stop'unu veriye bağlı kuran modeller (ör. "fitil
+    tepesinin üstü veya 1×ATR, hangisi genişse") bandın dışına taşabilir; onlar için
+    `max_stop_atr_multiple` bir **tavandır**: mesafe tavanı aşıyorsa **işlem atlanır.**
+    - Stop tavana **çekilmez** — bu, modelin "stop fitilin üstünde olmalı" tezini sessizce başka
+      bir modele çevirirdi.
+    - `core/validate.py` burada hata fırlatmaz: geniş stop bir programlama hatası değil,
+      karşılaştırılamayacak bir piyasa durumudur (kural 8 ile karışmaz).
+    - Atlama **sessiz olamaz:** model atladığı her sinyali gerekçesiyle `logger.info` ile yazar.
+      Kural 11'in "atlamak işlem sayısını sessizce düşürür" itirazı burada denetlenebilir kayıtla
+      karşılanır; bandın gerçekten tuttuğu ise `avg_stop_distance_pct` kolonundan okunur.
+
+## Rapor Kolonları
+
+`core/metrics.py` her modeli **aynı tabloda**, her metriği **long / short / toplam** olarak
+raporlar. Performans kolonlarının (`trades`, `win_rate`, `pnl`, `sharpe`, `max_drawdown`)
+yanında iki **maliyet ölçeği** kolonu zorunludur:
+
+| Kolon | Tanım |
+|---|---|
+| `avg_stop_distance_pct` | İşlem bazında `\|giriş − ilk stop\| / giriş` değerlerinin ortalaması (yüzde). Modelin hangi R ölçeğinde işlem yaptığını gösterir. |
+| `cost_per_r` | İşlemin **tüm** dolumlarında ödenen komisyon + kayma toplamının (giriş, kısmi TP'ler, çıkış) `risk_amount`'a bölümü; model/yön bazında ortalaması. |
+
+`risk_amount` = `pozisyon boyutu × |giriş − ilk stop|` (yani **gerçekleşen** 1R). Formülün payı
+(`risk_per_trade × sermaye`) değil: kaldıraç tavanı boyutu küçülttüyse (kural 11) gerçek risk de
+küçülmüştür ve payı kullanmak o işlemlerin maliyetini olduğundan düşük gösterirdi.
+
+Bu kolonlar opsiyonel değildir, çünkü projenin ana sorusunu doğrudan kirleten etkiyi ölçerler:
+"short modeller daha iyi" sonucu **sinyalden** mi geliyor, yoksa short modellerin daha geniş stop
+kullanıp R başına daha az maliyet ödemesinden mi? İki modelin `avg_stop_distance_pct` değerleri
+bandın dışında ayrışıyorsa ve `cost_per_r` farkı performans farkını tek başına açıklayabiliyorsa,
+kıyas **geçersiz** sayılır; sonuç yorumlanmaz, modelin stop parametresi düzeltilir.
+
+Tanım kararları:
+
+- **Payda her zaman ilk stop'tur, trailing ile güncellenen stop değil.** R, giriş anında üstlenilen
+  risktir; trailing yalnızca kârı korur. Yürüyen stop'u kullanmak iyi giden işlemlerin paydasını
+  sonradan küçültüp `cost_per_r`'yi şişirirdi — üstelik bu şişme trailing kullanan modellerde
+  farklı olurdu, yani tam da kıyaslanmak istenen şeyi bozardı.
+- **Veri yoksa `nan`, `0.0` değil.** Bir modelin o yönde hiç işlemi yoksa kolon `nan` olur. `0.0`
+  "işlem yaptı ve tam sıfır çıktı" demektir; ikisini aynı hücreye yazmak, hiç short açmamış bir
+  modeli "maliyetsiz short yapan model" gibi gösterir ve model ortalamalarını aşağı çeker.
+- **Yön bazlı Sharpe tek bakiyeyi bölerek değil, kümülatif R eğrisinden türetilir.** Hesap tektir
+  ve bölünemez (ortak margin, ortak funding, ortak nakit); bakiye eğrisini zorla long/short diye
+  ikiye ayırmak uydurma sayılar üretir. Bunun yerine yön bazlı Sharpe, o yöndeki işlemlerin
+  kapanış sırasına göre dizilmiş **R cinsinden getiri dizisinden** hesaplanır. Toplam (hesap)
+  Sharpe'ı ise gerçek bakiye eğrisinden gelir ve iki yön Sharpe'ının toplamı ya da ortalaması
+  **değildir** — tabloda ayrı bir satır olarak durur.
 
 ## Kod Stili
 
