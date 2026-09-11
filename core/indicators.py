@@ -31,9 +31,12 @@ Tanım kararları (hepsi aynı gerekçeye dayanır: **denetlenebilirlik > gelene
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, Sequence
 
 import numpy as np
 import pandas as pd
+
+PivotKind = Literal["low", "high"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -47,6 +50,15 @@ class BollingerBands:
 class DonchianChannel:
     upper: float
     lower: float
+
+
+@dataclass(frozen=True, kw_only=True)
+class Pivot:
+    """Zigzag dönüş noktası. `kind` kaynak tarayıcıdaki "dip"/"zirve" ayrımıdır."""
+
+    time: pd.Timestamp
+    price: float
+    kind: PivotKind
 
 
 def bars_until(frame: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
@@ -162,3 +174,135 @@ def average_true_range(frame: pd.DataFrame, period: int) -> float | None:
 def _require_positive(value: int, name: str) -> None:
     if value <= 0:
         raise ValueError(f"{name} pozitif olmalı: {value}")
+
+
+# --------------------------------------------------------------------------- #
+# Zigzag pivotları ve Fibonacci seviyeleri
+#
+# Bu iki fonksiyon crypto-scanner deposundaki `find_zigzag_pivots`,
+# `_merge_short_legs` ve `compute_fib_levels`'in BİREBİR taşınmış hâlidir (eşik
+# karşılaştırmaları, canlı uç davranışı ve çift silme mantığı dâhil). Yeniden
+# yazılmadılar: aynı pivot tanımının ikinci bir uygulaması, bu depodaki modelin
+# ölçtüğü şeyin kaynak tarayıcıyla aynı olduğu iddiasını kanıtlanamaz kılardı —
+# modül docstring'indeki "aynı göstergenin iki uygulaması" itirazının tam hâli.
+#
+# Look-ahead (kural 12) açısından temiz: her iki fonksiyon da yalnızca kendilerine
+# verilen çerçeveyi okur, çağıran taraf çerçeveyi `bars_until` ile `as_of`'ta keser.
+# Son pivot "henüz teyit edilmemiş" canlı uçtur — bir sonraki barda yer değiştirebilir
+# ama GELECEĞİ görmez; kaynaktaki davranış korundu, çünkü onu atmak swing'in güncel
+# ucunu tümden kaybettirirdi.
+# --------------------------------------------------------------------------- #
+
+
+def zigzag_pivots(
+    frame: pd.DataFrame, *, pct_threshold: float, min_leg_bars: int
+) -> list[Pivot]:
+    """Fiyat, ekstremden `pct_threshold` kadar ters yöne dönünce bir pivot onaylanır.
+
+    Süresi `min_leg_bars`'ın altında kalan bacaklar ÇİFT HÂLİNDE elenir: tek pivot
+    silmek dip/zirve alternansını bozardı, çift silmek bozmaz.
+    """
+    if pct_threshold <= 0.0:
+        raise ValueError(f"pct_threshold pozitif olmalı: {pct_threshold}")
+    if len(frame) < 3:
+        return []
+
+    highs = frame["high"].to_numpy(dtype="float64")
+    lows = frame["low"].to_numpy(dtype="float64")
+    times = frame.index
+
+    pivots: list[Pivot] = []
+    trend: Literal["up", "down"] | None = None
+    extreme_index = 0
+    extreme_price = float(frame["close"].iloc[0])
+
+    for index in range(1, len(frame)):
+        high, low = float(highs[index]), float(lows[index])
+
+        if trend is None:
+            if high >= extreme_price * (1 + pct_threshold):
+                trend, extreme_index, extreme_price = "up", index, high
+            elif low <= extreme_price * (1 - pct_threshold):
+                trend, extreme_index, extreme_price = "down", index, low
+            continue
+
+        if trend == "up":
+            if high > extreme_price:
+                extreme_index, extreme_price = index, high
+            elif low <= extreme_price * (1 - pct_threshold):
+                pivots.append(
+                    Pivot(time=times[extreme_index], price=extreme_price, kind="high")
+                )
+                trend, extreme_index, extreme_price = "down", index, low
+        else:
+            if low < extreme_price:
+                extreme_index, extreme_price = index, low
+            elif high >= extreme_price * (1 + pct_threshold):
+                pivots.append(
+                    Pivot(time=times[extreme_index], price=extreme_price, kind="low")
+                )
+                trend, extreme_index, extreme_price = "up", index, high
+
+    if trend is not None:
+        # Oluşmakta olan, reversal ile henüz onaylanmamış ekstrem: swing'in canlı ucu.
+        pivots.append(
+            Pivot(
+                time=times[extreme_index],
+                price=extreme_price,
+                kind="high" if trend == "up" else "low",
+            )
+        )
+
+    if pivots:
+        # Başlangıç ankrajı: ilk onaylanan pivotun ZIT tipinde, serinin ilk barından —
+        # ilk swing de (başlangıç -> ilk pivot) aday olarak değerlendirilebilsin diye.
+        pivots.insert(
+            0,
+            Pivot(
+                time=times[0],
+                price=float(frame["close"].iloc[0]),
+                kind="low" if pivots[0].kind == "high" else "high",
+            ),
+        )
+
+    return _merge_short_legs(frame, pivots, min_leg_bars)
+
+
+def fib_levels(
+    *, a_price: float, b_price: float, a_kind: PivotKind, ratios: Sequence[float]
+) -> dict[float, float]:
+    """A-B bacağının verilen oranlardaki seviyeleri; yön A'nın tipinden okunur.
+
+    A dip ise seviyeler B'den AŞAĞI (destek gibi), A zirve ise B'den YUKARI (direnç
+    gibi) projekte edilir — kaynak tarayıcıdaki `compute_fib_levels` ile aynı yön mantığı.
+    """
+    distance = abs(b_price - a_price)
+    return {
+        ratio: (b_price - ratio * distance if a_kind == "low" else b_price + ratio * distance)
+        for ratio in ratios
+    }
+
+
+def _merge_short_legs(
+    frame: pd.DataFrame, pivots: list[Pivot], min_leg_bars: int
+) -> list[Pivot]:
+    if min_leg_bars <= 0 or len(pivots) < 3:
+        return pivots
+
+    merged = list(pivots)
+    time_to_index = {stamp: index for index, stamp in enumerate(frame.index)}
+
+    changed = True
+    while changed and len(merged) >= 3:
+        changed = False
+        for index in range(len(merged) - 1):
+            first = time_to_index.get(merged[index].time)
+            second = time_to_index.get(merged[index + 1].time)
+            if first is None or second is None:
+                continue
+            if (second - first) < min_leg_bars:
+                del merged[index : index + 2]
+                changed = True
+                break
+
+    return merged

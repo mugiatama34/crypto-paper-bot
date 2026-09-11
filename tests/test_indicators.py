@@ -18,8 +18,10 @@ from core.indicators import (
     bollinger,
     donchian,
     ema,
+    fib_levels,
     rsi,
     sma,
+    zigzag_pivots,
 )
 
 START = pd.Timestamp("2026-01-01 00:00:00", tz="UTC")
@@ -189,3 +191,89 @@ def test_engine_reexports_the_same_atr_implementation() -> None:
     from core import engine
 
     assert engine.average_true_range is average_true_range
+
+
+# --------------------------------------------------------------------------- #
+# Zigzag pivotları — kaynak tarayıcıdan birebir taşınan tanım
+#
+# Bu testlerin işlevi doğruluk değil KİMLİK denetimidir: pivot tanımı sessizce
+# kayarsa (eşik karşılaştırması, canlı ucun atılması, çift yerine tek pivot silme)
+# `confluence` modelinin ölçtüğü şey kaynak tarayıcıyla aynı olmaktan çıkar ve
+# bunu hiçbir metrik göstermez.
+# --------------------------------------------------------------------------- #
+
+
+def _swing(closes: list[float], *, spread: float = 0.0) -> pd.DataFrame:
+    return _frame([(close + spread, close - spread, close) for close in closes])
+
+
+def test_pivots_alternate_between_lows_and_highs() -> None:
+    """Alternans bozulursa bir "bacak" iki dip arasına düşer ve Fibonacci yönü anlamsızlaşır."""
+    closes = [100.0] + [100.0 + i for i in range(1, 21)] + [120.0 - i for i in range(1, 21)]
+    pivots = zigzag_pivots(_swing(closes), pct_threshold=0.05, min_leg_bars=0)
+    kinds = [pivot.kind for pivot in pivots]
+    assert kinds == ["low", "high", "low"]
+    assert pivots[1].price == pytest.approx(120.0)
+
+
+def test_a_move_below_the_threshold_does_not_create_a_pivot() -> None:
+    """Eşik düşerse gürültü pivot sanılır; her gürültü bacağı bir "bağımsız swing" olurdu."""
+    closes = [100.0 + i for i in range(21)] + [120.0 - 0.2 * i for i in range(1, 11)]
+    pivots = zigzag_pivots(_swing(closes), pct_threshold=0.05, min_leg_bars=0)
+    assert [pivot.kind for pivot in pivots] == ["low", "high"]
+
+
+def test_the_live_extreme_is_reported_as_the_last_pivot() -> None:
+    """Canlı uç atılırsa swing'in güncel ucu kaybolur; kaynaktaki davranış korunmalı."""
+    closes = [100.0 + i for i in range(21)]
+    pivots = zigzag_pivots(_swing(closes), pct_threshold=0.05, min_leg_bars=0)
+    assert pivots[-1].kind == "high"
+    assert pivots[-1].price == pytest.approx(120.0)
+
+
+def test_the_series_start_is_anchored_with_the_opposite_kind() -> None:
+    """Ankraj olmadan ilk swing (başlangıç -> ilk pivot) hiç aday olamazdı."""
+    closes = [100.0 + i for i in range(21)]
+    pivots = zigzag_pivots(_swing(closes), pct_threshold=0.05, min_leg_bars=0)
+    assert pivots[0].kind == "low"
+    assert pivots[0].price == pytest.approx(100.0)
+    assert pivots[0].time == _index(len(closes))[0]
+
+
+def test_short_legs_are_dropped_in_pairs_so_alternation_survives() -> None:
+    """Tek pivot silmek dip/zirve sırasını bozardı; kaynak bu yüzden çift siler."""
+    closes = (
+        [100.0 + i for i in range(21)]  # uzun yükseliş
+        + [120.0 - 2.0 * i for i in range(1, 5)]  # 4 barlık sert düşüş (kısa bacak)
+        + [112.0 + 2.0 * i for i in range(1, 5)]  # 4 barlık sert dönüş (kısa bacak)
+        + [120.0 + i for i in range(1, 11)]
+    )
+    frame = _swing(closes)
+    unmerged = zigzag_pivots(frame, pct_threshold=0.05, min_leg_bars=0)
+    merged = zigzag_pivots(frame, pct_threshold=0.05, min_leg_bars=8)
+    assert len(unmerged) - len(merged) == 2
+    kinds = [pivot.kind for pivot in merged]
+    assert all(first != second for first, second in zip(kinds, kinds[1:]))
+
+
+def test_a_frame_shorter_than_three_bars_has_no_pivots() -> None:
+    assert zigzag_pivots(_swing([100.0, 101.0]), pct_threshold=0.05, min_leg_bars=8) == []
+
+
+def test_zigzag_rejects_a_non_positive_threshold() -> None:
+    """Sıfır eşik her barı pivot yapar: "bağımsız swing" kavramı tümden kaybolurdu."""
+    with pytest.raises(ValueError):
+        zigzag_pivots(_swing([100.0] * 5), pct_threshold=0.0, min_leg_bars=8)
+
+
+def test_fib_levels_project_downward_from_a_leg_that_started_at_a_low() -> None:
+    """Yön A'nın tipinden okunur: dipten başlayan bacakta seviyeler B'den AŞAĞI iner."""
+    levels = fib_levels(a_price=100.0, b_price=200.0, a_kind="low", ratios=(0.618, 1.272))
+    assert levels[0.618] == pytest.approx(138.2)
+    assert levels[1.272] == pytest.approx(72.8)
+
+
+def test_fib_levels_project_upward_from_a_leg_that_started_at_a_high() -> None:
+    levels = fib_levels(a_price=200.0, b_price=100.0, a_kind="high", ratios=(0.618, 1.272))
+    assert levels[0.618] == pytest.approx(161.8)
+    assert levels[1.272] == pytest.approx(227.2)
