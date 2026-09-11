@@ -85,7 +85,9 @@ def test_run_writes_ledger_and_metrics(sandbox: Sandbox) -> None:
     assert payload["as_of"] == _market().as_of.isoformat()
     assert payload["dry_run"] is False
     assert payload["benchmarks"] == ["buyhold"]
-    assert [model["name"] for model in payload["models"]] == ["buyhold"]
+    # Literal bir liste yerine config: yarışan küme büyüdükçe (10 model hedefleniyor) bu
+    # testin ölçtüğü şey "hangi modeller var" değil, "main config'in TAMAMINI koşturdu mu"dur.
+    assert [model["name"] for model in payload["models"]] == load_config()["models"]
     assert payload["settings"]["fee_rate"] == load_config()["fee_rate"]
     assert (sandbox.ledgers / "buyhold" / "positions.json").is_file()
 
