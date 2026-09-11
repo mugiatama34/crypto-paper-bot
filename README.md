@@ -17,6 +17,38 @@ tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLA
 - Her stratejinin işlemleri kendi defterine (`ledgers/`) yazılır ve `core/metrics.py`
   tarafından karşılaştırılır.
 
+## Çalıştırma
+
+```bash
+python main.py              # bir tur: veri çek -> modelleri koştur -> defteri ve metrikleri yaz
+python main.py --dry-run    # deftere ve docs/data/metrics.json'a YAZMADAN aynı turu raporla
+```
+
+`main.py` bir turu uçtan uca yürütür: veriyi çeker, `as_of`'u belirler, `config.yaml`'daki
+modelleri sırayla koşturur, metrikleri üretir ve `docs/data/metrics.json`'a yazar. `--dry-run`
+defterin bir kopyası üzerinde çalışır — motor turu ilerletirken durumu yazdığı için "yazmayan
+motor" metrikleri üretecek satırları hiç oluşturmazdı.
+
+Hata izolasyonu kasten iki katmanlıdır: **model kurulumu** (tanınmayan ad, kurucu hatası) ve
+**model kodu** (sinyal/çıkış üretimi) izole edilir — biri düşse de diğer modeller koşar. Tanınmayan
+bir model koşuyu ayrıca hata koduyla bitirir; sessizce eksik yarışan bir küme kural 6'yı bozardı.
+**Defter ve veri hataları izole EDİLMEZ:** bozuk defter ya da bayat anlık görüntü turu tümden
+düşürür — bunlar model hatası değil ölçüm hatasıdır.
+
+`.github/workflows/run.yml` bunu `5 0,4,8,12,16,20 * * *` cron'uyla çalıştırır: 4H barlar
+00/04/08/12/16/20 UTC'de kapanır, 5 dakikalık pay hem kapanmamış barı beklemeye hem GitHub
+cron gecikmesine yeter. Koşudan sonra `ledgers/` ve `docs/data/` commit edilir (değişiklik
+yoksa boş commit atılmaz). **Defter bu yüzden depoya girer:** runner her koşuda sıfırdan
+kurulur, commit edilmezse her tur boş bakiyeyle başlar ve ölçüm hiç birikmez.
+
+Her tur `docs/data/metrics.json`'a bir **tur raporu** da yazar: model başına işlenen bar,
+dolum, kapanan işlem, sinyal sayısı ve **doldurulamayan emirlerin sebep kodu dökümü**
+(`rejections`). Bu döküm opsiyonel değil: "sinyal üretildi ama işlem açılmadı" iki bambaşka
+şeyin aynı görünümüdür — beklenen bir tekrar (`duplicate_position`, örn. alım-tut çıpasının
+zaten taşıdığı pozisyon) ile gerçek bir boyutlandırma arızası (`zero_size`,
+`insufficient_cash`). Kod olmadan ikisi aylar sonra ayırt edilemez. Log seviyesi de aynı
+ayrımı taşır: beklenen tekrar `INFO`, arıza `WARNING`.
+
 ## Defter formatı (`ledgers/<model>/`)
 
 | Dosya | İçerik |
@@ -38,11 +70,18 @@ aittir.
 from core.config import load_config
 from core.metrics import compare, format_report
 
-print(format_report(compare(["model_a", "model_b"], config=load_config())))
+print(format_report(compare(
+    ["buyhold", "model_a"], config=load_config(), benchmarks=["buyhold"]
+)))
 ```
 
 Kayma dolum fiyatının içine gömülü olduğu için `slippage_cost` deftere ayrıca yazılır:
 `cost_per_r` komisyon **ve** kayma ister, yazılmazsa maliyetin yarısı görünmez kalırdı.
+
+Referans modeller (kural 15) bu sıralamaya girmez: tablonun altında ayrı bir **REFERANS**
+bölümünde durur ve `avg_stop_distance_pct` / `cost_per_r` kolonlarında `—` gösterir. Stop'u
+olmayanın 1R'si yoktur; çıpanın taşıdığı bilgi sıralamada değil hesap düzeyi getirisindedir
+("model piyasayı yendi mi?").
 
 Tablo **ortalama R'ye göre** sıralanır ve her model için long / short / TOPLAM satırlarını
 ayrı gösterir. Toplam getiri (USDT ve %) ikinci sırada, hesap düzeyinde raporlanır: hesapta
@@ -70,14 +109,18 @@ dışlanır ve loglanır; böylece tek bir gecikmiş sembol turun "şimdi"sini g
 
 ## Model listesi
 
-> Henüz tanımlanmadı — arayüz sözleşmesi onaylandıktan sonra `strategies/` altına eklenecek.
-> Yarışmanın tamamlanması için 10 model gerekir; ilerledikçe bu tablo güncellenecek.
+Aktif küme `config.yaml`'ın `models` listesidir; adlar `strategies/registry.py`'de çözülür.
+Yarışmanın tamamlanması için 10 model gerekir.
 
 | # | Strateji | Yön | Durum |
 |---|---|---|---|
+| — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
 | 1 | — | — | planlanıyor |
 | ... | | | |
 | 10 | — | — | planlanıyor |
+
+`buyhold` sayıya dâhil değildir: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınıp hiç satılmaz.
+Tek işi yarışmacılara bir zemin vermektir.
 
 ## Kabul çıtası (taslak)
 
@@ -100,6 +143,9 @@ Projenin "tamamlandı" sayılması için:
 - [x] `core/metrics.py` tüm stratejileri aynı tabloda karşılaştırabiliyor; her metrik
       long/short ayrı ve `avg_stop_distance_pct` + `cost_per_r` kolonları raporlanıyor
       (`tests/test_metrics.py`).
-- [ ] `.github/workflows/run.yml` periyodik çalıştırmayı ve testleri otomatik doğruluyor.
+- [x] `.github/workflows/run.yml` periyodik çalıştırmayı yapıyor; testleri `ci.yml` doğruluyor.
+- [x] `main.py` boru hattını uçtan uca çalıştırıyor ve `docs/data/metrics.json` üretiyor
+      (`tests/test_main.py`).
+- [x] Ölçüme bir referans çıpası (`buyhold`) eklendi (kural 15, `tests/test_buyhold.py`).
 
 Bu çıta taslaktır, onay/düzeltme bekliyor.

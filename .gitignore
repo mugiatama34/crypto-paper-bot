@@ -3,9 +3,14 @@ __pycache__/
 .venv/
 .env
 
-ledgers/*
-!ledgers/.gitkeep
+# ledgers/ KASTEN depoya girer: GitHub Actions runner'ı her koşuda sıfırdan kurulur, yani
+# defter commit edilmezse her tur boş bakiyeyle başlar ve ölçüm hiç birikmez. Defter aynı
+# zamanda denetim izidir (kural 1) — geçmişi git'te durmalı.
 
 # core/data.py'nin ürettiği yerel veri deposu: parquet mum önbelleği ve evren dosyası.
 # Koşuda yeniden üretilir; depoya girerse herkes farklı/bayat veriyle koşar.
-data/
+#
+# Başındaki "/" ŞART: desensiz "data/" her düzeydeki data klasörünü tutar ve yayımlanan
+# docs/data/metrics.json'ı da sessizce yok sayardı — cron her turda commit edecek bir şey
+# bulamaz, rapor hiç güncellenmezdi.
+/data/

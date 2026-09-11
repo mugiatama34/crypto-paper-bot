@@ -35,10 +35,14 @@ universe_refresh_days: 30   # evren bu süre dolmadan yeniden hesaplanmaz (kıya
 # Rastgelelik kullanan her yol (retry jitter dâhil) bu tohumdan beslenir: koşular tekrarlanabilir.
 random_seed: 20240217
 
-# Aktif modeller. strategies/ altındaki sınıfların `name` alanlarıyla birebir eşleşir ve
-# yarışmaya giren kümeyi burası tanımlar. Henüz uygulanmış model yok; her model eklendikçe
-# adı buraya yazılır (toplam 10 olacak).
-models: []
+# Aktif modeller. Adlar strategies/registry.py'deki kayıtlarla (ve sınıfların `name`
+# alanıyla) birebir eşleşir; yarışmaya giren kümeyi burası tanımlar. Tanınmayan bir ad
+# sessizce atlanmaz: o model düşer ve koşu hata koduyla biter (bkz. main.py).
+#
+# buyhold bir YARIŞMACI DEĞİL, referans çıpasıdır (is_benchmark=True, CLAUDE.md kural 15):
+# tabloda ayrı bölümde durur ve R'ye dayalı kolonları nan alır. Yarışacak 10 model bunun
+# üzerine eklenecek.
+models: ["buyhold"]
 
 # --- Trailing stop ---
 # Trailing'i core/engine.py uygular (CLAUDE.md kural 9); strateji yalnızca Signal.trailing_atr

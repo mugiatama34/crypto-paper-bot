@@ -25,6 +25,14 @@ aynı 1R'yi daha büyük notional ile taşır ve R başına daha çok komisyon+k
 `avg_stop_distance_pct` değerleri banda göre ayrışıyor ve `cost_per_r` farkı performans farkını
 tek başına açıklayabiliyorsa, kıyas geçersiz sayılır.
 
+**Referans (benchmark) modeller yarışmacı değildir** (CLAUDE.md kural 15). Stop'u olmayan
+bir alım-tut çıpasının 1R'si yoktur; `avg_stop_distance_pct` ve `cost_per_r` onun için
+tanımsızdır ve `nan` raporlanır. Tabloda ortalama R sıralamasına da girmez, ayrı bir
+"REFERANS" bölümünde durur: aynı sütunda sıralamak, farklı boyutlandırma kuralıyla
+(fraction × sermaye, 1x) çalışan bir satırı risk-birimi yarışının parçasıymış gibi
+gösterirdi. Referansın işi sıralamada yer almak değil, yarışmacıların hesap düzeyi
+getirisine bir zemin vermek: "model piyasayı yendi mi?"
+
 Tanımsız bir metrik (işlem yok, varyans sıfır) `nan` döner; 0.0 döndürmek "ölçüldü ve
 sıfır çıktı" ile "ölçülemedi"yi aynı sayıya indirger ve karşılaştırmayı sessizce bozar.
 Hiç short açmamış bir modelin `cost_per_r`'si 0.0 olsaydı, "maliyetsiz short yapan model"
@@ -35,7 +43,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Collection, Iterable, Mapping, Sequence
 
 import pandas as pd
 
@@ -95,6 +103,7 @@ class ModelMetrics:
     short: DirectionStats
     total: DirectionStats
     account: AccountStats
+    is_benchmark: bool = False  # kural 15: yarışmacı değil, referans çıpası
 
     def by_direction(self, direction: str) -> DirectionStats:
         return {"long": self.long, "short": self.short, TOTAL: self.total}[direction]
@@ -143,9 +152,19 @@ def cost_per_r(row: Mapping[str, Any]) -> float | None:
 
 
 def direction_stats(
-    trades: Iterable[Mapping[str, Any]], *, direction: str = TOTAL
+    trades: Iterable[Mapping[str, Any]],
+    *,
+    direction: str = TOTAL,
+    is_benchmark: bool = False,
 ) -> DirectionStats:
-    """`direction` ("long" | "short" | "total") için işlem metrikleri."""
+    """`direction` ("long" | "short" | "total") için işlem metrikleri.
+
+    `is_benchmark=True` iken maliyet ölçeği kolonları koşulsuz `nan` olur (kural 15).
+    Stop'suz işlemde bu değerler zaten hesaplanamaz, ama garantiyi defterin içeriğine
+    bırakmak kırılgan olurdu: referans modelin defterine bir gün stop'lu bir satır girerse
+    (elle düzeltme, şema göçü) tablo sessizce onu yarışmacı bir maliyet ölçeği gibi
+    gösterirdi.
+    """
     # Kapanış sırası: yön bazlı R-Sharpe, o yöndeki işlemlerin kapanış sırasına göre dizilmiş
     # R dizisinden hesaplanır (CLAUDE.md > Rapor Kolonları). Defter zaten bu sırada yazılır;
     # sıralama, satırların başka bir yoldan gelmesi hâlinde de garantiyi gerçek kılar.
@@ -174,8 +193,10 @@ def direction_stats(
         avg_win_r=_mean(wins),
         avg_loss_r=_mean(losses),
         profit_factor=_ratio(sum(wins), loss_total) if r_values else _NAN,
-        avg_stop_distance_pct=_mean(_collect(rows, stop_distance_pct)),
-        cost_per_r=_mean(_collect(rows, cost_per_r)),
+        avg_stop_distance_pct=(
+            _NAN if is_benchmark else _mean(_collect(rows, stop_distance_pct))
+        ),
+        cost_per_r=_NAN if is_benchmark else _mean(_collect(rows, cost_per_r)),
         pnl=_sum_column(rows, "pnl"),
         fees=_sum_column(rows, "fee"),
         slippage_cost=_sum_column(rows, "slippage_cost"),
@@ -270,26 +291,39 @@ def model_metrics(
     equity_rows: Sequence[Mapping[str, Any]],
     initial_capital: float,
     periods_per_year: float,
+    is_benchmark: bool = False,
 ) -> ModelMetrics:
     return ModelMetrics(
         model=model,
-        long=direction_stats(trades, direction="long"),
-        short=direction_stats(trades, direction="short"),
-        total=direction_stats(trades, direction=TOTAL),
+        long=direction_stats(trades, direction="long", is_benchmark=is_benchmark),
+        short=direction_stats(trades, direction="short", is_benchmark=is_benchmark),
+        total=direction_stats(trades, direction=TOTAL, is_benchmark=is_benchmark),
         account=account_stats(
             equity_rows, initial_capital=initial_capital, periods_per_year=periods_per_year
         ),
+        is_benchmark=is_benchmark,
     )
 
 
 def compare(
-    models: Sequence[str], *, ledger: Ledger | None = None, config: Mapping[str, Any]
+    models: Sequence[str],
+    *,
+    ledger: Ledger | None = None,
+    config: Mapping[str, Any],
+    benchmarks: Collection[str] = (),
 ) -> list[ModelMetrics]:
-    """Defterleri okuyup her model için metrikleri üretir. Defter değiştirilmez."""
+    """Defterleri okuyup her model için metrikleri üretir. Defter değiştirilmez.
+
+    `benchmarks` referans modellerin adlarıdır (kural 15). Bilgi stratejinin
+    `is_benchmark` alanından gelir ve buraya çağıran tarafından taşınır: metrics defteri
+    okur, strateji sınıflarını değil — `strategies/` importu, salt okunur bir metrik
+    modülünü tüm model koduna bağlardı.
+    """
     active_ledger = ledger if ledger is not None else Ledger()
     config_dict = dict(config)
     initial_capital = float(get_setting(config_dict, "initial_capital"))
     per_year = periods_per_year(config_dict)
+    benchmark_names = set(benchmarks)
     return [
         model_metrics(
             model,
@@ -297,6 +331,7 @@ def compare(
             equity_rows=active_ledger.read_equity(model),
             initial_capital=initial_capital,
             periods_per_year=per_year,
+            is_benchmark=model in benchmark_names,
         )
         for model in models
     ]
@@ -308,59 +343,84 @@ def compare(
 _HEADERS = ("model", "yön", "n", "ort.R", "medyan R", "topl.R", "R-Sharpe",
             "maxDD(R)", "kazanç%", "PF", "stopMes.%", "maliyet/R", "PnL(USDT)", "likid.")
 _WIDTHS = (18, 6, 5, 8, 9, 8, 9, 9, 8, 7, 10, 10, 12, 7)
+_TABLE_WIDTH = sum(_WIDTHS) + 2 * (len(_WIDTHS) - 1)
 
 
 def format_report(metrics: Sequence[ModelMetrics]) -> str:
     """Karşılaştırma tablosu. Kolon sırası bilinçlidir: önce R, sonra USDT getirisi.
 
-    Sıralama da ortalama R'ye göredir — tabloyu toplam getiriye göre sıralamak, tam da
+    Sıralama ortalama R'ye göredir — tabloyu toplam getiriye göre sıralamak, tam da
     ayıklamaya çalıştığımız bileşiklenme etkisini geri sokardı.
+
+    Referans modeller (kural 15) sıralamaya girmez, tablonun altında ayrı bir bölümde
+    durur: farklı boyutlandırma kuralıyla çalışan bir satırı yarışmacılarla aynı sütunda
+    sıralamak, okuyucuya olmayan bir kıyas sunardı.
     """
+    competitors = [item for item in metrics if not item.is_benchmark]
+    references = [item for item in metrics if item.is_benchmark]
+
     lines = [
         "  ".join(header.rjust(width) if index else header.ljust(width)
                   for index, (header, width) in enumerate(zip(_HEADERS, _WIDTHS))),
-        "-" * (sum(_WIDTHS) + 2 * (len(_WIDTHS) - 1)),
+        "-" * _TABLE_WIDTH,
     ]
-    ordered = sorted(
-        metrics,
-        key=lambda item: (-item.total.avg_r if not math.isnan(item.total.avg_r) else math.inf,
-                          item.model),
-    )
-    for item in ordered:
-        for index, direction in enumerate((*DIRECTIONS, TOTAL)):
-            stats = item.by_direction(direction)
-            label = item.model if index == 0 else ""
-            cells = (
-                label.ljust(_WIDTHS[0]),
-                ("TOPLAM" if direction == TOTAL else direction).rjust(_WIDTHS[1]),
-                str(stats.trades).rjust(_WIDTHS[2]),
-                _fmt(stats.avg_r).rjust(_WIDTHS[3]),
-                _fmt(stats.median_r).rjust(_WIDTHS[4]),
-                _fmt(stats.total_r).rjust(_WIDTHS[5]),
-                _fmt(stats.r_sharpe).rjust(_WIDTHS[6]),
-                _fmt(stats.max_drawdown_r).rjust(_WIDTHS[7]),
-                _fmt(_pct(stats.win_rate), digits=1).rjust(_WIDTHS[8]),
-                _fmt(stats.profit_factor).rjust(_WIDTHS[9]),
-                _fmt(stats.avg_stop_distance_pct).rjust(_WIDTHS[10]),
-                _fmt(stats.cost_per_r, digits=3).rjust(_WIDTHS[11]),
-                _fmt(stats.pnl, digits=2).rjust(_WIDTHS[12]),
-                str(stats.liquidations).rjust(_WIDTHS[13]),
-            )
-            lines.append("  ".join(cells))
-        account = item.account
-        lines.append(
-            f"{'':<{_WIDTHS[0]}}  hesap: son özsermaye {_fmt(account.final_equity, digits=2)} | "
-            f"getiri {_fmt(_pct(account.total_return), digits=2)}% | "
-            f"maxDD {_fmt(_pct(account.max_drawdown), digits=2)}% | "
-            f"Sharpe {_fmt(account.sharpe)} | {account.bars} bar"
-        )
-        unmeasured = item.total.unmeasured
-        if unmeasured:
-            lines.append(
-                f"{'':<{_WIDTHS[0]}}  UYARI: {unmeasured} işlemde risk_amount yok, R'ye girmedi"
-            )
-        lines.append("")
+    for item in sorted(competitors, key=_rank_key):
+        lines.extend(_model_block(item))
+
+    if references:
+        lines.append("REFERANS (yarışma dışı, kural 15) — kıyas zemini: model piyasayı yendi mi?")
+        lines.append("-" * _TABLE_WIDTH)
+        for item in sorted(references, key=lambda entry: entry.model):
+            lines.extend(_model_block(item))
+
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _rank_key(item: ModelMetrics) -> tuple[float, str]:
+    """Ortalama R'si olmayan model sıralamanın sonuna düşer, başına değil."""
+    avg_r = item.total.avg_r
+    return (-avg_r if not math.isnan(avg_r) else math.inf, item.model)
+
+
+def _model_block(item: ModelMetrics) -> list[str]:
+    lines: list[str] = []
+    for index, direction in enumerate((*DIRECTIONS, TOTAL)):
+        stats = item.by_direction(direction)
+        label = item.model if index == 0 else ""
+        cells = (
+            label.ljust(_WIDTHS[0]),
+            ("TOPLAM" if direction == TOTAL else direction).rjust(_WIDTHS[1]),
+            str(stats.trades).rjust(_WIDTHS[2]),
+            _fmt(stats.avg_r).rjust(_WIDTHS[3]),
+            _fmt(stats.median_r).rjust(_WIDTHS[4]),
+            _fmt(stats.total_r).rjust(_WIDTHS[5]),
+            _fmt(stats.r_sharpe).rjust(_WIDTHS[6]),
+            _fmt(stats.max_drawdown_r).rjust(_WIDTHS[7]),
+            _fmt(_pct(stats.win_rate), digits=1).rjust(_WIDTHS[8]),
+            _fmt(stats.profit_factor).rjust(_WIDTHS[9]),
+            _fmt(stats.avg_stop_distance_pct).rjust(_WIDTHS[10]),
+            _fmt(stats.cost_per_r, digits=3).rjust(_WIDTHS[11]),
+            _fmt(stats.pnl, digits=2).rjust(_WIDTHS[12]),
+            str(stats.liquidations).rjust(_WIDTHS[13]),
+        )
+        lines.append("  ".join(cells))
+
+    account = item.account
+    lines.append(
+        f"{'':<{_WIDTHS[0]}}  hesap: son özsermaye {_fmt(account.final_equity, digits=2)} | "
+        f"getiri {_fmt(_pct(account.total_return), digits=2)}% | "
+        f"maxDD {_fmt(_pct(account.max_drawdown), digits=2)}% | "
+        f"Sharpe {_fmt(account.sharpe)} | {account.bars} bar"
+    )
+    # Referansta R'siz satır beklenendir (stop yok), yarışmacıda ise denetlenmesi gereken
+    # bir anomalidir: uyarıyı ikisine de yazmak, gerçek uyarıyı gürültüye boğardı.
+    unmeasured = item.total.unmeasured
+    if unmeasured and not item.is_benchmark:
+        lines.append(
+            f"{'':<{_WIDTHS[0]}}  UYARI: {unmeasured} işlemde risk_amount yok, R'ye girmedi"
+        )
+    lines.append("")
+    return lines
 
 
 # --------------------------------------------------------------------------- #
