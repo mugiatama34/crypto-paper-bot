@@ -8,6 +8,7 @@ defterden mi üretildi, dry-run gerçekten hiçbir şey yazmadı mı.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -225,3 +226,106 @@ def test_empty_model_list_fails(sandbox: Sandbox, monkeypatch: pytest.MonkeyPatc
     config["models"] = []
     monkeypatch.setattr(main_module, "load_config", lambda path=None: config)
     assert main_module.main([]) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Ret dökümü: "sinyal var, işlem yok" tek bir görünüme çökmemeli
+# --------------------------------------------------------------------------- #
+def test_holding_rounds_report_duplicate_position_not_silence(sandbox: Sandbox) -> None:
+    """Çıpanın her turu signals=2/filled=0'dır; sebebi raporda AÇIKÇA durmalı.
+
+    Aksi hâlde aylar sonra gerçek bir boyutlandırma arızası da tam bu şekilde görünür.
+    """
+    main_module.main([])
+    sandbox.advance_to(31)
+    main_module.main([])  # dolum burada
+
+    sandbox.advance_to(32)
+    main_module.main([])
+
+    report = {item["model"]: item for item in sandbox.metrics()["round"]["models"]}["buyhold"]
+    assert report["signals"] == 2
+    assert report["filled"] == 0
+    # Sessizlik değil, kategorili gerekçe:
+    assert report["rejections"] == {"duplicate_position": 2}
+
+
+class _FixedStop(Strategy):
+    """Stop'lu, sıradan bir yarışmacı: boyutu core/portfolio.py'nin kuralı belirler."""
+
+    name = "kobay"
+    allowed_directions = ["long"]
+
+    def generate_signals(self, market: MarketData, peer_signals: Any = None) -> list[Signal]:
+        return [
+            Signal(symbol=SYMBOLS[0], direction="long", stop_price=95.0, reason="kobay")
+        ]
+
+
+def _run_with_broken_sizing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """risk_per_trade=0 -> boyut sıfır: tam da sessizce kaybolabilecek türden bir arıza."""
+    config = load_config()
+    config["models"] = ["kobay"]
+    config["risk_per_trade"] = 0.0
+    monkeypatch.setattr(main_module, "load_config", lambda path=None: config)
+    monkeypatch.setattr(main_module, "build", lambda name: _FixedStop())
+
+
+def test_sizing_failure_reports_a_different_code(
+    sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gerçek arıza, beklenen tekrardan FARKLI bir kodla görünür — ayırt edilebilirlik testi."""
+    _run_with_broken_sizing(monkeypatch)
+
+    main_module.main([])
+    sandbox.advance_to(31)
+    main_module.main([])
+
+    report = {item["model"]: item for item in sandbox.metrics()["round"]["models"]}["kobay"]
+    assert report["signals"] == 1
+    assert report["filled"] == 0
+    # Çıpanın beklenen tekrarıyla aynı hücreye düşmüyor:
+    assert report["rejections"] == {"zero_size": 1}
+    assert "duplicate_position" not in report["rejections"]
+
+
+def test_queued_first_round_has_no_rejections(sandbox: Sandbox) -> None:
+    """İlk tur da signals=2/filled=0'dır ama sebebi ret değil, kural 13'ün kuyruğudur."""
+    main_module.main([])
+    report = {item["model"]: item for item in sandbox.metrics()["round"]["models"]}["buyhold"]
+    assert report["signals"] == 2
+    assert report["filled"] == 0
+    assert report["rejections"] == {}
+
+
+def test_expected_repeat_logs_at_info(
+    sandbox: Sandbox, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Çıpanın her turki tekrarı INFO: beklenen bir durum logu kırmızıya boğmamalı."""
+    main_module.main([])
+    sandbox.advance_to(31)
+    main_module.main([])
+    sandbox.advance_to(32)
+
+    with caplog.at_level(logging.INFO, logger="core.engine"):
+        main_module.main([])
+
+    records = [r for r in caplog.records if "duplicate_position" in r.getMessage()]
+    assert records, "beklenen tekrar hiç loglanmadı"
+    assert all(record.levelno == logging.INFO for record in records)
+
+
+def test_sizing_failure_logs_at_warning(
+    sandbox: Sandbox, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Boyutlandırma arızası WARNING: logu gözle tarayan da ikisini ayırabilsin."""
+    _run_with_broken_sizing(monkeypatch)
+    main_module.main([])
+    sandbox.advance_to(31)
+
+    with caplog.at_level(logging.INFO, logger="core.engine"):
+        main_module.main([])
+
+    records = [r for r in caplog.records if "zero_size" in r.getMessage()]
+    assert records, "boyutlandırma arızası hiç loglanmadı"
+    assert all(record.levelno == logging.WARNING for record in records)

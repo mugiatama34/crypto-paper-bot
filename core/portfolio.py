@@ -52,6 +52,26 @@ logger = logging.getLogger(__name__)
 
 ExitReason = Literal["liquidation", "stop", "tp", "signal"]
 
+# Açılış reddinin SEBEP KODU. Serbest metin gerekçe (OpenResult.rejected) insan içindir ve
+# sembol adı taşıdığı için toplanamaz; bu kod ise tur raporunda sayılabilir ve zaman içinde
+# karşılaştırılabilir. Ayrım şart: "sinyal üretildi ama işlem açılmadı" iki bambaşka şeyin
+# aynı görünümüdür — beklenen bir tekrar (referans modelin zaten taşıdığı pozisyon) ile
+# gerçek bir boyutlandırma arızası (sıfır boyut, yetersiz nakit). Kod olmadan ikisi aylar
+# sonra ayırt edilemez.
+RejectReason = Literal[
+    "duplicate_position",    # aynı sembol+yönde zaten açık pozisyon var (BEKLENEN olabilir)
+    "max_positions",         # eşzamanlı pozisyon kotası dolu
+    "max_short_positions",   # short kotası dolu
+    "gap_past_stop",         # bar stop'un ötesinde açtı, emir doldurulmadı
+    "zero_size",             # boyutlandırma sıfır adet üretti (ARIZA sinyali)
+    "insufficient_cash",     # nakit marj + komisyonu karşılamıyor (ARIZA sinyali)
+]
+
+# Boyutlandırmanın "çalıştı ama sıfır çıktı" hâlleri. Bunlar beklenen bir tekrar değildir:
+# sermaye tükenmiş ya da formül beklenmedik bir sayı üretmiştir — log seviyesi de bunu
+# yansıtır (INFO değil WARNING), çünkü bakılması gereken tek grup budur.
+SIZING_FAILURES: frozenset[str] = frozenset({"zero_size", "insufficient_cash"})
+
 # Kalan miktar başlangıcın bu oranının altına düşerse pozisyon kapanmış sayılır:
 # kısmi çıkışların kayan nokta artığı "0.0000000001 adet" pozisyon bırakmasın.
 _DUST_RATIO = 1e-9
@@ -240,10 +260,16 @@ class OpenPosition:
 
 @dataclass(frozen=True, kw_only=True)
 class OpenResult:
-    """Açılış denemesinin sonucu. `rejected` doluysa pozisyon açılmadı."""
+    """Açılış denemesinin sonucu. `rejected` doluysa pozisyon açılmadı.
+
+    `rejected` insan için serbest metindir (sembol/fiyat taşır, toplanamaz); `reason_code`
+    ise tur raporunda sayılabilen sabit kategoridir. İkisi birlikte döner çünkü log satırı
+    ayrıntı ister, denetim izi ise sayılabilirlik.
+    """
 
     position: OpenPosition | None = None
     rejected: str = ""
+    reason_code: RejectReason | None = None
 
 
 @dataclass
@@ -515,13 +541,22 @@ class Portfolio:
             raise ValueError('sizing_mode="risk" için stop_price zorunludur')
 
         if account.find(symbol, direction) is not None:
-            return OpenResult(rejected=f"{symbol} üzerinde zaten açık {direction} pozisyon var")
+            return OpenResult(
+                rejected=f"{symbol} üzerinde zaten açık {direction} pozisyon var",
+                reason_code="duplicate_position",
+            )
         if len(account.positions) >= self.max_positions:
-            return OpenResult(rejected=f"max_positions={self.max_positions} dolu")
+            return OpenResult(
+                rejected=f"max_positions={self.max_positions} dolu",
+                reason_code="max_positions",
+            )
         if direction == "short":
             open_shorts = sum(1 for p in account.positions if p.direction == "short")
             if open_shorts >= self.max_short_positions:
-                return OpenResult(rejected=f"max_short_positions={self.max_short_positions} dolu")
+                return OpenResult(
+                    rejected=f"max_short_positions={self.max_short_positions} dolu",
+                    reason_code="max_short_positions",
+                )
 
         entry_price = self.fill_price(
             direction=direction, reference_price=reference_price, side="entry"
@@ -531,9 +566,15 @@ class Portfolio:
         # Stop'suz referans pozisyonda (kural 15) böyle bir boşluk tanımsızdır.
         if stop_price is not None:
             if direction == "long" and stop_price >= entry_price:
-                return OpenResult(rejected=f"boşluklu açılış: stop {stop_price} >= dolum {entry_price}")
+                return OpenResult(
+                    rejected=f"boşluklu açılış: stop {stop_price} >= dolum {entry_price}",
+                    reason_code="gap_past_stop",
+                )
             if direction == "short" and stop_price <= entry_price:
-                return OpenResult(rejected=f"boşluklu açılış: stop {stop_price} <= dolum {entry_price}")
+                return OpenResult(
+                    rejected=f"boşluklu açılış: stop {stop_price} <= dolum {entry_price}",
+                    reason_code="gap_past_stop",
+                )
 
         if sizing_mode == "notional_fraction":
             if notional_fraction is None:
@@ -555,7 +596,10 @@ class Portfolio:
                 leverage_cap=self.leverage_cap,
             )
         if sizing.qty <= 0.0:
-            return OpenResult(rejected=f"boyut sıfır ({sizing.note or 'yetersiz sermaye'})")
+            return OpenResult(
+                rejected=f"boyut sıfır ({sizing.note or 'yetersiz sermaye'})",
+                reason_code="zero_size",
+            )
 
         qty, notional, margin = sizing.qty, sizing.notional, sizing.margin
         fee = self.fee_rate * notional
@@ -572,7 +616,10 @@ class Portfolio:
             fee *= scale
             notes = _join_notes(notes, f"boyut komisyon+marj nakde sığsın diye {scale:.4f} oranında kırpıldı")
         if qty <= 0.0:
-            return OpenResult(rejected="nakit marj ve komisyonu karşılamıyor")
+            return OpenResult(
+                rejected="nakit marj ve komisyonu karşılamıyor",
+                reason_code="insufficient_cash",
+            )
 
         position = OpenPosition(
             symbol=symbol,

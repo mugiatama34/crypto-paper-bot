@@ -21,6 +21,11 @@ pozisyon varsa emri reddeden tek yetkili yer `core/portfolio.py`'dir; davranış
 gelir. Bilgiyi buraya taşımak, stratejiye bakiye/pozisyon durumu sızdırmak (ve kuralı iki
 yere bölmek) olurdu. Pratik sonuç aynıdır: ilk dolumdan sonra hiçbir işlem daha açılmaz,
 `manage_positions` hiçbir zaman çıkış istemez, pozisyonlar süresiz taşınır.
+
+Bunun görünür bedeli, her turun `signals=2 / filled=0` olmasıdır — gerçek bir boyutlandırma
+arızasıyla AYNI görünüm. Bu yüzden ret sessiz değildir: `duplicate_position` sebep koduyla
+tur raporuna sayılarak yazılır ve `zero_size` / `insufficient_cash` gibi arızalardan hem kodla
+hem log seviyesiyle ayrılır (bkz. CLAUDE.md kural 15).
 """
 
 from __future__ import annotations

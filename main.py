@@ -36,7 +36,7 @@ import tempfile
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
@@ -234,14 +234,33 @@ def _jsonable(value: Any) -> Any:
 
 
 def _log_round(report: RoundReport) -> None:
+    """Tur özeti. Ret dökümü `signals` ve `filled` kadar birinci sınıftır.
+
+    "sinyal üretildi ama işlem açılmadı" tek başına iki bambaşka şeyin aynı görünümüdür:
+    beklenen bir tekrar (referans modelin zaten taşıdığı pozisyon) ile gerçek bir
+    boyutlandırma arızası. Kod dökümü olmadan ikisi aylar sonra ayırt edilemez, o yüzden
+    her turda yazılır — sinyal üretilip hiçbiri dolmadığında ayrıca vurgulanır.
+    """
     logger.info("tur tamamlandı: as_of=%s", report.as_of)
     for model in report.models:
         logger.info(
-            "  %-16s bar=%d dolum=%d kapanan=%d sinyal=%d çıkış=%d band-atlanan=%d%s",
+            "  %-16s bar=%d dolum=%d kapanan=%d sinyal=%d çıkış=%d band-atlanan=%d%s%s",
             model.model, model.bars_processed, model.filled, model.closed,
             model.signals, model.exits, model.skipped_signals,
+            f" ret={_format_rejections(model.rejections)}" if model.rejections else "",
             f" ATLANDI: {model.skipped}" if model.skipped else "",
         )
+        if model.signals and not model.filled and not model.rejections:
+            # Kodsuz bir "hiç dolmadı" turu: emirler bir sonraki barda dolacağı için
+            # normaldir (kural 13), ama kodlu hâliyle karışmasın diye ayrıca söylenir.
+            logger.info(
+                "  %-16s sinyaller kuyrukta: dolum bir sonraki barın açılışında (kural 13)",
+                model.model,
+            )
+
+
+def _format_rejections(rejections: Mapping[str, int]) -> str:
+    return ", ".join(f"{code}×{count}" for code, count in sorted(rejections.items()))
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

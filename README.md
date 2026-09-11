@@ -41,6 +41,14 @@ cron gecikmesine yeter. Koşudan sonra `ledgers/` ve `docs/data/` commit edilir 
 yoksa boş commit atılmaz). **Defter bu yüzden depoya girer:** runner her koşuda sıfırdan
 kurulur, commit edilmezse her tur boş bakiyeyle başlar ve ölçüm hiç birikmez.
 
+Her tur `docs/data/metrics.json`'a bir **tur raporu** da yazar: model başına işlenen bar,
+dolum, kapanan işlem, sinyal sayısı ve **doldurulamayan emirlerin sebep kodu dökümü**
+(`rejections`). Bu döküm opsiyonel değil: "sinyal üretildi ama işlem açılmadı" iki bambaşka
+şeyin aynı görünümüdür — beklenen bir tekrar (`duplicate_position`, örn. alım-tut çıpasının
+zaten taşıdığı pozisyon) ile gerçek bir boyutlandırma arızası (`zero_size`,
+`insufficient_cash`). Kod olmadan ikisi aylar sonra ayırt edilemez. Log seviyesi de aynı
+ayrımı taşır: beklenen tekrar `INFO`, arıza `WARNING`.
+
 ## Defter formatı (`ledgers/<model>/`)
 
 | Dosya | İçerik |
