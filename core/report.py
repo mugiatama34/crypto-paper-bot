@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 # config.yaml'da değil burada durur: config.yaml "tüm modeller için birebir aynı
 # ölçüm koşulu" sözleşmesidir (kural 6), kaç satır çizildiği o sözleşmenin parçası değil.
 RECENT_TRADE_LIMIT = 20
+# Model detay görünümü (dashboard'ın ikinci seviyesi) modelin KENDİ geçmişini sayfalı
+# gösterir, bu yüzden 20 satırlık ortak akış yetmez. Tamamı da taşınmaz: defter
+# append-only büyür ve JSON her turda baştan yazılır — denetim izi `ledgers/` altındadır,
+# sayfa onun son penceresini çizer.
+MODEL_TRADE_LIMIT = 100
 EQUITY_MAX_POINTS = 500  # eğri başına; koşu aylarca sürdüğünde JSON sınırsız büyümesin
 ACTIVITY_HOURS = 24
 
@@ -98,6 +103,7 @@ def build_dashboard(
         "equity": {model: equity_series(rows) for model, rows in equity.items()},
         "open_positions": positions,
         "recent_trades": recent_trades(trades, limit=RECENT_TRADE_LIMIT),
+        "model_trades": model_trades(trades, limit=MODEL_TRADE_LIMIT),
         "activity": activity(
             trades, positions=positions, as_of=market.as_of, hours=ACTIVITY_HOURS
         ),
@@ -211,6 +217,17 @@ def _position_row(
         "liq_price": _to_float(payload.get("liq_price")),
         "leverage": _to_float(payload.get("leverage")),
         "notional": qty * entry,
+        # Hedefler KALAN hedeflerdir: kısmi TP dolduğunda portfolio onu pozisyondan
+        # düşer (core/portfolio.py), dolayısıyla sayfa "bundan sonra ne bekleniyor"u
+        # gösterir — dolmuş bir hedefi hâlâ beklenen gibi çizmek yanlış olurdu.
+        "take_profits": [
+            {
+                "price": _to_float(tp.get("price")),
+                "fraction": _to_float(tp.get("fraction")),
+            }
+            for tp in (payload.get("take_profits", ()) or ())
+            if isinstance(tp, Mapping)
+        ],
         "gross_pnl": gross,
         "entry_fee": entry_fee,
         "funding": funding,
@@ -260,6 +277,13 @@ def _trade_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "entry_price": _to_float(row.get("entry_price")),
         "exit_price": _to_float(row.get("exit_price")),
         "stop_price": _to_float(row.get("stop_price")),
+        "qty": _to_float(row.get("qty")),
+        "notional": _to_float(row.get("notional")),
+        # Deftere yazılan GERÇEKLEŞEN 1R. R kolonunun paydası olduğu için taşınır:
+        # onsuz sayfa "bu işlemin R'si neye göre" sorusunu cevaplayamaz ve okuyucu
+        # paydayı `risk_per_trade × sermaye` sanar (kural 11'in tavanı boyutu
+        # küçülttüğünde ikisi ayrışır).
+        "risk_amount": risk,
         "pnl": pnl,
         "fee": _to_float(row.get("fee")),
         "slippage_cost": _to_float(row.get("slippage_cost")),
@@ -268,6 +292,36 @@ def _trade_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "exit_reason": str(row.get("exit_reason", "")),
         "reason": str(row.get("signal_reason", "")),
     }
+
+
+def model_trades(
+    trades_by_model: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    limit: int = MODEL_TRADE_LIMIT,
+) -> dict[str, Any]:
+    """Model başına kapanmış işlem geçmişi: en yeni `limit` satır, yeniden eskiye.
+
+    `recent_trades` tüm modellerin TEK akışıdır ("şu anda ne oldu"); burası modelin
+    kendi geçmişidir ("bu model nasıl işlem yapıyor"). İkisi ayrı durur çünkü tek bir
+    akışı modele göre filtrelemek, çok işlem yapan bir modelin 20 satırı doldurup
+    diğerlerini akıştan silmesi demekti.
+
+    `total` kırpılmadan ÖNCEki satır sayısıdır: sayfa "son 100 gösteriliyor, defterde
+    420 var" diyebilsin. Olmadığında kırpılmış bir liste, modelin tüm geçmişi gibi
+    okunur.
+    """
+    out: dict[str, Any] = {"limit": int(max(0, limit)), "models": {}}
+    for model, trades in trades_by_model.items():
+        rows = sorted(
+            (dict(row) for row in trades),
+            key=lambda row: str(row.get("closed_at", "")),
+            reverse=True,
+        )
+        out["models"][model] = {
+            "total": len(rows),
+            "trades": [_trade_row({**row, "model": model}) for row in rows[: max(0, limit)]],
+        }
+    return out
 
 
 def activity(

@@ -57,14 +57,33 @@ koşu workflow'u defterlerle birlikte commit eder. Sayfayı yayına almak için 
 ayarlarında **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`** seçmek
 yeterlidir; ayrı bir deploy workflow'u gerekmez.
 
+Sayfa **iki seviyelidir**: genel bakış tüm modelleri yan yana koyar, model kartına
+dokunulduğunda o modelin detayı açılır. Detayın adresi `#model=<ad>` hash'idir — geri tuşu,
+yer imi ve paylaşılan link çalışır.
+
+**Seviye 1 — genel bakış**
+
 | Bölüm | Ne gösterir |
 |---|---|
-| LONG vs SHORT | Projenin ana sorusu, en üstte: tüm yarışmacıların long işlemleri havuzu vs short işlemleri havuzu — ortalama R, kazanma oranı, işlem sayısı, net funding katkısı ayrı ayrı. Havuz **işleme** oy verir, modele değil: model ortalamalarının ortalaması 2 işlemlik bir modeli 200 işlemlik bir modelle eşitlerdi. |
-| Leaderboard | Ortalama R'ye göre sıralı (başlığa tıklayınca değişir): getiri, MDD, işlem sayısı, kazanma oranı, profit factor, `avg_stop_distance_pct`, `cost_per_r` ve kabul sütunu — **iki kapı** (Ö, E) ve **bir uyarı** (⚠ B); bkz. Kabul çıtası. `random_ctrl` KONTROL etiketiyle sıralamada kalır; `buyhold` REFERANS olarak ayrı bölümdedir (kural 15). |
+| Özet kartları | Yarışmacıların toplam kapanmış işlem sayısı, ortalama R'ye göre lider model (kapılarını geçip geçmediğiyle) ve tek satırda long vs short. |
+| LONG vs SHORT | Projenin ana sorusu: tüm yarışmacıların long işlemleri havuzu vs short işlemleri havuzu — ortalama R, kazanma oranı, işlem sayısı, net funding katkısı ayrı ayrı. Havuz **işleme** oy verir, modele değil: model ortalamalarının ortalaması 2 işlemlik bir modeli 200 işlemlik bir modelle eşitlerdi. |
+| Model kartları | Tez tipine göre gruplanmış (trend & momentum, ortalamaya dönüş, kırılım & tuzak, sadece short, meta, referans): ortalama R, hesap getirisi, işlem sayısı, mini özsermaye kıvrımı, kabul rozetleri — **iki kapı** (Ö, E) ve **bir uyarı** (⚠ B); bkz. Kabul çıtası. Gruplama sıralamayı gizlemesin diye her yarışmacı kartı ortalama R sıralamasındaki rütbesini taşır. `random_ctrl` KONTROL etiketiyle yarışmacılar arasında sıralanır; `buyhold` REFERANS grubundadır ve kartında hero sayı ortalama R değil hesap getirisidir (kural 15: stop'u olmayanın 1R'si yoktur). |
 | Özsermaye eğrileri | Tüm modeller tek grafikte; bir modele tıklayınca yalnız o kalır. Kesikli gri çizgi başlangıç sermayesi. |
-| Açık pozisyonlar | Model, sembol, yön, giriş, stop, güncel PnL ve stratejinin gerekçesi. PnL **çıkış maliyeti hariçtir** (pozisyon kapanmadı, çıkış fiyatı bilinmiyor) ve sayfa bunu söyler. |
-| Son 20 işlem | Kapanış sırasına göre, `signal_reason` kırpılmadan — ensemble'ın oy sayısı, confluence'ın güven kuyruğu dâhil. |
-| Getiri korelasyonu | Modellerin bar getirilerinin Pearson korelasyonu (çift bazında örtüşme). Yüksek korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki kopyasıdır. |
+| Getiri korelasyonu | Modellerin bar getirilerinin Pearson korelasyonu (çift bazında örtüşme). Yüksek korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki kopyasıdır. Dar ekranda matris yerine en güçlü çiftler listelenir. |
+
+**Seviye 2 — model detayı (`#model=<ad>`)**
+
+| Bölüm | Ne gösterir |
+|---|---|
+| Üst şerit | Ortalama R, getiri, max drawdown, kazanma oranı, profit factor, işlem sayısı, `cost_per_r`, `avg_stop_distance_pct`, hesap Sharpe'ı ve son özsermaye; yanında kabul rozetleri — rozete dokununca gerekçesi açılır (dokunmatikte `title` okunamaz). |
+| Long / short kırılımı | Modelin kendi yön ayrışması: ortalama R, kazanma, toplam R, profit factor, PnL, funding + yön bazlı stop mesafesi, R başına maliyet ve R Sharpe'ı. |
+| Açık pozisyonlar | Sembol, yön, miktar, giriş, güncel fiyat, notional, gerçekleşmemiş K/Z (USDT ve %), stop, hedef(ler), açılış zamanı ve stratejinin gerekçesi. K/Z **çıkış maliyeti hariçtir** (pozisyon kapanmadı, çıkış fiyatı bilinmiyor) ve sayfa bunu söyler. Masaüstünde tablo, dar ekranda kart. |
+| Kapanmış işlemler | Model başına son 100 işlemden 20'şerlik sayfalar, yeniden eskiye, yön filtresiyle (hepsi / long / short): sembol, yön, giriş-çıkış fiyatı ve zamanı, miktar, R, net K/Z, gerçekleşen 1R, komisyon, kayma, funding, çıkış sebebi (stop / hedef / likidasyon / sinyal) ve `signal_reason` kırpılmadan — ensemble'ın oy sayısı, confluence'ın güven kuyruğu dâhil. |
+| Özsermaye eğrisi | Yalnızca o modelin eğrisi, başlangıç sermayesi çizgisiyle. |
+
+Mobilde yatay kaydırma yoktur: geniş tablolar dar ekranda kart düzenine döner (kaydırma
+çubuğuna sarılmaz — ekran dışına itilen bir K/Z kolonu hiç gösterilmemiş demektir), sayılar
+ortadan bölünmez ve dokunma hedefleri en az 44px'dir.
 
 Sayfa bir **süs katmanıdır**: ölçüm defterde ve JSON'dadır, sayfa yalnızca onu çizer.
 Yerelde açmak için `python -m http.server` gerekir (`file://` ile `fetch` engellenir).
@@ -244,8 +263,10 @@ Projenin "tamamlandı" sayılması için:
 - [x] `main.py` boru hattını uçtan uca çalıştırıyor ve `docs/data/metrics.json` üretiyor
       (`tests/test_main.py`).
 - [x] Ölçüme bir referans çıpası (`buyhold`) eklendi (kural 15, `tests/test_buyhold.py`).
-- [x] `docs/index.html` sonuçları tek sayfada gösteriyor; LONG vs SHORT paneli en üstte,
-      iki kabul kapısı ve band uyarısı leaderboard'da (`tests/test_report.py`).
+- [x] `docs/index.html` sonuçları tek sayfada, iki seviyede gösteriyor: LONG vs SHORT
+      paneli ve tez gruplarına ayrılmış model kartları genel bakışta, modelin açık/kapanmış
+      işlemleri `#model=<ad>` detayında; iki kabul kapısı ve band uyarısı her iki seviyede
+      (`tests/test_report.py`).
 - [x] `scripts/telegram_report.py` günlük özeti yolluyor ve hatası turu düşürmüyor
       (`tests/test_telegram_report.py`).
 

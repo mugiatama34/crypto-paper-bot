@@ -16,12 +16,22 @@
   sürüm değişikliği ya da CDN kesintisi raporu okunamaz hâle getirebilmemeli; ölçüm
   zaten defterde ve JSON'da durur, burası yalnızca onu çizer.
 
+  İKİ SEVİYE: genel bakış (tüm modeller) ve model detayı. Detay AYNI sayfadadır ve
+  adresi `#model=<ad>` hash'idir — böylece tarayıcının geri tuşu, yer imi ve paylaşılan
+  link çalışır. Bir yönlendirme kütüphanesi ya da ikinci bir HTML dosyası eklemek,
+  "tek dosya, build adımı yok" kuralını bozmadan aynı şeyi yapamazdı.
+
   Renkler: 8 kategorik slot yalnızca BİLGİLİ yarışmacılara verilir. Referans çıpası
   (kural 15) ve kontrol grubu nötr gri tonlar alır — ikisi de bir "fikir" değil bir
   zemindir ve grafikte de öyle görünmeleri gerekir. Dokuzuncu model üretilmiş yeni bir
   renk almaz; ilk slotun rengini KESİKLİ çizgiyle tekrar kullanır (renk + çizgi deseni
   birlikte kimliği taşır), çünkü 8'den sonra üretilen renkler renk körlüğünde birbirinden
   ayrılamaz.
+
+  MOBİL: yatay kaydırma yoktur. Geniş tablolar (açık pozisyonlar, korelasyon matrisi)
+  dar ekranda kart/liste düzenine DÖNÜŞÜR, kaydırma çubuğuna sarılmaz: kritik kolon
+  (K/Z) ekran dışına taşarsa sayfa o sayıyı hiç göstermemiş olur. Dokunulabilir her
+  öğe en az 44px yüksektedir.
 -->
 <style>
   :root {
@@ -53,6 +63,7 @@
 
     --radius: 10px;
     --gap: 14px;
+    --touch: 44px;   /* dokunma hedefi tabanı; hiçbir tıklanabilir öğe bundan kısa değil */
     --font: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
 
@@ -91,73 +102,117 @@
     background: var(--surface); border: 1px solid var(--hair);
     border-radius: var(--radius); padding: 14px;
   }
+  .pos { color: var(--pos); }
+  .neg { color: var(--neg); }
+  .empty { color: var(--ink-muted); font-size: 12.5px; padding: 16px 0; margin: 0; }
+  [hidden] { display: none !important; }
+
+  /* ---------------- seviye 1: özet kartları ---------------- */
+  .sum-grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; }
+  .sum {
+    background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius);
+    padding: 14px; min-width: 0;
+  }
+  .sum-k { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .sum-v {
+    font-size: clamp(24px, 7.5vw, 30px); font-weight: 650; line-height: 1.1;
+    letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 6px;
+    overflow-wrap: anywhere;
+  }
+  .sum-v small { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 5px; letter-spacing: 0; }
+  .sum-sub { color: var(--ink-2); font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
 
   /* ---------------- long vs short ---------------- */
   .ls-grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; }
-  .ls-col { background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius); padding: 14px; }
+  .ls-col { background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius); padding: 14px; min-width: 0; }
   .ls-col.long  { border-top: 3px solid var(--long); }
   .ls-col.short { border-top: 3px solid var(--short); }
   .ls-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   .ls-name { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; }
   .ls-col.long  .ls-name { color: var(--long); }
   .ls-col.short .ls-name { color: var(--short); }
-  .ls-hero { font-size: 34px; font-weight: 650; line-height: 1.05; letter-spacing: -0.02em; }
+  .ls-hero { font-size: clamp(27px, 9vw, 34px); font-weight: 650; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .ls-hero small { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 6px; letter-spacing: 0; }
-  .ls-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .ls-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+  .ls-tiles > div { min-width: 0; }
   .tile-k { color: var(--ink-muted); font-size: 11px; }
-  .tile-v { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile-v { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .verdict { margin-top: var(--gap); }
   .verdict p { margin: 0; color: var(--ink-2); font-size: 13px; }
   .verdict b { color: var(--ink); }
 
-  /* ---------------- tablo ---------------- */
-  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 760px; }
-  th, td { padding: 7px 9px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  th {
-    color: var(--ink-muted); font-weight: 600; font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.04em; border-bottom: 1px solid var(--axis); position: sticky; top: 0;
-    background: var(--surface); cursor: pointer; user-select: none;
+  /* ---------------- model kartları ---------------- */
+  .group { margin-top: 22px; }
+  .group-head {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--grid);
   }
-  th:first-child, td:first-child { text-align: left; }
-  th.sorted::after { content: " ▾"; color: var(--ink-2); }
-  th.sorted.asc::after { content: " ▴"; }
-  tbody tr { border-bottom: 1px solid var(--grid); }
-  tbody tr:last-child { border-bottom: 0; }
-  td.model { font-weight: 600; color: var(--ink); }
+  .group-name { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
+  .group-note { font-size: 11.5px; color: var(--ink-muted); }
+  .mcards { display: grid; gap: 10px; grid-template-columns: 1fr; }
+  a.mcard {
+    display: flex; flex-direction: column; gap: 8px; min-height: 150px;
+    background: var(--surface); border: 1px solid var(--hair); border-top: 3px solid var(--ink-muted);
+    border-radius: var(--radius); padding: 12px; text-decoration: none; color: inherit;
+    min-width: 0;
+  }
+  a.mcard:hover, a.mcard:focus-visible { border-color: var(--axis); background: var(--surface-2); outline: none; }
+  a.mcard:focus-visible { box-shadow: 0 0 0 2px var(--ink-muted); }
+  a.mcard:active { background: var(--surface-2); }
+  /* Referans ve kontrol satırları grafikte nötr; kartta da öyle görünürler. Çıpa
+     ayrıca KESİKLİ kenarlıkla ayrışır: aynı sütunda yarışmıyor (kural 15). */
+  a.mcard.reference { border-style: dashed; background: rgba(255,255,255,0.028); }
+  .mcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .mcard-name { font-weight: 650; font-size: 14px; overflow-wrap: anywhere; }
+  .mcard-rank { color: var(--ink-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mcard-hero { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .mcard-hero b { font-size: clamp(24px, 7vw, 28px); font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .mcard-hero span { color: var(--ink-muted); font-size: 11px; }
+  .mcard-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .mcard-row span { color: var(--ink-muted); }
+  .mcard-spark { margin-top: auto; }
+  .mcard-spark svg { display: block; width: 100%; height: 34px; overflow: visible; }
   .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: baseline; }
   /* Slot döngüye girdiğinde renk tek başına kimlik taşıyamaz: içi boş kare, grafikteki
-     kesikli çizginin tablodaki karşılığıdır. */
+     kesikli çizginin kart/tablo karşılığıdır. */
   .swatch.dashed { background: transparent !important; box-shadow: inset 0 0 0 2px currentColor; }
   .tag {
     font-size: 9.5px; letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px;
     border: 1px solid var(--hair); color: var(--ink-muted); margin-left: 7px; font-weight: 600;
+    white-space: nowrap;
   }
-  tr.reference td { background: rgba(255,255,255,0.028); color: var(--ink-2); }
-  tr.control  td { background: rgba(255,255,255,0.015); }
-  .pos { color: var(--pos); }
-  .neg { color: var(--neg); }
 
-  .badges { display: inline-flex; gap: 4px; }
+  /* ---------------- kabul rozetleri ---------------- */
+  .badges { display: inline-flex; gap: 4px; flex-wrap: wrap; }
   .badge {
     display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700;
     letter-spacing: 0.03em; padding: 2px 6px; border-radius: 4px; border: 1px solid transparent;
-    cursor: help;
+    background: transparent; font-family: inherit; white-space: nowrap;
   }
-  .badge.on  { color: var(--good);     border-color: rgba(12,163,12,0.45);  background: rgba(12,163,12,0.12); }
-  .badge.off { color: var(--ink-muted); border-color: var(--hair);          background: transparent; }
+  .badge.on  { color: var(--good);      border-color: rgba(12,163,12,0.45); background: rgba(12,163,12,0.12); }
+  .badge.off { color: var(--ink-muted); border-color: var(--hair); }
   .badge.na  { color: var(--ink-muted); border-color: transparent; }
   /* Band bir KAPI değil uyarıdır: statü rengi taşır ve yalnızca uyaracak bir şey
      varken görünür. Sessizken hiç çizilmez — her satırda duran bir uyarı, uyarı
      olmaktan çıkıp süse döner. */
   .badge.warn { color: var(--warning); border-color: rgba(250,178,25,0.45); background: rgba(250,178,25,0.10); }
+  /* Detayda rozet TIKLANABİLİR: `title` yalnızca fareyle gelene açılır, dokunmatikte
+     gerekçe hiç okunamazdı. Tıklanabilir olduğu için dokunma hedefi tabanına uyar. */
+  button.badge { min-height: var(--touch); padding: 0 11px; font-size: 11px; cursor: pointer; }
+  button.badge:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 1px; }
+  .tipbox {
+    margin-top: 10px; border: 1px solid var(--hair); border-left: 3px solid var(--ink-muted);
+    border-radius: 8px; background: var(--surface-2); padding: 10px 12px;
+    font-size: 12px; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .tipbox.warn { border-left-color: var(--warning); }
 
   /* ---------------- grafik ---------------- */
   .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
   .lg {
     display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2);
     border: 1px solid var(--hair); background: var(--surface-2); border-radius: 999px;
-    padding: 3px 9px; cursor: pointer;
+    padding: 0 12px; cursor: pointer; min-height: var(--touch); font-family: inherit;
   }
   .lg:hover { border-color: var(--axis); }
   .lg[aria-pressed="true"] { color: var(--ink); border-color: var(--ink-muted); }
@@ -166,7 +221,7 @@
   .chart-wrap { position: relative; }
   svg { display: block; width: 100%; height: auto; overflow: visible; }
   .tip {
-    position: absolute; pointer-events: none; z-index: 5; min-width: 120px;
+    position: absolute; pointer-events: none; z-index: 5; min-width: 120px; max-width: 86%;
     background: #000; border: 1px solid var(--axis); border-radius: 8px; padding: 8px 10px;
     font-size: 11.5px; color: var(--ink-2); box-shadow: 0 6px 22px rgba(0,0,0,0.6);
     font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .09s;
@@ -176,62 +231,153 @@
   .tip .t-r { display: flex; justify-content: space-between; gap: 12px; }
   .tip .t-r i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 6px; }
 
-  /* ---------------- kartlar (mobil listeler) ---------------- */
+  /* ---------------- seviye 2: üst şerit ---------------- */
+  .crumb { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 18px; }
+  .back {
+    display: inline-flex; align-items: center; gap: 7px; min-height: var(--touch); padding: 0 14px;
+    border: 1px solid var(--hair); border-radius: 999px; background: var(--surface);
+    color: var(--ink-2); font: 600 12.5px/1 var(--font); text-decoration: none; cursor: pointer;
+  }
+  .back:hover { border-color: var(--axis); color: var(--ink); }
+  .detail-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .detail-title h1 { margin: 0; font-size: clamp(18px, 5.5vw, 22px); }
+  .strip { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .strip > div {
+    background: var(--surface); border: 1px solid var(--hair); border-radius: 8px;
+    padding: 10px 11px; min-width: 0;
+  }
+  .strip .tile-v { font-size: clamp(17px, 5vw, 19px); margin-top: 2px; }
+
+  /* ---------------- listeler: kart düzeni (mobil öncelikli) ---------------- */
   .rows { display: grid; gap: 8px; }
   .row {
     background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius);
-    padding: 11px 12px;
+    padding: 11px 12px; min-width: 0;
   }
   .row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .row-sym { font-weight: 650; font-size: 13.5px; }
+  .row-top > div { min-width: 0; }
+  .row-sym { font-weight: 650; font-size: 13.5px; overflow-wrap: anywhere; }
   .row-model { color: var(--ink-muted); font-size: 11.5px; }
-  .dir { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px; }
+  .dir { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
   .dir.long  { color: var(--long);  background: rgba(57,135,229,0.14); }
   .dir.short { color: var(--short); background: rgba(217,89,38,0.16); }
   .row-grid {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin-top: 8px;
     font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums;
   }
+  .row-grid > div { min-width: 0; }
   .row-grid span { color: var(--ink-muted); }
-  .row-grid b { font-weight: 600; color: var(--ink-2); }
+  /* Hücre satır sonu ALABİLİR, ama sayının içinden değil: her sayı `.nw` ile atomiktir.
+     Hücreye top yekûn `nowrap` vermek iki hedefli bir "hedef" değerini ekranın dışına
+     taşırıyordu; `normal` bırakıp sayıyı sarmamak ise sayıyı ortadan bölerdi. */
+  .row-grid b { font-weight: 600; color: var(--ink-2); white-space: normal; }
+  .nw { white-space: nowrap; }
   .reason {
     margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--grid);
     font-size: 11.5px; color: var(--ink-muted); line-height: 1.45;
     overflow-wrap: anywhere;
   }
-  .row-val { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .row-val { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .row-val-sub { font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-  /* ---------------- ısı haritası ---------------- */
-  .heat { overflow-x: auto; }
-  .heat table { min-width: 620px; font-size: 11px; }
-  .heat th, .heat td { padding: 0; text-align: center; }
-  .heat th { position: static; background: transparent; cursor: default; text-transform: none; letter-spacing: 0; }
-  .heat th.col { height: 82px; vertical-align: bottom; padding-bottom: 6px; }
-  .heat th.col span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); color: var(--ink-muted); }
-  .heat th.row { text-align: right; padding-right: 8px; color: var(--ink-2); white-space: nowrap; font-weight: 500; }
-  .heat td div {
-    width: 100%; height: 30px; display: flex; align-items: center; justify-content: center;
-    border-radius: 3px; font-variant-numeric: tabular-nums; cursor: help;
+  /* ---------------- listeler: tablo düzeni (yalnızca geniş ekran) ---------------- */
+  /* Tablo ile kart AYNI veriyi iki düzende verir; hangisinin görüneceğine yalnızca
+     genişlik karar verir. Geniş tabloyu dar ekranda kaydırma çubuğuna sarmak, K/Z
+     kolonunu ekranın dışında bırakıp sayfanın onu hiç göstermemesi demekti. */
+  .wide { display: none; }
+  table.grid { border-collapse: collapse; width: 100%; font-size: 12.5px; table-layout: auto; }
+  table.grid th, table.grid td { padding: 6px 7px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* Başlık SARILABİLİR, hücredeki sayı sarılmaz: iki satırlık bir başlık okunur,
+     ortadan bölünmüş bir K/Z okunmaz. Tabloyu sabit genişlikte tutmanın tek yolu
+     bu — aksi hâlde uzun bir başlık tablonun kendisini ekran dışına taşırıyor. */
+  table.grid th {
+    color: var(--ink-muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.04em; border-bottom: 1px solid var(--axis); white-space: normal;
   }
-  .heat td { padding: 2px; }
-  .scale { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11px; color: var(--ink-muted); }
-  .scale .bar { height: 8px; width: 160px; border-radius: 4px; }
+  table.grid th:first-child, table.grid td:first-child { text-align: left; }
+  table.grid td.symcell { white-space: normal; }
+  table.grid tbody tr.data { border-top: 1px solid var(--grid); }
+  table.grid td.wrapcell { white-space: normal; }
+  table.grid td.reason-cell {
+    text-align: left; white-space: normal; color: var(--ink-muted); font-size: 11.5px;
+    padding: 0 8px 9px; overflow-wrap: anywhere;
+  }
 
-  .empty { color: var(--ink-muted); font-size: 12.5px; padding: 16px 0; margin: 0; }
-  [hidden] { display: none !important; }
+  /* ---------------- filtre + sayfalama ---------------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--hair); border-radius: 999px; background: var(--surface); overflow: hidden; }
+  .seg button {
+    min-height: var(--touch); padding: 0 14px; background: transparent; border: 0;
+    color: var(--ink-2); font: 600 12px/1 var(--font); cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--hair); }
+  .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); }
+  .pager { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .pager button {
+    min-height: var(--touch); padding: 0 16px; border: 1px solid var(--hair); border-radius: 999px;
+    background: var(--surface); color: var(--ink-2); font: 600 12.5px/1 var(--font); cursor: pointer;
+  }
+  .pager button:disabled { opacity: 0.4; cursor: default; }
+  .pager .count { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  /* ---------------- korelasyon ---------------- */
+  table.heat { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 10.5px; }
+  table.heat th, table.heat td { padding: 2px; text-align: center; }
+  table.heat th.col { height: 84px; vertical-align: bottom; padding-bottom: 6px; }
+  table.heat th.col span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); color: var(--ink-muted); font-weight: 500; }
+  /* Satır etiketi KIRPILMAZ: `overflow: hidden` ile kesmek "downtrend_rally"yi
+     "downtrend_ra" yapıp hangi modelin satırı olduğunu okunamaz kılıyordu. */
+  table.heat th.rowh {
+    text-align: right; padding-right: 7px; color: var(--ink-2); font-weight: 500;
+    width: 13ch; white-space: normal; overflow-wrap: anywhere; line-height: 1.25;
+  }
+  table.heat td div {
+    width: 100%; height: 28px; display: flex; align-items: center; justify-content: center;
+    border-radius: 3px; font-variant-numeric: tabular-nums;
+  }
+  .scale { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11px; color: var(--ink-muted); flex-wrap: wrap; }
+  .scale .bar { height: 8px; width: 140px; max-width: 40vw; border-radius: 4px; }
+  .pairs { display: grid; gap: 6px; }
+  .pair {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border: 1px solid var(--hair); border-radius: 8px; background: var(--surface); padding: 9px 11px;
+    font-size: 12.5px;
+  }
+  .pair span { color: var(--ink-2); overflow-wrap: anywhere; }
+  .pair b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
   footer { color: var(--ink-muted); font-size: 11.5px; margin-top: 34px; line-height: 1.6; }
-  footer a { color: var(--ink-2); }
+  footer a {
+    color: var(--ink-2); display: inline-flex; align-items: center;
+    min-height: var(--touch); padding-right: 2px;
+  }
   .banner {
     border: 1px solid rgba(250,178,25,0.4); background: rgba(250,178,25,0.08);
     color: var(--warning); border-radius: var(--radius); padding: 10px 12px; font-size: 12.5px;
     margin-top: 12px;
   }
 
+  @media (min-width: 560px) {
+    .sum-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .mcards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ls-tiles { grid-template-columns: repeat(3, 1fr); }
+    .strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .row-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   @media (min-width: 760px) {
     .ls-grid { grid-template-columns: 1fr 1fr; }
-    .rows { grid-template-columns: 1fr 1fr; }
-    .row-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     h1 { font-size: 21px; }
+  }
+  @media (min-width: 900px) {
+    .mcards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .row-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  /* Tablo düzeni yalnızca 11 kolonun hiçbiri kırpılmadan sığdığı genişlikte açılır.
+     Eşik ölçülerek seçildi: uç değerlerle (yedi haneli miktar, sekiz ondalıklı fiyat)
+     tablo ~1040px istiyor; altında kart düzeni kalır. */
+  @media (min-width: 1060px) {
+    .wide { display: block; }
+    .narrow { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
 </style>
@@ -246,74 +392,129 @@
     <div id="banner"></div>
   </header>
 
-  <section id="sec-ls">
-    <h2>Long vs Short</h2>
-    <p class="note">
-      Projenin ana sorusu. Tüm <b>yarışmacı</b> modellerin işlemleri tek havuzda toplanır
-      (referans çıpası havuzda yoktur: stop'suz işlemin R'si yoktur). Havuz işlem başına
-      oy verir — model başına ortalama R'lerin ortalaması, 2 işlemlik bir modeli 200
-      işlemlik bir modelle eşitlerdi.
-    </p>
-    <div class="ls-grid" id="ls"></div>
-    <div class="verdict card" id="verdict"></div>
-  </section>
+  <!-- ======================= SEVİYE 1 — GENEL BAKIŞ ======================= -->
+  <main id="level-overview">
 
-  <section id="sec-board">
-    <h2>Leaderboard</h2>
-    <p class="note">
-      Ortalama R'ye göre sıralı (başlığa tıklayarak değiştirilebilir). Kabul sütununda iki
-      <b>kapı</b> ve bir <b>uyarı</b> vardır; her birinin üzerine gelince gerekçesi yazar.
-      <b>Ö</b> örneklem yeterli mi, <b>E</b> ort. R kontrolü marjla ve çıpayı geçiyor mu —
-      model ancak ikisi de yeşilken doğrulanmış sayılır. <b>⚠ B</b> kapı değildir:
-      doğrulamayı engellemez, yalnızca bu satırı başkasıyla kıyaslarken
-      <b>maliyet farkının (cost_per_r) dikkate alınması</b> gerektiğini söyler.
-      <b>KONTROL</b> satırı bilgisiz çekiliştir; yarışmacı değil ama aynı boyutlandırmayla
-      işlem yaptığı için aynı sıralamada durur. <b>REFERANS</b> (kural 15) sıralamaya hiç
-      girmez, tablonun altındadır.
-    </p>
-    <div class="card scroll"><table id="board"></table></div>
-    <div class="card scroll" id="ref-wrap" style="margin-top:10px"><table id="board-ref"></table></div>
-  </section>
+    <section id="sec-summary">
+      <h2>Özet</h2>
+      <div class="sum-grid" id="summary"></div>
+    </section>
 
-  <section id="sec-equity">
-    <h2>Özsermaye eğrileri</h2>
-    <p class="note">Bir modele tıklayınca yalnız o kalır; tekrar tıklayınca hepsi döner. Kesikli gri çizgi başlangıç sermayesidir.</p>
-    <div class="card">
-      <div class="chart-wrap" id="equity-wrap">
-        <svg id="equity" role="img" aria-label="Model özsermaye eğrileri"></svg>
-        <div class="tip" id="equity-tip"></div>
+    <section id="sec-ls">
+      <h2>Long vs Short</h2>
+      <p class="note">
+        Projenin ana sorusu. Tüm <b>yarışmacı</b> modellerin işlemleri tek havuzda toplanır
+        (referans çıpası havuzda yoktur: stop'suz işlemin R'si yoktur). Havuz işlem başına
+        oy verir — model başına ortalama R'lerin ortalaması, 2 işlemlik bir modeli 200
+        işlemlik bir modelle eşitlerdi.
+      </p>
+      <div class="ls-grid" id="ls"></div>
+      <div class="verdict card" id="verdict"></div>
+    </section>
+
+    <section id="sec-models">
+      <h2>Modeller</h2>
+      <p class="note">
+        Tez tipine göre gruplanmış; grup içinde ortalama R'ye göre sıralı. Kartta <b>ort. R</b>
+        (birinci sınıf metrik), hesap getirisi, işlem sayısı, özsermaye kıvrımı ve kabul
+        rozetleri vardır: <b>Ö</b> örneklem, <b>E</b> edge — model ancak ikisi de yeşilken
+        doğrulanmış sayılır. <b>⚠ B</b> kapı değildir, yalnızca bu satırı başkasıyla
+        kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate alınması gerektiğini
+        söyler. <b>REFERANS</b> çıpası (kural 15) sıralamaya hiç girmez; ölçtüğü şey R değil,
+        "piyasa ne yaptı" olduğu için kartında hesap getirisi öne çıkar.
+        Karta dokununca o modelin detayı açılır.
+      </p>
+      <div id="groups"></div>
+    </section>
+
+    <section id="sec-equity">
+      <h2>Özsermaye eğrileri</h2>
+      <p class="note">Bir modele tıklayınca yalnız o kalır; tekrar tıklayınca hepsi döner. Kesikli gri çizgi başlangıç sermayesidir.</p>
+      <div class="card">
+        <div class="chart-wrap" id="equity-wrap">
+          <svg id="equity" role="img" aria-label="Model özsermaye eğrileri"></svg>
+          <div class="tip" id="equity-tip"></div>
+        </div>
+        <div class="legend" id="equity-legend"></div>
       </div>
-      <div class="legend" id="equity-legend"></div>
-    </div>
-  </section>
+    </section>
 
-  <section id="sec-open">
-    <h2>Açık pozisyonlar</h2>
-    <p class="note">PnL çıkış maliyeti hariçtir: pozisyon kapanmadı, çıkış fiyatı ve komisyonu bilinmiyor. Brüt fiyat farkı − giriş komisyonu + funding.</p>
-    <div class="rows" id="open"></div>
-  </section>
-
-  <section id="sec-trades">
-    <h2>Son işlemler</h2>
-    <p class="note">Kapanış zamanına göre en yeni 20 satır, deftere yazılan gerekçesiyle.</p>
-    <div class="rows" id="trades"></div>
-  </section>
-
-  <section id="sec-corr">
-    <h2>Getiri korelasyonu</h2>
-    <p class="note">
-      Bar getirilerinin Pearson korelasyonu, çift bazında örtüşen barlar üzerinden. Yüksek
-      korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki kopyasıdır.
-      Örtüşme yetersizse hücre boş kalır (0 "ilişkisiz" demek olurdu).
-    </p>
-    <div class="card">
-      <div class="heat" id="corr"></div>
-      <div class="scale">
-        <span>−1</span><div class="bar" id="corr-scale"></div><span>+1</span>
-        <span style="margin-left:6px">ters ↔ birlikte hareket</span>
+    <section id="sec-corr">
+      <h2>Getiri korelasyonu</h2>
+      <p class="note">
+        Bar getirilerinin Pearson korelasyonu, çift bazında örtüşen barlar üzerinden. Yüksek
+        korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki kopyasıdır.
+        Örtüşme yetersizse hücre boş kalır (0 "ilişkisiz" demek olurdu). Dar ekranda matris
+        yerine en güçlü çiftler listelenir: 11 kolonluk bir matris telefonda ancak yatay
+        kaydırmayla sığardı.
+      </p>
+      <div class="card">
+        <div class="wide" id="corr-matrix"></div>
+        <div class="narrow" id="corr-pairs"></div>
+        <div class="scale" id="corr-scale-wrap">
+          <span>−1</span><div class="bar" id="corr-scale"></div><span>+1</span>
+          <span>ters ↔ birlikte hareket</span>
+        </div>
       </div>
+    </section>
+
+  </main>
+
+  <!-- ======================= SEVİYE 2 — MODEL DETAYI ======================= -->
+  <main id="level-detail" hidden>
+
+    <div class="crumb">
+      <a class="back" href="#" id="back">← tüm modeller</a>
+      <div class="detail-title" id="detail-title"></div>
     </div>
-  </section>
+
+    <section id="sec-detail-strip">
+      <h2>Özet</h2>
+      <div class="strip" id="detail-strip"></div>
+      <div id="detail-flags" style="margin-top:10px"></div>
+      <div id="detail-tip"></div>
+    </section>
+
+    <section id="sec-detail-ls">
+      <h2>Bu modelin long / short kırılımı</h2>
+      <p class="note">
+        Yön bazlı Sharpe tek bakiyeyi bölerek değil, o yöndeki işlemlerin <b>R cinsinden</b>
+        dizisinden gelir; hesap düzeyi Sharpe ayrı durur ve iki yönün toplamı değildir.
+        Maliyet ölçeği kolonları (stop mesafesi, R başına maliyet) yön bazında burada okunur.
+      </p>
+      <div class="ls-grid" id="detail-ls"></div>
+    </section>
+
+    <section id="sec-detail-open">
+      <h2>Açık pozisyonlar</h2>
+      <p class="note">
+        Gerçekleşmemiş K/Z <b>çıkış maliyeti hariçtir</b>: pozisyon kapanmadı, çıkış fiyatı ve
+        komisyonu bilinmiyor (brüt fiyat farkı − giriş komisyonu + funding). Güncel fiyat
+        turun <code>as_of</code> barının kapanışıdır.
+      </p>
+      <div id="detail-open"></div>
+    </section>
+
+    <section id="sec-detail-trades">
+      <h2>Kapanmış işlemler</h2>
+      <p class="note" id="detail-trades-note"></p>
+      <div class="controls" id="detail-filter"></div>
+      <div id="detail-trades"></div>
+      <div class="pager" id="detail-pager"></div>
+    </section>
+
+    <section id="sec-detail-equity">
+      <h2>Bu modelin özsermaye eğrisi</h2>
+      <div class="card">
+        <p class="empty" id="detail-equity-empty" hidden>Bu model için henüz özsermaye kaydı yok.</p>
+        <div class="chart-wrap" id="detail-equity-wrap">
+          <svg id="detail-equity" role="img" aria-label="Modelin özsermaye eğrisi"></svg>
+          <div class="tip" id="detail-equity-tip"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
 
   <footer>
     Veri kaynağı: <a href="data/metrics.json">data/metrics.json</a> — her turda
@@ -333,16 +534,30 @@
  * "ölçüldü, sıfır çıktı" aynı hücreye yazılmaz.
  * ------------------------------------------------------------------ */
 const DASH = "—";
-const num = (v) => (v === null || v === undefined || Number.isNaN(v)) ? null : Number(v);
+const num = (v) => (v === null || v === undefined || v === "" || Number.isNaN(v)) ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
 const fmt = (v, d = 2) => { const n = num(v); return n === null ? DASH : n.toFixed(d); };
 const fmtSigned = (v, d = 2) => { const n = num(v); return n === null ? DASH : (n > 0 ? "+" : "") + n.toFixed(d); };
 const pct = (v, d = 1) => { const n = num(v); return n === null ? DASH : (n * 100).toFixed(d) + "%"; };
+const pctSigned = (v, d = 2) => { const n = num(v); return n === null ? DASH : (n > 0 ? "+" : "") + (n * 100).toFixed(d) + "%"; };
 const pctRaw = (v, d = 2) => { const n = num(v); return n === null ? DASH : n.toFixed(d) + "%"; };
 const usd = (v, d = 2) => { const n = num(v); return n === null ? DASH : (n > 0 ? "+" : "") + n.toFixed(d); };
 const signClass = (v) => { const n = num(v); return n === null ? "" : (n > 0 ? "pos" : (n < 0 ? "neg" : "")); };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
 ));
+/* Fiyat ve miktar ondalığı sembole göre değişir: BTC 77222.69, bir altcoin 0.7232.
+   Sabit iki hane küçük fiyatları "0.72" diye yuvarlayıp stop ile girişi aynı sayı
+   gösterirdi — stop mesafesi de o iki sayının farkından okunuyor. */
+const price = (v) => {
+  const n = num(v); if (n === null) return DASH;
+  const a = Math.abs(n);
+  return n.toFixed(a >= 1000 ? 2 : a >= 100 ? 3 : a >= 1 ? 4 : a >= 0.01 ? 6 : 8);
+};
+const qty = (v) => {
+  const n = num(v); if (n === null) return DASH;
+  const a = Math.abs(n);
+  return n.toFixed(a >= 1000 ? 2 : a >= 1 ? 3 : 6);
+};
 const shortTs = (s) => {
   if (!s) return DASH;
   const d = new Date(s);
@@ -350,6 +565,35 @@ const shortTs = (s) => {
   return d.toISOString().slice(5, 16).replace("T", " ");
 };
 const el = (id) => document.getElementById(id);
+
+/* Çıkış sebebi deftere kod olarak yazılır; sayfa onu okunur hâle getirir ama
+   likidasyonu DİĞERLERİYLE AYNI renkte göstermez: likidasyon bir stop değil,
+   bakım marjının ihlalidir (kural 13) ve raporun görmesi gereken şey tam olarak o. */
+const EXIT_LABELS = { stop: "stop", tp: "hedef (TP)", liquidation: "likidasyon", signal: "sinyal" };
+const exitLabel = (code) => EXIT_LABELS[code] || (code || DASH);
+const exitClass = (code) => (code === "liquidation" ? "neg" : "");
+
+/* ------------------------------------------------------------------ *
+ * Tez grupları (seviye 1). Modeli hangi SORUYU sorduğuna göre
+ * kümeler: iki trend modelini yan yana okumak, ortalamaya dönüş
+ * modelinin yanında okumaktan farklı bir şey söyler.
+ *
+ * Listede olmayan bir model SESSİZCE DÜŞMEZ, "Gruplanmamış" başlığına
+ * düşer: yeni bir model eklendiğinde sayfadan kaybolması, tam da
+ * kural 6'nın ("küme tüm modeller için aynı") engellemek istediği şey.
+ * ------------------------------------------------------------------ */
+const GROUPS = [
+  { label: "Trend & Momentum", note: "fiyatın yönünde devam tezi", models: ["trend", "momentum"] },
+  { label: "Ortalamaya Dönüş", note: "aşırılığın geri çekilmesi tezi", models: ["meanrev", "avwap"] },
+  { label: "Kırılım & Tuzak", note: "sıkışma, başarısız kırılım, kesişim", models: ["squeeze", "failed_breakout", "confluence"] },
+  { label: "Sadece Short", note: "yalnızca short yönde işlem açar", models: ["downtrend_rally"] },
+  { label: "Meta", note: "diğer modellerin o turdaki sinyallerini okur (kural 4)", models: ["ensemble"] },
+];
+const REFERENCE_GROUP = {
+  label: "Referans",
+  note: "yarışmacı değil zemin: çıpa (kural 15) ve bilgisiz kontrol grubu",
+  models: ["buyhold", "random_ctrl"],
+};
 
 /* ------------------------------------------------------------------ *
  * Renk ataması: kimlik sabittir. Bir model filtrelendiğinde ya da
@@ -386,8 +630,22 @@ function assignStyles(models, benchmarks, controlModel) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Durum: tek veri yükü + iki seviyenin görünüm durumu
+ * ------------------------------------------------------------------ */
+let DATA = null;
+let MODELS = {};              // model -> metrics satırı
+let FLAGS = {};               // model -> acceptance bayrakları
+let isolated = null;          // seviye 1 eğri izolasyonu
+let overviewScroll = 0;       // detaydan dönüşte okuyucunun bıraktığı yer
+let entryWasDetail = false;   // sayfaya doğrudan #model=... ile mi girildi
+const TRADE_PAGE_SIZE = 20;
+let detailView = { model: null, filter: "all", page: 0, tip: null };
+
+/* ------------------------------------------------------------------ *
  * Yükleme
  * ------------------------------------------------------------------ */
+entryWasDetail = !!hashModel();
+
 fetch("data/metrics.json?t=" + Date.now(), { cache: "no-store" })
   .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
   .then(render)
@@ -400,18 +658,62 @@ fetch("data/metrics.json?t=" + Date.now(), { cache: "no-store" })
   });
 
 function render(d) {
+  DATA = d;
   const models = (d.models || []).map((m) => m.model || m.name);
   const benchmarks = d.benchmarks || [];
   const controlModel = (d.acceptance || {}).control_model || null;
   STYLE = assignStyles(models, benchmarks, controlModel);
+  MODELS = {};
+  for (const m of (d.models || [])) MODELS[m.model || m.name] = m;
+  FLAGS = {};
+  for (const f of ((d.acceptance || {}).models || [])) FLAGS[f.model] = f;
 
   renderHeader(d);
+  renderSummary(d);
   renderLongShort(d);
-  renderBoard(d, benchmarks, controlModel);
+  renderGroups(d);
   renderEquity(d);
-  renderOpen(d);
-  renderTrades(d);
   renderCorrelation(d);
+
+  window.addEventListener("hashchange", route);
+  el("back").addEventListener("click", (ev) => {
+    ev.preventDefault();
+    // Doğrudan bir model linkiyle girildiyse `history.back()` siteden ÇIKARDI.
+    if (entryWasDetail) { entryWasDetail = false; location.replace("#"); } else { history.back(); }
+  });
+  route();
+}
+
+/* ---------------------------- yönlendirme ---------------------------- */
+function hashModel() {
+  const match = /^#model=(.+)$/.exec(location.hash || "");
+  return match ? decodeURIComponent(match[1]) : null;
+}
+const modelHref = (model) => "#model=" + encodeURIComponent(model);
+
+function route() {
+  const model = hashModel();
+  const overview = el("level-overview");
+  const detail = el("level-detail");
+
+  if (model) {
+    // Detaya geçmeden önce okuyucunun bıraktığı yer saklanır; geri dönüşte oraya
+    // dönmek, uzun bir kart listesinde "hangi karta basmıştım" sorusunu ortadan kaldırır.
+    if (!overview.hidden) overviewScroll = window.scrollY;
+    overview.hidden = true;
+    detail.hidden = false;
+    renderDetail(model);
+    window.scrollTo(0, 0);
+    document.title = model + " — Paper Trading";
+    return;
+  }
+  detail.hidden = true;
+  overview.hidden = false;
+  document.title = "Paper Trading — model karşılaştırması";
+  // Grafik gizliyken çizilemez (genişliği 0'dır): geri dönüşte yeniden çizilir.
+  equityChart.redraw();
+  window.scrollTo(0, overviewScroll);
+  overviewScroll = 0;
 }
 
 /* ---------------------------- başlık ---------------------------- */
@@ -443,18 +745,106 @@ function renderHeader(d) {
   el("banner").innerHTML = warnings.map((w) => '<div class="banner">' + w + "</div>").join("");
 }
 
+/* ------------------------- özet kartları ------------------------- */
+function competitors(d) {
+  return (d.models || [])
+    .map((m) => m.model || m.name)
+    .filter((model) => !(d.benchmarks || []).includes(model));
+}
+
+function renderSummary(d) {
+  const pooled = ((d.pooled || {}).directions) || {};
+  const total = pooled.total || {};
+  const long = pooled.long || {};
+  const short = pooled.short || {};
+  const names = competitors(d);
+
+  // Lider, ortalama R'ye göredir (birinci sınıf metrik) ve YALNIZCA yarışmacılar
+  // arasındadır: çıpanın R'si yoktur, sıralamaya girmesi onu yarışmacı gibi gösterirdi.
+  let leader = null;
+  for (const model of names) {
+    const value = num(((MODELS[model] || {}).total || {}).avg_r);
+    if (value === null) continue;
+    if (!leader || value > leader.value) leader = { model, value };
+  }
+
+  const dl = num(long.avg_r), ds = num(short.avg_r);
+  let lsValue = DASH, lsSub = "iki yönün de kapanmış işlemi gerekiyor.";
+  if (dl !== null && ds !== null) {
+    const diff = ds - dl;
+    lsValue = (diff > 0 ? "SHORT" : diff < 0 ? "LONG" : "EŞİT");
+    lsSub = "fark " + fmt(Math.abs(diff)) + "R · long " + fmtSigned(dl) + "R (" +
+      (num(long.trades) ?? 0) + " işlem) · short " + fmtSigned(ds) + "R (" + (num(short.trades) ?? 0) + " işlem)";
+  }
+
+  const leaderFlags = leader ? FLAGS[leader.model] : null;
+  const cards = [
+    {
+      k: "kapanmış işlem (yarışmacı)",
+      v: String(num(total.trades) ?? 0),
+      vClass: "",
+      sub: names.length + " yarışmacı · referans çıpası havuzda değil (kural 15)",
+    },
+    {
+      k: "lider · işlem başına ort. R",
+      v: leader ? esc(leader.model) : DASH,
+      vClass: "",
+      sub: leader
+        ? '<b class="' + signClass(leader.value) + '">' + fmtSigned(leader.value) + "R</b> · " +
+          (leaderFlags
+            ? (leaderFlags.passed ? "iki kapı da geçildi" : "kapılar henüz geçilmedi (Ö/E)")
+            : "kabul bayrağı yok")
+        : "R'ye giren kapanmış işlem yok.",
+    },
+    {
+      k: "long vs short",
+      v: lsValue + (lsValue === "SHORT" || lsValue === "LONG" ? '<small>önde</small>' : ""),
+      vClass: "",
+      sub: lsSub,
+    },
+  ];
+  el("summary").innerHTML = cards.map((c) =>
+    '<div class="sum"><div class="sum-k">' + esc(c.k) + "</div>" +
+    '<div class="sum-v ' + c.vClass + '">' + c.v + "</div>" +
+    '<div class="sum-sub">' + c.sub + "</div></div>"
+  ).join("");
+}
+
 /* ------------------------- long vs short ------------------------- */
+function dirColumn(label, cls, stats, extraTiles) {
+  const tiles = [
+    ["işlem", num(stats.trades) === null ? DASH : String(stats.trades)],
+    ["kazanma", pct(stats.win_rate)],
+    ["net funding", usd(stats.funding)],
+    ["toplam R", fmtSigned(stats.total_r)],
+    ["profit factor", fmt(stats.profit_factor)],
+    ["PnL (USDT)", usd(stats.pnl)],
+  ].concat(extraTiles || []);
+  return '<div class="ls-col ' + cls + '">' +
+    '<div class="ls-head"><span class="ls-name">' + esc(label) + '</span>' +
+    '<span class="tile-k">işlem başına ortalama R</span></div>' +
+    // Hero sayı METİN rengindedir: kimliği üst kenarlık ve etiket taşır. Sayıyı
+    // yön rengine boyamak, SHORT panelindeki pozitif bir R'yi "negatif kırmızı" ile
+    // aynı hücreye koyup iki farklı anlamı tek renge yığardı.
+    '<div class="ls-hero">' + fmtSigned(stats.avg_r) + "<small>R</small></div>" +
+    '<div class="ls-tiles">' +
+    tiles.map(([k, v]) =>
+      '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v">' + esc(v) + "</div></div>"
+    ).join("") +
+    "</div></div>";
+}
+
 function renderLongShort(d) {
   const pooled = (d.pooled || {}).directions;
   if (!pooled) {
     el("ls").innerHTML = '<p class="empty">Havuz verisi yok — bir sonraki tur üretecek.</p>';
-    el("verdict").style.display = "none";
+    el("verdict").hidden = true;
     return;
   }
   const long = pooled.long || {};
   const short = pooled.short || {};
 
-  el("ls").innerHTML = [column("LONG", "long", long), column("SHORT", "short", short)].join("");
+  el("ls").innerHTML = [dirColumn("LONG", "long", long), dirColumn("SHORT", "short", short)].join("");
 
   const dl = num(long.avg_r), ds = num(short.avg_r);
   let text;
@@ -477,48 +867,10 @@ function renderLongShort(d) {
       "; stop mesafesi long " + pctRaw(long.avg_stop_distance_pct) + " / short " +
       pctRaw(short.avg_stop_distance_pct) + ". Fark bu iki kolondan da okunabiliyorsa sinyale yazılamaz."
     : "";
-  el("verdict").innerHTML = "<p>" + text + esc("") + costNote + "</p>";
-
-  function column(label, cls, s) {
-    const tiles = [
-      ["işlem", num(s.trades) === null ? DASH : String(s.trades)],
-      ["kazanma", pct(s.win_rate)],
-      ["net funding", usd(s.funding)],
-      ["toplam R", fmtSigned(s.total_r)],
-      ["profit factor", fmt(s.profit_factor)],
-      ["PnL (USDT)", usd(s.pnl)],
-    ];
-    return '<div class="ls-col ' + cls + '">' +
-      '<div class="ls-head"><span class="ls-name">' + label + '</span>' +
-      '<span class="tile-k">işlem başına ortalama R</span></div>' +
-      // Hero sayı METİN rengindedir: kimliği üst kenarlık ve etiket taşır. Sayıyı
-      // yön rengine boyamak, SHORT panelindeki pozitif bir R'yi "negatif kırmızı" ile
-      // aynı hücreye koyup iki farklı anlamı tek renge yığardı.
-      '<div class="ls-hero">' + fmtSigned(s.avg_r) + "<small>R</small></div>" +
-      '<div class="ls-tiles">' +
-      tiles.map(([k, v]) =>
-        '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v">' + esc(v) + "</div></div>"
-      ).join("") +
-      "</div></div>";
-  }
+  el("verdict").innerHTML = "<p>" + text + costNote + "</p>";
 }
 
-/* --------------------------- leaderboard --------------------------- */
-const COLS = [
-  { key: "model",    label: "model",        get: (r) => r.model,                      cell: null, num: false },
-  { key: "avg_r",    label: "ort. R",       get: (r) => num(r.total.avg_r),           cell: (r) => span(fmtSigned(r.total.avg_r), signClass(r.total.avg_r)) },
-  { key: "ret",      label: "getiri",       get: (r) => num(r.account.total_return),  cell: (r) => span(r.account.total_return == null ? DASH : (num(r.account.total_return) > 0 ? "+" : "") + (num(r.account.total_return) * 100).toFixed(2) + "%", signClass(r.account.total_return)) },
-  { key: "mdd",      label: "MDD",          get: (r) => num(r.account.max_drawdown),  cell: (r) => span(pct(r.account.max_drawdown, 2), signClass(r.account.max_drawdown)) },
-  { key: "trades",   label: "n",            get: (r) => num(r.total.trades),          cell: (r) => String(r.total.trades ?? DASH) },
-  { key: "win",      label: "kazanma",      get: (r) => num(r.total.win_rate),        cell: (r) => pct(r.total.win_rate) },
-  { key: "pf",       label: "PF",           get: (r) => num(r.total.profit_factor),   cell: (r) => fmt(r.total.profit_factor) },
-  { key: "stop",     label: "stop mes. %",  get: (r) => num(r.total.avg_stop_distance_pct), cell: (r) => pctRaw(r.total.avg_stop_distance_pct) },
-  { key: "cost",     label: "maliyet / R",  get: (r) => num(r.total.cost_per_r),      cell: (r) => fmt(r.total.cost_per_r, 3) },
-  { key: "flags",    label: "kabul",        get: () => 0,                             cell: (r) => badges(r.flags), num: false },
-];
-
-function span(text, cls) { return cls ? '<span class="' + cls + '">' + text + "</span>" : text; }
-
+/* ---------------------- kabul rozetleri ---------------------- */
 /* İKİ KAPI: geçilmesi zorunlu, `passed` bunlardan oluşur. */
 const GATE_DEFS = [
   {
@@ -552,107 +904,168 @@ const BAND_WARNING = (f) =>
   "\nfarklı notional ile taşımış, yani R başına farklı komisyon+kayma ödemiştir." +
   "\nÖnce cost_per_r kolonuna bakın — fark sonucu tek başına açıklıyor olabilir.";
 
-function badges(flags) {
-  if (!flags) return '<span class="badge na">' + DASH + "</span>";
+function badges(flags, interactive) {
+  if (!flags) return '<span class="badge na" title="Referans çıpası yarışmacı değildir: kabul kapıları uygulanmaz (kural 15).">' + DASH + "</span>";
+  const tag = interactive ? "button" : "span";
+  const extra = (key) => interactive ? ' type="button" data-flag="' + key + '"' : "";
   const gates = GATE_DEFS.map((b) =>
-    '<span class="badge ' + (flags[b.key] ? "on" : "off") + '" title="' + esc(b.title(flags)) + '">' +
-    (flags[b.key] ? "✓" : "·") + b.letter + "</span>"
+    "<" + tag + ' class="badge ' + (flags[b.key] ? "on" : "off") + '" title="' + esc(b.title(flags)) + '"' + extra(b.key) + ">" +
+    (flags[b.key] ? "✓" : "·") + b.letter + "</" + tag + ">"
   ).join("");
   const warning = flags.band === false
-    ? '<span class="badge warn" title="' + esc(BAND_WARNING(flags)) + '">⚠ B</span>'
+    ? "<" + tag + ' class="badge warn" title="' + esc(BAND_WARNING(flags)) + '"' + extra("band") + ">⚠ B</" + tag + ">"
     : "";
   return '<span class="badges">' + gates + warning + "</span>";
 }
 
-let sortKey = "avg_r", sortAsc = false;
+/* ---------------------- model kartları ---------------------- */
+function sparkline(points, color, dashed) {
+  const values = (points || []).map((p) => num(p[1])).filter((v) => v !== null);
+  const W = 100, H = 34, initial = num((DATA.settings || {}).initial_capital);
+  if (!values.length) {
+    return '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<line x1="0" x2="' + W + '" y1="' + (H / 2) + '" y2="' + (H / 2) +
+      '" stroke="var(--grid)" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/></svg>';
+  }
+  let lo = Math.min(...values), hi = Math.max(...values);
+  // Başlangıç sermayesi eksene DAHİL: onsuz düz bir kıvrım "kâr" gibi okunabilirdi,
+  // oysa asıl soru çizginin başlangıcın üstünde mi altında kaldığı.
+  if (initial !== null) { lo = Math.min(lo, initial); hi = Math.max(hi, initial); }
+  const span = (hi - lo) || Math.max(1, Math.abs(hi) * 0.001);
+  const y = (v) => (H - 3) - ((v - lo) / span) * (H - 6);
+  const x = (i) => values.length === 1 ? W : (i / (values.length - 1)) * W;
+  const path = values.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
+  const base = initial === null ? "" :
+    '<line x1="0" x2="' + W + '" y1="' + y(initial).toFixed(1) + '" y2="' + y(initial).toFixed(1) +
+    '" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.55" vector-effect="non-scaling-stroke"/>';
+  const mark = values.length === 1
+    ? '<circle cx="' + (W - 2) + '" cy="' + y(values[0]).toFixed(1) + '" r="2.5" fill="' + color + '"/>'
+    : "";
+  return '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' + base +
+    '<path d="' + path + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" ' +
+    'stroke-linecap="round" vector-effect="non-scaling-stroke"' + (dashed ? ' stroke-dasharray="5 3"' : "") + "/>" +
+    mark + "</svg>";
+}
 
-function renderBoard(d, benchmarks, controlModel) {
-  const flagsByModel = {};
-  for (const f of ((d.acceptance || {}).models || [])) flagsByModel[f.model] = f;
+function renderGroups(d) {
+  const present = new Set(Object.keys(MODELS));
+  const grouped = new Set([].concat(...GROUPS.map((g) => g.models), REFERENCE_GROUP.models));
+  const benchmarks = d.benchmarks || [];
+  const controlModel = (d.acceptance || {}).control_model || null;
+  const openCount = {};
+  for (const p of (d.open_positions || [])) openCount[p.model] = (openCount[p.model] || 0) + 1;
 
-  const rows = (d.models || []).map((m) => ({
-    model: m.model || m.name,
-    total: m.total || {},
-    account: m.account || {},
-    isBenchmark: !!m.is_benchmark,
-    isControl: (m.model || m.name) === controlModel,
-    flags: flagsByModel[m.model || m.name] || null,
-  }));
+  // Yarışmacı sırası: ortalama R. Kart sıralaması gruba göre olduğu için rütbe
+  // sayıyla taşınır — gruplama, "kim önde" sorusunun cevabını gizlememeli.
+  const ranked = competitors(d)
+    .map((model) => ({ model, value: num((MODELS[model].total || {}).avg_r) }))
+    .filter((row) => row.value !== null)
+    .sort((a, b) => b.value - a.value);
+  const rank = {};
+  ranked.forEach((row, index) => { rank[row.model] = index + 1; });
 
-  draw(el("board"), rows.filter((r) => !r.isBenchmark), true);
-
-  const refs = rows.filter((r) => r.isBenchmark);
-  el("ref-wrap").style.display = refs.length ? "" : "none";
-  if (refs.length) draw(el("board-ref"), refs, false);
-
-  function draw(table, data, sortable) {
-    const sorted = sortable ? [...data].sort(compare) : [...data].sort((a, b) => a.model.localeCompare(b.model));
-    const head = "<thead><tr>" + COLS.map((c) =>
-      "<th" + (sortable ? ' data-key="' + c.key + '"' : "") +
-      (sortable && c.key === sortKey ? ' class="sorted' + (sortAsc ? " asc" : "") + '"' : "") +
-      ">" + esc(c.label) + "</th>"
-    ).join("") + "</tr></thead>";
-
-    const body = "<tbody>" + sorted.map((r) => {
-      const st = STYLE[r.model] || {};
-      const tag = r.isBenchmark
-        ? '<span class="tag">REFERANS</span>'
-        : (r.isControl ? '<span class="tag">KONTROL</span>' : "");
-      const cls = r.isBenchmark ? "reference" : (r.isControl ? "control" : "");
-      const cells = COLS.map((c, i) => {
-        if (i === 0) {
-          return '<td class="model"><span class="swatch' + (st.dash ? " dashed" : "") +
-            '" style="background:' + (st.color || "var(--ink-muted)") + ";color:" +
-            (st.color || "var(--ink-muted)") + '"></span>' + esc(r.model) + tag + "</td>";
-        }
-        return "<td>" + (r.isBenchmark && (c.key === "stop" || c.key === "cost") ? DASH : c.cell(r)) + "</td>";
-      }).join("");
-      return '<tr class="' + cls + '">' + cells + "</tr>";
-    }).join("") + "</tbody>";
-
-    table.innerHTML = head + body;
-    if (!sortable) return;
-    table.querySelectorAll("th[data-key]").forEach((th) => {
-      th.addEventListener("click", () => {
-        const key = th.dataset.key;
-        if (key === "flags") return;
-        if (key === sortKey) sortAsc = !sortAsc; else { sortKey = key; sortAsc = key === "model"; }
-        renderBoard(d, benchmarks, controlModel);
-      });
+  const sections = GROUPS.map((g) => ({ ...g, models: g.models.filter((m) => present.has(m)) }))
+    .filter((g) => g.models.length);
+  const leftovers = [...present].filter((m) => !grouped.has(m) && !benchmarks.includes(m));
+  if (leftovers.length) {
+    sections.push({
+      label: "Gruplanmamış",
+      note: "docs/index.html'deki tez gruplarına eklenmeyi bekliyor",
+      models: leftovers,
     });
   }
+  const refs = REFERENCE_GROUP.models.filter((m) => present.has(m))
+    .concat([...present].filter((m) => benchmarks.includes(m) && !REFERENCE_GROUP.models.includes(m)));
+  if (refs.length) sections.push({ ...REFERENCE_GROUP, models: [...new Set(refs)], reference: true });
 
-  function compare(a, b) {
-    const col = COLS.find((c) => c.key === sortKey) || COLS[1];
-    if (col.key === "model") return sortAsc ? a.model.localeCompare(b.model) : b.model.localeCompare(a.model);
-    const va = col.get(a), vb = col.get(b);
-    // Ölçülemeyen değer sıralamanın SONUNA düşer, başına değil: "—" bir sıfır değildir.
-    if (va === null && vb === null) return a.model.localeCompare(b.model);
-    if (va === null) return 1;
-    if (vb === null) return -1;
-    return sortAsc ? va - vb : vb - va;
+  el("groups").innerHTML = sections.map((g) => {
+    const cards = [...g.models].sort((a, b) => {
+      const va = num((MODELS[a].total || {}).avg_r), vb = num((MODELS[b].total || {}).avg_r);
+      if (va === null && vb === null) return a.localeCompare(b);
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return vb - va;
+    }).map((model) => card(model, g.reference));
+    return '<div class="group"><div class="group-head">' +
+      '<span class="group-name">' + esc(g.label) + "</span>" +
+      '<span class="group-note">' + esc(g.note) + "</span></div>" +
+      '<div class="mcards">' + cards.join("") + "</div></div>";
+  }).join("");
+
+  function card(model, isReferenceGroup) {
+    const m = MODELS[model] || {};
+    const total = m.total || {};
+    const account = m.account || {};
+    const st = STYLE[model] || {};
+    const isBenchmark = !!m.is_benchmark;
+    const tag = isBenchmark
+      ? '<span class="tag">REFERANS</span>'
+      : (model === controlModel ? '<span class="tag">KONTROL</span>' : "");
+    // Çıpanın hero sayısı ort. R DEĞİL hesap getirisidir: stop'u olmayanın 1R'si
+    // yoktur (kural 15) ve taşıdığı bilgi tam olarak hesap düzeyi getiridir.
+    const hero = isBenchmark
+      ? '<b class="' + signClass(account.total_return) + '">' + pctSigned(account.total_return) + "</b><span>hesap getirisi</span>"
+      : '<b class="' + signClass(total.avg_r) + '">' + fmtSigned(total.avg_r) + "R</b><span>işlem başına ort. R</span>";
+    const secondary = isBenchmark
+      ? [["işlem", String(num(total.trades) ?? 0)], ["MDD", pct(account.max_drawdown, 2)]]
+      : [["getiri", pctSigned(account.total_return)], ["işlem", String(num(total.trades) ?? 0)]];
+    const open = openCount[model] || 0;
+    return '<a class="mcard' + (isReferenceGroup || isBenchmark ? " reference" : "") + '" href="' + modelHref(model) +
+      '" style="border-top-color:' + (st.color || "var(--ink-muted)") + '">' +
+      '<div class="mcard-top"><div class="mcard-name"><span class="swatch' + (st.dash ? " dashed" : "") +
+        '" style="background:' + (st.color || "var(--ink-muted)") + ";color:" + (st.color || "var(--ink-muted)") +
+        '"></span>' + esc(model) + tag + "</div>" +
+      '<div class="mcard-rank">' + (rank[model] ? "#" + rank[model] : DASH) + "</div></div>" +
+      '<div class="mcard-hero">' + hero + "</div>" +
+      '<div class="mcard-row">' +
+        secondary.map(([k, v]) => "<div><span>" + esc(k) + "</span> " + esc(v) + "</div>").join("") +
+        (open ? '<div><span>açık</span> ' + open + "</div>" : "") +
+      "</div>" +
+      '<div>' + badges(FLAGS[model], false) + "</div>" +
+      '<div class="mcard-spark">' + sparkline((DATA.equity || {})[model], st.color || "#888", !!st.dash) + "</div>" +
+      "</a>";
   }
 }
 
-/* --------------------------- equity chart --------------------------- */
-let isolated = null;
+/* --------------------------- eğri grafikleri --------------------------- */
+/* Aynı çizim iki yerde kullanılır (tüm modeller / tek model). Fonksiyon
+   seviyeden habersizdir: hangi serilerin çizileceğini çağıran söyler. */
+function makeChart(svgId, tipId) {
+  const svg = el(svgId), tip = el(tipId);
+  let state = null;
+  const draw = () => {
+    if (!state || !state.names.length) { svg.innerHTML = ""; svg.setAttribute("hidden", ""); return; }
+    // Gizli bir kapsayıcının genişliği 0'dır; o anda çizmek eğriyi bozar.
+    const level = svg.closest("main");
+    if (level && level.hidden) return;
+    svg.removeAttribute("hidden");
+    paintLines(svg, tip, state);
+  };
+  let raf = null;
+  window.addEventListener("resize", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); });
+  return {
+    show(series, names, opts) { state = { series, names, opts: opts || {} }; draw(); },
+    clear() { state = null; svg.innerHTML = ""; svg.setAttribute("hidden", ""); },
+    redraw: draw,
+  };
+}
+
+const equityChart = makeChart("equity", "equity-tip");
+const detailChart = makeChart("detail-equity", "detail-equity-tip");
 
 function renderEquity(d) {
   const equity = d.equity || {};
   const names = Object.keys(equity).filter((m) => (equity[m] || []).length > 0);
   const legend = el("equity-legend");
-  const svg = el("equity");
 
   if (!names.length) {
     // Boş bir <svg> yer kaplamaya devam eder (varsayılan 150px) ve sayfada sebepsiz bir
     // kutu bırakır. `svg.hidden = true` İŞE YARAMAZ: `hidden` HTMLElement'in IDL alanıdır,
     // SVGElement onu uygulamaz — atama sessizce bir JS alanı yaratır, öznitelik yazılmaz.
-    svg.innerHTML = "";
-    svg.setAttribute("hidden", "");
+    equityChart.clear();
     legend.innerHTML = '<p class="empty">Henüz özsermaye kaydı yok.</p>';
     return;
   }
-  svg.removeAttribute("hidden");
 
   legend.innerHTML = names.map((m) => {
     const st = STYLE[m] || {};
@@ -666,28 +1079,24 @@ function renderEquity(d) {
     renderEquity(d);
   }));
 
-  const initial = num((d.settings || {}).initial_capital);
-  const draw = () => paintEquity(svg, equity, names, initial);
-  draw();
-  if (!svg.dataset.bound) {
-    svg.dataset.bound = "1";
-    let raf = null;
-    window.addEventListener("resize", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); });
-  }
+  equityChart.show(equity, names, { isolate: isolated });
 }
 
-function paintEquity(svg, equity, names, initial) {
+function paintLines(svg, tip, state) {
+  const { series, names, opts } = state;
+  const isolate = opts.isolate || null;
+  const initial = num((DATA.settings || {}).initial_capital);
   const wrap = svg.parentElement;
   const W = Math.max(300, wrap.clientWidth);
   const H = W < 560 ? 260 : 340;
   const M = { t: 10, r: 12, b: 26, l: W < 560 ? 46 : 58 };
   const iw = W - M.l - M.r, ih = H - M.t - M.b;
 
-  const visible = names.filter((m) => !isolated || m === isolated);
+  const visible = names.filter((m) => !isolate || m === isolate);
   const pts = {};
   let tMin = Infinity, tMax = -Infinity, vMin = Infinity, vMax = -Infinity;
   for (const m of visible) {
-    pts[m] = (equity[m] || []).map(([ts, v]) => [Date.parse(ts), Number(v)]).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    pts[m] = (series[m] || []).map(([ts, v]) => [Date.parse(ts), Number(v)]).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
     for (const [t, v] of pts[m]) {
       if (t < tMin) tMin = t; if (t > tMax) tMax = t;
       if (v < vMin) vMin = v; if (v > vMax) vMax = v;
@@ -727,20 +1136,19 @@ function paintEquity(svg, equity, names, initial) {
     if (!path) continue;
     out += '<path d="' + path + '" fill="none" stroke="' + (st.color || "#888") + '" stroke-width="' + (st.width || 2) +
       '" stroke-linejoin="round" stroke-linecap="round"' + (st.dash ? ' stroke-dasharray="' + st.dash + '"' : "") +
-      (isolated ? "" : ' opacity="0.95"') + "/>";
+      (isolate ? "" : ' opacity="0.95"') + "/>";
     const last = pts[m][pts[m].length - 1];
     if (last) out += '<circle cx="' + x(last[0]).toFixed(1) + '" cy="' + y(last[1]).toFixed(1) + '" r="3" fill="' + (st.color || "#888") + '" stroke="var(--surface)" stroke-width="2"/>';
   }
-  out += '<line id="eq-cross" x1="0" x2="0" y1="' + M.t + '" y2="' + (M.t + ih) + '" stroke="var(--ink-muted)" stroke-width="1" opacity="0"/>';
-  out += '<rect id="eq-hit" x="' + M.l + '" y="' + M.t + '" width="' + iw + '" height="' + ih + '" fill="transparent"/>';
+  out += '<line class="cross" x1="0" x2="0" y1="' + M.t + '" y2="' + (M.t + ih) + '" stroke="var(--ink-muted)" stroke-width="1" opacity="0"/>';
+  out += '<rect class="hit" x="' + M.l + '" y="' + M.t + '" width="' + iw + '" height="' + ih + '" fill="transparent"/>';
 
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
   svg.setAttribute("height", H);
   svg.innerHTML = out;
 
-  const tip = el("equity-tip");
-  const cross = svg.querySelector("#eq-cross");
-  const hit = svg.querySelector("#eq-hit");
+  const cross = svg.querySelector(".cross");
+  const hit = svg.querySelector(".hit");
   const onMove = (ev) => {
     const rect = svg.getBoundingClientRect();
     const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
@@ -750,9 +1158,9 @@ function paintEquity(svg, equity, names, initial) {
     cross.setAttribute("opacity", "0.5");
 
     const rows = visible.map((m) => {
-      const series = pts[m];
+      const values = pts[m];
       let hitPoint = null;
-      for (const p of series) { if (p[0] <= t) hitPoint = p; else break; }
+      for (const p of values) { if (p[0] <= t) hitPoint = p; else break; }
       return hitPoint ? { m, v: hitPoint[1], t: hitPoint[0] } : null;
     }).filter(Boolean).sort((a, b) => b.v - a.v);
     if (!rows.length) { tip.classList.remove("show"); return; }
@@ -766,7 +1174,7 @@ function paintEquity(svg, equity, names, initial) {
         "</span><span>" + r.v.toFixed(2) + "</span></div>").join("");
     tip.classList.add("show");
     const tw = tip.offsetWidth;
-    tip.style.left = Math.min(Math.max(cx - tw / 2, 4), rect.width - tw - 4) + "px";
+    tip.style.left = Math.min(Math.max(cx - tw / 2, 4), Math.max(4, rect.width - tw - 4)) + "px";
     tip.style.top = "8px";
   };
   hit.addEventListener("mousemove", onMove);
@@ -785,68 +1193,6 @@ function niceTicks(min, max, count) {
   return out;
 }
 
-/* ------------------------- açık pozisyonlar ------------------------- */
-function renderOpen(d) {
-  const rows = d.open_positions || [];
-  const host = el("open");
-  if (!rows.length) { host.innerHTML = '<p class="empty">Açık pozisyon yok.</p>'; return; }
-  host.innerHTML = rows.map((p) => {
-    const st = STYLE[p.model] || {};
-    const fields = [
-      ["giriş", fmt(p.entry_price, 6)],
-      ["güncel", fmt(p.mark_price, 6) + (p.marked ? "" : " *")],
-      ["stop", p.stop_price == null ? DASH : fmt(p.stop_price, 6)],
-      ["R", fmtSigned(p.r)],
-      ["funding", usd(p.funding)],
-      ["açılış", shortTs(p.opened_at)],
-    ];
-    return '<article class="row">' +
-      '<div class="row-top"><div>' +
-        '<span class="row-sym">' + esc(p.symbol) + "</span> " +
-        '<span class="dir ' + esc(p.direction) + '">' + esc((p.direction || "").toUpperCase()) + "</span>" +
-        '<div class="row-model"><span class="swatch" style="background:' + (st.color || "#888") + '"></span>' + esc(p.model) + "</div>" +
-      "</div>" +
-      '<div style="text-align:right"><div class="row-val ' + signClass(p.pnl) + '">' + usd(p.pnl) + "</div>" +
-      '<div class="row-model">' + fmtSigned(p.pnl_pct) + "%</div></div></div>" +
-      '<div class="row-grid">' + fields.map(([k, v]) => "<div><span>" + esc(k) + "</span> <b>" + esc(v) + "</b></div>").join("") + "</div>" +
-      (p.reason ? '<div class="reason">' + esc(p.reason) + "</div>" : "") +
-      "</article>";
-  }).join("");
-  if (rows.some((p) => !p.marked)) {
-    el("foot-extra").innerHTML =
-      " <br>* işaretli fiyat: sembolün <code>as_of</code> barı anlık görüntüde yoktu, pozisyon giriş fiyatından işaretlendi.";
-  }
-}
-
-/* ---------------------------- son işlemler ---------------------------- */
-function renderTrades(d) {
-  const rows = d.recent_trades || [];
-  const host = el("trades");
-  if (!rows.length) { host.innerHTML = '<p class="empty">Henüz kapanmış işlem yok.</p>'; return; }
-  host.innerHTML = rows.map((t) => {
-    const st = STYLE[t.model] || {};
-    const fields = [
-      ["giriş", fmt(t.entry_price, 6)],
-      ["çıkış", fmt(t.exit_price, 6)],
-      ["çıkış sebebi", t.exit_reason || DASH],
-      ["komisyon", fmt(t.fee)],
-      ["kayma", fmt(t.slippage_cost)],
-      ["kapanış", shortTs(t.closed_at)],
-    ];
-    return '<article class="row">' +
-      '<div class="row-top"><div>' +
-        '<span class="row-sym">' + esc(t.symbol) + "</span> " +
-        '<span class="dir ' + esc(t.direction) + '">' + esc((t.direction || "").toUpperCase()) + "</span>" +
-        '<div class="row-model"><span class="swatch" style="background:' + (st.color || "#888") + '"></span>' + esc(t.model) + "</div>" +
-      "</div>" +
-      '<div style="text-align:right"><div class="row-val ' + signClass(t.r) + '">' + fmtSigned(t.r) + "R</div>" +
-      '<div class="row-model ' + signClass(t.pnl) + '">' + usd(t.pnl) + " USDT</div></div></div>" +
-      '<div class="row-grid">' + fields.map(([k, v]) => "<div><span>" + esc(k) + "</span> <b>" + esc(v) + "</b></div>").join("") + "</div>" +
-      (t.reason ? '<div class="reason">' + esc(t.reason) + "</div>" : "") +
-      "</article>";
-  }).join("");
-}
-
 /* ---------------------------- korelasyon ---------------------------- */
 function heatColor(v) {
   // Diverging: iki zıt kutup + NÖTR gri orta nokta. Orta noktaya renk vermek
@@ -861,16 +1207,18 @@ function heatColor(v) {
 
 function renderCorrelation(d) {
   const corr = d.correlation;
-  const host = el("corr");
+  const matrixHost = el("corr-matrix"), pairHost = el("corr-pairs");
   if (!corr || !(corr.models || []).length) {
-    host.innerHTML = '<p class="empty">Korelasyon için yeterli bar yok.</p>';
+    matrixHost.innerHTML = '<p class="empty">Korelasyon için yeterli bar yok.</p>';
+    pairHost.innerHTML = '<p class="empty">Korelasyon için yeterli bar yok.</p>';
+    el("corr-scale-wrap").hidden = true;
     return;
   }
   const models = corr.models;
   const head = "<tr><th></th>" + models.map((m) =>
     '<th class="col"><span>' + esc(m) + "</span></th>").join("") + "</tr>";
   const body = models.map((rowModel, i) =>
-    '<tr><th class="row">' + esc(rowModel) + "</th>" + models.map((colModel, j) => {
+    '<tr><th class="rowh" title="' + esc(rowModel) + '">' + esc(rowModel) + "</th>" + models.map((colModel, j) => {
       const v = num(corr.matrix[i][j]);
       const overlap = (corr.overlap && corr.overlap[i]) ? corr.overlap[i][j] : null;
       const title = esc(rowModel) + " ↔ " + esc(colModel) + "\n" +
@@ -888,10 +1236,304 @@ function renderCorrelation(d) {
         (v === null ? ";border:1px dashed var(--grid)" : "") + '">' +
         (v === null ? "" : v.toFixed(2)) + "</div></td>";
     }).join("") + "</tr>").join("");
-  host.innerHTML = '<table>' + head + body + "</table>";
+  matrixHost.innerHTML = '<table class="heat">' + head + body + "</table>";
+
+  // Dar ekran: matrisin yerine en güçlü çiftler. Aynı veri, daha az hücre —
+  // matrisi küçültmek sayıları okunamaz, kaydırmaya sarmak ekran dışına atardı.
+  const pairs = [];
+  for (let i = 0; i < models.length; i++) {
+    for (let j = i + 1; j < models.length; j++) {
+      const v = num(corr.matrix[i][j]);
+      if (v !== null) pairs.push({ a: models[i], b: models[j], v });
+    }
+  }
+  pairs.sort((p, q) => Math.abs(q.v) - Math.abs(p.v));
+  pairHost.innerHTML = pairs.length
+    ? '<div class="pairs">' + pairs.slice(0, 8).map((p) =>
+        '<div class="pair"><span>' + esc(p.a) + " ↔ " + esc(p.b) + "</span>" +
+        '<b style="color:' + heatColor(p.v) + '">' + fmtSigned(p.v) + "</b></div>").join("") +
+      "</div>" + (pairs.length > 8 ? '<p class="note" style="margin-top:8px">En güçlü 8 çift; tamamı geniş ekranda matris olarak.</p>' : "")
+    : '<p class="empty">Hiçbir çiftte yeterli örtüşme yok.</p>';
 
   el("corr-scale").style.background =
     "linear-gradient(90deg," + heatColor(-1) + "," + heatColor(0) + "," + heatColor(1) + ")";
+}
+
+/* =================================================================== *
+ * SEVİYE 2 — MODEL DETAYI
+ * =================================================================== */
+function renderDetail(model) {
+  const m = MODELS[model];
+  const st = STYLE[model] || {};
+  if (detailView.model !== model) detailView = { model, filter: "all", page: 0, tip: null };
+
+  el("detail-title").innerHTML =
+    '<h1><span class="swatch' + (st.dash ? " dashed" : "") + '" style="background:' +
+    (st.color || "var(--ink-muted)") + ";color:" + (st.color || "var(--ink-muted)") + '"></span>' +
+    esc(model) + "</h1>" +
+    (m && m.is_benchmark ? '<span class="tag">REFERANS</span>' : "") +
+    (model === ((DATA.acceptance || {}).control_model) ? '<span class="tag">KONTROL</span>' : "");
+
+  if (!m) {
+    el("detail-strip").innerHTML = '<p class="empty">Bu adda bir model yükte yok: ' + esc(model) +
+      ". Adres çubuğundaki <code>#model=</code> değeri eski olabilir.</p>";
+    el("detail-flags").innerHTML = "";
+    el("detail-tip").innerHTML = "";
+    el("detail-ls").innerHTML = "";
+    el("detail-open").innerHTML = "";
+    el("detail-trades").innerHTML = "";
+    el("detail-trades-note").textContent = "";
+    el("detail-filter").innerHTML = "";
+    el("detail-pager").innerHTML = "";
+    detailChart.clear();
+    return;
+  }
+
+  renderDetailStrip(model, m);
+  renderDetailFlags(model, m);
+  renderDetailDirections(m);
+  renderDetailOpen(model);
+  renderDetailTrades(model);
+  const curve = (DATA.equity || {})[model] || [];
+  el("detail-equity-empty").hidden = curve.length > 0;
+  detailChart.show(DATA.equity || {}, curve.length ? [model] : [], { isolate: model });
+}
+
+function renderDetailStrip(model, m) {
+  const total = m.total || {}, account = m.account || {};
+  const tiles = [
+    ["ort. R", fmtSigned(total.avg_r) + "R", signClass(total.avg_r)],
+    ["getiri", pctSigned(account.total_return), signClass(account.total_return)],
+    ["max drawdown", pct(account.max_drawdown, 2), signClass(account.max_drawdown)],
+    ["kazanma", pct(total.win_rate), ""],
+    ["profit factor", fmt(total.profit_factor), ""],
+    ["işlem", String(num(total.trades) ?? 0), ""],
+    ["maliyet / R", fmt(total.cost_per_r, 3), ""],
+    ["stop mesafesi", pctRaw(total.avg_stop_distance_pct), ""],
+  ];
+  el("detail-strip").innerHTML = tiles.map(([k, v, cls]) =>
+    '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v ' + cls + '">' + esc(v) + "</div></div>"
+  ).join("") +
+  // Hesap düzeyi Sharpe iki yön Sharpe'ının toplamı ya da ortalaması DEĞİLDİR;
+  // ayrı bir hücrede durur ki kırılım paneliyle karıştırılmasın.
+  '<div><div class="tile-k">Sharpe (hesap)</div><div class="tile-v">' + fmt(account.sharpe) + "</div></div>" +
+  '<div><div class="tile-k">son özsermaye</div><div class="tile-v">' + fmt(account.final_equity) + "</div></div>";
+}
+
+function renderDetailFlags(model, m) {
+  const flags = FLAGS[model];
+  const host = el("detail-flags");
+  if (m.is_benchmark) {
+    host.innerHTML = '<p class="note" style="margin:0">Referans çıpasına kabul kapıları uygulanmaz (kural 15): ' +
+      "yarışmacı değil, zemindir. Stop'u olmadığı için <code>ort. R</code>, <code>maliyet / R</code> ve " +
+      "<code>stop mesafesi</code> tanımsızdır — taşıdığı bilgi hesap getirisindedir.</p>";
+    el("detail-tip").innerHTML = "";
+    return;
+  }
+  host.innerHTML = badges(flags, true) +
+    (flags
+      ? '<p class="note" style="margin:8px 0 0">' +
+        (flags.passed ? "İki kapı da geçildi." : "Doğrulanmış değil: iki kapı birden yeşil olmalı.") +
+        " Rozete dokunun, gerekçesi açılır.</p>"
+      : "");
+  const tipHost = el("detail-tip");
+  tipHost.innerHTML = "";
+  host.querySelectorAll("button.badge").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.flag;
+      if (detailView.tip === key) { detailView.tip = null; tipHost.innerHTML = ""; return; }
+      detailView.tip = key;
+      const text = key === "band"
+        ? BAND_WARNING(flags)
+        : (GATE_DEFS.find((g) => g.key === key) || {}).title(flags);
+      tipHost.innerHTML = '<div class="tipbox' + (key === "band" ? " warn" : "") + '">' + esc(text) + "</div>";
+    });
+  });
+}
+
+function renderDetailDirections(m) {
+  const extra = (stats) => [
+    ["stop mesafesi", pctRaw(stats.avg_stop_distance_pct)],
+    ["maliyet / R", fmt(stats.cost_per_r, 3)],
+    ["R Sharpe", fmt(stats.r_sharpe)],
+  ];
+  const long = m.long || {}, short = m.short || {};
+  el("detail-ls").innerHTML =
+    dirColumn("LONG", "long", long, extra(long)) +
+    dirColumn("SHORT", "short", short, extra(short));
+}
+
+/* ------------------------- açık pozisyonlar ------------------------- */
+const POSITION_COLUMNS = [
+  "sembol", "yön", "miktar", "giriş", "güncel", "notional",
+  "gerç.memiş K/Z", "K/Z %", "stop", "hedef", "açılış",
+];
+
+function targetHtml(position) {
+  const targets = position.take_profits || [];
+  if (!targets.length) return DASH;
+  // Her hedef KENDİ İÇİNDE bölünmez, hedefler ARASINDA satır sonu serbesttir: iki
+  // hedefli bir pozisyon dar ekranda alt satıra iner, sayı ortadan kesilmez.
+  return targets.map((tp) => {
+    const fraction = num(tp.fraction);
+    // Kısmi hedefte oranı yazmak şart: "120" ile "120'de %50" aynı şey değil.
+    const text = price(tp.price) + (fraction !== null && fraction < 1 ? " (%" + (fraction * 100).toFixed(0) + ")" : "");
+    return '<span class="nw">' + esc(text) + "</span>";
+  }).join(" / ");
+}
+
+function renderDetailOpen(model) {
+  const rows = (DATA.open_positions || []).filter((p) => p.model === model);
+  const host = el("detail-open");
+  if (!rows.length) { host.innerHTML = '<p class="empty">Bu modelin açık pozisyonu yok.</p>'; return; }
+
+  const table = '<div class="card wide"><table class="grid"><thead><tr>' +
+    POSITION_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") +
+    "</tr></thead><tbody>" + rows.map((p) => {
+      const cells = [
+        ["symcell", esc(p.symbol)],
+        ["", '<span class="dir ' + esc(p.direction) + '">' + esc((p.direction || "").toUpperCase()) + "</span>"],
+        ["", qty(p.qty)],
+        ["", price(p.entry_price)],
+        ["", price(p.mark_price) + (p.marked ? "" : " *")],
+        ["", fmt(p.notional)],
+        [signClass(p.pnl), usd(p.pnl)],
+        [signClass(p.pnl_pct), pctRaw(p.pnl_pct) === DASH ? DASH : fmtSigned(p.pnl_pct) + "%"],
+        ["", p.stop_price == null ? DASH : price(p.stop_price)],
+        ["wrapcell", targetHtml(p)],
+        ["", '<span title="' + esc(p.opened_at) + '">' + shortTs(p.opened_at) + "</span>"],
+      ];
+      return '<tr class="data">' + cells.map(([cls, value]) =>
+        '<td class="' + cls + '">' + value + "</td>").join("") + "</tr>" +
+        (p.reason ? '<tr><td class="reason-cell" colspan="' + POSITION_COLUMNS.length + '">' + esc(p.reason) + "</td></tr>" : "");
+    }).join("") + "</tbody></table></div>";
+
+  const cards = '<div class="rows narrow">' + rows.map((p) => {
+    const fields = [
+      ["miktar", qty(p.qty)],
+      ["giriş", price(p.entry_price)],
+      ["güncel", price(p.mark_price) + (p.marked ? "" : " *")],
+      ["notional", fmt(p.notional)],
+      ["stop", price(p.stop_price)],
+      ["hedef", targetHtml(p), true],
+      ["funding", usd(p.funding)],
+      ["R", fmtSigned(p.r)],
+      ["açılış", shortTs(p.opened_at)],
+    ];
+    return '<article class="row">' +
+      '<div class="row-top"><div>' +
+        '<span class="row-sym">' + esc(p.symbol) + "</span> " +
+        '<span class="dir ' + esc(p.direction) + '">' + esc((p.direction || "").toUpperCase()) + "</span>" +
+      "</div>" +
+      '<div style="text-align:right"><div class="row-val ' + signClass(p.pnl) + '">' + usd(p.pnl) + "</div>" +
+      '<div class="row-val-sub ' + signClass(p.pnl_pct) + '">' + fmtSigned(p.pnl_pct) + "%</div></div></div>" +
+      '<div class="row-grid">' + fields.map(([k, v, html]) =>
+        "<div><span>" + esc(k) + '</span> <b>' + (html ? v : '<span class="nw">' + esc(v) + "</span>") + "</b></div>").join("") + "</div>" +
+      (p.reason ? '<div class="reason">' + esc(p.reason) + "</div>" : "") +
+      "</article>";
+  }).join("") + "</div>";
+
+  host.innerHTML = table + cards;
+  // Dipnot her iki yönde de yazılır: bir modelden diğerine geçildiğinde asılı kalan
+  // bir "* işaretli fiyat" açıklaması, işaretlenmiş fiyatı işaretsiz gösterirdi.
+  el("foot-extra").innerHTML = rows.some((p) => !p.marked)
+    ? " <br>* işaretli fiyat: sembolün <code>as_of</code> barı anlık görüntüde yoktu, pozisyon giriş fiyatından işaretlendi."
+    : "";
+}
+
+/* ------------------------- kapanmış işlemler ------------------------- */
+function modelTradeSet(model) {
+  const section = (DATA.model_trades || {}).models || {};
+  const entry = section[model];
+  if (entry) {
+    return { trades: entry.trades || [], total: num(entry.total) ?? (entry.trades || []).length,
+             limit: num((DATA.model_trades || {}).limit), partial: false };
+  }
+  // Eski bir metrics.json (model_trades bölümünden önce üretilmiş) sessizce boş
+  // liste göstermez: ortak akıştan bu modelin satırları süzülür ve eksik olduğu yazılır.
+  const fallback = (DATA.recent_trades || []).filter((t) => t.model === model);
+  return { trades: fallback, total: fallback.length, limit: null, partial: true };
+}
+
+function renderDetailTrades(model) {
+  const set = modelTradeSet(model);
+  const filtered = set.trades.filter((t) =>
+    detailView.filter === "all" ? true : t.direction === detailView.filter);
+  const pages = Math.max(1, Math.ceil(filtered.length / TRADE_PAGE_SIZE));
+  if (detailView.page >= pages) detailView.page = pages - 1;
+  const start = detailView.page * TRADE_PAGE_SIZE;
+  const page = filtered.slice(start, start + TRADE_PAGE_SIZE);
+
+  el("detail-trades-note").innerHTML = set.partial
+    ? "Bu yük <code>model_trades</code> bölümünden önce üretilmiş: yalnızca ortak akışa giren " +
+      "son işlemler gösteriliyor. Tam geçmiş bir sonraki turda gelir — defterin kendisi " +
+      "<code>ledgers/" + esc(model) + "/trades.csv</code>'dir."
+    : "Yeniden eskiye, " + TRADE_PAGE_SIZE + "'şer. Deftere yazılan " + set.total + " satırdan " +
+      (set.limit !== null && set.total > set.limit
+        ? "son " + set.limit + " tanesi yükte; tamamı <code>ledgers/" + esc(model) + "/trades.csv</code>'de."
+        : "tamamı yükte.") +
+      " <b>R</b> = net K/Z ÷ işlemin gerçekleşen 1R'si (giriş anındaki ilk stop'tan).";
+
+  el("detail-filter").innerHTML = '<div class="seg">' + [
+    ["all", "hepsi"], ["long", "sadece long"], ["short", "sadece short"],
+  ].map(([key, label]) =>
+    '<button type="button" data-filter="' + key + '" aria-pressed="' + (detailView.filter === key) + '">' +
+    esc(label) + "</button>").join("") + "</div>" +
+    '<span class="pager count">' + filtered.length + " işlem</span>";
+  el("detail-filter").querySelectorAll("button[data-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      detailView.filter = button.dataset.filter;
+      detailView.page = 0;
+      renderDetailTrades(model);
+    });
+  });
+
+  const host = el("detail-trades");
+  if (!page.length) {
+    host.innerHTML = '<p class="empty">' +
+      (set.trades.length ? "Bu yönde kapanmış işlem yok." : "Bu modelin kapanmış işlemi yok.") + "</p>";
+    el("detail-pager").innerHTML = "";
+    return;
+  }
+
+  host.innerHTML = '<div class="rows">' + page.map((t) => {
+    const fields = [
+      ["miktar", qty(t.qty)],
+      ["giriş", price(t.entry_price)],
+      ["çıkış", price(t.exit_price)],
+      ["açılış", shortTs(t.opened_at)],
+      ["kapanış", shortTs(t.closed_at)],
+      ["1R (USDT)", fmt(t.risk_amount)],
+      ["komisyon", fmt(t.fee)],
+      ["kayma", fmt(t.slippage_cost)],
+      ["funding", usd(t.funding)],
+    ];
+    return '<article class="row">' +
+      '<div class="row-top"><div>' +
+        '<span class="row-sym">' + esc(t.symbol) + "</span> " +
+        '<span class="dir ' + esc(t.direction) + '">' + esc((t.direction || "").toUpperCase()) + "</span>" +
+        '<div class="row-model ' + exitClass(t.exit_reason) + '">çıkış: ' + esc(exitLabel(t.exit_reason)) + "</div>" +
+      "</div>" +
+      '<div style="text-align:right"><div class="row-val ' + signClass(t.r) + '">' + fmtSigned(t.r) + "R</div>" +
+      '<div class="row-val-sub ' + signClass(t.pnl) + '">' + usd(t.pnl) + " USDT</div></div></div>" +
+      '<div class="row-grid">' + fields.map(([k, v]) =>
+        "<div><span>" + esc(k) + '</span> <b><span class="nw">' + esc(v) + "</span></b></div>").join("") + "</div>" +
+      (t.reason ? '<div class="reason">' + esc(t.reason) + "</div>" : "") +
+      "</article>";
+  }).join("") + "</div>";
+
+  el("detail-pager").innerHTML =
+    '<button type="button" id="page-prev"' + (detailView.page === 0 ? " disabled" : "") + ">← daha yeni</button>" +
+    '<span class="count">' + (start + 1) + "–" + (start + page.length) + " / " + filtered.length +
+    " · sayfa " + (detailView.page + 1) + "/" + pages + "</span>" +
+    '<button type="button" id="page-next"' + (detailView.page >= pages - 1 ? " disabled" : "") + ">daha eski →</button>";
+  const step = (delta) => {
+    detailView.page += delta;
+    renderDetailTrades(model);
+    el("sec-detail-trades").scrollIntoView({ block: "start" });
+  };
+  el("page-prev").addEventListener("click", () => step(-1));
+  el("page-next").addEventListener("click", () => step(1));
 }
 </script>
 </body>
