@@ -41,6 +41,7 @@ gibi görünür ve model ortalamalarını aşağı çekerdi.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from typing import Any, Collection, Iterable, Mapping, Sequence
@@ -51,6 +52,8 @@ from core.config import get_setting
 from core.data import bar_duration
 from core.ledger import Ledger
 from strategies.base import Direction
+
+logger = logging.getLogger(__name__)
 
 DIRECTIONS: tuple[Direction, ...] = ("long", "short")
 TOTAL = "total"
@@ -335,6 +338,283 @@ def compare(
         )
         for model in models
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Havuzlanmış yön karşılaştırması (projenin ana sorusu)
+# --------------------------------------------------------------------------- #
+def pooled_direction_stats(
+    trades_by_model: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, DirectionStats]:
+    """Birden çok modelin işlemlerini TEK havuzda birleştirip yön bazında ölçer.
+
+    Model tablosu "hangi model iyi" sorusunu cevaplar; bu havuz projenin asıl sorusunu:
+    **short işlemler long işlemlerden daha mı başarılı?** Model başına ortalama R'lerin
+    ortalamasını almak bu soruya yanlış cevap verirdi — 2 işlemlik bir model 200 işlemlik
+    bir modelle eşit ağırlık alır ve sonuç, işlemlerin değil model sayısının ortalaması
+    olurdu. Havuz her işleme bir oy verir.
+
+    Havuza kimin gireceğine çağıran karar verir: referans çıpalarının (kural 15) R'si
+    yoktur, havuzda işleri de yoktur. Burada filtre uygulanmaz ki modül defterin
+    içeriğinden başka bir şey varsaymasın.
+    """
+    rows = [row for trades in trades_by_model.values() for row in trades]
+    return {
+        direction: direction_stats(rows, direction=direction)
+        for direction in (*DIRECTIONS, TOTAL)
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Kabul çıtası (üç bayrak)
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, kw_only=True)
+class AcceptanceFlags:
+    """Bir yarışmacının sonucunun okunabilir sayılması için üç kapı.
+
+    Üçü de ayrı ayrı raporlanır ve hiçbiri diğerinin yerine geçmez:
+
+    - `sample` — **örneklem**: R'ye giren kapanmış işlem sayısı eşiğin altındaysa
+      ortalama R bir ölçüm değil gürültüdür. Bu kapı olmadan iki işlemle +3R yapmış bir
+      model tablonun başına oturur.
+    - `band` — **maliyet ölçeği** (kural 14): modelin `avg_stop_distance_pct` değeri
+      yarışmacı medyanının etrafındaki bantta mı? Dışındaysa model aynı 1R'yi belirgin
+      biçimde farklı notional ile taşımıştır ve R başına maliyeti diğerleriyle
+      kıyaslanamaz — sonucu yorumlanmaz (CLAUDE.md > Rapor Kolonları).
+    - `edge` — **üstünlük**: ortalama R pozitif, bilgisiz kontrol grubunun ortalama
+      R'sini aşıyor ve hesap getirisi referans çıpasını geçiyor. Üçü birlikte tek bir
+      soruyu sorar: "bu sonuç sinyalden mi geliyor, yoksa piyasadan ve şanstan mı?"
+
+    `passed` üçünün de yeşil olmasıdır. Kapılar YALNIZCA yarışmacılara uygulanır;
+    referans çıpası yarışmacı değildir (kural 15), ona bir çıta koymak ölçmediği bir
+    yarışta not vermek olurdu.
+    """
+
+    model: str
+    sample: bool
+    band: bool
+    edge: bool
+    passed: bool
+    measured_trades: int
+    min_trades: int
+    avg_stop_distance_pct: float
+    band_low: float
+    band_high: float
+    avg_r: float
+    control_avg_r: float
+    total_return: float
+    benchmark_return: float
+
+
+def acceptance_flags(
+    metrics: Sequence[ModelMetrics],
+    *,
+    min_trades: int,
+    stop_band_ratio: float,
+    control_model: str,
+) -> list[AcceptanceFlags]:
+    """Her yarışmacı için üç kabul bayrağı. Referans çıpaları listeye girmez.
+
+    Bandın çapası yarışmacıların `avg_stop_distance_pct` MEDYANIDIR, sabit bir yüzde
+    değil: kural 14'ün bandı ATR katı cinsindendir, defterde ise ATR yoktur (işlem
+    kapandıktan sonra "o anki ATR" geri hesaplanamaz, geriye dönük yeniden hesaplamak da
+    look-ahead kapısı açardı). Medyan, aynı evrende aynı barlarda işlem yapan modellerin
+    ortak volatilite ölçeğini taşır; band `medyan/√oran .. medyan×√oran` olarak kurulur,
+    yani uçtan uca tam `stop_band_ratio` kadar geniştir.
+
+    Kontrol ya da referans modeli kümede yoksa ilgili koşul değerlendirilemez ve `edge`
+    geri kalan koşullara düşer — ama bu sessiz olmaz, `logger.warning` ile söylenir:
+    eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
+    """
+    competitors = [item for item in metrics if not item.is_benchmark]
+    band_low, band_high = _stop_band(competitors, ratio=stop_band_ratio)
+    control_avg_r = _control_avg_r(metrics, control_model)
+    benchmark_return = _benchmark_return(metrics)
+
+    return [
+        _flags_for(
+            item,
+            min_trades=int(min_trades),
+            band_low=band_low,
+            band_high=band_high,
+            control_avg_r=control_avg_r,
+            benchmark_return=benchmark_return,
+        )
+        for item in competitors
+    ]
+
+
+def _flags_for(
+    item: ModelMetrics,
+    *,
+    min_trades: int,
+    band_low: float,
+    band_high: float,
+    control_avg_r: float,
+    benchmark_return: float,
+) -> AcceptanceFlags:
+    measured = item.total.trades - item.total.unmeasured
+    avg_r = item.total.avg_r
+    stop_distance = item.total.avg_stop_distance_pct
+    total_return = item.account.total_return
+
+    sample = measured >= min_trades
+    # Ölçülemeyen band (tek yarışmacı, hiç stop'lu işlem yok) bir ihlal değildir: kapı
+    # ancak kıyaslanacak bir medyan varken anlamlıdır.
+    band = (
+        True
+        if math.isnan(band_low) or math.isnan(stop_distance)
+        else band_low <= stop_distance <= band_high
+    )
+    edge = (
+        not math.isnan(avg_r)
+        and avg_r > 0.0
+        and (math.isnan(control_avg_r) or avg_r > control_avg_r)
+        and (math.isnan(benchmark_return) or (
+            not math.isnan(total_return) and total_return > benchmark_return
+        ))
+    )
+    return AcceptanceFlags(
+        model=item.model,
+        sample=sample,
+        band=band,
+        edge=edge,
+        passed=sample and band and edge,
+        measured_trades=measured,
+        min_trades=min_trades,
+        avg_stop_distance_pct=stop_distance,
+        band_low=band_low,
+        band_high=band_high,
+        avg_r=avg_r,
+        control_avg_r=control_avg_r,
+        total_return=total_return,
+        benchmark_return=benchmark_return,
+    )
+
+
+def _stop_band(competitors: Sequence[ModelMetrics], *, ratio: float) -> tuple[float, float]:
+    values = [
+        item.total.avg_stop_distance_pct
+        for item in competitors
+        if not math.isnan(item.total.avg_stop_distance_pct)
+    ]
+    if not values or ratio <= 0.0:
+        return (_NAN, _NAN)
+    center = _median(values)
+    half = math.sqrt(ratio)
+    return (center / half, center * half)
+
+
+def _control_avg_r(metrics: Sequence[ModelMetrics], control_model: str) -> float:
+    for item in metrics:
+        if item.model == control_model:
+            return item.total.avg_r
+    logger.warning(
+        "kontrol grubu %r kümede yok: edge bayrağı 'kontrolü geçti mi' koşulunu "
+        "değerlendiremiyor", control_model,
+    )
+    return _NAN
+
+
+def _benchmark_return(metrics: Sequence[ModelMetrics]) -> float:
+    """Çıpanın hesap getirisi. Birden fazla çıpa varsa EN YÜKSEĞİ alınır.
+
+    Zemin en yüksek çıpadır: "piyasayı yendi mi" sorusuna, geçilmesi en kolay çıpayı
+    seçerek cevap vermek çıtayı sessizce indirirdi.
+    """
+    returns = [
+        item.account.total_return
+        for item in metrics
+        if item.is_benchmark and not math.isnan(item.account.total_return)
+    ]
+    if not returns:
+        logger.warning(
+            "kümede referans çıpası yok: edge bayrağı 'piyasayı geçti mi' koşulunu "
+            "değerlendiremiyor (kural 15)",
+        )
+        return _NAN
+    return max(returns)
+
+
+# --------------------------------------------------------------------------- #
+# Modeller arası getiri korelasyonu
+# --------------------------------------------------------------------------- #
+def return_correlation(
+    equity_by_model: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    min_overlap: int = 3,
+) -> dict[str, Any]:
+    """Modellerin bar getirilerinin Pearson korelasyon matrisi.
+
+    Neden ölçülüyor: on model aynı evreni aynı barlarda görüyor. Yüksek korelasyonla
+    yarışan iki model bağımsız iki ölçüm değil, tek ölçümün iki kopyasıdır — tablonun
+    ilk iki sırasını doldurmaları bir teyit değil, tekrardır. Matris, sıralamanın ne
+    kadarının gerçekten farklı fikirlerden geldiğini gösterir.
+
+    Kesişim PAR BAZINDA alınır, global değil: yarışmaya sonradan eklenen bir modelin kısa
+    geçmişi, global kesişim kullanılsaydı TÜM çiftleri onun uzunluğuna kırpardı. Örtüşme
+    `min_overlap`'in altındaysa hücre `nan`'dır (0.0 "ilişkisiz" demek olurdu); örneklem
+    okunabilsin diye örtüşme sayıları da ayrıca döner.
+    """
+    models = sorted(equity_by_model)
+    series = {model: _bar_returns(equity_by_model[model]) for model in models}
+
+    matrix: list[list[float]] = []
+    overlap: list[list[int]] = []
+    for row_model in models:
+        correlations: list[float] = []
+        counts: list[int] = []
+        for column_model in models:
+            left, right = _align(series[row_model], series[column_model])
+            counts.append(len(left))
+            correlations.append(
+                _pearson(left, right) if len(left) >= min_overlap else _NAN
+            )
+        matrix.append(correlations)
+        overlap.append(counts)
+
+    return {
+        "models": models,
+        "matrix": matrix,
+        "overlap": overlap,
+        "min_overlap": int(min_overlap),
+    }
+
+
+def _bar_returns(equity_rows: Sequence[Mapping[str, Any]]) -> dict[str, float]:
+    """Zaman damgası -> o bardaki getiri. Damga anahtar, çünkü modeller farklı barda başlar."""
+    points = [
+        (str(row.get("ts", "")), _to_float(row.get("equity")))
+        for row in equity_rows
+    ]
+    points = [(ts, value) for ts, value in points if ts and value is not None]
+    points.sort(key=lambda item: item[0])
+    return {
+        ts: points[index][1] / points[index - 1][1] - 1.0
+        for index, (ts, _) in enumerate(points)
+        if index > 0 and points[index - 1][1] > 0.0
+    }
+
+
+def _align(
+    left: Mapping[str, float], right: Mapping[str, float]
+) -> tuple[list[float], list[float]]:
+    shared = sorted(set(left) & set(right))
+    return ([left[ts] for ts in shared], [right[ts] for ts in shared])
+
+
+def _pearson(left: Sequence[float], right: Sequence[float]) -> float:
+    """Sabit bir seri (varyans 0) için `nan`: sabitle korelasyon tanımsızdır, 0 değil."""
+    mean_left = _mean(left)
+    mean_right = _mean(right)
+    covariance = sum(
+        (a - mean_left) * (b - mean_right) for a, b in zip(left, right)
+    )
+    spread_left = math.sqrt(sum((a - mean_left) ** 2 for a in left))
+    spread_right = math.sqrt(sum((b - mean_right) ** 2 for b in right))
+    if spread_left == 0.0 or spread_right == 0.0:
+        return _NAN
+    return covariance / (spread_left * spread_right)
 
 
 # --------------------------------------------------------------------------- #

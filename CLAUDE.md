@@ -24,6 +24,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. |
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
 | `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. Salt okunur — ledger'ı değiştirmez. |
+| `core/report.py` | Dashboard yükü: `docs/data/metrics.json`'un tablo dışında kalan bölümleri (özsermaye eğrileri, açık pozisyonlar, son işlemler, son 24 saatin hareketi, havuz ve kabul bayraklarının toplanması). Salt okunur; hiçbir şey hesaplamaz ki `core/portfolio.py` zaten hesaplamış olsun. Tek istisna açık pozisyonun güncel PnL'idir ve kapanış formülünün aynı parçalarından kurulur (brüt − giriş komisyonu + funding; çıkış maliyeti YOK). Sunum sabitleri (kaç işlem gösterilir, eğri kaç noktaya seyreltilir) burada durur, `config.yaml`'da değil. |
 | `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde `ledgers/` altına yazar. Sistemin denetim izi (audit trail) burasıdır. |
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni. Geçersiz sinyalde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
@@ -33,8 +34,10 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `data/` | Çalışma zamanı veri deposu (depoya girmez): `data/universe.json` ve `data/cache/<sembol>_<bar>.parquet`. Mum/funding önbelleği burada tutulur, her koşuda yalnızca eksik barlar çekilir. |
 | `ledgers/` | Her stratejinin işlem/bakiye kayıtlarının tutulduğu çıktı klasörü (strateji başına dosya/alt klasör). |
 | `docs/` | Tasarım kararları, metrik tanımları, kabul kriterleri. |
+| `docs/index.html` | GitHub Pages dashboard'u: tek dosya, harici framework/CDN yok, build adımı yok. Tek veri kaynağı `docs/data/metrics.json`. Bölümler: LONG vs SHORT paneli (en üstte — ana soru), ortalama R'ye göre leaderboard + üç kabul rozeti, özsermaye eğrileri (tıklayınca izole), açık pozisyonlar, son 20 işlem (gerekçesiyle), modeller arası getiri korelasyonu. Koyu tema, mobil öncelikli. Süs katmanıdır: ölçüm defterde ve JSON'dadır, sayfa yalnızca onu çizer. |
+| `scripts/telegram_report.py` | Günlük Telegram özeti. `as_of` saati 20:00 (UTC) olan turda yollanır; token'lar ortamdan (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) okunur. **Her yolda 0 döner** — eksik token, ağ hatası, Telegram 4xx'i, bozuk JSON: hepsi loglanıp geçilir. Özet bir bildirimdir, ölçümün parçası değil; Telegram kesintisi turu kırmızıya çeviremez. |
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
-| `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. |
+| `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
 
 ### config.yaml Değerleri
 
@@ -55,6 +58,9 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `universe_size` | `50` | 24s hacme göre seçilen USDT perpetual sayısı. |
 | `universe_refresh_days` | `30` | Evren bu süre dolmadan yeniden hesaplanmaz (kıyas kümesi sabit kalsın). |
 | `trailing.atr_period` | `14` | Projenin **tek ATR tanımı**: hem trailing stop (kural 9) hem stop mesafesi bandı (kural 14) bu periyodu kullanır. İkisi ayrışırsa "3×ATR" iki farklı mesafe demeye başlar. Uygulama `core/engine.py`'dedir; periyot ortak olmalı ki aynı `trailing_atr` değeri her modelde aynı stop mesafesi anlamına gelsin. |
+| `acceptance.min_trades` | `20` | Kabul çıtasının **örneklem** kapısı: R'ye giren kapanmış işlem bu sayının altındaysa ortalama R bir ölçüm değil gürültüdür. |
+| `acceptance.stop_band_ratio` | `2.5` | Kabul çıtasının **band** kapısı (kural 14). Defterde ATR olmadığı için band yarışmacıların `avg_stop_distance_pct` medyanına göre kurulur: `medyan/√oran .. medyan×√oran`, uçtan uca tam bu oran kadar geniş. |
+| `acceptance.control_model` | `"random_ctrl"` | Kabul çıtasının **edge** kapısının kontrol referansı. `is_benchmark` değildir (aynı sütunda yarışır), bu yüzden adı `benchmarks` listesinden türetilemez. |
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
 | `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
@@ -215,6 +221,38 @@ Tanım kararları:
   kapanış sırasına göre dizilmiş **R cinsinden getiri dizisinden** hesaplanır. Toplam (hesap)
   Sharpe'ı ise gerçek bakiye eğrisinden gelir ve iki yön Sharpe'ının toplamı ya da ortalaması
   **değildir** — tabloda ayrı bir satır olarak durur.
+
+## Kabul Çıtası (üç bayrak)
+
+Tablo "hangi model önde" der; çıta "bu satır okunabilir mi" der. Üç kapı ayrı ayrı
+raporlanır (`core/metrics.py::acceptance_flags`, eşikler `config.yaml > acceptance`) ve
+hiçbiri diğerinin yerine geçmez. Bir model ancak **üçü birden** yeşilken "çıtayı geçti"
+sayılır.
+
+| Bayrak | Soru | Geçme koşulu |
+|---|---|---|
+| **Ö** — örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` |
+| **B** — band | Maliyet ölçeği diğerleriyle kıyaslanabilir mi? (kural 14) | `avg_stop_distance_pct`, yarışmacı medyanının `medyan/√oran .. medyan×√oran` bandında |
+| **E** — edge | Sonuç sinyalden mi geliyor, piyasadan ve şanstan mı? | ortalama R > 0 **ve** kontrol grubunun ortalama R'sini aşıyor **ve** hesap getirisi referans çıpasını geçiyor |
+
+Kararlar:
+
+- **Kapılar yalnızca yarışmacılara uygulanır.** Referans çıpası (kural 15) yarışmacı
+  değildir; ölçmediği bir yarışta not vermek, çıpanın ne olduğunu yanlış anlatırdı. Çıpa
+  `acceptance` bölümüne hiç girmez, tabloda bayrak sütununda `—` görünür.
+- **Kontrol grubu kapılara girer.** `random_ctrl` bir yarışmacıdır (`is_benchmark = False`)
+  ve kendi edge kapısında kendini geçemez (koşul kesin büyüktür). Bilgisiz çekilişin
+  sıralamada nerede durduğu gizlenecek bir kusur değil, raporlanacak bir sonuçtur.
+- **Band neden medyana bağlı:** kural 14'ün bandı ATR katı cinsindendir, defterde ise ATR
+  yoktur — işlem kapandıktan sonra "o anki ATR" geri hesaplanamaz ve geriye dönük yeniden
+  hesaplamak look-ahead kapısı açardı. Medyan, aynı evrende aynı barlarda işlem yapan
+  modellerin ortak volatilite ölçeğini taşır.
+- **Edge'in "çıpayı geç" koşulu** kural 15'in sorusudur: on model de pozitif getirse ama
+  hiçbiri çıpayı geçemese sonuç "stratejiler işe yarıyor" değildir. Birden çok çıpa varsa
+  **en yükseği** zemindir; geçilmesi en kolay olanı seçmek çıtayı sessizce indirirdi.
+- **Kontrol ya da çıpa kümede yoksa** ilgili koşul değerlendirilemez ve `edge` geri kalan
+  koşullara düşer — ama bu sessiz olmaz, `logger.warning` ile söylenir. Eksik bir çıta,
+  geçilmiş bir çıta gibi görünmemelidir.
 
 ## Kod Stili
 

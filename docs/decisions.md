@@ -786,3 +786,157 @@ eklendiğinde, diğer modeller o barı zaten işlemişse ensemble tek başına "
 kümesi BOŞ gelir. Bu tek turluk bir durumdur ve sessiz değildir: model "havuzdan hiç sinyal
 gelmedi" diye loglar. Guard'ı gevşetmek (metaları tazelik kontrolünden muaf tutmak) çift sinyal
 riskini geri getirirdi; bir turluk boş oy ondan ucuzdur.
+
+## 15. Dashboard ve Telegram özeti: raporlama katmanı
+
+Ölçüm tamamdı, okunması değil. Bu adım hiçbir ölçüm kuralına dokunmaz — tek işi defterde
+ve `docs/data/metrics.json`'da zaten duran sayıları telefondan okunabilir hâle getirmek.
+Ayrım bilinçlidir ve aşağıdaki kararların çoğu ondan türer: **raporlama katmanı ölçümü ne
+değiştirebilir ne de düşürebilir.**
+
+### Neden ayrı bir modül: `core/report.py`
+
+Dashboard'un ihtiyaç duyduğu her şey `core/metrics.py`'ye eklenebilirdi. Eklenmedi, çünkü
+metrics bir ÖLÇÜM modülüdür ve sunum kararları (kaç işlem gösterilir, eğri kaç noktaya
+seyreltilir, açık pozisyon nasıl işaretlenir) oraya sızsaydı ölçümün tanımı sunuma
+bağlanırdı. Bölüşüm şöyle:
+
+- **`core/metrics.py`** — havuzlanmış yön istatistikleri, kabul bayrakları, getiri
+  korelasyonu. Üçü de metriktir: girdisi defter satırı, çıktısı sayı.
+- **`core/report.py`** — bu sayıların yanına bağlam koyar (açık pozisyonlar, son işlemler,
+  özsermaye eğrileri, 24 saatlik hareket) ve JSON bölümlerini kurar. Sunum sabitleri
+  (`RECENT_TRADE_LIMIT`, `EQUITY_MAX_POINTS`) burada durur, `config.yaml`'da değil:
+  config.yaml "tüm modeller için birebir aynı ölçüm koşulu" sözleşmesidir (kural 6) ve kaç
+  satır çizildiği o sözleşmenin parçası değildir.
+
+`main.py` ince kaldı: tek bir `build_dashboard(...)` çağrısı, defter kapsamı hâlâ açıkken.
+Böylece `--dry-run` sayfayı da turun geçici kopyasından üretir, gerçek defterden değil.
+
+### Havuz modele değil İŞLEME oy verir
+
+"Short işlemler daha mı başarılı" sorusunun cevabı model başına ortalama R'lerin ortalaması
+olamaz: 2 işlemlik bir model 200 işlemlik bir modelle eşit ağırlık alır ve sonuç işlemlerin
+değil model sayısının ortalaması olur. Bu yüzden `pooled_direction_stats` tüm yarışmacıların
+satırlarını tek havuzda birleştirip `direction_stats`'ı ONUN üzerinde çalıştırır.
+
+Havuza kimin gireceğine `core/report.py` karar verir, `core/metrics.py` değil: modül defterin
+içeriğinden başka bir şey varsaymamalı. Referans çıpası havuz dışıdır (stop'suz işlemin R'si
+yoktur, kural 15); `random_ctrl` içeridedir, çünkü boyutlandırması ve stop ölçeği
+yarışmacılarla birebir aynıdır.
+
+### Kabul çıtası: neden ÜÇ bayrak, neden tek bir puan değil
+
+Tek bir "skor" üretmek üç farklı soruyu tek sayıya yığardı ve hangi kapıda takılındığı
+görünmez olurdu. Üç kapı ayrı ayrı raporlanır (tanımlar: `CLAUDE.md > Kabul Çıtası`):
+
+- **Ö (örneklem)** — iki işlemle +3R yapmış bir model, bu kapı olmadan tablonun başına
+  oturur.
+- **B (band)** — kural 14'ün maliyet ölçeği kuralının denetlenebilir hâli.
+- **E (edge)** — ortalama R pozitif, kontrol grubu aşılmış ve çıpa geçilmiş.
+
+`E`'nin üç koşulu ayrı bayrak yapılmadı: üçü aynı soruyu farklı yerlerden soruyor ("bu
+sonuç sinyalden mi geliyor, piyasadan ve şanstan mı"), ve rozet sayısını altıya çıkarmak
+mobil tabloda okunaksız bir sütun üretirdi. Hangi koşulun düştüğü rozetin tooltip'inde ve
+Telegram özetinin "en yakını" satırında yazılı.
+
+#### Bandın çapası neden medyan
+
+Kural 14'ün bandı **ATR katı** cinsindendir; `trades.csv`'de ATR yoktur ve işlem kapandıktan
+sonra "giriş anındaki ATR" geri hesaplanamaz — geriye dönük yeniden hesaplamak look-ahead
+için yeni bir kapı açardı. Sabit bir yüzde eşiği de kullanılamazdı: %3 stop, düşük volatil
+bir dönemde geniş, yüksek volatil bir dönemde dardır.
+
+Medyan bu iki sorunu birden çözer: aynı evrende aynı barlarda işlem yapan modellerin ortak
+volatilite ölçeğini taşır ve rejim değiştikçe kendisi de kayar. Band `medyan/√oran ..
+medyan×√oran` olarak kurulur — uçtan uca tam `stop_band_ratio` kadar geniş, yani kural 14'ün
+1×–2.5× bandıyla aynı genişlikte.
+
+#### Çıpayı geçme koşulu ve "en yüksek çıpa" kuralı
+
+Kural 15'in sorusu: "model piyasayı yendi mi, yoksa yalnızca yükselen bir piyasada mı
+durdu?" Birden çok çıpa varsa **en yükseği** zemindir. Alternatif (ilk çıpayı ya da
+ortalamayı almak) çıtayı, hangi çıpaların listede olduğuna göre sessizce indirirdi.
+
+Kontrol ya da çıpa kümede yoksa koşul değerlendirilemez ve `edge` geri kalanlara düşer —
+ama `logger.warning` ile. Eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
+
+### Korelasyon: örtüşme par bazında, yetersizse `nan`
+
+Modellerin bar getirilerinin Pearson korelasyonu, "sıralamanın ne kadarı gerçekten farklı
+fikirlerden geliyor" sorusunu sorar: yüksek korelasyonla yarışan iki model bağımsız iki
+ölçüm değil, aynı ölçümün iki kopyasıdır.
+
+Kesişim **par bazında** alınır. Global kesişim kullanılsaydı, yarışmaya sonradan eklenen bir
+modelin kısa geçmişi TÜM çiftleri onun uzunluğuna kırpardı. Örtüşme `min_overlap`'in
+altındaysa hücre `nan`'dır ve sayfada boş kalır: `0.0` "ilişkisiz" demektir, "ölçülemedi"
+değil (aynı gerekçe `core/metrics.py`'nin tamamında geçerli).
+
+Korelasyon matrisi referans çıpasını DA içerir — orada ölçülen R değil bar getirisidir ve
+"modeller piyasadan ne kadar ayrışıyor" sorusunun cevabı tam olarak çıpayla karşılaştırmayı
+gerektirir.
+
+### `docs/index.html`: sıfır bağımlılık
+
+Sayfa tek dosyadır: framework yok, CDN yok, build adımı yok. Gerekçe, sayfanın ölçümün YÜZÜ
+olup parçası olmamasıdır: bir grafik kütüphanesinin sürüm değişikliği ya da CDN kesintisi
+raporu okunamaz hâle getirebilmemeli. Ölçüm zaten defterde ve JSON'da duruyor.
+
+- **Renk ataması kimliğe bağlıdır, sıraya değil.** Filtre ya da sıralama değiştiğinde hiçbir
+  modelin rengi değişmez; "trend maviydi" diye öğrenen okuyucu yanılmamalı.
+- **Nötr griler bir zemindir, bir fikir değil.** Referans çıpası ve kontrol grubu kategorik
+  renk slotu almaz — grafikte de tabloda da hue'suz durur.
+- **Dokuzuncu model üretilmiş bir renk almaz.** İlk slotun rengini KESİKLİ çizgiyle (tabloda:
+  içi boş kare) tekrar kullanır; kimliği renk + desen birlikte taşır. Sekizden sonra üretilen
+  renkler renk körlüğünde birbirinden ayrılamaz.
+- **Yön kimliği ile sayının işareti farklı renk ailelerindedir.** Short'a "negatif kırmızı"yı
+  vermek, kârdaki bir short'u da kırmızı gösterip "kötü" diye okuturdu. Yön kimliği kategorik
+  (mavi/turuncu), işaret ise diverging çift (mavi/kırmızı).
+- **Tanımsız metrik `—`'dir.** JSON'da `null` (bkz. `main.py::_jsonable`), sayfada tire.
+  `0` yazmak "ölçüldü, sıfır çıktı" ile "ölçülemedi"yi aynı hücreye yığardı.
+- **Açık pozisyonun PnL'i çıkış maliyeti hariçtir** ve sayfa bunu söyler: pozisyon kapanmadı,
+  çıkış fiyatı da komisyonu da bilinmiyor. Mevcut fiyattan kapanmış saymak, deftere hiç
+  girmeyecek bir sayıyı kapanmış işlemlerin yanına koyardı.
+- **Fiyatı olmayan sembol kâr/zararda gösterilmez:** giriş fiyatından işaretlenir (aynı kural
+  `core/portfolio.py::_mark`'ta) ve satır `*` ile işaretlenir.
+
+`main.py::_write_metrics` artık `_jsonable`'ı yükün TAMAMINA uygular, yalnızca model
+tablosuna değil. Dönüşümü tek bir dala uygulamak, yeni bir bölüm eklendiği gün sessizce
+GEÇERSİZ JSON üretirdi ve sayfa veriyi hiç çizemeden ölürdü.
+
+### Telegram: kapı `as_of`'ta, hata yutuluyor
+
+"Günde bir kez, 20:00 UTC turunda" kararını script verir, cron değil. 4H barlarda gün içinde
+altı tur koşar; "günde bir"in tekrarlanabilir tanımı **"as_of'u 20:00 olan tur"**dur. Duvar
+saatine bakan bir kapı, cron geciktiğinde ya da tur elle tekrarlandığında özeti ya iki kez
+ya hiç yollardı.
+
+Saat kapısı tek başına yetmiyor: tur düşerse depodaki `metrics.json` bir önceki turdan kalır
+ve DÜNKÜ 20:00 raporu bugün tekrar yollanabilirdi. Bu yüzden `generated_at` üzerinden bir
+tazelik kapısı daha var (`MAX_REPORT_AGE_HOURS = 3`; bar 4H olduğu için taze bir rapor her
+zaman bundan gençtir).
+
+**Script her yolda 0 döner.** Eksik token, ağ hatası, Telegram 4xx'i, bozuk JSON — hepsi
+loglanır ve geçilir. Workflow adımı ayrıca `continue-on-error: true` taşır ve defter
+commit'inden SONRA gelir. Üç ayrı emniyet, tek bir gerekçeyle: özet bir bildirimdir, ölçümün
+parçası değil. Telegram'ın kesintisi yüzünden turun kırmızı dönmesi, defterin commit'lenip
+commit'lenmediğine dair gerçek sinyali gürültüye boğardı.
+
+Mesaj `parse_mode: HTML` ile yollanır, Markdown ile değil: model adları alt çizgi içerir
+(`failed_breakout`, `downtrend_rally`) ve Markdown'da alt çizgi italik açar — mesaj ya bozuk
+biçimlenir ya Telegram 400 döner. HTML'de kaçırılması gereken üç karakter vardır ve
+`html.escape` hepsini kapatır.
+
+Sıralamaya yalnızca ortalama R'si ÖLÇÜLEBİLEN modeller girer; kaç modelin ölçülemediği ayrı
+bir satırda söylenir. Hiç kapanmış işlemi olmayan bir modeli "ilk 3"e koymak, ölçülmemiş bir
+modeli ölçülmüş bir modelin önüne geçirirdi. Kontrol grubu sıralamada `⚠` ile anılır:
+bilgisiz çekilişin ilk üçte olması gizlenecek bir kusur değil, raporlanacak bir sonuçtur.
+
+### Referans satırlarının görsel ayrışması — kısmi bir sapma
+
+İstenen "referans satırları (`buyhold`, `random_ctrl`) görsel olarak ayrışsın, yarışmacı
+değiller" idi. Görsel ayrışma ikisine de uygulandı (nötr gri, ayrı etiket), ama
+**`random_ctrl` sıralamada bırakıldı.** Gerekçe `README.md`'de zaten yazılı: `random_ctrl`
+`is_benchmark` DEĞİLDİR — boyutlandırması, stop ölçeği ve limitleri yarışmacılarla birebir
+aynıdır, tek farkı sinyalin bilgisiz olmasıdır. Onu ayrı bir bölüme almak "edge'in referansı
+ancak aynı sütunda okunabilir" ilkesini bozardı. Yalnızca `buyhold` ayrı REFERANS bölümünde
+durur (kural 15). Ayrım tabloda KONTROL / REFERANS etiketleriyle görünür.

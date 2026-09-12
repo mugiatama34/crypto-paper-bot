@@ -49,6 +49,51 @@ zaten taşıdığı pozisyon) ile gerçek bir boyutlandırma arızası (`zero_si
 `insufficient_cash`). Kod olmadan ikisi aylar sonra ayırt edilemez. Log seviyesi de aynı
 ayrımı taşır: beklenen tekrar `INFO`, arıza `WARNING`.
 
+## Dashboard (GitHub Pages)
+
+`docs/index.html` statik bir tek sayfadır: harici framework yok, CDN yok, build adımı yok.
+Tek veri kaynağı kardeş dosya `docs/data/metrics.json`'dır — her turda `main.py` üretir,
+koşu workflow'u defterlerle birlikte commit eder. Sayfayı yayına almak için depo
+ayarlarında **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`** seçmek
+yeterlidir; ayrı bir deploy workflow'u gerekmez.
+
+| Bölüm | Ne gösterir |
+|---|---|
+| LONG vs SHORT | Projenin ana sorusu, en üstte: tüm yarışmacıların long işlemleri havuzu vs short işlemleri havuzu — ortalama R, kazanma oranı, işlem sayısı, net funding katkısı ayrı ayrı. Havuz **işleme** oy verir, modele değil: model ortalamalarının ortalaması 2 işlemlik bir modeli 200 işlemlik bir modelle eşitlerdi. |
+| Leaderboard | Ortalama R'ye göre sıralı (başlığa tıklayınca değişir): getiri, MDD, işlem sayısı, kazanma oranı, profit factor, `avg_stop_distance_pct`, `cost_per_r` ve **üç kabul rozeti** (Ö/B/E — bkz. Kabul çıtası). `random_ctrl` KONTROL etiketiyle sıralamada kalır; `buyhold` REFERANS olarak ayrı bölümdedir (kural 15). |
+| Özsermaye eğrileri | Tüm modeller tek grafikte; bir modele tıklayınca yalnız o kalır. Kesikli gri çizgi başlangıç sermayesi. |
+| Açık pozisyonlar | Model, sembol, yön, giriş, stop, güncel PnL ve stratejinin gerekçesi. PnL **çıkış maliyeti hariçtir** (pozisyon kapanmadı, çıkış fiyatı bilinmiyor) ve sayfa bunu söyler. |
+| Son 20 işlem | Kapanış sırasına göre, `signal_reason` kırpılmadan — ensemble'ın oy sayısı, confluence'ın güven kuyruğu dâhil. |
+| Getiri korelasyonu | Modellerin bar getirilerinin Pearson korelasyonu (çift bazında örtüşme). Yüksek korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki kopyasıdır. |
+
+Sayfa bir **süs katmanıdır**: ölçüm defterde ve JSON'dadır, sayfa yalnızca onu çizer.
+Yerelde açmak için `python -m http.server` gerekir (`file://` ile `fetch` engellenir).
+
+## Telegram özeti
+
+`scripts/telegram_report.py` günde bir kez, **`as_of` saati 20:00 UTC olan turda** tek bir
+mesaj yollar: long vs short güncel durum, ortalama R'ye göre ilk 3 ve son 3 model, son 24
+saatte açılan/kapanan işlemler ve kabul çıtasını geçen model olup olmadığı (yoksa en yakını
+hangi kapıda takıldığı).
+
+```bash
+python scripts/telegram_report.py --dry-run --force   # yollamadan mesajı gör
+```
+
+Token'lar GitHub Secrets'tan ortama geçer: **`TELEGRAM_BOT_TOKEN`** ve **`TELEGRAM_CHAT_ID`**
+(Settings → Secrets and variables → Actions). Tanımlı değilse script bunu bilgi olarak
+loglar ve sessizce geçer.
+
+Kapı duvar saatine değil `as_of` barına bakar: 4H barlarda gün içinde altı tur koşar ve
+"günde bir"in tekrarlanabilir tanımı "as_of'u 20:00 olan tur"dur. Raporun tazeliği de ayrıca
+kontrol edilir, yoksa tur düştüğünde depoda kalan dünkü 20:00 raporu yeniden yollanırdı.
+
+**Telegram hatası koşuyu düşürmez.** Script her yolda 0 döner (eksik token, ağ hatası,
+Telegram 4xx'i, bozuk JSON — hepsi loglanıp geçilir), workflow adımı ayrıca
+`continue-on-error: true` taşır ve defter commit'inden **sonra** gelir. Özet bir bildirimdir;
+onun kesintisi yüzünden turun kırmızı dönmesi, defterin commit'lenip commit'lenmediğine dair
+gerçek sinyali gürültüye boğardı.
+
 ## Defter formatı (`ledgers/<model>/`)
 
 | Dosya | İçerik |
@@ -140,7 +185,28 @@ limitleri yarışmacılarla birebir aynıdır, tek farkı sinyalin bilgisiz olma
 ne yaptı"yı ölçer, kontrol ise "sinyalin kendisi bir şey söylüyor mu"yu — ikincisinin cevabı
 ancak aynı sütunda, aynı ortalama R sıralamasında okunabilir.
 
-## Kabul çıtası (taslak)
+## Kabul çıtası
+
+İki ayrı çıta vardır ve karıştırılmamalıdır: **kod çıtası** (bir strateji "tamamlandı" mı)
+ve **sonuç çıtası** (bir modelin ölçülmüş sonucu okunabilir mi).
+
+### Sonuç çıtası — üç bayrak (dashboard rozetleri)
+
+Eşikler `config.yaml > acceptance` altındadır; hesap `core/metrics.py::acceptance_flags`.
+Bir model ancak **üçü birden** yeşilken çıtayı geçmiş sayılır.
+
+| Bayrak | Soru | Geçme koşulu |
+|---|---|---|
+| **Ö** örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` (20) |
+| **B** band | Maliyet ölçeği kıyaslanabilir mi? (kural 14) | `avg_stop_distance_pct`, yarışmacı medyanının `medyan/√2.5 .. medyan×√2.5` bandında |
+| **E** edge | Sonuç sinyalden mi geliyor? | ort. R > 0 **ve** `random_ctrl`'ü aşıyor **ve** hesap getirisi `buyhold` çıpasını geçiyor |
+
+Referans çıpası bu kapılara hiç girmez (kural 15): yarışmacı olmadığı için ölçmediği bir
+yarışta not almaz. `random_ctrl` girer — bilgisiz çekilişin sıralamada nerede durduğu
+gizlenecek bir kusur değil, raporlanacak bir sonuçtur. Gerekçeler için bkz.
+[`CLAUDE.md` > Kabul Çıtası](./CLAUDE.md#kabul-çıtası-üç-bayrak).
+
+### Kod çıtası (taslak)
 
 Bir stratejinin "tamamlandı" sayılması için:
 
@@ -165,5 +231,9 @@ Projenin "tamamlandı" sayılması için:
 - [x] `main.py` boru hattını uçtan uca çalıştırıyor ve `docs/data/metrics.json` üretiyor
       (`tests/test_main.py`).
 - [x] Ölçüme bir referans çıpası (`buyhold`) eklendi (kural 15, `tests/test_buyhold.py`).
+- [x] `docs/index.html` sonuçları tek sayfada gösteriyor; LONG vs SHORT paneli en üstte
+      ve üç kabul rozeti leaderboard'da (`tests/test_report.py`).
+- [x] `scripts/telegram_report.py` günlük özeti yolluyor ve hatası turu düşürmüyor
+      (`tests/test_telegram_report.py`).
 
 Bu çıta taslaktır, onay/düzeltme bekliyor.

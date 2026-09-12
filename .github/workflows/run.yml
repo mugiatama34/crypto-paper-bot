@@ -72,3 +72,25 @@ jobs:
           done
           echo "push 4 denemede başarısız oldu"
           exit 1
+
+      # Günlük Telegram özeti. Defter commit'inden SONRA gelir: özet bir bildirimdir,
+      # ölçümün parçası değil — burada ne olursa olsun tur çoktan kaydedilmiştir.
+      #
+      # `if: always()` çünkü push çakışması özeti susturmamalı; `continue-on-error`
+      # ve script'in koşulsuz 0 dönmesi (bkz. scripts/telegram_report.py) iki ayrı
+      # emniyet kemeridir — biri kaldırılsa bile Telegram arızası turu kırmızıya
+      # çeviremez.
+      #
+      # "Günde bir kez, 20:00 UTC turunda" kararını script verir (as_of saati 20 olan
+      # tur) ve raporun tazeliğini de ayrıca kontrol eder. Kapıyı cron'a taşımak,
+      # gecikmiş ya da elle tetiklenmiş bir koşuda özeti ya iki kez ya hiç yollardı.
+      #
+      # Secret tanımlı değilse (fork, yeni depo) script bunu bilgi olarak loglar ve
+      # sessizce geçer: eksik bir secret bir arıza değil, bir tercihtir.
+      - name: Telegram daily summary
+        if: always()
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/telegram_report.py --log-level INFO
