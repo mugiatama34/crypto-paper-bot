@@ -18,6 +18,7 @@ from strategies.base import Strategy
 from strategies.buyhold import BuyHold
 from strategies.confluence import Confluence
 from strategies.downtrend_rally import DowntrendRally
+from strategies.ensemble import Ensemble
 from strategies.failed_breakout import FailedBreakout
 from strategies.meanrev import MeanReversion
 from strategies.momentum import Momentum
@@ -37,6 +38,7 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     FailedBreakout.name: FailedBreakout,
     DowntrendRally.name: DowntrendRally,
     Avwap.name: Avwap,
+    Ensemble.name: Ensemble,
     RandomControl.name: RandomControl,
 }
 

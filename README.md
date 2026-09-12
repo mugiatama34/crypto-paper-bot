@@ -124,10 +124,16 @@ Yarışmanın tamamlanması için 10 model gerekir.
 | 7 | `downtrend_rally` | short | düşüş trendinde 0.382-0.618 / 20 EMA rallisinin satışı |
 | 8 | `avwap` | long + short | kesinleşmiş pivota çapalı VWAP'tan ±2σ sapma |
 | 9 | `random_ctrl` | long + short | **kontrol grubu**: bilgisiz çekiliş, edge'in referansı |
-| 10 | — | — | planlanıyor |
+| 10 | `ensemble` | long + short | **meta** (kural 4): akranların o turdaki sinyallerinden konsensüs |
 
 `buyhold` sayıya dâhil değildir: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınıp hiç satılmaz.
 Tek işi yarışmacılara bir zemin vermektir.
+
+`ensemble` projedeki tek META modeldir (`is_meta = True`): kendi sinyal mantığı yoktur, o
+turda normal modellerin ürettiği sinyalleri salt okunur okur ve aynı sembolde aynı yönde en az
+2 modelin birleştiği yerde işlem açar. Oy veren havuz `random_ctrl` (kontrol grubu) ile
+`buyhold` (referans çıpası) DIŞINDADIR; oylar eşit ağırlıklıdır. Stop katılımcıların en
+genişi, hedef en yakını (tek TP, tamamı). Ölçtüğü tek şey: **üst üste binme işe yarıyor mu.**
 
 `random_ctrl` ise sayıya dâhildir ve `is_benchmark` DEĞİLDİR: boyutlandırması, stop ölçeği ve
 limitleri yarışmacılarla birebir aynıdır, tek farkı sinyalin bilgisiz olmasıdır. Çıpa "piyasa
@@ -148,7 +154,7 @@ Bir stratejinin "tamamlandı" sayılması için:
 
 Projenin "tamamlandı" sayılması için:
 
-- [ ] 10 strateji de arayüze uygun şekilde çalışıyor.
+- [x] 10 strateji de arayüze uygun şekilde çalışıyor (9 yarışmacı + 1 meta; `buyhold` çıpa).
 - [x] `core/portfolio.py`, `core/funding.py`, `core/ledger.py` tüm modeller için aynı kuralları
       uyguladığını kanıtlayan testlere sahip (`tests/test_portfolio.py`, `tests/test_funding.py`,
       `tests/test_ledger.py`, `tests/test_engine.py`).

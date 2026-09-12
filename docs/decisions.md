@@ -694,3 +694,95 @@ maliyet, limit ve defter kuralları diğer modellerle birebir aynıdır.
 `market(...)` artık `funding` alıyor ve `funding_series(rates, end=as_of)` eklendi: funding
 kapısı/önceliği olan iki model (failed_breakout, downtrend_rally) onsuz test edilemezdi. Seri
 `as_of`ta biter — kural 12 funding tarafında da geçerlidir.
+
+---
+
+## 14. `ensemble`: ilk meta model ve `is_meta` yolunun canlı doğrulaması
+
+Onuncu model kayıtlı: `strategies/ensemble.py`, projedeki tek `is_meta = True` model. Kendi
+sinyal mantığı yoktur — tek girdisi `peer_signals`'tır (kural 4'ün dar istisnası). Tezi tek
+cümledir: *bağımsız modellerin aynı sembolde aynı yönde üst üste binmesi, tek bir modelin
+sinyalinden daha iyi bir giriş midir?*
+
+### Kendi kapısını eklemez
+
+Ensemble'a bir rejim ya da hacim filtresi eklemek ölçtüğü şeyi "üst üste binme + benim
+filtrem" yapardı: iyi sonucun örtüşmeden mi filtreden mi geldiği ayrılamaz, tez test edilemez
+hâle gelirdi. Bu yüzden model hiçbir gösterge hesaplamaz; fiyat verisine yalnızca "sembol bu
+turun anlık görüntüsünde `as_of` barını taşıyor mu" kontrolü için bakar.
+
+### Oy veren havuz: `random_ctrl` ve `buyhold` dışarıda
+
+- **`random_ctrl` oy vermez.** Kontrol bilgisiz bir çekiliştir; oyu sayılsaydı ensemble kısmen
+  rastgele olurdu. Bozulma tek taraflı da değildir: kontrolün "bilgisiz sinyal" tanımı
+  ensemble üzerinden dolaylı olarak bir stratejiye bağlanır, yani iki modelin ölçümü birden
+  kirlenir.
+- **`buyhold` oy vermez.** Çıpa yönlü bir görüş bildirmez (kural 15): her turda aynı iki
+  sinyali üretir ve oyu sayılsaydı BTC/ETH'de kalıcı bir "long" tabanı yaratırdı.
+- Havuz `VOTER_POOL` sabitinde açıkça yazılıdır — "hepsi hariç şunlar" biçiminde bir dışlama
+  listesi, ileride eklenecek bir modelin sessizce oy vermeye başlaması demekti.
+
+### Eşik iki AYRI model; oylar eşit ağırlıklı
+
+Aynı model bir sembolde aynı yönde iki sinyal üretse bile tek oy sayar: ölçülen şey modellerin
+üst üste binmesi, sinyal sayısı değil. Short-only modeller (`failed_breakout`,
+`downtrend_rally`) short tarafta diğerleriyle aynı ağırlığı taşır. **Ağırlıklandırma yapılmadı**
+— "hangi model daha iyi oy veriyor" ayrı bir tezdir ve karıştırıldığında iyi sonucun ağırlıktan
+mı örtüşmeden mi geldiği ayrılamaz.
+
+### Zıt yön: çakışma varsa işlem yok, tek muhalif veto değil
+
+Bir sembolde hem long hem short eşiği geçiyorsa işlem yoktur ve durum `logger.info` ile
+(hangi modellerin hangi tarafta olduğu dâhil) yazılır. Oy farkına ya da bir öncelik sırasına
+bakarak bir tarafı seçmek ensemble'ı gizli bir ağırlıklandırmaya çevirirdi.
+
+Eşiği geçmeyen TEK bir karşı oy ise çakışma sayılmaz: iki long oyuna karşı bir short oyu,
+konsensüsün tanımı gereği konsensüsü bozmaz. Aksi kural, modeli "hiç kimse itiraz etmedi"
+tezini ölçen bambaşka bir modele çevirirdi — tek bir muhalif her işlemi veto ederdi.
+
+### Seviyeler devralınır, yeniden hesaplanmaz
+
+- **Stop: katılanların en GENİŞİ.** En muhafazakâr seçim budur; dar stop aynı 1R'yi daha büyük
+  notional ile taşımak ve R başına daha çok maliyet ödemek demektir (kural 14). Ortalama almak
+  ya da kendi ATR katını kurmak, ensemble'ı katılımcıların hiçbirinin savunmadığı ÜÇÜNCÜ bir
+  modele çevirirdi. En geniş stop `max_stop_atr_multiple` tavanını aşarsa işlem
+  `core/engine.py` tarafından atlanır ve loglanır — bilinçli sonuç: konsensüsün taşıdığı risk
+  ölçülemiyorsa işlem de açılmaz.
+- **Hedef: en YAKIN, tek TP, fraction 1.0.** Kısmi çıkışları birleştirmek (fraction toplamak,
+  kademe sıraya dizmek) katılımcıların hiçbirinin planına benzemeyen bir çıkış üretirdi.
+  Hiçbir katılımcının hedefi yoksa sinyal hedefsiz gider.
+- **`trailing_atr` istenmez.** Trailing bir çıkış tezidir ve katılımcılar arasında farklıdır;
+  üçüncü bir birleştirme kuralı, ölçülen şeye ensemble'ın kendi katkısını eklerdi.
+
+### `reason` ayrıştırılabilir bir kuyrukla biter
+
+`... | voters=squeeze,trend | stop_from=squeeze | tp_from=none`. Karar 12'deki `| confidence=`
+ile aynı gerekçe: hangi model bileşiminin kazandığı defterden (`trades.csv`) gruplanarak
+sorulabilsin, ölçüm tablosunun kolonları hiç kirlenmesin. Oy listesi ve `stop_from`/`tp_from`
+alfabetik seçilir — eşitlikte etiketin akranların çalışma sırasına göre değişmemesi için.
+
+### `is_meta` yolu canlı doğrulandı
+
+Bu yol bugüne kadar yalnızca sahte modellerle test edilmişti. `tests/test_ensemble.py` gerçek
+Ensemble'ı `core/engine.py` içinde koşturur ve şunları çiviler:
+
+- normal modeller bittikten SONRA meta geçişi çalışır; iki oy tek konsensüs sinyaline dönüşür
+  ve bir sonraki barda dolar (kural 13),
+- normal modeller `peer_signals=None` alır,
+- metalar birbirini görmez: ensemble'ın yanında koşan ikinci bir meta'nın gördüğü küme yalnızca
+  normal modellerdir (sıralamadan bağımsız), ve bir meta'nın sinyali ensemble'a oy olarak
+  girmez,
+- akran kümesi derin kopyadır ve `MappingProxyType`'tır (yazılamaz).
+
+Kod tarafında bir değişiklik gerekmedi: `_collect_signals` `peer_base`'i meta döngüsünden ÖNCE
+dondurduğu için metaların çıktısı akran kümesine hiç girmiyor, her meta kendi derin kopyasını
+alıyor.
+
+### Bilinen ve kabul edilen kenar durum: soğuk başlangıç
+
+`core/engine.py` sinyal üretimini yalnızca `as_of` barına BU turda ulaşan modellere açar
+(`reached_as_of`, aynı turun iki kez koşmasına karşı). Ensemble defteri boş olarak listeye
+eklendiğinde, diğer modeller o barı zaten işlemişse ensemble tek başına "taze" olur ve akran
+kümesi BOŞ gelir. Bu tek turluk bir durumdur ve sessiz değildir: model "havuzdan hiç sinyal
+gelmedi" diye loglar. Guard'ı gevşetmek (metaları tazelik kontrolünden muaf tutmak) çift sinyal
+riskini geri getirirdi; bir turluk boş oy ondan ucuzdur.
