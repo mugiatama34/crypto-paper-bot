@@ -824,20 +824,56 @@ içeriğinden başka bir şey varsaymamalı. Referans çıpası havuz dışıdı
 yoktur, kural 15); `random_ctrl` içeridedir, çünkü boyutlandırması ve stop ölçeği
 yarışmacılarla birebir aynıdır.
 
-### Kabul çıtası: neden ÜÇ bayrak, neden tek bir puan değil
+### Kabul çıtası: İKİ KAPI + BİR UYARI, tek bir puan değil
 
-Tek bir "skor" üretmek üç farklı soruyu tek sayıya yığardı ve hangi kapıda takılındığı
-görünmez olurdu. Üç kapı ayrı ayrı raporlanır (tanımlar: `CLAUDE.md > Kabul Çıtası`):
+Tek bir "skor" üretmek farklı soruları tek sayıya yığardı ve nerede takılındığı görünmez
+olurdu. Ayrı ayrı raporlanır (tanımlar: `CLAUDE.md > Kabul Çıtası`):
 
-- **Ö (örneklem)** — iki işlemle +3R yapmış bir model, bu kapı olmadan tablonun başına
-  oturur.
-- **B (band)** — kural 14'ün maliyet ölçeği kuralının denetlenebilir hâli.
-- **E (edge)** — ortalama R pozitif, kontrol grubu aşılmış ve çıpa geçilmiş.
+- **Ö (örneklem, KAPI)** — iki işlemle +3R yapmış bir model, bu kapı olmadan tablonun
+  başına oturur. Eşik 30 işlem.
+- **E (edge, KAPI)** — ortalama R pozitif, kontrol grubu **marjla** aşılmış ve çıpa
+  geçilmiş.
+- **⚠ B (band, UYARI)** — kural 14'ün maliyet ölçeği kuralının denetlenebilir hâli.
 
 `E`'nin üç koşulu ayrı bayrak yapılmadı: üçü aynı soruyu farklı yerlerden soruyor ("bu
-sonuç sinyalden mi geliyor, piyasadan ve şanstan mı"), ve rozet sayısını altıya çıkarmak
-mobil tabloda okunaksız bir sütun üretirdi. Hangi koşulun düştüğü rozetin tooltip'inde ve
+sonuç sinyalden mi geliyor, piyasadan ve şanstan mı"), ve rozet sayısını artırmak mobil
+tabloda okunaksız bir sütun üretirdi. Hangi koşulun düştüğü rozetin tooltip'inde ve
 Telegram özetinin "en yakını" satırında yazılı.
+
+#### Band neden bir KAPI değil
+
+İlk hâlinde band da bir kapıydı ve bandın dışında kalan model "çıtayı geçemedi" sayılıyordu.
+Bu iki ayrı soruyu birbirine karıştırıyordu:
+
+1. *"Bu model doğrulandı mı?"* — modelin **kendi** verisiyle cevaplanır: yeterli örneklem
+   var mı, sonuç kontrolü ve piyasayı geçiyor mu.
+2. *"Bu model şu modelle kıyaslanabilir mi?"* — ancak bir **çiftle** cevaplanır ve
+   cevabı modelin kalitesi hakkında hiçbir şey söylemez.
+
+Bandın dışında kalmak ikinci sorunun konusudur. 1.2% stop mesafesiyle çalışan bir model,
+diğerleri 3% civarındayken, aynı 1R'yi çok daha büyük notional ile taşır ve R başına çok
+daha fazla komisyon+kayma öder — ama bu onun ölçümünü geçersiz kılmaz, yalnızca o satırı
+başka bir satırın yanına koyarken `cost_per_r` farkının sonucu tek başına açıklayıp
+açıklamadığını sormayı zorunlu kılar (CLAUDE.md > Rapor Kolonları zaten bunu söylüyordu).
+
+Kapı olarak bırakmanın somut zararı: geniş ya da dar stop kuran bir modelin **tezi** —
+"stop fitilin üstünde olmalı", "stop sıkı olmalı" — tam da ölçülmek istenen şeydir. Onu
+"doğrulanamaz" diye işaretlemek, ölçüme girmeden önce elemek olurdu. Bu yüzden band artık
+`passed`'a girmiyor; tabloda yalnızca bandın DIŞINDAKİ satırlarda görünen bir uyarı
+ikonudur (`⚠ B`), tooltip'i ne yapılacağını söyler. Bandın içindeki satırlarda hiç
+çizilmez: her satırda duran bir uyarı, uyarı olmaktan çıkıp süse döner.
+
+#### Edge'in marjı
+
+Kontrolü 0.01R ile geçen bir model marj olmadan "geçti" sayılırdı. `random_ctrl` bilgisiz
+bir çekiliştir ve kendi ortalama R'si de bir örneklem tahminidir: kıl payı bir fark, iki
+gürültülü ortalamanın farkından ibaret olabilir. `acceptance.edge_margin_r` (0.15R) bu
+farkı anlamlı olana kadar bekletir.
+
+Karşılaştırma `fark >= marj` şeklindedir ("en az bu kadar"). Sınırın ULP düzeyinde tanımı
+anlamsızdır — iki kayan noktalı ortalamanın farkı söz konusudur ve 0.15 ile
+0.1499999999999999 arasındaki ayrım gürültünün çok altındadır — bu yüzden koda yapay bir
+tolerans eklenmedi ve test de sınırı iki yandan açıkça yokluyor.
 
 #### Bandın çapası neden medyan
 

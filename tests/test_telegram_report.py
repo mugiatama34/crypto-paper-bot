@@ -64,12 +64,13 @@ def _payload(**overrides: Any) -> dict[str, Any]:
             "total": _direction(direction="total"),
         }},
         "acceptance": {
-            "control_model": "random_ctrl", "min_trades": 20, "stop_band_ratio": 2.5,
+            "control_model": "random_ctrl", "min_trades": 30, "stop_band_ratio": 2.5,
+            "edge_margin_r": 0.15,
             "models": [
                 {"model": "trend", "sample": True, "band": True, "edge": True, "passed": True,
-                 "measured_trades": 40, "min_trades": 20, "avg_stop_distance_pct": 3.0,
+                 "measured_trades": 40, "min_trades": 30, "avg_stop_distance_pct": 3.0,
                  "band_low": 2.0, "band_high": 5.0, "avg_r": 0.4, "control_avg_r": 0.0,
-                 "total_return": 0.11, "benchmark_return": 0.06},
+                 "edge_margin_r": 0.15, "total_return": 0.11, "benchmark_return": 0.06},
             ],
         },
         "activity": {"since": "2026-03-09T20:00:00+00:00", "hours": 24, "opened": 4,
@@ -116,7 +117,7 @@ def test_message_reports_the_daily_activity() -> None:
 
 def test_message_says_who_cleared_the_acceptance_bar() -> None:
     message = telegram_report.build_message(_payload())
-    assert "üç kapıyı da geçen" in message and "trend" in message
+    assert "iki kapıyı da geçen" in message and "trend" in message
 
 
 def test_message_says_when_nobody_cleared_the_bar() -> None:
@@ -126,6 +127,24 @@ def test_message_says_when_nobody_cleared_the_bar() -> None:
     message = telegram_report.build_message(payload)
     assert "geçen model yok" in message
     assert "E✗" in message
+    assert "gereken marj 0.15R" in message
+
+
+def test_band_never_appears_as_a_failed_gate() -> None:
+    """Band bir kapı değil: "B✗" yazmak doğrulanmış bir modeli reddedilmiş gösterirdi."""
+    payload = _payload()
+    payload["acceptance"]["models"][0].update(passed=False, edge=False, band=False)
+    message = telegram_report.build_message(payload)
+    assert "B✗" not in message
+
+
+def test_band_warning_rides_along_with_a_passing_model() -> None:
+    """Geçen model bandın dışındaysa uyarı anılır — ama "geçti" bozulmaz."""
+    payload = _payload()
+    payload["acceptance"]["models"][0].update(band=False)
+    message = telegram_report.build_message(payload)
+    assert "iki kapıyı da geçen" in message
+    assert "⚠" in message and "cost_per_r" in message
 
 
 def test_message_marks_the_control_group_in_the_ranking() -> None:

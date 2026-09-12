@@ -76,6 +76,7 @@ def build_dashboard(
         min_trades=int(get_setting(config_dict, "acceptance.min_trades")),
         stop_band_ratio=float(get_setting(config_dict, "acceptance.stop_band_ratio")),
         control_model=str(get_setting(config_dict, "acceptance.control_model")),
+        edge_margin_r=float(get_setting(config_dict, "acceptance.edge_margin_r")),
     )
     positions = open_positions(models, ledger=ledger, marks=marks)
 
@@ -89,6 +90,7 @@ def build_dashboard(
         "acceptance": {
             "control_model": str(get_setting(config_dict, "acceptance.control_model")),
             "min_trades": int(get_setting(config_dict, "acceptance.min_trades")),
+            "edge_margin_r": float(get_setting(config_dict, "acceptance.edge_margin_r")),
             "stop_band_ratio": float(get_setting(config_dict, "acceptance.stop_band_ratio")),
             "models": [asdict(item) for item in flags],
         },

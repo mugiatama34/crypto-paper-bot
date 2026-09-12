@@ -60,7 +60,7 @@ yeterlidir; ayrı bir deploy workflow'u gerekmez.
 | Bölüm | Ne gösterir |
 |---|---|
 | LONG vs SHORT | Projenin ana sorusu, en üstte: tüm yarışmacıların long işlemleri havuzu vs short işlemleri havuzu — ortalama R, kazanma oranı, işlem sayısı, net funding katkısı ayrı ayrı. Havuz **işleme** oy verir, modele değil: model ortalamalarının ortalaması 2 işlemlik bir modeli 200 işlemlik bir modelle eşitlerdi. |
-| Leaderboard | Ortalama R'ye göre sıralı (başlığa tıklayınca değişir): getiri, MDD, işlem sayısı, kazanma oranı, profit factor, `avg_stop_distance_pct`, `cost_per_r` ve **üç kabul rozeti** (Ö/B/E — bkz. Kabul çıtası). `random_ctrl` KONTROL etiketiyle sıralamada kalır; `buyhold` REFERANS olarak ayrı bölümdedir (kural 15). |
+| Leaderboard | Ortalama R'ye göre sıralı (başlığa tıklayınca değişir): getiri, MDD, işlem sayısı, kazanma oranı, profit factor, `avg_stop_distance_pct`, `cost_per_r` ve kabul sütunu — **iki kapı** (Ö, E) ve **bir uyarı** (⚠ B); bkz. Kabul çıtası. `random_ctrl` KONTROL etiketiyle sıralamada kalır; `buyhold` REFERANS olarak ayrı bölümdedir (kural 15). |
 | Özsermaye eğrileri | Tüm modeller tek grafikte; bir modele tıklayınca yalnız o kalır. Kesikli gri çizgi başlangıç sermayesi. |
 | Açık pozisyonlar | Model, sembol, yön, giriş, stop, güncel PnL ve stratejinin gerekçesi. PnL **çıkış maliyeti hariçtir** (pozisyon kapanmadı, çıkış fiyatı bilinmiyor) ve sayfa bunu söyler. |
 | Son 20 işlem | Kapanış sırasına göre, `signal_reason` kırpılmadan — ensemble'ın oy sayısı, confluence'ın güven kuyruğu dâhil. |
@@ -74,7 +74,8 @@ Yerelde açmak için `python -m http.server` gerekir (`file://` ile `fetch` enge
 `scripts/telegram_report.py` günde bir kez, **`as_of` saati 20:00 UTC olan turda** tek bir
 mesaj yollar: long vs short güncel durum, ortalama R'ye göre ilk 3 ve son 3 model, son 24
 saatte açılan/kapanan işlemler ve kabul çıtasını geçen model olup olmadığı (yoksa en yakını
-hangi kapıda takıldığı).
+hangi kapıda takıldığı). Band uyarısı geçen modelin yanında `⚠` olarak anılır — kapı
+olmadığı için "geçemedi" diye raporlanmaz.
 
 ```bash
 python scripts/telegram_report.py --dry-run --force   # yollamadan mesajı gör
@@ -190,21 +191,33 @@ ancak aynı sütunda, aynı ortalama R sıralamasında okunabilir.
 İki ayrı çıta vardır ve karıştırılmamalıdır: **kod çıtası** (bir strateji "tamamlandı" mı)
 ve **sonuç çıtası** (bir modelin ölçülmüş sonucu okunabilir mi).
 
-### Sonuç çıtası — üç bayrak (dashboard rozetleri)
+### Sonuç çıtası — iki kapı + bir uyarı (dashboard rozetleri)
 
 Eşikler `config.yaml > acceptance` altındadır; hesap `core/metrics.py::acceptance_flags`.
-Bir model ancak **üçü birden** yeşilken çıtayı geçmiş sayılır.
+Bir model ancak **iki kapı da** yeşilken doğrulanmış sayılır.
 
-| Bayrak | Soru | Geçme koşulu |
+| Kapı | Soru | Geçme koşulu |
 |---|---|---|
-| **Ö** örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` (20) |
-| **B** band | Maliyet ölçeği kıyaslanabilir mi? (kural 14) | `avg_stop_distance_pct`, yarışmacı medyanının `medyan/√2.5 .. medyan×√2.5` bandında |
-| **E** edge | Sonuç sinyalden mi geliyor? | ort. R > 0 **ve** `random_ctrl`'ü aşıyor **ve** hesap getirisi `buyhold` çıpasını geçiyor |
+| **Ö** örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` (**30**) |
+| **E** edge | Sonuç sinyalden mi geliyor? | ort. R > 0 **ve** `random_ctrl`'ü **en az `edge_margin_r` = 0.15R marjla** aşıyor **ve** hesap getirisi `buyhold` çıpasını geçiyor |
+
+Marj olmadan kontrolü 0.01R ile geçen bir model de "geçti" sayılırdı; oysa bilgisiz
+çekilişin kendi gürültüsü o kadar farkı tek başına üretir.
+
+| Uyarı | Soru | Tetiklenme |
+|---|---|---|
+| **⚠ B** band | Bu satır başka bir satırla aynı maliyet ölçeğinde mi? (kural 14) | `avg_stop_distance_pct`, yarışmacı medyanının `medyan/√2.5 .. medyan×√2.5` bandının **dışında** |
+
+**Band bir kapı değildir ve doğrulamayı engellemez.** Bandın dışında kalmak bir kusur değil
+bir kıyas koşuludur: modelin kendi ölçümü geçerlidir, ama o satırı bir başkasının yanına
+koyarken **maliyet farkı (`cost_per_r`) dikkate alınmalıdır** — model aynı 1R'yi farklı
+notional ile taşımış, yani R başına farklı komisyon+kayma ödemiştir. Tabloda uyarı ikonu
+olarak durur; tooltip ne yapılacağını söyler.
 
 Referans çıpası bu kapılara hiç girmez (kural 15): yarışmacı olmadığı için ölçmediği bir
 yarışta not almaz. `random_ctrl` girer — bilgisiz çekilişin sıralamada nerede durduğu
 gizlenecek bir kusur değil, raporlanacak bir sonuçtur. Gerekçeler için bkz.
-[`CLAUDE.md` > Kabul Çıtası](./CLAUDE.md#kabul-çıtası-üç-bayrak).
+[`CLAUDE.md` > Kabul Çıtası](./CLAUDE.md#kabul-çıtası-iki-kapı--bir-uyarı).
 
 ### Kod çıtası (taslak)
 
@@ -231,8 +244,8 @@ Projenin "tamamlandı" sayılması için:
 - [x] `main.py` boru hattını uçtan uca çalıştırıyor ve `docs/data/metrics.json` üretiyor
       (`tests/test_main.py`).
 - [x] Ölçüme bir referans çıpası (`buyhold`) eklendi (kural 15, `tests/test_buyhold.py`).
-- [x] `docs/index.html` sonuçları tek sayfada gösteriyor; LONG vs SHORT paneli en üstte
-      ve üç kabul rozeti leaderboard'da (`tests/test_report.py`).
+- [x] `docs/index.html` sonuçları tek sayfada gösteriyor; LONG vs SHORT paneli en üstte,
+      iki kabul kapısı ve band uyarısı leaderboard'da (`tests/test_report.py`).
 - [x] `scripts/telegram_report.py` günlük özeti yolluyor ve hatası turu düşürmüyor
       (`tests/test_telegram_report.py`).
 

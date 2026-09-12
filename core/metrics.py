@@ -366,35 +366,43 @@ def pooled_direction_stats(
 
 
 # --------------------------------------------------------------------------- #
-# Kabul çıtası (üç bayrak)
+# Kabul çıtası (iki kapı + bir uyarı)
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, kw_only=True)
 class AcceptanceFlags:
-    """Bir yarışmacının sonucunun okunabilir sayılması için üç kapı.
+    """Bir yarışmacının sonucu: İKİ KAPI ve BİR UYARI.
 
-    Üçü de ayrı ayrı raporlanır ve hiçbiri diğerinin yerine geçmez:
+    **Kapılar** (`passed` = ikisi birden):
 
     - `sample` — **örneklem**: R'ye giren kapanmış işlem sayısı eşiğin altındaysa
       ortalama R bir ölçüm değil gürültüdür. Bu kapı olmadan iki işlemle +3R yapmış bir
       model tablonun başına oturur.
+    - `edge` — **üstünlük**: ortalama R pozitif, bilgisiz kontrol grubunun ortalama
+      R'sini **en az `edge_margin_r` kadar** aşıyor ve hesap getirisi referans çıpasını
+      geçiyor. Üçü birlikte tek bir soruyu sorar: "bu sonuç sinyalden mi geliyor, yoksa
+      piyasadan ve şanstan mı?" Marj olmadan kontrolü 0.01R ile geçen bir model de
+      "geçti" sayılırdı; oysa çekilişin kendi gürültüsü o kadar farkı tek başına üretir.
+
+    **Uyarı** (`band`, `passed`'ı ETKİLEMEZ):
+
     - `band` — **maliyet ölçeği** (kural 14): modelin `avg_stop_distance_pct` değeri
       yarışmacı medyanının etrafındaki bantta mı? Dışındaysa model aynı 1R'yi belirgin
-      biçimde farklı notional ile taşımıştır ve R başına maliyeti diğerleriyle
-      kıyaslanamaz — sonucu yorumlanmaz (CLAUDE.md > Rapor Kolonları).
-    - `edge` — **üstünlük**: ortalama R pozitif, bilgisiz kontrol grubunun ortalama
-      R'sini aşıyor ve hesap getirisi referans çıpasını geçiyor. Üçü birlikte tek bir
-      soruyu sorar: "bu sonuç sinyalden mi geliyor, yoksa piyasadan ve şanstan mı?"
+      biçimde farklı notional ile taşımış, yani R başına farklı maliyet ödemiştir.
+      Bu bir KUSUR DEĞİL, bir kıyas koşuludur: modelin kendi ölçümü geçerlidir, ama
+      başka bir modelle yan yana konurken `cost_per_r` farkının sonucu tek başına
+      açıklayıp açıklamadığı sorulmalıdır (CLAUDE.md > Rapor Kolonları). Kapı yapmak
+      iki ayrı soruyu birbirine karıştırırdı: "bu model doğrulandı mı" ile "bu model
+      şu modelle kıyaslanabilir mi". Bu yüzden raporda bir uyarı göstergesidir.
 
-    `passed` üçünün de yeşil olmasıdır. Kapılar YALNIZCA yarışmacılara uygulanır;
-    referans çıpası yarışmacı değildir (kural 15), ona bir çıta koymak ölçmediği bir
-    yarışta not vermek olurdu.
+    Kapılar YALNIZCA yarışmacılara uygulanır; referans çıpası yarışmacı değildir
+    (kural 15), ona bir çıta koymak ölçmediği bir yarışta not vermek olurdu.
     """
 
     model: str
     sample: bool
-    band: bool
     edge: bool
     passed: bool
+    band: bool  # UYARI göstergesi: False = bandın dışında. `passed`'a girmez.
     measured_trades: int
     min_trades: int
     avg_stop_distance_pct: float
@@ -402,6 +410,7 @@ class AcceptanceFlags:
     band_high: float
     avg_r: float
     control_avg_r: float
+    edge_margin_r: float
     total_return: float
     benchmark_return: float
 
@@ -412,8 +421,9 @@ def acceptance_flags(
     min_trades: int,
     stop_band_ratio: float,
     control_model: str,
+    edge_margin_r: float,
 ) -> list[AcceptanceFlags]:
-    """Her yarışmacı için üç kabul bayrağı. Referans çıpaları listeye girmez.
+    """Her yarışmacı için iki kabul kapısı ve bir band uyarısı. Çıpalar listeye girmez.
 
     Bandın çapası yarışmacıların `avg_stop_distance_pct` MEDYANIDIR, sabit bir yüzde
     değil: kural 14'ün bandı ATR katı cinsindendir, defterde ise ATR yoktur (işlem
@@ -438,6 +448,7 @@ def acceptance_flags(
             band_low=band_low,
             band_high=band_high,
             control_avg_r=control_avg_r,
+            edge_margin_r=float(edge_margin_r),
             benchmark_return=benchmark_return,
         )
         for item in competitors
@@ -451,6 +462,7 @@ def _flags_for(
     band_low: float,
     band_high: float,
     control_avg_r: float,
+    edge_margin_r: float,
     benchmark_return: float,
 ) -> AcceptanceFlags:
     measured = item.total.trades - item.total.unmeasured
@@ -459,7 +471,7 @@ def _flags_for(
     total_return = item.account.total_return
 
     sample = measured >= min_trades
-    # Ölçülemeyen band (tek yarışmacı, hiç stop'lu işlem yok) bir ihlal değildir: kapı
+    # Ölçülemeyen band (tek yarışmacı, hiç stop'lu işlem yok) uyarı üretmez: gösterge
     # ancak kıyaslanacak bir medyan varken anlamlıdır.
     band = (
         True
@@ -469,7 +481,9 @@ def _flags_for(
     edge = (
         not math.isnan(avg_r)
         and avg_r > 0.0
-        and (math.isnan(control_avg_r) or avg_r > control_avg_r)
+        # Marj, kontrolü ANLAMLI biçimde geçmiş modeli kıl payı önde olandan ayırır:
+        # bilgisiz çekilişin kendi gürültüsü 0.01R'lik bir farkı tek başına üretebilir.
+        and (math.isnan(control_avg_r) or avg_r - control_avg_r >= edge_margin_r)
         and (math.isnan(benchmark_return) or (
             not math.isnan(total_return) and total_return > benchmark_return
         ))
@@ -477,9 +491,10 @@ def _flags_for(
     return AcceptanceFlags(
         model=item.model,
         sample=sample,
-        band=band,
         edge=edge,
-        passed=sample and band and edge,
+        # Band bilinçli olarak DIŞARIDA: kıyas koşuludur, kalite kapısı değil.
+        passed=sample and edge,
+        band=band,
         measured_trades=measured,
         min_trades=min_trades,
         avg_stop_distance_pct=stop_distance,
@@ -487,6 +502,7 @@ def _flags_for(
         band_high=band_high,
         avg_r=avg_r,
         control_avg_r=control_avg_r,
+        edge_margin_r=edge_margin_r,
         total_return=total_return,
         benchmark_return=benchmark_return,
     )

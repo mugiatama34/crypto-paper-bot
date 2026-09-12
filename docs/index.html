@@ -147,6 +147,10 @@
   .badge.on  { color: var(--good);     border-color: rgba(12,163,12,0.45);  background: rgba(12,163,12,0.12); }
   .badge.off { color: var(--ink-muted); border-color: var(--hair);          background: transparent; }
   .badge.na  { color: var(--ink-muted); border-color: transparent; }
+  /* Band bir KAPI değil uyarıdır: statü rengi taşır ve yalnızca uyaracak bir şey
+     varken görünür. Sessizken hiç çizilmez — her satırda duran bir uyarı, uyarı
+     olmaktan çıkıp süse döner. */
+  .badge.warn { color: var(--warning); border-color: rgba(250,178,25,0.45); background: rgba(250,178,25,0.10); }
 
   /* ---------------- grafik ---------------- */
   .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
@@ -257,11 +261,15 @@
   <section id="sec-board">
     <h2>Leaderboard</h2>
     <p class="note">
-      Ortalama R'ye göre sıralı (başlığa tıklayarak değiştirilebilir). Rozetler kabul
-      çıtasının üç kapısıdır; üzerine gelince neden yandığı/yanmadığı yazar.
-      <b>KONTROL</b> etiketli satır bilgisiz çekiliştir — yarışmacı değil, sinyalin
-      referansıdır, ama aynı boyutlandırmayla işlem yaptığı için aynı sıralamada durur.
-      <b>REFERANS</b> satırları (kural 15) sıralamaya hiç girmez, tablonun altındadır.
+      Ortalama R'ye göre sıralı (başlığa tıklayarak değiştirilebilir). Kabul sütununda iki
+      <b>kapı</b> ve bir <b>uyarı</b> vardır; her birinin üzerine gelince gerekçesi yazar.
+      <b>Ö</b> örneklem yeterli mi, <b>E</b> ort. R kontrolü marjla ve çıpayı geçiyor mu —
+      model ancak ikisi de yeşilken doğrulanmış sayılır. <b>⚠ B</b> kapı değildir:
+      doğrulamayı engellemez, yalnızca bu satırı başkasıyla kıyaslarken
+      <b>maliyet farkının (cost_per_r) dikkate alınması</b> gerektiğini söyler.
+      <b>KONTROL</b> satırı bilgisiz çekiliştir; yarışmacı değil ama aynı boyutlandırmayla
+      işlem yaptığı için aynı sıralamada durur. <b>REFERANS</b> (kural 15) sıralamaya hiç
+      girmez, tablonun altındadır.
     </p>
     <div class="card scroll"><table id="board"></table></div>
     <div class="card scroll" id="ref-wrap" style="margin-top:10px"><table id="board-ref"></table></div>
@@ -511,32 +519,49 @@ const COLS = [
 
 function span(text, cls) { return cls ? '<span class="' + cls + '">' + text + "</span>" : text; }
 
-const BADGE_DEFS = [
+/* İKİ KAPI: geçilmesi zorunlu, `passed` bunlardan oluşur. */
+const GATE_DEFS = [
   {
     key: "sample", letter: "Ö",
     title: (f) => "ÖRNEKLEM — R'ye giren kapanmış işlem: " + f.measured_trades + " / çıta " + f.min_trades +
       ".\nÇıtanın altında ortalama R bir ölçüm değil gürültüdür.",
   },
   {
-    key: "band", letter: "B",
-    title: (f) => "BAND (kural 14) — stop mesafesi " + pctRaw(f.avg_stop_distance_pct) +
-      ", yarışmacı bandı " + pctRaw(f.band_low) + " – " + pctRaw(f.band_high) +
-      ".\nBandın dışındaki model aynı 1R'yi farklı notional ile taşır; R başına maliyeti kıyaslanamaz.",
-  },
-  {
     key: "edge", letter: "E",
-    title: (f) => "EDGE — ort. R " + fmtSigned(f.avg_r) + " (pozitif olmalı)" +
-      "\nkontrol grubu (" + fmtSigned(f.control_avg_r) + "R) aşılmalı" +
-      "\nhesap getirisi " + pct(f.total_return, 2) + ", referans çıpası " + pct(f.benchmark_return, 2) + " aşılmalı.",
+    title: (f) => {
+      const margin = num(f.edge_margin_r);
+      const gap = (num(f.avg_r) === null || num(f.control_avg_r) === null)
+        ? DASH : fmtSigned(num(f.avg_r) - num(f.control_avg_r));
+      return "EDGE — üç koşul birden:" +
+        "\n1) ort. R " + fmtSigned(f.avg_r) + " pozitif olmalı" +
+        "\n2) kontrol grubunu (" + fmtSigned(f.control_avg_r) + "R) en az " +
+        (margin === null ? DASH : margin.toFixed(2)) + "R marjla aşmalı — şu anki fark " + gap + "R" +
+        "\n   (marj olmadan çekilişin kendi gürültüsü 'geçti' gibi okunurdu)" +
+        "\n3) hesap getirisi " + pct(f.total_return, 2) + ", referans çıpası " +
+        pct(f.benchmark_return, 2) + " aşılmalı.";
+    },
   },
 ];
 
+/* UYARI: geçmeyi engellemez, yalnızca sonucun nasıl okunacağını söyler. */
+const BAND_WARNING = (f) =>
+  "BAND UYARISI (kural 14) — stop mesafesi " + pctRaw(f.avg_stop_distance_pct) +
+  ", yarışmacı bandı " + pctRaw(f.band_low) + " – " + pctRaw(f.band_high) + " dışında." +
+  "\nModelin kendi ölçümü geçerlidir ve bu bir kusur değildir; ama başka bir modelle" +
+  "\nyan yana konurken KIYASTA MALİYET FARKI DİKKATE ALINMALIDIR: bu model aynı 1R'yi" +
+  "\nfarklı notional ile taşımış, yani R başına farklı komisyon+kayma ödemiştir." +
+  "\nÖnce cost_per_r kolonuna bakın — fark sonucu tek başına açıklıyor olabilir.";
+
 function badges(flags) {
   if (!flags) return '<span class="badge na">' + DASH + "</span>";
-  return '<span class="badges">' + BADGE_DEFS.map((b) =>
+  const gates = GATE_DEFS.map((b) =>
     '<span class="badge ' + (flags[b.key] ? "on" : "off") + '" title="' + esc(b.title(flags)) + '">' +
     (flags[b.key] ? "✓" : "·") + b.letter + "</span>"
-  ).join("") + "</span>";
+  ).join("");
+  const warning = flags.band === false
+    ? '<span class="badge warn" title="' + esc(BAND_WARNING(flags)) + '">⚠ B</span>'
+    : "";
+  return '<span class="badges">' + gates + warning + "</span>";
 }
 
 let sortKey = "avg_r", sortAsc = false;

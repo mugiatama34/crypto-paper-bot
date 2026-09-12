@@ -55,20 +55,29 @@ models: ["buyhold", "trend", "meanrev", "momentum", "squeeze", "confluence",
          "failed_breakout", "downtrend_rally", "avwap", "random_ctrl", "ensemble"]
 
 # --- Kabul çıtası (dashboard rozetleri ve Telegram özeti) ---
-# Bir modelin sonucu "okunabilir" sayılmadan önce geçmesi gereken üç kapı. Eşikler burada
-# durur, çünkü rozet bir yorum değil bir ölçüdür: sayıyı koda gömmek, çıtanın modelden
-# modele ya da sürümden sürüme sessizce kaymasına kapı açardı (CLAUDE.md kural 6).
+# Bir modelin sonucunun nasıl okunacağını belirleyen eşikler. Burada dururlar, çünkü rozet
+# bir yorum değil bir ölçüdür: sayıyı koda gömmek, çıtanın modelden modele ya da sürümden
+# sürüme sessizce kaymasına kapı açardı (CLAUDE.md kural 6).
 acceptance:
-  min_trades: 20          # ÖRNEKLEM: R'ye giren kapanmış işlem sayısı bu sayının altındaysa
-                          # ortalama R bir ölçüm değil gürültüdür; rozet kırmızı yanar.
-  stop_band_ratio: 2.5    # BAND: kural 14'ün 1×-2.5×ATR bandının oranı. Defterde ATR yoktur,
-                          # bu yüzden band yarışmacıların avg_stop_distance_pct MEDYANINA
-                          # göre uygulanır: medyan/√oran .. medyan×√oran aralığı, uçtan uca
-                          # tam bu oran kadar geniştir. Dışında kalan modelin maliyet ölçeği
-                          # diğerleriyle kıyaslanamaz.
-  control_model: "random_ctrl"   # EDGE: sinyalin bilgisiz çekilişi geçip geçmediği buna göre
-                                 # ölçülür. is_benchmark DEĞİLdir (aynı sütunda yarışır), bu
-                                 # yüzden adı benchmarks listesinden türetilemez; açıkça yazılır.
+  # İKİ KAPI (geçilmesi zorunlu) + BİR UYARI (geçmeyi engellemez).
+  min_trades: 30          # KAPI — ÖRNEKLEM: R'ye giren kapanmış işlem sayısı bu sayının
+                          # altındaysa ortalama R bir ölçüm değil gürültüdür.
+  control_model: "random_ctrl"   # KAPI — EDGE: sinyalin bilgisiz çekilişi geçip geçmediği
+                                 # buna göre ölçülür. is_benchmark DEĞİLdir (aynı sütunda
+                                 # yarışır), bu yüzden adı benchmarks listesinden
+                                 # türetilemez; açıkça yazılır.
+  edge_margin_r: 0.15     # KAPI — EDGE marjı: kontrolü "geçmek" için kıl payı önde olmak
+                          # yetmez, ort. R farkı en az bu kadar olmalıdır. Çekilişin kendi
+                          # gürültüsü küçük bir farkı tek başına üretebilir; marj, kontrolü
+                          # anlamlı biçimde geçmiş modeli sıfır virgül farkla öne geçmiş
+                          # modelden ayırır.
+  stop_band_ratio: 2.5    # UYARI — BAND: kural 14'ün 1×-2.5×ATR bandının oranı. Defterde
+                          # ATR yoktur, bu yüzden band yarışmacıların avg_stop_distance_pct
+                          # MEDYANINA göre uygulanır: medyan/√oran .. medyan×√oran aralığı,
+                          # uçtan uca tam bu oran kadar geniştir. Bandın dışında kalmak bir
+                          # KUSUR DEĞİL, bir kıyas koşuludur: model doğrulanabilir, ama
+                          # sonucu okunurken R başına maliyet farkı hesaba katılmalıdır.
+                          # Bu yüzden çıtayı ENGELLEMEZ, tabloda uyarı ikonu olarak durur.
 
 # --- Trailing stop ---
 # Trailing'i core/engine.py uygular (CLAUDE.md kural 9); strateji yalnızca Signal.trailing_atr

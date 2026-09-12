@@ -465,7 +465,7 @@ def _competitor(
     )
 
 
-def _winner(model: str, *, n: int = 30, pnl: float = 50.0, final: float = 12_000.0) -> Any:
+def _winner(model: str, *, n: int = 40, pnl: float = 50.0, final: float = 12_000.0) -> Any:
     return _competitor(
         model,
         avg_r_trades=[
@@ -478,23 +478,25 @@ def _winner(model: str, *, n: int = 30, pnl: float = 50.0, final: float = 12_000
 
 
 def _flags(metrics: list[Any], **overrides: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = dict(min_trades=20, stop_band_ratio=2.5, control_model="ctrl")
+    payload: dict[str, Any] = dict(
+        min_trades=30, stop_band_ratio=2.5, control_model="ctrl", edge_margin_r=0.15
+    )
     payload.update(overrides)
     return {item.model: item for item in acceptance_flags(metrics, **payload)}
 
 
-def test_acceptance_needs_all_three_gates() -> None:
+def test_acceptance_needs_both_gates() -> None:
     flags = _flags([
         _winner("good"),
         _competitor("ctrl", avg_r_trades=[
-            _trade(pnl=-10.0, risk=100.0, entry_price=100.0, stop_price=97.0) for _ in range(20)
+            _trade(pnl=-10.0, risk=100.0, entry_price=100.0, stop_price=97.0) for _ in range(30)
         ], final=9_800.0),
         model_metrics("bench", trades=[], equity_rows=_equity(10_000.0, 10_500.0),
                       initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
     ])
-    assert flags["good"].sample and flags["good"].band and flags["good"].edge
+    assert flags["good"].sample and flags["good"].edge
     assert flags["good"].passed
-    # Kontrol grubu kendini geçemez: edge koşulu KESİN büyüktür.
+    # Kontrol grubu kendini geçemez: kendisiyle arasındaki fark 0, gereken marj 0.15.
     assert not flags["ctrl"].edge
 
 
@@ -503,6 +505,12 @@ def test_small_sample_fails_even_with_a_great_average() -> None:
     assert not flags["tiny"].sample
     assert not flags["tiny"].passed
     assert flags["tiny"].measured_trades == 3
+
+
+def test_sample_gate_uses_the_configured_threshold() -> None:
+    """Eşik config'ten gelir; 29 işlem 30'luk çıtayı geçmez, 30 geçer."""
+    assert not _flags([_winner("m", n=29)])["m"].sample
+    assert _flags([_winner("m", n=30)])["m"].sample
 
 
 def test_benchmarks_get_no_acceptance_row() -> None:
@@ -515,7 +523,7 @@ def test_benchmarks_get_no_acceptance_row() -> None:
     assert "bench" not in flags
 
 
-def test_band_flags_a_model_outside_the_stop_scale() -> None:
+def test_band_warns_about_a_model_outside_the_stop_scale() -> None:
     """Bandın çapası yarışmacı medyanıdır; çok dar stop kuran model bandın dışına düşer."""
     wide = [
         _competitor(f"wide{index}", avg_r_trades=[
@@ -529,6 +537,61 @@ def test_band_flags_a_model_outside_the_stop_scale() -> None:
     assert flags["wide0"].band
     assert not flags["tight"].band
     assert flags["tight"].band_low == pytest.approx(3.0 / math.sqrt(2.5))
+
+
+def test_band_is_a_warning_not_a_gate() -> None:
+    """Bandın dışında kalmak bir KUSUR değil kıyas koşuludur: doğrulamayı engellemez."""
+    wide = [
+        _competitor(f"wide{index}", avg_r_trades=[
+            _trade(pnl=10.0, risk=100.0, entry_price=100.0, stop_price=97.0)
+        ]) for index in range(3)
+    ]
+    # İki kapıyı da geçen ama stop'u bandın çok dışında (çok dar) bir model.
+    tight = _competitor("tight", avg_r_trades=[
+        _trade(pnl=50.0, risk=100.0, entry_price=100.0, stop_price=99.9,
+               closed_at=f"2026-01-{index + 1:02d}T00:00:00+00:00")
+        for index in range(40)
+    ], final=12_000.0)
+    flags = _flags([*wide, tight])
+    assert flags["tight"].band is False
+    assert flags["tight"].sample and flags["tight"].edge
+    assert flags["tight"].passed  # band `passed`'a GİRMEZ
+
+
+def test_edge_needs_the_configured_margin_over_the_control() -> None:
+    """Kontrolü kıl payı geçmek yetmez: çekilişin kendi gürültüsü o farkı üretebilir."""
+    control = _competitor("ctrl", avg_r_trades=[
+        _trade(pnl=20.0, risk=100.0, entry_price=100.0, stop_price=97.0,
+               closed_at=f"2026-01-{index + 1:02d}T00:00:00+00:00")
+        for index in range(40)
+    ], final=10_800.0)                      # kontrolün ort. R'si +0.20
+    barely = _winner("barely", pnl=30.0)    # +0.30 → fark 0.10, marj 0.15
+    clearly = _winner("clearly", pnl=40.0)  # +0.40 → fark 0.20
+
+    flags = _flags([control, barely, clearly])
+    assert flags["barely"].control_avg_r == pytest.approx(0.20)
+    assert not flags["barely"].edge
+    assert flags["clearly"].edge
+    assert flags["barely"].edge_margin_r == pytest.approx(0.15)
+
+
+def test_edge_margin_is_a_minimum_not_a_strict_excess() -> None:
+    """Eşik "en az bu kadar"dır (`>=`), "bundan fazla" değil.
+
+    Sınırın ULP düzeyinde test edilmesi anlamsız olurdu: karşılaştırma iki kayan noktalı
+    ORTALAMANIN farkı üzerinden yapılır ve 0.15 ile 0.1499999999999999 arasındaki ayrım
+    gürültünün altındadır. Test bu yüzden eşiğin iki yanını açıkça ayrı noktalardan
+    yoklar; koda yapay bir tolerans eklemek, olmayan bir hassasiyeti iddia etmek olurdu.
+    """
+    control = _competitor("ctrl", avg_r_trades=[
+        _trade(pnl=10.0, risk=100.0, entry_price=100.0, stop_price=97.0,
+               closed_at=f"2026-01-{index + 1:02d}T00:00:00+00:00")
+        for index in range(40)
+    ], final=10_400.0)                                    # kontrol +0.10
+    flags = _flags([control, _winner("uzak", pnl=26.0)])   # +0.26 → fark 0.16 >= 0.15
+    assert flags["uzak"].edge
+    flags = _flags([control, _winner("yakin", pnl=24.0)])  # +0.24 → fark 0.14 < 0.15
+    assert not flags["yakin"].edge
 
 
 def test_edge_requires_beating_the_benchmark_return() -> None:
@@ -550,6 +613,16 @@ def test_missing_control_is_warned_not_silently_passed(
         flags = _flags([_winner("solo")], control_model="yok")
     assert math.isnan(flags["solo"].control_avg_r)
     assert "yok" in caplog.text
+
+
+def test_control_with_no_trades_does_not_block_the_margin() -> None:
+    """Kontrolün ölçülebilir R'si yoksa marj uygulanamaz; koşul düşer ama sessizce değil."""
+    flags = _flags([
+        _winner("m"),
+        _competitor("ctrl", avg_r_trades=[]),
+    ])
+    assert math.isnan(flags["m"].control_avg_r)
+    assert flags["m"].edge
 
 
 def test_highest_benchmark_sets_the_floor() -> None:

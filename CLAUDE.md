@@ -34,7 +34,7 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `data/` | Çalışma zamanı veri deposu (depoya girmez): `data/universe.json` ve `data/cache/<sembol>_<bar>.parquet`. Mum/funding önbelleği burada tutulur, her koşuda yalnızca eksik barlar çekilir. |
 | `ledgers/` | Her stratejinin işlem/bakiye kayıtlarının tutulduğu çıktı klasörü (strateji başına dosya/alt klasör). |
 | `docs/` | Tasarım kararları, metrik tanımları, kabul kriterleri. |
-| `docs/index.html` | GitHub Pages dashboard'u: tek dosya, harici framework/CDN yok, build adımı yok. Tek veri kaynağı `docs/data/metrics.json`. Bölümler: LONG vs SHORT paneli (en üstte — ana soru), ortalama R'ye göre leaderboard + üç kabul rozeti, özsermaye eğrileri (tıklayınca izole), açık pozisyonlar, son 20 işlem (gerekçesiyle), modeller arası getiri korelasyonu. Koyu tema, mobil öncelikli. Süs katmanıdır: ölçüm defterde ve JSON'dadır, sayfa yalnızca onu çizer. |
+| `docs/index.html` | GitHub Pages dashboard'u: tek dosya, harici framework/CDN yok, build adımı yok. Tek veri kaynağı `docs/data/metrics.json`. Bölümler: LONG vs SHORT paneli (en üstte — ana soru), ortalama R'ye göre leaderboard + iki kabul kapısı ve band uyarısı, özsermaye eğrileri (tıklayınca izole), açık pozisyonlar, son 20 işlem (gerekçesiyle), modeller arası getiri korelasyonu. Koyu tema, mobil öncelikli. Süs katmanıdır: ölçüm defterde ve JSON'dadır, sayfa yalnızca onu çizer. |
 | `scripts/telegram_report.py` | Günlük Telegram özeti. `as_of` saati 20:00 (UTC) olan turda yollanır; token'lar ortamdan (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) okunur. **Her yolda 0 döner** — eksik token, ağ hatası, Telegram 4xx'i, bozuk JSON: hepsi loglanıp geçilir. Özet bir bildirimdir, ölçümün parçası değil; Telegram kesintisi turu kırmızıya çeviremez. |
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
 | `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
@@ -58,9 +58,10 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `universe_size` | `50` | 24s hacme göre seçilen USDT perpetual sayısı. |
 | `universe_refresh_days` | `30` | Evren bu süre dolmadan yeniden hesaplanmaz (kıyas kümesi sabit kalsın). |
 | `trailing.atr_period` | `14` | Projenin **tek ATR tanımı**: hem trailing stop (kural 9) hem stop mesafesi bandı (kural 14) bu periyodu kullanır. İkisi ayrışırsa "3×ATR" iki farklı mesafe demeye başlar. Uygulama `core/engine.py`'dedir; periyot ortak olmalı ki aynı `trailing_atr` değeri her modelde aynı stop mesafesi anlamına gelsin. |
-| `acceptance.min_trades` | `20` | Kabul çıtasının **örneklem** kapısı: R'ye giren kapanmış işlem bu sayının altındaysa ortalama R bir ölçüm değil gürültüdür. |
-| `acceptance.stop_band_ratio` | `2.5` | Kabul çıtasının **band** kapısı (kural 14). Defterde ATR olmadığı için band yarışmacıların `avg_stop_distance_pct` medyanına göre kurulur: `medyan/√oran .. medyan×√oran`, uçtan uca tam bu oran kadar geniş. |
-| `acceptance.control_model` | `"random_ctrl"` | Kabul çıtasının **edge** kapısının kontrol referansı. `is_benchmark` değildir (aynı sütunda yarışır), bu yüzden adı `benchmarks` listesinden türetilemez. |
+| `acceptance.min_trades` | `30` | **Kapı** — örneklem: R'ye giren kapanmış işlem bu sayının altındaysa ortalama R bir ölçüm değil gürültüdür. |
+| `acceptance.control_model` | `"random_ctrl"` | **Kapı** — edge'in kontrol referansı. `is_benchmark` değildir (aynı sütunda yarışır), bu yüzden adı `benchmarks` listesinden türetilemez. |
+| `acceptance.edge_margin_r` | `0.15` | **Kapı** — edge marjı: kontrolü geçmek için ortalama R farkının en az bu kadar olması gerekir. Çekilişin kendi gürültüsü kıl payı bir farkı tek başına üretebilir. |
+| `acceptance.stop_band_ratio` | `2.5` | **Uyarı** — band (kural 14). Defterde ATR olmadığı için band yarışmacıların `avg_stop_distance_pct` medyanına göre kurulur: `medyan/√oran .. medyan×√oran`, uçtan uca tam bu oran kadar geniş. Bandın dışında kalmak doğrulamayı ENGELLEMEZ; raporda uyarı ikonudur. |
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
 | `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
@@ -222,27 +223,46 @@ Tanım kararları:
   Sharpe'ı ise gerçek bakiye eğrisinden gelir ve iki yön Sharpe'ının toplamı ya da ortalaması
   **değildir** — tabloda ayrı bir satır olarak durur.
 
-## Kabul Çıtası (üç bayrak)
+## Kabul Çıtası (iki kapı + bir uyarı)
 
-Tablo "hangi model önde" der; çıta "bu satır okunabilir mi" der. Üç kapı ayrı ayrı
-raporlanır (`core/metrics.py::acceptance_flags`, eşikler `config.yaml > acceptance`) ve
-hiçbiri diğerinin yerine geçmez. Bir model ancak **üçü birden** yeşilken "çıtayı geçti"
-sayılır.
+Tablo "hangi model önde" der; çıta "bu satır okunabilir mi" der. Hesap
+`core/metrics.py::acceptance_flags`, eşikler `config.yaml > acceptance`.
 
-| Bayrak | Soru | Geçme koşulu |
+**İki KAPI** — bir model ancak **ikisi birden** yeşilken doğrulanmış (`passed`) sayılır:
+
+| Kapı | Soru | Geçme koşulu |
 |---|---|---|
-| **Ö** — örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` |
-| **B** — band | Maliyet ölçeği diğerleriyle kıyaslanabilir mi? (kural 14) | `avg_stop_distance_pct`, yarışmacı medyanının `medyan/√oran .. medyan×√oran` bandında |
-| **E** — edge | Sonuç sinyalden mi geliyor, piyasadan ve şanstan mı? | ortalama R > 0 **ve** kontrol grubunun ortalama R'sini aşıyor **ve** hesap getirisi referans çıpasını geçiyor |
+| **Ö** — örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` (30) |
+| **E** — edge | Sonuç sinyalden mi geliyor, piyasadan ve şanstan mı? | ortalama R > 0 **ve** kontrol grubunun ortalama R'sini **en az `acceptance.edge_margin_r` (0.15R) marjla** aşıyor **ve** hesap getirisi referans çıpasını geçiyor |
+
+**Bir UYARI** — `passed`'ı **etkilemez**, yalnızca sonucun nasıl okunacağını söyler:
+
+| Uyarı | Soru | Tetiklenme |
+|---|---|---|
+| **⚠ B** — band | Bu satır başka bir satırla aynı maliyet ölçeğinde mi? (kural 14) | `avg_stop_distance_pct`, yarışmacı medyanının `medyan/√oran .. medyan×√oran` bandının **dışında** |
 
 Kararlar:
 
+- **Band neden kapı değil.** Bandın dışında kalmak bir kusur değil, bir **kıyas koşuludur.**
+  Modelin kendi ölçümü geçerlidir; sorun ancak o satır bir başkasının yanına konduğunda
+  doğar — model aynı 1R'yi farklı notional ile taşımış, yani R başına farklı komisyon+kayma
+  ödemiştir. Kapı yapmak iki ayrı soruyu birbirine karıştırırdı: *"bu model doğrulandı mı"*
+  ile *"bu model şu modelle kıyaslanabilir mi."* Birincisi modelin kendi verisiyle
+  cevaplanır, ikincisi ancak bir çiftle. Bu yüzden band tabloda bir uyarı ikonudur:
+  görüldüğünde önce `cost_per_r` kolonuna bakılır, çünkü fark sonucu tek başına açıklıyor
+  olabilir (CLAUDE.md > Rapor Kolonları).
+- **Edge'in marjı neden var.** Kontrolü 0.01R ile geçen bir model marj olmadan "geçti"
+  sayılırdı; oysa bilgisiz çekilişin kendi gürültüsü o kadar farkı tek başına üretir.
+  `edge_margin_r`, kontrolü **anlamlı biçimde** geçmiş modeli kıl payı önde olandan ayırır.
+  Karşılaştırma `fark >= marj` şeklindedir ("en az bu kadar"); iki kayan noktalı ortalamanın
+  farkı söz konusu olduğu için sınırın ULP düzeyinde tanımı anlamsızdır ve koda yapay bir
+  tolerans eklenmez.
 - **Kapılar yalnızca yarışmacılara uygulanır.** Referans çıpası (kural 15) yarışmacı
   değildir; ölçmediği bir yarışta not vermek, çıpanın ne olduğunu yanlış anlatırdı. Çıpa
   `acceptance` bölümüne hiç girmez, tabloda bayrak sütununda `—` görünür.
 - **Kontrol grubu kapılara girer.** `random_ctrl` bir yarışmacıdır (`is_benchmark = False`)
-  ve kendi edge kapısında kendini geçemez (koşul kesin büyüktür). Bilgisiz çekilişin
-  sıralamada nerede durduğu gizlenecek bir kusur değil, raporlanacak bir sonuçtur.
+  ve kendi edge kapısında kendini geçemez (kendisiyle farkı 0, gereken marj 0.15R). Bilgisiz
+  çekilişin sıralamada nerede durduğu gizlenecek bir kusur değil, raporlanacak bir sonuçtur.
 - **Band neden medyana bağlı:** kural 14'ün bandı ATR katı cinsindendir, defterde ise ATR
   yoktur — işlem kapandıktan sonra "o anki ATR" geri hesaplanamaz ve geriye dönük yeniden
   hesaplamak look-ahead kapısı açardı. Medyan, aynı evrende aynı barlarda işlem yapan

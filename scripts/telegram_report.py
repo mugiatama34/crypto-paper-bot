@@ -267,11 +267,15 @@ def _activity_block(payload: Mapping[str, Any]) -> list[str]:
 def _acceptance_block(
     payload: Mapping[str, Any], ranked: Sequence[Mapping[str, Any]]
 ) -> list[str]:
-    """Kabul çıtası: geçen var mı, yoksa en yakını hangi kapıda takıldı.
+    """Kabul çıtası: iki kapıyı geçen var mı, yoksa en yakını hangisinde takıldı.
 
     "Geçen yok" satırını atlamak çıtayı görünmez kılardı; geçilememesi de bir sonuçtur
     (CLAUDE.md kural 15: hepsi pozitif getirse bile çıpayı geçemiyorsa cevap "stratejiler
     işe yarıyor" değildir).
+
+    Band bir kapı DEĞİLDİR (bkz. core/metrics.py): geçen modelin yanında `⚠` olarak
+    anılır. Onu "geçemedi" diye raporlamak, doğrulanmış bir modeli reddedilmiş gibi
+    gösterirdi; hiç anmamak ise kıyasta dikkate alınması gereken maliyet farkını gizlerdi.
     """
     acceptance = payload.get("acceptance") or {}
     flags = acceptance.get("models") or []
@@ -280,20 +284,29 @@ def _acceptance_block(
 
     passed = [item for item in flags if item.get("passed")]
     if passed:
-        names = ", ".join(f"<b>{_esc(item['model'])}</b>" for item in passed)
-        return ["<b>Kabul çıtası</b>", f"✅ üç kapıyı da geçen: {names}"]
+        names = ", ".join(
+            f"<b>{_esc(item['model'])}</b>" + ("" if item.get("band", True) else " ⚠")
+            for item in passed
+        )
+        lines = ["<b>Kabul çıtası</b>", f"✅ iki kapıyı da geçen: {names}"]
+        if any(not item.get("band", True) for item in passed):
+            lines.append(
+                "<i>⚠ stop mesafesi yarışmacı bandının dışında: kıyasta maliyet farkı "
+                "(cost_per_r) dikkate alınmalı — doğrulamayı engellemez</i>"
+            )
+        return lines
 
     order = {row["model"]: index for index, row in enumerate(ranked)}
     best = max(
         flags,
         key=lambda item: (
-            sum(bool(item.get(key)) for key in ("sample", "band", "edge")),
+            sum(bool(item.get(key)) for key in ("sample", "edge")),
             -order.get(item["model"], len(flags)),
         ),
     )
     gates = " ".join(
         f"{letter}{'✓' if best.get(key) else '✗'}"
-        for key, letter in (("sample", "Ö"), ("band", "B"), ("edge", "E"))
+        for key, letter in (("sample", "Ö"), ("edge", "E"))
     )
     return [
         "<b>Kabul çıtası</b>",
@@ -303,18 +316,18 @@ def _acceptance_block(
 
 
 def _gate_hint(flags: Mapping[str, Any], acceptance: Mapping[str, Any]) -> str:
+    """Takılınan KAPInın sayıları. Band buraya girmez — o bir kapı değil, uyarıdır."""
     if not flags.get("sample"):
         return (
             f"örneklem {_int(flags.get('measured_trades'))}/"
             f"{_int(flags.get('min_trades') or acceptance.get('min_trades'))} işlem"
         )
-    if not flags.get("band"):
-        return (
-            f"stop mesafesi {_pct_raw(flags.get('avg_stop_distance_pct'))}, "
-            f"band {_pct_raw(flags.get('band_low'))}–{_pct_raw(flags.get('band_high'))}"
-        )
+    margin = _num(flags.get("edge_margin_r"))
+    if margin is None:
+        margin = _num(acceptance.get("edge_margin_r"))
     return (
-        f"ort. R {_r(flags.get('avg_r'))} · kontrol {_r(flags.get('control_avg_r'))} · "
+        f"ort. R {_r(flags.get('avg_r'))} · kontrol {_r(flags.get('control_avg_r'))} "
+        f"(gereken marj {'—' if margin is None else f'{margin:.2f}R'}) · "
         f"getiri {_pct(flags.get('total_return'), 2)} · çıpa {_pct(flags.get('benchmark_return'), 2)}"
     )
 
