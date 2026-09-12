@@ -115,12 +115,24 @@ Yarışmanın tamamlanması için 10 model gerekir.
 | # | Strateji | Yön | Durum |
 |---|---|---|---|
 | — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
-| 1 | — | — | planlanıyor |
-| ... | | | |
+| 1 | `trend` | long + short | Donchian kırılımı + EMA rejim filtresi |
+| 2 | `meanrev` | long + short | RSI + Bollinger ortalamaya dönüş (short'ta BTC rejim kapısı) |
+| 3 | `momentum` | long + short | kesitsel 7g getiri sıralaması, haftalık dengeleme |
+| 4 | `squeeze` | long + short | Bollinger sıkışması + hacim teyitli kırılım |
+| 5 | `confluence` | long + short | Fibonacci çakışması (retracement × extension), yön RSI'dan |
+| 6 | `failed_breakout` | short | 20 bar zirvesini süpürüp altına kapanan tuzak |
+| 7 | `downtrend_rally` | short | düşüş trendinde 0.382-0.618 / 20 EMA rallisinin satışı |
+| 8 | `avwap` | long + short | kesinleşmiş pivota çapalı VWAP'tan ±2σ sapma |
+| 9 | `random_ctrl` | long + short | **kontrol grubu**: bilgisiz çekiliş, edge'in referansı |
 | 10 | — | — | planlanıyor |
 
 `buyhold` sayıya dâhil değildir: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınıp hiç satılmaz.
 Tek işi yarışmacılara bir zemin vermektir.
+
+`random_ctrl` ise sayıya dâhildir ve `is_benchmark` DEĞİLDİR: boyutlandırması, stop ölçeği ve
+limitleri yarışmacılarla birebir aynıdır, tek farkı sinyalin bilgisiz olmasıdır. Çıpa "piyasa
+ne yaptı"yı ölçer, kontrol ise "sinyalin kendisi bir şey söylüyor mu"yu — ikincisinin cevabı
+ancak aynı sütunda, aynı ortalama R sıralamasında okunabilir.
 
 ## Kabul çıtası (taslak)
 

@@ -592,3 +592,105 @@ ondan türemez.
   `order=3`). Zigzag'dan **bilerek ayrı** bir pivot tanımıdır — kaynak da çift dip yapısını
   bununla arar; birini diğerinin yerine kullanmak kaynak modelin ölçtüğü yapıyı değiştirirdi.
   Son `order` bar hiçbir zaman pivot olamaz: bu bir gecikmedir, look-ahead değil.
+
+---
+
+## 13. Son dört model: `failed_breakout`, `downtrend_rally`, `avwap`, `random_ctrl`
+
+Kayıtlı yarışmacı sayısı 9'a çıktı (buyhold hâlâ referans çıpası, kural 15). Dördünün de
+göstergeleri `core/indicators.py`'den okunur; hiçbiri kendi RSI/ATR/EMA/pivot matematiğini
+yazmaz (karar 9'un gerekçesi aynen geçerli).
+
+### `strategies/failed_breakout.py` (short-only)
+
+Tuzak kırılım: 20 bar zirvesini FİTİLLE süpüren, ardından 1-2 bar içinde aynı seviyenin
+altına kapanan, hacmi kendi 20 bar ortalamasının altında kalan ve RSI ayı uyumsuzluğu taşıyan
+kurulum.
+
+- **Süpürme fitille, teyit kapanışla tanımlı.** Kırılımı kapanışla tanımlamak tuzağın
+  kendisini eler ve model "başarılı kırılım" aramaya başlardı.
+- **Teyit BİRİNCİ kapanışta aranır.** Aradaki barlardan biri zaten seviyenin altına
+  kapanmışsa kurulum orada oluşmuştur; aksi hâlde aynı tuzak iki tur üst üste sinyal üretir,
+  `core/portfolio.py` ikincisini `duplicate_position` ile reddeder ve modelin sinyal sayısı
+  ölçülemeyen bir nedenle şişerdi.
+- **Funding önceliği boyut değil SIRA.** Son 3 periyodun ortalaması pozitif ve yükseliyorsa
+  sinyal listenin başına alınır. Boyutla ödüllendirmek kural 3/11'i delerdi; motor
+  `max_positions` dolana kadar sinyalleri geldikleri sırada doldurduğu için sıra,
+  boyutlandırmaya dokunmayan tek "öncelik" kanalıdır. Gerekçe `reason`a yazılır.
+- **Stop fitil tepesi ya da 1×ATR — hangisi genişse; tavanı aşarsa işlem ATLANIR** (kural 14).
+  ATR burada bir TABANDIR: dar fitilli bir süpürmede stop'u fitilin hemen üstüne koymak R'yi
+  gürültü ölçeğine indirir ve R başına maliyeti diğer modellerle kıyaslanamaz yapardı.
+- **Hedef önce son swing dip, yoksa 2R.** Sabit R hedefini dipten öne almak, modeli "tuzak"
+  modelinden "sabit R hasat eden" bir modele çevirirdi.
+
+### `strategies/downtrend_rally.py` (short-only)
+
+Rejim (200 EMA altı + 50 EMA < 200 EMA) ve kesitsel zayıflık (7g getiri evrenin alt %20'si)
+altında, son düşüş bacağının 0.382-0.618 bandına ya da 20 EMA'ya **aşağıdan ilk dokunuşta**,
+RSI(14) < 45 VE hacim 20 bar ortalamasının üstündeyken short.
+
+- **Zayıflık kesitseldir.** "Düşüyor" mutlak bir ifade değil, sıralamada bir yerdir; mutlak
+  tanım modeli bir piyasa yönü bahsine indirgerdi. Alt %20'nin tek bir sembolü
+  adlandırabilmesi için en az 5 sıralanabilir sembol aranır, yoksa tur sinyalsiz geçer ve
+  loglanır.
+- **Bacağın dibi pivottan değil, barların kendi en düşüğünden okunur.** Zigzag kısa bacakları
+  ÇİFT hâlinde eler (`_merge_short_legs`): taze bir dip, onu teyit eden ralli 8 bardan kısaysa
+  pivot listesinde hiç görünmez. Dibi pivotlardan okumak, modelin "son düşüş bacağı" derken
+  hep bir önceki bacağı kastetmesi — yani düzeltme bandını fiyattan onlarca yüzde uzağa
+  koyması ve kapının pratikte hiç açılmaması — demekti. Bacağın BAŞI ise teyitli bir zigzag
+  zirvesi olmak zorundadır.
+- **Funding kapısı (ortalama < %-0.01 ise girme) bir kâr filtresi değil ölçüm filtresidir:**
+  kalabalık zaten short taraftayken açılan işlem sinyal kalitesini değil squeeze riskini
+  ölçer. Veri yoksa kapı KAPALI kalır — `meanrev`in BTC kapısıyla aynı gerekçe.
+- **Hedefin yarısı önceki dip, kalanı 1×ATR trailing.** Yarı yarıya bölünme bir tercihtir:
+  tezin bittiği yerde kârın yarısını almakla trendin devamını ölçmeye devam etmek arasında,
+  ikisini de ölçülebilir bırakan tek nokta odur.
+
+### `strategies/avwap.py` (long + short)
+
+Çapa **en son kesinleşmiş** zigzag pivotu; çapadan itibaren hacim ağırlıklı ortalama ve hacim
+ağırlıklı σ. Long: çapa dip, kapanış −2σ altında ve fiyat hâlâ çapanın üstünde. Short: çapa
+tepe, kapanış +2σ üstünde ve BTC 200 EMA altında. Hedefler ±1σ (yarısı) ve AVWAP çizgisi.
+
+- **`core/indicators.py`'ye `anchored_vwap` + `typical_price` eklendi.** Hacim ağırlıklı
+  ortalama ve sapması bir göstergedir; strateji içine yazılmış ikinci bir uygulama modül
+  docstring'indeki itirazın tam hedefidir. Sapma popülasyon (ddof=0) tanımındadır — Bollinger
+  kararıyla tutarlı olsun ve "2σ" bu depoda tek bir şey ifade etsin diye.
+- **Teyit "listenin sonuncusunu at" ile değil, zigzag'ın KENDİ eşiğiyle sorulur.** Canlı uç
+  çapa yapılamaz (her barda yer değiştirebilir, AVWAP'ın başlangıcı kayardı), ama kısa bacak
+  elemesi canlı ucu bazen zaten silmiş olur; sonuncuyu koşulsuz atmak çapayı bir swing geriye
+  — bazen serinin başındaki sentetik ankraja — kaydırırdı. Teyit ölçüsü: pivottan sonra fiyat
+  `pct_threshold` kadar ters yöne dönmüş mü. Bu, pivot matematiğinin ikinci bir uygulaması
+  değil, aynı eşikle yapılan bir süzmedir.
+- **Eğim filtresi ATR cinsindendir.** "Sert ters" ölçüsünü yüzdeyle tanımlamak eşiği sembolün
+  oynaklığına göre farklı bir şeye çevirirdi; 0.5×ATR/5 bar, projenin ortak birimini kullanır.
+- **Stop çapanın ötesi ya da 1.5×ATR — hangisi genişse.** Uzak çapada mesafe tavanı aşar ve
+  işlem atlanır (kural 14). Bu, modeli doğal olarak GÜNCEL çapalara yönlendirir; stop'u tavana
+  çekmek ise "tez çapanın ötesinde ölür" iddiasını sessizce başka bir iddiaya çevirirdi.
+
+### `strategies/random_ctrl.py` — kontrol grubu
+
+Her turda evrenden bilgisiz bir çekiliş: rastgele sembol, rastgele yön, 2×ATR stop. Boyut,
+maliyet, limit ve defter kuralları diğer modellerle birebir aynıdır.
+
+- **`is_benchmark = False`.** Çıpa (buyhold) "piyasa ne yaptı"yı ölçer; kontrol "sinyalin
+  kendisi bir şey söylüyor mu"yu. İkincisinin cevabı ancak yarışmacılarla AYNI sütunda,
+  aynı ortalama R sıralamasında okunabilir — ayrı bir bölüme koymak onu kıyasın dışına atardı.
+- **Tohum tur bazlı karıştırılır:** `random.Random(f"{random_seed}:{as_of}")`. Sabit tohumla
+  süreç başına tek RNG kurmak, her koşu ayrı bir süreç olduğu için HER TURDA aynı çekilişi
+  yapardı — kontrol bilgisiz değil SABİT olurdu. Tur bazlı tohum hem tekrarlanabilirliği
+  (aynı `as_of` → aynı sinyal) hem turlar arası bağımsızlığı verir.
+- **RNG `core/data.py`'nin jitter RNG'siyle ve global `random` ile paylaşılmaz.** Paylaşmak,
+  çekilişi o turda kaç kez yeniden denendiğine — borsanın o günkü keyfine — bağlardı; aynı
+  `as_of` iki koşuda farklı sembol seçebilirdi.
+- **Elemede görüş yok:** yalnızca `as_of` barı olmayan ve ATR'si hesaplanamayan semboller
+  (işlem kurulamaz) çekiliş dışıdır. Buraya eklenecek her filtre kontrolü sessizce bir
+  stratejiye çevirir ve diğer modellerin farkı neye karşı ölçtüğü bilinmez hâle gelir.
+- **Stop 2×ATR**, `trend` ile aynı: kontrolün R ölçeği bandın (1×–2.5×ATR) dışında kalsaydı
+  `cost_per_r` kolonu onu haksız biçimde iyi ya da kötü gösterirdi.
+
+### `tests/helpers_market.py` genişletildi
+
+`market(...)` artık `funding` alıyor ve `funding_series(rates, end=as_of)` eklendi: funding
+kapısı/önceliği olan iki model (failed_breakout, downtrend_rally) onsuz test edilemezdi. Seri
+`as_of`ta biter — kural 12 funding tarafında da geçerlidir.

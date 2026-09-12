@@ -13,11 +13,15 @@ from __future__ import annotations
 
 from typing import Callable, Mapping
 
+from strategies.avwap import Avwap
 from strategies.base import Strategy
 from strategies.buyhold import BuyHold
 from strategies.confluence import Confluence
+from strategies.downtrend_rally import DowntrendRally
+from strategies.failed_breakout import FailedBreakout
 from strategies.meanrev import MeanReversion
 from strategies.momentum import Momentum
+from strategies.random_ctrl import RandomControl
 from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 
@@ -30,6 +34,10 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     Momentum.name: Momentum,
     Squeeze.name: Squeeze,
     Confluence.name: Confluence,
+    FailedBreakout.name: FailedBreakout,
+    DowntrendRally.name: DowntrendRally,
+    Avwap.name: Avwap,
+    RandomControl.name: RandomControl,
 }
 
 
