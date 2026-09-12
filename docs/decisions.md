@@ -976,3 +976,85 @@ değiller" idi. Görsel ayrışma ikisine de uygulandı (nötr gri, ayrı etiket
 aynıdır, tek farkı sinyalin bilgisiz olmasıdır. Onu ayrı bir bölüme almak "edge'in referansı
 ancak aynı sütunda okunabilir" ilkesini bozardı. Yalnızca `buyhold` ayrı REFERANS bölümünde
 durur (kural 15). Ayrım tabloda KONTROL / REFERANS etiketleriyle görünür.
+
+---
+
+## 16. Dashboard iki seviyeye ayrıldı: genel bakış + model detayı
+
+Karar 15'in sayfası tek düzlemdi: her şey tek akışta, tek tabloda. Model sayısı 11'e
+çıkınca iki ayrı okuma isteği aynı ekranda çakışmaya başladı — *"hangi model önde"* ile
+*"bu model ne yaptı"*. Birincisi tüm modelleri yan yana ister, ikincisi tek bir modelin
+işlem işlem geçmişini. Sayfa ikiye ayrıldı; ÖLÇÜM tarafında hiçbir şey değişmedi.
+
+### Seviye 1 tablo değil kart: leaderboard'ın kaybolmaması için rütbe sayısı taşındı
+
+Eski leaderboard 10 kolonluk bir tabloydu ve `min-width: 760px` ile yatay kaydırmaya
+sarılıydı: telefonda `cost_per_r` kolonu ekranın dışındaydı, yani pratikte yoktu. Yerine
+model kartları geldi ve kartlar **tez tipine göre** gruplandı (trend & momentum, ortalamaya
+dönüş, kırılım & tuzak, sadece short, meta, referans). Gruplama bir süs değil: iki trend
+modelini yan yana okumak, birini bir ortalamaya-dönüş modelinin yanında okumaktan başka bir
+şey söyler.
+
+Gruplama tek başına bir bilgiyi kaybettiriyordu — **sıralama.** Kartlar gruba göre dizildiği
+için "kim önde" artık düzenden okunamıyor. Bu yüzden her yarışmacı kartı ortalama R
+sıralamasındaki **rütbesini** (`#1`, `#2`, …) sayıyla taşır ve özet kartlarından biri lideri
+adıyla yazar. Rütbe yalnızca R'si ölçülebilen yarışmacılara verilir: çıpanın R'si yoktur
+(kural 15), ölçülmemiş bir modeli sıraya sokmak ölçülmüş bir modelin önüne geçirirdi.
+
+Listede olmayan bir model sessizce DÜŞMEZ, "Gruplanmamış" başlığına düşer. Sessiz düşmek,
+yeni eklenen bir modelin aylarca sayfada görünmemesi demekti — tam da kural 6'nın
+engellemek istediği şey.
+
+### Çıpanın kartında hero sayı ort. R değil, hesap getirisi
+
+Referans kartı diğerleriyle aynı şablonu kullansaydı en büyük sayısı `—` olurdu: stop'u
+olmayanın 1R'si yoktur. Kart bunun yerine hesap getirisini büyütür — kural 15'in "çıpanın
+taşıdığı bilgi sıralamada değil, hesap düzeyi getirisindedir" cümlesinin görsel karşılığı.
+
+### Detay AYNI sayfada ve adresi `#model=<ad>`
+
+İkinci bir HTML dosyası ya da bir yönlendirme kütüphanesi "tek dosya, build adımı yok"
+kuralını bozardı. Hash yönlendirmesi ikisini de bozmadan geri tuşunu, yer imini ve
+paylaşılan linki çalıştırır. Genel bakışa dönüşte okuyucunun bıraktığı kaydırma konumu
+geri yüklenir; doğrudan bir model linkiyle girildiyse geri düğmesi `history.back()` yerine
+hash'i temizler (aksi hâlde siteden çıkarırdı).
+
+### Mobil: geniş tablolar KART'a dönüşür, kaydırmaya sarılmaz
+
+Kural, "yatay kaydırma yok" idi ve bunun tek dürüst uygulaması tabloyu dar ekranda
+bırakmak: bir tabloyu `overflow-x` içine koymak K/Z kolonunu ekranın dışında tutar, yani
+sayfa o sayıyı hiç göstermemiş olur. Açık pozisyonlar bu yüzden iki düzende yazılır (aynı
+veri, CSS hangisinin görüneceğine karar verir) ve korelasyon matrisi dar ekranda "en güçlü
+çiftler" listesine döner. Tablo eşiği (1060px) tahminle değil ölçülerek seçildi: uç
+değerlerle (yedi haneli miktar, sekiz ondalıklı fiyat) 11 kolon ~1040px istiyor.
+
+Sayı asla kırpılmaz ve asla ortasından bölünmez: her sayı `.nw` ile atomiktir, hücre ise
+sarılabilir. İkisi birden gerekiyordu — hücreye top yekûn `nowrap` vermek iki hedefli bir
+"hedef" değerini ekran dışına taşırıyordu, `normal` bırakıp sayıyı sarmamak ise fiyatı
+ortadan bölüyordu. Fiyat ondalığı sembole göre uyarlanır (BTC'de 2, `0.7232`'de 6): sabit
+iki hane küçük fiyatlı sembollerde girişi ve stop'u aynı sayı gösterirdi.
+
+Denetim ölçülerek yapıldı: dört genişlikte (320 / 390 / 700 / 1060 / 1280) iki seviye de
+taranıp yatay kaydırma, ekran dışına taşan öğe, 44px altındaki dokunma hedefi ve kırpılmış
+metin arandı; üç ayrı veri kümesiyle (gerçek defter, uç değerli stres kümesi, `model_trades`
+bölümünden önce üretilmiş eski bir yük) tekrarlandı.
+
+### Veri tarafı: `model_trades` bölümü (yalnızca `core/report.py`)
+
+Detay görünümü modelin kendi geçmişini sayfalı gösterir; 20 satırlık ortak akış (`recent_trades`)
+buna yetmiyordu ve akışı modele göre süzmek de çözüm değildi — çok işlem yapan bir model 20
+satırı doldurup diğerlerini akıştan siler. Yeni bölüm model başına **son 100** kapanmış işlemi
+ve kırpılmadan önceki `total`'ı taşır; `total` olmadan kırpılmış bir liste modelin tüm geçmişi
+gibi okunurdu. Tamamı taşınmaz: defter append-only büyür, JSON her turda baştan yazılır —
+denetim izi `ledgers/` altındadır, sayfa onun son penceresini çizer.
+
+Bölüm `core/metrics.py`'ye DEĞİL `core/report.py`'ye eklendi; gerekçe karar 15'inkiyle aynı:
+"kaç satır gösterilir" bir sunum sabitidir, ölçümün tanımı ona bağlanmamalı. İşlem satırına
+`qty`, `notional` ve `risk_amount` eklendi (`risk_amount` R'nin paydasıdır: onsuz sayfa "bu
+işlemin R'si neye göre" sorusunu cevaplayamaz ve okuyucu paydayı `risk_per_trade × sermaye`
+sanar — kaldıraç tavanı boyutu küçülttüğünde ikisi ayrışır). Açık pozisyon satırına `take_profits`
+eklendi: KALAN hedefler, çünkü kısmi TP dolduğunda `core/portfolio.py` onu pozisyondan düşer
+ve dolmuş bir hedefi hâlâ beklenen gibi çizmek yanlış olurdu.
+
+Açık pozisyonların güncel fiyatı ve gerçekleşmemiş K/Z'si zaten yükte vardı (karar 15) —
+eklenmedi, olduğu gibi kullanıldı.

@@ -22,6 +22,7 @@ from core.report import (
     build_dashboard,
     equity_series,
     marks_from_market,
+    model_trades,
     open_positions,
     recent_trades,
 )
@@ -152,6 +153,21 @@ def test_pnl_pct_agrees_with_pnl_sign(tmp_path: Path) -> None:
     assert rows[0]["pnl_pct"] < 0.0
 
 
+def test_open_position_carries_the_remaining_take_profits(tmp_path: Path) -> None:
+    """Hedefler KALAN hedeflerdir: dolmuş bir TP'yi beklenen gibi çizmek yanlış olurdu."""
+    ledger = _ledger(tmp_path, "m", positions=[
+        _position(take_profits=[{"price": 120.0, "fraction": 0.5}])
+    ])
+    rows = open_positions(["m"], ledger=ledger, marks={"BTC-USDT-SWAP": 110.0})
+    assert rows[0]["take_profits"] == [{"price": 120.0, "fraction": 0.5}]
+
+
+def test_open_position_without_targets_has_an_empty_target_list(tmp_path: Path) -> None:
+    ledger = _ledger(tmp_path, "m", positions=[_position()])
+    rows = open_positions(["m"], ledger=ledger, marks={"BTC-USDT-SWAP": 110.0})
+    assert rows[0]["take_profits"] == []
+
+
 # --------------------------------------------------------------------------- #
 # Son işlemler
 # --------------------------------------------------------------------------- #
@@ -177,6 +193,39 @@ def test_recent_trades_respect_the_limit() -> None:
 def test_trade_without_risk_amount_has_no_r() -> None:
     rows = recent_trades({"m": [_trade(risk_amount="")]})
     assert math.isnan(rows[0]["r"])
+
+
+def test_trade_rows_carry_quantity_and_the_realised_risk() -> None:
+    """Model detayı miktarı ve R'nin PAYDASINI gösterir; ikisi de deftere yazılan değerdir."""
+    rows = recent_trades({"m": [_trade(qty=2.5, notional=250.0, risk_amount=3.0)]})
+    assert rows[0]["qty"] == 2.5
+    assert rows[0]["notional"] == 250.0
+    assert rows[0]["risk_amount"] == 3.0
+
+
+# --------------------------------------------------------------------------- #
+# Model başına işlem geçmişi
+# --------------------------------------------------------------------------- #
+def test_model_trades_are_kept_per_model_and_newest_first() -> None:
+    """Tek akışı modele göre filtrelemek, çok işlem yapan modelin diğerlerini silmesiydi."""
+    result = model_trades({
+        "a": [_trade(closed_at="2026-03-01T00:00:00+00:00"),
+              _trade(closed_at="2026-03-05T00:00:00+00:00")],
+        "b": [_trade(closed_at="2026-03-03T00:00:00+00:00")],
+    }, limit=10)
+    assert set(result["models"]) == {"a", "b"}
+    assert [row["closed_at"] for row in result["models"]["a"]["trades"]] == [
+        "2026-03-05T00:00:00+00:00", "2026-03-01T00:00:00+00:00",
+    ]
+    assert [row["model"] for row in result["models"]["b"]["trades"]] == ["b"]
+
+
+def test_model_trades_report_the_untruncated_total() -> None:
+    """Kırpılmış bir liste, `total` olmadan modelin TÜM geçmişi gibi okunur."""
+    result = model_trades({"m": [_trade() for _ in range(7)]}, limit=3)
+    assert result["limit"] == 3
+    assert result["models"]["m"]["total"] == 7
+    assert len(result["models"]["m"]["trades"]) == 3
 
 
 # --------------------------------------------------------------------------- #
@@ -264,5 +313,5 @@ def test_build_dashboard_sections_are_all_present(tmp_path: Path) -> None:
     payload = build_dashboard(metrics, ledger=ledger, config=config, market=_market())
     assert set(payload) == {
         "pooled", "acceptance", "correlation", "equity",
-        "open_positions", "recent_trades", "activity",
+        "open_positions", "recent_trades", "model_trades", "activity",
     }

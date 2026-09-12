@@ -108,7 +108,7 @@ def test_metrics_json_carries_the_dashboard_sections(sandbox: Sandbox) -> None:
     main_module.main([])
     payload = sandbox.metrics()
     for section in ("pooled", "acceptance", "correlation", "equity",
-                    "open_positions", "recent_trades", "activity"):
+                    "open_positions", "recent_trades", "model_trades", "activity"):
         assert section in payload, section
     assert payload["pooled"]["models"] == [
         name for name in load_config()["models"] if name != "buyhold"
