@@ -103,6 +103,34 @@ def test_metrics_json_is_valid_json_with_null_not_nan(sandbox: Sandbox) -> None:
     assert total["avg_stop_distance_pct"] is None
 
 
+def test_metrics_json_carries_the_dashboard_sections(sandbox: Sandbox) -> None:
+    """Sayfa statiktir ve defteri okuyamaz: ihtiyacı olan her şey bu dosyada olmalı."""
+    main_module.main([])
+    payload = sandbox.metrics()
+    for section in ("pooled", "acceptance", "correlation", "equity",
+                    "open_positions", "recent_trades", "activity"):
+        assert section in payload, section
+    assert payload["pooled"]["models"] == [
+        name for name in load_config()["models"] if name != "buyhold"
+    ]
+    assert set(payload["equity"]) == set(load_config()["models"])
+
+
+def test_dashboard_sections_are_also_nan_free(sandbox: Sandbox) -> None:
+    """Tanımsız metrik yalnızca model tablosunda değil, her bölümde null olmalı."""
+    main_module.main([])
+    text = (sandbox.root / main_module.METRICS_PATH).read_text(encoding="utf-8")
+    assert "NaN" not in text
+    payload = json.loads(text)
+    assert payload["pooled"]["directions"]["short"]["avg_r"] is None
+
+
+def test_dry_run_does_not_write_the_dashboard_sections(sandbox: Sandbox) -> None:
+    """Sayfa defterin türevidir: kalıcı olmayan bir turdan üretilmiş hâli ikisini ayrıştırır."""
+    main_module.main(["--dry-run"])
+    assert not (sandbox.root / main_module.METRICS_PATH).exists()
+
+
 def test_benchmark_opens_once_then_holds(sandbox: Sandbox) -> None:
     """İlk tur sinyali kuyruğa alır, ikinci tur doldurur, sonraki turlar hiç işlem açmaz."""
     main_module.main([])

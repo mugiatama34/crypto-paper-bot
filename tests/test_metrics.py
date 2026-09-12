@@ -15,6 +15,7 @@ import pytest
 from core.config import load_config
 from core.ledger import TRADE_COLUMNS, Ledger
 from core.metrics import (
+    acceptance_flags,
     account_stats,
     compare,
     direction_stats,
@@ -22,7 +23,9 @@ from core.metrics import (
     format_report,
     model_metrics,
     periods_per_year,
+    pooled_direction_stats,
     r_multiple,
+    return_correlation,
     stop_distance_pct,
 )
 
@@ -416,3 +419,266 @@ def test_compare_marks_named_benchmarks(tmp_path: Path) -> None:
     assert marked == {"buyhold": True, "model_a": False}
     assert math.isnan(results[0].total.cost_per_r)
     assert not math.isnan(results[1].total.cost_per_r)
+
+
+# --------------------------------------------------------------------------- #
+# Havuzlanmış yön karşılaştırması (dashboard'un üst paneli)
+# --------------------------------------------------------------------------- #
+def test_pooled_stats_weight_every_trade_not_every_model() -> None:
+    """Havuz işleme oy verir: 1 işlemlik bir model 10 işlemlik bir modeli dengeleyemez."""
+    pooled = pooled_direction_stats({
+        "az": [_trade(direction="long", pnl=1000.0, risk=100.0)],           # +10R
+        "cok": [_trade(direction="long", pnl=-100.0, risk=100.0) for _ in range(10)],  # 10 × -1R
+    })
+    # Model ortalamalarının ortalaması (+10 ile -1) +4.5 olurdu; havuz 11 işleme bakar.
+    assert pooled["long"].trades == 11
+    assert pooled["long"].avg_r == pytest.approx((10.0 - 10.0) / 11.0)
+
+
+def test_pooled_stats_keep_the_directions_apart() -> None:
+    pooled = pooled_direction_stats({
+        "a": [_trade(direction="long", pnl=100.0, risk=100.0, funding=-3.0)],
+        "b": [_trade(direction="short", pnl=-50.0, risk=100.0, funding=5.0)],
+    })
+    assert pooled["long"].avg_r == pytest.approx(1.0)
+    assert pooled["short"].avg_r == pytest.approx(-0.5)
+    assert pooled["long"].funding == pytest.approx(-3.0)
+    assert pooled["short"].funding == pytest.approx(5.0)
+    assert pooled["total"].trades == 2
+
+
+def test_pooled_stats_with_no_trades_are_nan_not_zero() -> None:
+    pooled = pooled_direction_stats({"a": []})
+    assert math.isnan(pooled["short"].avg_r)
+    assert pooled["short"].trades == 0
+
+
+# --------------------------------------------------------------------------- #
+# Kabul çıtası (üç bayrak)
+# --------------------------------------------------------------------------- #
+def _competitor(
+    model: str, *, avg_r_trades: list[dict[str, Any]], final: float = 10_100.0
+) -> Any:
+    return model_metrics(
+        model, trades=avg_r_trades, equity_rows=_equity(10_000.0, final),
+        initial_capital=10_000.0, periods_per_year=2190.0,
+    )
+
+
+def _winner(model: str, *, n: int = 40, pnl: float = 50.0, final: float = 12_000.0) -> Any:
+    return _competitor(
+        model,
+        avg_r_trades=[
+            _trade(pnl=pnl, risk=100.0, entry_price=100.0, stop_price=97.0,
+                   closed_at=f"2026-01-{index + 1:02d}T00:00:00+00:00")
+            for index in range(n)
+        ],
+        final=final,
+    )
+
+
+def _flags(metrics: list[Any], **overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = dict(
+        min_trades=30, stop_band_ratio=2.5, control_model="ctrl", edge_margin_r=0.15
+    )
+    payload.update(overrides)
+    return {item.model: item for item in acceptance_flags(metrics, **payload)}
+
+
+def test_acceptance_needs_both_gates() -> None:
+    flags = _flags([
+        _winner("good"),
+        _competitor("ctrl", avg_r_trades=[
+            _trade(pnl=-10.0, risk=100.0, entry_price=100.0, stop_price=97.0) for _ in range(30)
+        ], final=9_800.0),
+        model_metrics("bench", trades=[], equity_rows=_equity(10_000.0, 10_500.0),
+                      initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
+    ])
+    assert flags["good"].sample and flags["good"].edge
+    assert flags["good"].passed
+    # Kontrol grubu kendini geçemez: kendisiyle arasındaki fark 0, gereken marj 0.15.
+    assert not flags["ctrl"].edge
+
+
+def test_small_sample_fails_even_with_a_great_average() -> None:
+    flags = _flags([_winner("tiny", n=3, final=15_000.0)])
+    assert not flags["tiny"].sample
+    assert not flags["tiny"].passed
+    assert flags["tiny"].measured_trades == 3
+
+
+def test_sample_gate_uses_the_configured_threshold() -> None:
+    """Eşik config'ten gelir; 29 işlem 30'luk çıtayı geçmez, 30 geçer."""
+    assert not _flags([_winner("m", n=29)])["m"].sample
+    assert _flags([_winner("m", n=30)])["m"].sample
+
+
+def test_benchmarks_get_no_acceptance_row() -> None:
+    """Çıpa yarışmacı değildir (kural 15): ölçmediği bir yarışta not almaz."""
+    flags = _flags([
+        _winner("good"),
+        model_metrics("bench", trades=[], equity_rows=_equity(10_000.0, 10_500.0),
+                      initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
+    ])
+    assert "bench" not in flags
+
+
+def test_band_warns_about_a_model_outside_the_stop_scale() -> None:
+    """Bandın çapası yarışmacı medyanıdır; çok dar stop kuran model bandın dışına düşer."""
+    wide = [
+        _competitor(f"wide{index}", avg_r_trades=[
+            _trade(pnl=10.0, risk=100.0, entry_price=100.0, stop_price=97.0)
+        ]) for index in range(3)
+    ]
+    tight = _competitor("tight", avg_r_trades=[
+        _trade(pnl=10.0, risk=100.0, entry_price=100.0, stop_price=99.9)  # %0.1 stop
+    ])
+    flags = _flags([*wide, tight])
+    assert flags["wide0"].band
+    assert not flags["tight"].band
+    assert flags["tight"].band_low == pytest.approx(3.0 / math.sqrt(2.5))
+
+
+def test_band_is_a_warning_not_a_gate() -> None:
+    """Bandın dışında kalmak bir KUSUR değil kıyas koşuludur: doğrulamayı engellemez."""
+    wide = [
+        _competitor(f"wide{index}", avg_r_trades=[
+            _trade(pnl=10.0, risk=100.0, entry_price=100.0, stop_price=97.0)
+        ]) for index in range(3)
+    ]
+    # İki kapıyı da geçen ama stop'u bandın çok dışında (çok dar) bir model.
+    tight = _competitor("tight", avg_r_trades=[
+        _trade(pnl=50.0, risk=100.0, entry_price=100.0, stop_price=99.9,
+               closed_at=f"2026-01-{index + 1:02d}T00:00:00+00:00")
+        for index in range(40)
+    ], final=12_000.0)
+    flags = _flags([*wide, tight])
+    assert flags["tight"].band is False
+    assert flags["tight"].sample and flags["tight"].edge
+    assert flags["tight"].passed  # band `passed`'a GİRMEZ
+
+
+def test_edge_needs_the_configured_margin_over_the_control() -> None:
+    """Kontrolü kıl payı geçmek yetmez: çekilişin kendi gürültüsü o farkı üretebilir."""
+    control = _competitor("ctrl", avg_r_trades=[
+        _trade(pnl=20.0, risk=100.0, entry_price=100.0, stop_price=97.0,
+               closed_at=f"2026-01-{index + 1:02d}T00:00:00+00:00")
+        for index in range(40)
+    ], final=10_800.0)                      # kontrolün ort. R'si +0.20
+    barely = _winner("barely", pnl=30.0)    # +0.30 → fark 0.10, marj 0.15
+    clearly = _winner("clearly", pnl=40.0)  # +0.40 → fark 0.20
+
+    flags = _flags([control, barely, clearly])
+    assert flags["barely"].control_avg_r == pytest.approx(0.20)
+    assert not flags["barely"].edge
+    assert flags["clearly"].edge
+    assert flags["barely"].edge_margin_r == pytest.approx(0.15)
+
+
+def test_edge_margin_is_a_minimum_not_a_strict_excess() -> None:
+    """Eşik "en az bu kadar"dır (`>=`), "bundan fazla" değil.
+
+    Sınırın ULP düzeyinde test edilmesi anlamsız olurdu: karşılaştırma iki kayan noktalı
+    ORTALAMANIN farkı üzerinden yapılır ve 0.15 ile 0.1499999999999999 arasındaki ayrım
+    gürültünün altındadır. Test bu yüzden eşiğin iki yanını açıkça ayrı noktalardan
+    yoklar; koda yapay bir tolerans eklemek, olmayan bir hassasiyeti iddia etmek olurdu.
+    """
+    control = _competitor("ctrl", avg_r_trades=[
+        _trade(pnl=10.0, risk=100.0, entry_price=100.0, stop_price=97.0,
+               closed_at=f"2026-01-{index + 1:02d}T00:00:00+00:00")
+        for index in range(40)
+    ], final=10_400.0)                                    # kontrol +0.10
+    flags = _flags([control, _winner("uzak", pnl=26.0)])   # +0.26 → fark 0.16 >= 0.15
+    assert flags["uzak"].edge
+    flags = _flags([control, _winner("yakin", pnl=24.0)])  # +0.24 → fark 0.14 < 0.15
+    assert not flags["yakin"].edge
+
+
+def test_edge_requires_beating_the_benchmark_return() -> None:
+    """Ortalama R pozitif ama piyasa daha çok kazandırdıysa edge yanmaz (kural 15)."""
+    flags = _flags([
+        _winner("beaten", final=10_100.0),
+        model_metrics("bench", trades=[], equity_rows=_equity(10_000.0, 13_000.0),
+                      initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
+    ])
+    assert flags["beaten"].sample and flags["beaten"].band
+    assert not flags["beaten"].edge
+    assert flags["beaten"].benchmark_return == pytest.approx(0.30)
+
+
+def test_missing_control_is_warned_not_silently_passed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING"):
+        flags = _flags([_winner("solo")], control_model="yok")
+    assert math.isnan(flags["solo"].control_avg_r)
+    assert "yok" in caplog.text
+
+
+def test_control_with_no_trades_does_not_block_the_margin() -> None:
+    """Kontrolün ölçülebilir R'si yoksa marj uygulanamaz; koşul düşer ama sessizce değil."""
+    flags = _flags([
+        _winner("m"),
+        _competitor("ctrl", avg_r_trades=[]),
+    ])
+    assert math.isnan(flags["m"].control_avg_r)
+    assert flags["m"].edge
+
+
+def test_highest_benchmark_sets_the_floor() -> None:
+    """Birden çok çıpa varsa en yükseği zemindir: kolay olanı seçmek çıtayı indirirdi."""
+    flags = _flags([
+        _winner("m", final=11_000.0),
+        model_metrics("low", trades=[], equity_rows=_equity(10_000.0, 10_050.0),
+                      initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
+        model_metrics("high", trades=[], equity_rows=_equity(10_000.0, 12_000.0),
+                      initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
+    ])
+    assert flags["m"].benchmark_return == pytest.approx(0.20)
+    assert not flags["m"].edge
+
+
+# --------------------------------------------------------------------------- #
+# Modeller arası getiri korelasyonu
+# --------------------------------------------------------------------------- #
+def test_identical_curves_correlate_perfectly() -> None:
+    result = return_correlation({"a": _equity(100.0, 110.0, 99.0, 120.0),
+                                 "b": _equity(100.0, 110.0, 99.0, 120.0)})
+    assert result["models"] == ["a", "b"]
+    assert result["matrix"][0][1] == pytest.approx(1.0)
+
+
+def test_mirrored_curves_correlate_negatively() -> None:
+    # Getiriler birebir zıt: +10/-10/+20% ile -10/+10/-20%.
+    result = return_correlation({"up": _equity(100.0, 110.0, 99.0, 118.8),
+                                 "down": _equity(100.0, 90.0, 99.0, 79.2)})
+    assert result["matrix"][0][1] == pytest.approx(-1.0)
+
+
+def test_short_overlap_is_nan_not_zero() -> None:
+    """0.0 'ilişkisiz' demektir; ölçülemeyen bir ilişkiyi öyle göstermek yanıltır."""
+    result = return_correlation({"a": _equity(100.0, 110.0), "b": _equity(100.0, 90.0)})
+    index = result["models"].index("a")
+    other = result["models"].index("b")
+    assert math.isnan(result["matrix"][index][other])
+    assert result["overlap"][index][other] == 1
+
+
+def test_overlap_is_computed_pairwise_not_globally() -> None:
+    """Yeni eklenen kısa geçmişli bir model, DİĞER çiftlerin örneklemini kırpmaz."""
+    long_rows = _equity(100.0, 102.0, 104.0, 103.0, 106.0)
+    result = return_correlation({
+        "a": long_rows,
+        "b": long_rows,
+        "yeni": long_rows[-2:],
+    })
+    a, b, yeni = (result["models"].index(name) for name in ("a", "b", "yeni"))
+    assert result["overlap"][a][b] == 4
+    assert result["overlap"][a][yeni] < result["overlap"][a][b]
+
+
+def test_flat_curve_has_no_correlation() -> None:
+    result = return_correlation({"flat": _equity(100.0, 100.0, 100.0, 100.0),
+                                 "moving": _equity(100.0, 110.0, 99.0, 120.0)})
+    index = result["models"].index("flat")
+    assert math.isnan(result["matrix"][index][result["models"].index("moving")])

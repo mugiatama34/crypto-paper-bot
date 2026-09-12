@@ -46,6 +46,7 @@ from core.engine import Engine, RoundReport
 from core.ledger import LEDGER_DIRNAME, Ledger
 from core.metrics import ModelMetrics, compare, format_report
 from core.portfolio import Portfolio
+from core.report import build_dashboard
 from strategies.base import MarketData, Strategy
 from strategies.registry import build
 
@@ -100,6 +101,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             strategies=strategies,
             build_failures=build_failures,
             dry_run=args.dry_run,
+        )
+        # Dashboard bölümleri defteri OKUR, bu yüzden defter kapsamı hâlâ açıkken üretilir:
+        # --dry-run'da sayfa da turun geçici kopyasını yansıtır, gerçek defteri değil.
+        payload.update(
+            build_dashboard(metrics, ledger=ledger, config=config, market=market)
         )
 
     if args.dry_run:
@@ -205,10 +211,17 @@ def _payload(
 
 
 def _write_metrics(payload: dict[str, Any]) -> None:
+    """Yükü diske yazar. `_jsonable` TÜM yüke uygulanır, yalnızca model tablosuna değil.
+
+    Dashboard bölümleri de tanımsız metrik taşır (açık pozisyonun R'si, hiç işlem
+    görmemiş bir günün ortalama R'si). Dönüşümü yükün yalnızca bir dalına uygulamak,
+    yeni bir bölüm eklendiği gün sessizce GEÇERSİZ JSON üretirdi — ve sayfa veriyi
+    hiç çizemeden ölürdü.
+    """
     path = PROJECT_ROOT / METRICS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        json.dumps(_jsonable(payload), indent=2, ensure_ascii=False, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     logger.info("metrikler yazıldı: %s", path)
