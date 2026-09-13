@@ -1,0 +1,83 @@
+name: run-scalp
+
+# 15 dakikalık scalp katmanının periyodik turu (config.yaml > layers.scalp).
+# `run.yml`e DOKUNULMAZ: iki katman ayrı workflow, ayrı cron, ayrı defter, ayrı rapor
+# dosyasıdır — ama AYNI çekirdeği koşar (main.py --layer scalp).
+#
+# Zamanlama: bar 15m, yani barlar :00/:15/:30/:45'te KAPANIR. Cron 3 dakika sonra
+# tetiklenir — core/data.py kapanmamış barı atar (kural 12), erken tetiklenen bir koşu bir
+# önceki barı işleyip turu boşa harcardı.
+#
+# NOT: GitHub'ın cron'u garantili değildir; 15 dakikalık bir kadansta tetiklemeler
+# gecikebilir ya da tamamen atlanabilir. Bu ölçümü BOZMAZ: motor son işlenmiş bardan
+# `as_of`'a kadar aradaki tüm barları sırayla ilerletir (core/engine.py > _timeline), yani
+# atlanan tur bir sonraki koşuda telafi edilir. Kaybedilen tek şey, atlanan barlarda
+# ÜRETİLMEYEN sinyallerdir — sinyal yalnızca `as_of` barında üretilir. İki model de aynı
+# turları kaçırdığı için aralarındaki kıyas bundan etkilenmez.
+on:
+  schedule:
+    - cron: "3,18,33,48 * * * *"
+  workflow_dispatch:
+
+# Defter koşular arası taşınan DURUMDUR: iki tur aynı anda koşarsa ikisi de aynı
+# `last_processed_bar`dan başlar ve biri diğerinin commit'ini ezer. Grup 4 saatlik
+# koşununkinden AYRIDIR (`paper-trading-run`): iki katman farklı defterlere yazdığı için
+# birbirini beklemelerine gerek yok, aynı gruba koymak 15 dakikalık turların 4 saatlik
+# koşuyu (ya da tersini) sırada bekletmesi demekti.
+concurrency:
+  group: paper-trading-run-scalp
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scalp round
+        run: python main.py --layer scalp --log-level INFO
+
+      - name: Commit scalp ledgers and metrics
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # YALNIZCA scalp katmanının çıktıları: 4 saatlik katmanın defterine bu iş
+          # hiçbir koşulda dokunmaz.
+          git add ledgers_scalp docs/data/metrics_scalp.json
+
+          if git diff --cached --quiet; then
+            echo "değişiklik yok, commit atlanıyor"
+            exit 0
+          fi
+
+          AS_OF="$(python -c "import json,pathlib; print(json.loads(pathlib.Path('docs/data/metrics_scalp.json').read_text())['as_of'])")"
+          git commit -m "scalp: ${AS_OF}"
+
+          # 15 dakikada bir koşan bir iş, 4 saatlik koşunun commit'iyle sık sık yarışır.
+          # Defter append-only olduğu için rebase güvenlidir; birkaç kez denenir.
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız oldu"
+          exit 1

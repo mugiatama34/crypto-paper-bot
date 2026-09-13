@@ -152,6 +152,52 @@ class Ledger:
     def append_equity(self, model: str, rows: Sequence[Mapping[str, Any]]) -> None:
         self._append_rows(self.model_dir(model) / EQUITY_FILENAME, EQUITY_COLUMNS, rows)
 
+    def compact_equity(self, model: str, *, older_than: str) -> int:
+        """`older_than`dan (ISO zaman damgası) eski equity satırlarını GÜNLÜK özete indirir.
+
+        Neden bu dosyada bir istisna var: bu modülün sözleşmesi append-only'dir ve
+        `trades.csv` için istisnasızdır — denetim izi odur, bir işlem satırı hiçbir
+        gerekçeyle değişmez veya silinmez. `equity.csv` ise bar başına bir ANLIK GÖRÜNTÜ
+        serisidir: aynı bilginin türevi, defterin kanıtı değil. 15 dakikalık katman günde
+        96 tur koşar ve her turu commit eder; sıkıştırma olmadan tek bir modelin özsermaye
+        dosyası yılda ~35 bin satıra çıkar ve depo geçmişi ölçümle ilgisiz satırlarla şişer.
+
+        Sıkıştırma ölçümü değiştirmemek için iki kurala bağlıdır:
+        - **Taze pencereye dokunulmaz.** `older_than` ve sonrası bar bazında kalır; max
+          drawdown ve Sharpe gibi eğri metrikleri son dönemde tam çözünürlükte ölçülür.
+        - **Gün başına SON satır tutulur** (o günün kapanış özsermayesi), ortalama değil:
+          bir gün içindeki en düşük noktayı kaybetmek eski dönemin drawdown'ını olduğundan
+          iyi gösterirdi; kapanış serisi en azından tutarlı bir günlük seridir ve aynı
+          kural her model için birebir uygulanır.
+
+        Sıkıştırılan satır sayısını döndürür (0 = değişiklik yok, dosya hiç yazılmaz).
+        """
+        path = self.model_dir(model) / EQUITY_FILENAME
+        rows = _read_rows(path)
+        if not rows:
+            return 0
+
+        keep: list[Mapping[str, Any]] = []
+        daily: dict[str, Mapping[str, Any]] = {}
+        for row in rows:
+            ts = str(row.get("ts", ""))
+            if ts >= older_than:
+                keep.append(row)
+                continue
+            daily[ts[:10]] = row  # aynı günün sonraki satırı öncekini geçer: gün sonu kalır
+
+        compacted = [daily[day] for day in sorted(daily)] + keep
+        if len(compacted) == len(rows):
+            return 0
+
+        removed = len(rows) - len(compacted)
+        _atomic_write_text(path, _header_line(EQUITY_COLUMNS) + _rows_to_csv(EQUITY_COLUMNS, compacted))
+        logger.info(
+            "%s equity.csv sıkıştırıldı: %d satır -> %d (%s öncesi günlük özete indi)",
+            model, len(rows), len(compacted), older_than,
+        )
+        return removed
+
     def read_trades(self, model: str) -> list[dict[str, str]]:
         return _read_rows(self.model_dir(model) / TRADES_FILENAME)
 

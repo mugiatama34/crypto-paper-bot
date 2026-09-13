@@ -44,13 +44,14 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, Collection, Iterable, Mapping, Sequence
+from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 
 import pandas as pd
 
 from core.config import get_setting
 from core.data import bar_duration
 from core.ledger import Ledger
+from core.tags import parse_tag
 from strategies.base import Direction
 
 logger = logging.getLogger(__name__)
@@ -338,6 +339,48 @@ def compare(
         )
         for model in models
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Kırılımlar (kol / sembol)
+# --------------------------------------------------------------------------- #
+def breakdown(
+    trades: Iterable[Mapping[str, Any]], *, key: Callable[[Mapping[str, Any]], str]
+) -> dict[str, DirectionStats]:
+    """İşlemleri `key`e göre gruplayıp her grup için aynı metrikleri hesaplar.
+
+    Grup ölçütü dışarıdan gelir: bu modül defteri okur, modelleri değil (bkz. `compare`).
+    Kol kırılımı `arm_of`, sembol kırılımı `symbol_of` ile kurulur; ikisi de satırın
+    kendi alanlarından türer.
+
+    Her grup TOPLAM (yön ayrımsız) raporlanır. Grup × yön kırılımı JSON'u üç katına
+    çıkarırdı ve yön sorusunun cevabı zaten model tablosunda ve havuz panelinde durur;
+    kırılımın cevapladığı soru farklıdır: "bu kol/sembol ölçülebilir bir şey üretti mi".
+
+    `key` bir satırda hata fırlatırsa hata YUTULMAZ (bkz. `arm_of`): eksik etiketi olan
+    satırı gruptan düşürmek, kırılım toplamı ile model toplamını sessizce ayrıştırırdı.
+    """
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for row in trades:
+        grouped.setdefault(key(row), []).append(row)
+    return {
+        group: direction_stats(rows, direction=TOTAL)
+        for group, rows in sorted(grouped.items())
+    }
+
+
+def arm_of(row: Mapping[str, Any]) -> str:
+    """İşlemin kolu: `signal_reason` kuyruğundaki `arm=` etiketi.
+
+    Etiket yoksa `TagError` (bkz. core/tags.py): kol kırılımının anlamı "her işlem bir
+    kola aittir" varsayımına dayanır ve etiketsiz satırı sessizce atlamak o varsayımı
+    denetlenemez kılardı.
+    """
+    return parse_tag(str(row.get("signal_reason", "")), "arm")
+
+
+def symbol_of(row: Mapping[str, Any]) -> str:
+    return str(row.get("symbol", ""))
 
 
 # --------------------------------------------------------------------------- #

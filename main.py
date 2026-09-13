@@ -17,6 +17,13 @@ defterler ve `docs/data/metrics.json` koşudan sonra commit edilir.
   turu tümden düşürür. Bunlar model hatası değil ölçüm hatasıdır; "yarısı yazılmış"
   bir turla devam etmek denetim izini sessizce bozardı (bkz. core/ledger.py).
 
+`--layer` TURUN KOŞULLARINI seçer (bkz. core/layers.py): `base` 4 saatlik ana yarışma,
+`scalp` 15 dakikalık scalp katmanıdır. İki katman da AYNI çekirdeği koşar — bu dosya,
+`core/engine.py`, `core/portfolio.py`, `core/ledger.py`, `core/metrics.py` tek kopyadır;
+değişen yalnızca bar, sembol evreni, model listesi, defter kökü ve rapor dosyasıdır.
+Ayrı bir giriş noktası açmak orkestrasyonu (model kurulumu, hata izolasyonu, dry-run
+kopyası, yük yazımı) ikiye kopyalar ve iki katmanın sessizce ayrışmasına kapı açardı.
+
 `--dry-run` deftere yazmaz: defterin bir KOPYASI geçici dizine alınır, tur orada koşar ve
 rapor oradan üretilir. Gerçek defteri okuyup yazmayı atlamak yetmezdi — motor turu
 ilerletirken durumu yazar, yazmayan bir motor da metrikleri üretecek satırları hiç
@@ -40,10 +47,11 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from core.config import PROJECT_ROOT, get_setting, load_config, project_path
+from core.config import get_setting, load_config
 from core.data import load_market_data
 from core.engine import Engine, RoundReport
-from core.ledger import LEDGER_DIRNAME, Ledger
+from core.layers import DEFAULT_LAYER, Layer, resolve_layer
+from core.ledger import Ledger
 from core.metrics import ModelMetrics, compare, format_report
 from core.portfolio import Portfolio
 from core.report import build_dashboard
@@ -51,8 +59,6 @@ from strategies.base import MarketData, Strategy
 from strategies.registry import build
 
 logger = logging.getLogger("main")
-
-METRICS_PATH = Path("docs/data/metrics.json")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -62,24 +68,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
     )
 
-    config = load_config(args.config)
-    names = [str(name) for name in get_setting(config, "models")]
+    layer = resolve_layer(load_config(args.config), args.layer)
+    config = layer.config
+    names = layer.models
     if not names:
-        logger.error("config.yaml'da models listesi boş: çalıştırılacak model yok")
+        logger.error("%s katmanında models listesi boş: çalıştırılacak model yok", layer.name)
         return 1
+    logger.info(
+        "katman=%s bar=%s modeller=%s defter=%s rapor=%s",
+        layer.name, layer.timeframe, ", ".join(names),
+        layer.ledger_root.name, layer.metrics_path,
+    )
 
-    strategies, build_failures = _build_strategies(names)
+    strategies, build_failures = _build_strategies(names, config)
     if not strategies:
         logger.error("hiçbir model kurulamadı, tur çalıştırılmadı")
         return 1
 
-    market = load_market_data(config)
+    market = load_market_data(config, symbols=layer.symbols)
     logger.info(
         "anlık görüntü hazır: as_of=%s, %d sembol, %d model",
         market.as_of, len(market.ohlcv), len(strategies),
     )
 
-    with _ledger_for(args.dry_run) as ledger:
+    with _ledger_for(args.dry_run, layer) as ledger:
         report = Engine(
             strategies, config=config, ledger=ledger, portfolio=Portfolio(config)
         ).run_round(market)
@@ -93,7 +105,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(format_report(metrics))
 
+        _compact_equity(ledger, [s.name for s in strategies], layer=layer, as_of=market.as_of)
+
         payload = _payload(
+            layer=layer,
             config=config,
             market=market,
             report=report,
@@ -105,13 +120,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Dashboard bölümleri defteri OKUR, bu yüzden defter kapsamı hâlâ açıkken üretilir:
         # --dry-run'da sayfa da turun geçici kopyasını yansıtır, gerçek defteri değil.
         payload.update(
-            build_dashboard(metrics, ledger=ledger, config=config, market=market)
+            build_dashboard(
+                metrics,
+                ledger=ledger,
+                config=config,
+                market=market,
+                model_trade_limit=layer.retention.model_trade_limit,
+                breakdowns=layer.breakdowns,
+            )
         )
 
     if args.dry_run:
-        logger.info("--dry-run: defter ve %s yazılmadı", METRICS_PATH)
+        logger.info("--dry-run: defter ve %s yazılmadı", layer.metrics_path)
     else:
-        _write_metrics(payload)
+        _write_metrics(payload, layer.metrics_path)
 
     # Kurulamayan model = eksik yarışma. Tur başarılı olsa bile koşu kırmızı dönmeli.
     return 1 if build_failures else 0
@@ -120,13 +142,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 # --------------------------------------------------------------------------- #
 # Model kurulumu
 # --------------------------------------------------------------------------- #
-def _build_strategies(names: Sequence[str]) -> tuple[list[Strategy], dict[str, str]]:
-    """Modelleri sırayla kurar; biri patlarsa yalnızca o atlanır (gerekçesiyle)."""
+def _build_strategies(
+    names: Sequence[str], config: Mapping[str, Any]
+) -> tuple[list[Strategy], dict[str, str]]:
+    """Modelleri sırayla kurar; biri patlarsa yalnızca o atlanır (gerekçesiyle).
+
+    `config` KATMANIN çözülmüş ayarıdır: ayarı okuyan model kök değerleri değil katmanın
+    değerlerini görmelidir (15 dakikalık katmanda bar süresi, stop tavanı, sembol evreni).
+    """
     strategies: list[Strategy] = []
     failures: dict[str, str] = {}
     for name in names:
         try:
-            strategies.append(build(name))
+            strategies.append(build(name, config=config))
         except Exception as exc:
             logger.error("%s modeli kurulamadı, atlanıyor: %s", name, exc)
             failures[name] = str(exc)
@@ -137,18 +165,24 @@ def _build_strategies(names: Sequence[str]) -> tuple[list[Strategy], dict[str, s
 # Defter (dry-run kopyası)
 # --------------------------------------------------------------------------- #
 class _LedgerScope:
-    """`--dry-run` için defterin geçici kopyasını, aksi hâlde gerçek defteri verir."""
+    """`--dry-run` için defterin geçici kopyasını, aksi hâlde katmanın gerçek defterini verir.
 
-    def __init__(self, dry_run: bool) -> None:
+    Defter kökü KATMANDAN gelir: iki katman asla aynı defteri paylaşmaz. Paylaşsalardı
+    15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve
+    iki ölçüm birbirinin bakiyesini bozardı.
+    """
+
+    def __init__(self, dry_run: bool, layer: Layer) -> None:
         self._dry_run = dry_run
+        self._layer = layer
         self._tmp: tempfile.TemporaryDirectory[str] | None = None
 
     def __enter__(self) -> Ledger:
+        source = self._layer.ledger_root
         if not self._dry_run:
-            return Ledger()
+            return Ledger(source)
         self._tmp = tempfile.TemporaryDirectory(prefix="paper-bot-dryrun-")
-        source = project_path(LEDGER_DIRNAME)
-        target = Path(self._tmp.name) / LEDGER_DIRNAME
+        target = Path(self._tmp.name) / source.name
         if source.is_dir():
             shutil.copytree(source, target)
         else:
@@ -161,8 +195,28 @@ class _LedgerScope:
             self._tmp.cleanup()
 
 
-def _ledger_for(dry_run: bool) -> _LedgerScope:
-    return _LedgerScope(dry_run)
+def _ledger_for(dry_run: bool, layer: Layer) -> _LedgerScope:
+    return _LedgerScope(dry_run, layer)
+
+
+def _compact_equity(
+    ledger: Ledger, models: Sequence[str], *, layer: Layer, as_of: pd.Timestamp
+) -> None:
+    """Katmanın saklama penceresinden eski equity satırlarını günlük özete indirir.
+
+    15 dakikalık katman günde 96 tur koşar ve her turu commit eder: sıkıştırma olmadan
+    `equity.csv` yılda on binlerce satıra çıkar ve depo geçmişi ölçümle ilgisiz satırlarla
+    şişer. `trades.csv`'ye DOKUNULMAZ — denetim izi odur (bkz. core/ledger.py).
+
+    Çağrı turun SONUNDA, metrikler üretilmeden ÖNCE yapılır: metrikler sıkıştırılmış
+    eğriden hesaplansın ki raporlanan sayı ile defterdeki seri her zaman aynı şeyi söylesin.
+    """
+    days = layer.retention.equity_compaction_days
+    if days is None:
+        return
+    cutoff = (as_of - pd.Timedelta(days=days)).isoformat()
+    for model in models:
+        ledger.compact_equity(model, older_than=cutoff)
 
 
 # --------------------------------------------------------------------------- #
@@ -170,6 +224,7 @@ def _ledger_for(dry_run: bool) -> _LedgerScope:
 # --------------------------------------------------------------------------- #
 def _payload(
     *,
+    layer: Layer,
     config: dict[str, Any],
     market: MarketData,
     report: RoundReport,
@@ -178,7 +233,10 @@ def _payload(
     build_failures: dict[str, str],
     dry_run: bool,
 ) -> dict[str, Any]:
-    """docs/data/metrics.json içeriği.
+    """Katmanın rapor dosyasının (`layer.metrics_file`) içeriği.
+
+    `layer` ve `timeframe` yükün en üstünde durur: sayfa iki katmanı AYRI bölümlerde
+    çizer ve hangi dosyanın hangi zaman dilimine ait olduğunu tahmin etmemelidir.
 
     `as_of` ve koşu koşulları (maliyet sabitleri, görülen sembol sayısı) da yazılır:
     tablo tek başına "hangi varsayımlarla ölçüldü" sorusuna cevap veremez, oysa sonucun
@@ -186,6 +244,7 @@ def _payload(
     """
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "layer": layer.name,
         "as_of": market.as_of.isoformat(),
         "dry_run": dry_run,
         "universe_size": len(market.ohlcv),
@@ -210,7 +269,7 @@ def _payload(
     }
 
 
-def _write_metrics(payload: dict[str, Any]) -> None:
+def _write_metrics(payload: dict[str, Any], path: Path) -> None:
     """Yükü diske yazar. `_jsonable` TÜM yüke uygulanır, yalnızca model tablosuna değil.
 
     Dashboard bölümleri de tanımsız metrik taşır (açık pozisyonun R'si, hiç işlem
@@ -218,7 +277,6 @@ def _write_metrics(payload: dict[str, Any]) -> None:
     yeni bir bölüm eklendiği gün sessizce GEÇERSİZ JSON üretirdi — ve sayfa veriyi
     hiç çizemeden ölürdü.
     """
-    path = PROJECT_ROOT / METRICS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(_jsonable(payload), indent=2, ensure_ascii=False, sort_keys=True) + "\n",
@@ -284,6 +342,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="deftere ve docs/data/metrics.json'a yazmadan turu çalıştırıp raporlar",
+    )
+    parser.add_argument(
+        "--layer",
+        default=DEFAULT_LAYER,
+        help=(
+            "koşulacak katman (config.yaml > layers): varsayılan %(default)s. "
+            "Katman bar, sembol evreni, model listesi, defter ve rapor dosyasını belirler; "
+            "maliyet ve risk sabitleri iki katmanda da birebir aynıdır."
+        ),
     )
     parser.add_argument("--config", default=None, help="config.yaml yolu (varsayılan: proje kökü)")
     parser.add_argument(

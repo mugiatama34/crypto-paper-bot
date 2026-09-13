@@ -32,8 +32,11 @@ from core.ledger import Ledger
 from core.metrics import (
     ModelMetrics,
     acceptance_flags,
+    arm_of,
+    breakdown,
     pooled_direction_stats,
     return_correlation,
+    symbol_of,
 )
 from strategies.base import MarketData
 
@@ -58,6 +61,8 @@ def build_dashboard(
     ledger: Ledger,
     config: Mapping[str, Any],
     market: MarketData,
+    model_trade_limit: int = MODEL_TRADE_LIMIT,
+    breakdowns: Sequence[str] = (),
 ) -> dict[str, Any]:
     """`docs/data/metrics.json`'a eklenen dashboard bölümleri.
 
@@ -66,6 +71,11 @@ def build_dashboard(
     işlemi 1R'lik bir işlemmiş gibi saymak" olurdu. Korelasyon matrisi ise çıpayı DA
     içerir — orada ölçülen R değil bar getirisidir ve "modeller piyasadan ne kadar
     ayrışıyor" sorusunun cevabı tam olarak çıpayla karşılaştırmayı gerektirir.
+
+    `model_trade_limit` ve `breakdowns` KATMAN ayarlarıdır (core/layers.py): 15 dakikalık
+    katman günde 96 tur koşar ve JSON her turda commit edilir — sayfanın çizdiği pencere
+    orada daha dar tutulur (son 50 işlem). Kırılımlar da katmana bağlıdır: kol kırılımının
+    yalnızca scalp modellerinde bir karşılığı vardır, 4 saatlik modellerde kol yoktur.
     """
     config_dict = dict(config)
     competitors = [item.model for item in metrics if not item.is_benchmark]
@@ -103,11 +113,44 @@ def build_dashboard(
         "equity": {model: equity_series(rows) for model, rows in equity.items()},
         "open_positions": positions,
         "recent_trades": recent_trades(trades, limit=RECENT_TRADE_LIMIT),
-        "model_trades": model_trades(trades, limit=MODEL_TRADE_LIMIT),
+        "model_trades": model_trades(trades, limit=model_trade_limit),
+        "breakdowns": model_breakdowns(trades, kinds=breakdowns),
         "activity": activity(
             trades, positions=positions, as_of=market.as_of, hours=ACTIVITY_HOURS
         ),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Kırılımlar (kol / sembol)
+# --------------------------------------------------------------------------- #
+_BREAKDOWN_KEYS: Mapping[str, Any] = {"arm": arm_of, "symbol": symbol_of}
+
+
+def model_breakdowns(
+    trades: Mapping[str, Sequence[Mapping[str, Any]]], *, kinds: Sequence[str]
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Model başına kol ve/veya sembol kırılımı. `kinds` boşsa bölüm de boştur.
+
+    Sembol kırılımı scalp katmanında ölçümün bir parçasıdır, süs değil: evrendeki her
+    sembol aynı likiditeye sahip değildir ve kayma varsayımı (`slippage_base`) tüm
+    semboller için tek bir sayıdır. İnce kitapta işlem gören bir sembolün `cost_per_r`
+    kolonu diğerlerinden belirgin biçimde ayrışıyorsa, o varsayımın orada tutmadığı
+    buradan okunur — sonuç yorumlanmadan önce bilinmesi gereken şey budur.
+    """
+    result: dict[str, dict[str, dict[str, Any]]] = {}
+    for kind in kinds:
+        key = _BREAKDOWN_KEYS.get(kind)
+        if key is None:
+            raise ValueError(f"bilinmeyen kırılım: {kind!r} (geçerli: {sorted(_BREAKDOWN_KEYS)})")
+        result[kind] = {
+            model: {
+                group: asdict(stats)
+                for group, stats in breakdown(rows, key=key).items()
+            }
+            for model, rows in trades.items()
+        }
+    return result
 
 
 # --------------------------------------------------------------------------- #

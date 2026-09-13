@@ -14,12 +14,15 @@ import pytest
 
 from core.config import load_config
 from core.ledger import TRADE_COLUMNS, Ledger
+from core.tags import TagError, format_tags
 from core.metrics import (
     acceptance_flags,
     account_stats,
+    arm_of,
+    breakdown,
     compare,
-    direction_stats,
     cost_per_r,
+    direction_stats,
     format_report,
     model_metrics,
     periods_per_year,
@@ -27,6 +30,7 @@ from core.metrics import (
     r_multiple,
     return_correlation,
     stop_distance_pct,
+    symbol_of,
 )
 
 
@@ -682,3 +686,85 @@ def test_flat_curve_has_no_correlation() -> None:
                                  "moving": _equity(100.0, 110.0, 99.0, 120.0)})
     index = result["models"].index("flat")
     assert math.isnan(result["matrix"][index][result["models"].index("moving")])
+
+
+# --------------------------------------------------------------------------- #
+# Kırılımlar (kol / sembol) — scalp katmanının rapor kolonları
+# --------------------------------------------------------------------------- #
+def _tagged(arm: str, *, symbol: str = "BTC-USDT-SWAP", pnl: float, risk: float = 100.0,
+            fee: float = 1.0, slippage: float = 0.5, closed_at: str = "2026-03-02T00:00:00+00:00",
+            direction: str = "long") -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "closed_at": closed_at,
+        "entry_price": "100",
+        "stop_price": "99",
+        "risk_amount": str(risk),
+        "pnl": str(pnl),
+        "fee": str(fee),
+        "slippage_cost": str(slippage),
+        "signal_reason": format_tags("kurulum", arm=arm, post_r=0.1),
+        "exit_reason": "target",
+    }
+
+
+def test_breakdown_groups_by_arm() -> None:
+    """Kol kırılımı: her kolun kaç işlem yaptığı, ortalama R'si ve kazanma oranı."""
+    trades = [
+        _tagged("vwap_pullback", pnl=200.0),
+        _tagged("vwap_pullback", pnl=-100.0),
+        _tagged("momentum_burst", pnl=150.0),
+    ]
+
+    groups = breakdown(trades, key=arm_of)
+
+    assert set(groups) == {"vwap_pullback", "momentum_burst"}
+    assert groups["vwap_pullback"].trades == 2
+    assert groups["vwap_pullback"].avg_r == pytest.approx(0.5)
+    assert groups["vwap_pullback"].win_rate == pytest.approx(0.5)
+    assert groups["momentum_burst"].avg_r == pytest.approx(1.5)
+
+
+def test_breakdown_groups_by_symbol_with_cost_per_r() -> None:
+    """Sembol kırılımı ince kitaplı sembollerde kayma varsayımını denetlemek içindir."""
+    trades = [
+        _tagged("vwap_pullback", symbol="PENGU-USDT-SWAP", pnl=100.0, fee=4.0, slippage=6.0),
+        _tagged("vwap_pullback", symbol="BTC-USDT-SWAP", pnl=100.0, fee=1.0, slippage=0.5),
+    ]
+
+    groups = breakdown(trades, key=symbol_of)
+
+    assert groups["PENGU-USDT-SWAP"].cost_per_r == pytest.approx(0.1)
+    assert groups["BTC-USDT-SWAP"].cost_per_r == pytest.approx(0.015)
+
+
+def test_breakdown_is_sorted_for_stable_output() -> None:
+    """JSON her turda baştan yazılır: grup sırası kararlı olmalı ki diff anlamlı kalsın."""
+    trades = [_tagged("momentum_burst", pnl=10.0), _tagged("funding_spike_fade", pnl=10.0)]
+
+    assert list(breakdown(trades, key=arm_of)) == ["funding_spike_fade", "momentum_burst"]
+
+
+def test_breakdown_totals_match_the_model_total() -> None:
+    """Kırılım toplamı model toplamından AYRILAMAZ: ayrılırsa biri yanlış ölçüyor demektir."""
+    trades = [
+        _tagged("vwap_pullback", pnl=200.0),
+        _tagged("rsi2_reversal", pnl=-100.0, direction="short"),
+        _tagged("momentum_burst", pnl=50.0),
+    ]
+
+    groups = breakdown(trades, key=arm_of)
+    total = direction_stats(trades, direction="total")
+
+    assert sum(group.trades for group in groups.values()) == total.trades
+    assert sum(group.total_r for group in groups.values()) == pytest.approx(total.total_r)
+
+
+def test_breakdown_raises_when_the_arm_tag_is_missing() -> None:
+    """Etiketsiz satırı atlamak, kırılım toplamını sessizce eksiltirdi."""
+    orphan = _tagged("vwap_pullback", pnl=10.0)
+    orphan["signal_reason"] = "etiketsiz eski satır"
+
+    with pytest.raises(TagError):
+        breakdown([orphan], key=arm_of)

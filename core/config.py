@@ -59,6 +59,21 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "data.history_bars",
     "data.funding_history_periods",
     "data.max_staleness_bars",
+    # Katmanlar (core/layers.py): iki katman da AYNI çekirdeği koşar, farkları burada durur.
+    "layers.base",
+    "layers.scalp",
+    # Scalp modellerinin ortak kısıtları. Yalnızca scalp modelleri okur, ama eksikliği
+    # koşu ortasında değil config yüklenirken görülmelidir: 15 dakikalık katman günde 96
+    # tur koşar, yarım saat sonra fark edilen bir eksik anahtar onlarca boş tur demektir.
+    "scalp.min_stop_pct",
+    "scalp.min_reward_risk",
+    "scalp.time_stop_bars",
+    "scalp.stop_atr_multiple",
+    "scalp.target_reward_risk",
+    "scalp.bandit.warmup_trades",
+    "scalp.bandit.min_allocation",
+    "scalp.bandit.window_trades",
+    "scalp.bandit.prior_r_sigma",
 )
 
 

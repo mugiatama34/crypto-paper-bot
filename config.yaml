@@ -118,3 +118,101 @@ data:
   # BTC verisi beklenen bardan bu kadar barlık gecikmeyi aşarsa anlık görüntü üretilmez.
   # (Diğer semboller tolere edilmez: as_of barına sahip olmayan sembol o tur dışlanır.)
   max_staleness_bars: 2
+
+# --- Katmanlar (core/layers.py) ---
+# Proje İKİ zaman diliminde ölçüm yapar ve ikisi de AYNI çekirdeği kullanır: engine,
+# portfolio, ledger, funding, metrics tek kopyadır. Katmanın değiştirebildiği şey ölçümün
+# KOŞULLARIDIR (bar, sembol evreni, model listesi, defter, rapor dosyası); maliyet ve risk
+# sabitleri (risk_per_trade, fee_rate, slippage_*, leverage_cap, initial_capital, maintenance_margin)
+# katman bloğunda YOKTUR — kökten gelirler, çünkü iki katmanın birebir aynısını görmesi
+# kural 6'nın kendisidir.
+#
+# Katman bloğu yalnızca FARKI yazar; geri kalan her ayar kökten devralınır (derin birleştirme).
+layers:
+  base:
+    # 4 saatlik ana yarışma. Kökle aynı olduğu için hiçbir override yoktur: burada
+    # tekrarlanan bir `timeframe: "4H"` satırı, kökle katmanın sessizce ayrışabileceği
+    # ikinci bir kaynak demekti.
+    ledger_dir: "ledgers"
+    metrics_file: "docs/data/metrics.json"
+    universe: null            # hacimden otomatik seçim (universe_size / universe_refresh_days)
+    retention:
+      equity_compaction_days: null   # 6 saatte bir tur: equity.csv yavaş büyür, sıkıştırma gereksiz
+      model_trade_limit: 100
+    breakdowns: []            # 4 saatlik modellerde kol/sembol kırılımı yok
+
+  scalp:
+    # 15 dakikalık scalp katmanı: iki model (model 11 adaptif, model 12 kontrol).
+    timeframe: "15m"
+    models: ["scalp_bandit", "scalp_fixed"]
+
+    # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
+    # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 14 sembol elle
+    # seçilir ve sabit kalır; değişiklik bir commit'tir, bir yan etki değil.
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "SUI-USDT-SWAP"
+      - "NEAR-USDT-SWAP"
+      - "PENGU-USDT-SWAP"
+      - "TON-USDT-SWAP"
+      - "ETHFI-USDT-SWAP"
+
+    ledger_dir: "ledgers_scalp"
+    metrics_file: "docs/data/metrics_scalp.json"
+
+    # Stop mesafesi tavanı (kural 14) scalp'te 8×ATR'dir, 3× değil. Gerekçe: scalp
+    # modellerinin stop TABANI %1'dir (tur maliyeti ~%0.25; daha dar stop'ta maliyet
+    # 0.25R'yi aşar) ve 15 dakikalık ATR çoğu sembolde fiyatın %1'inden küçüktür — 3×
+    # tavanı bırakmak, sinyallerin büyük kısmının band dışı diye elenmesi ve iki modelin
+    # de 30 işlem eşiğine hiç ulaşamaması demekti. Tavan KATMAN İÇİ kıyası bozmaz: model
+    # 11 ve 12 aynı tavanı görür. Katmanlar arası kıyas zaten yapılmaz (ayrı tablo).
+    max_stop_atr_multiple: 8.0
+
+    data:
+      # 15m barda 1500 bar ≈ 15.6 gün: gün-çapalı VWAP, açılış aralığı ve RSI/ATR
+      # pencerelerinin hepsi için fazlasıyla yeterli, önbellek ise küçük kalır.
+      history_bars: 1500
+      # Çıpanın (BTC) tazelik sınırı bar cinsindendir: 15m'de 4 bar = 1 saat. 4 saatlik
+      # katmandaki 2 bar (8 saat) burada 30 dakikaya karşılık gelirdi ve GitHub cron'unun
+      # olağan gecikmesi turu sebepsiz düşürürdü.
+      max_staleness_bars: 4
+
+    retention:
+      # Günde 96 tur × 2 model: equity.csv yılda ~35 bin satıra çıkar ve her tur commit
+      # edilir. 30 günden eski satırlar GÜNLÜK özete (o günün son barı) indirilir; taze
+      # 30 gün bar bazında kalır. trades.csv'ye DOKUNULMAZ — denetim izi odur.
+      equity_compaction_days: 30
+      model_trade_limit: 50    # scalp çok işlem üretir; JSON'a model başına son 50 işlem
+    breakdowns: ["arm", "symbol"]
+
+# --- Scalp katmanının model kısıtları (core/layers.py'nin değil, modellerin okuduğu blok) ---
+# İki scalp modeli de bu değerleri BİREBİR aynı okur: aralarındaki tek fark kol seçimidir.
+# Blok kökte durur ama yalnızca scalp modelleri okur — 4 saatlik modeller bu anahtarları
+# hiç sormaz (core/config.py'nin REQUIRED_KEYS listesi gibi, okunmayan anahtar zararsızdır).
+scalp:
+  min_stop_pct: 0.01        # stop mesafesi girişin %1'inden DARSA işlem alınmaz (atlanır)
+  min_reward_risk: 1.5      # hedef/stop oranı bunun altındaysa kurulum atlanır
+  time_stop_bars: 16        # 16 × 15m = 4 saat; sonra pozisyon piyasa fiyatından kapanır
+  # Kolların ORTAK stop mesafesi: 5×ATR(14). Neden bu kadar geniş: 15 dakikalık barda
+  # ATR tipik olarak fiyatın %0.15-0.25'idir; 1.5×ATR gibi bir çarpan stop'u %0.3'te
+  # bırakır ve stop TABANI (%1) yüzünden kurulumların neredeyse tamamı atlanırdı — iki
+  # model de 30 işlem eşiğine hiç ulaşamaz, yani ölçüm hiç başlamazdı. 5×ATR tipik olarak
+  # %0.75-1.25 verir: tabanın civarında, katmanın 8×ATR tavanının (layers.scalp) altında.
+  stop_atr_multiple: 5.0
+  # Hedef PROJEKSİYONU: stop mesafesinin bu katı. Gerçek hedef, projeksiyon ile kolun
+  # yapısal engelinin YAKIN olanıdır (bkz. strategies/scalp/arms.py) — yani 2.0 bir tavan,
+  # min_reward_risk (1.5) ise taban: engeli 1.5R'den yakın olan kurulum atlanır.
+  target_reward_risk: 2.0
+  bandit:
+    warmup_trades: 20       # kol başına: ilk 20 işlemde tüm kollar eşit ağırlık
+    min_allocation: 0.05    # hiçbir kol %5 tahsisin altına düşmez (susturulan kol ölçülemez)
+    window_trades: 100      # kayan pencere: kol başına son 100 kapanmış işlem
+    prior_r_sigma: 1.0      # posterior önseli: R'nin a priori standart sapması
