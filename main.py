@@ -102,6 +102,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ledger=ledger,
             config=config,
             benchmarks=[s.name for s in strategies if s.is_benchmark],
+            replicas=[s.name for s in strategies if s.is_replica],
         )
         print(format_report(metrics))
 
@@ -266,6 +267,9 @@ def _payload(
             for item in metrics
         ],
         "benchmarks": [strategy.name for strategy in strategies if strategy.is_benchmark],
+        # Kopya modeller ayrı bir liste: sayfa onları çıpayla aynı bölümde çizemez
+        # (ölçtükleri soru farklı) ve yarışmacı tablosuna hiç sokmamalıdır.
+        "replicas": [strategy.name for strategy in strategies if strategy.is_replica],
     }
 
 

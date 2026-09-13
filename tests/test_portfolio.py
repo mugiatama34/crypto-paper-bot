@@ -579,20 +579,32 @@ def test_stopless_position_round_trips_through_state() -> None:
     assert restored.cash("b") == pytest.approx(portfolio.cash("b"))
 
 
-def test_risk_mode_requires_stop_and_fraction_mode_forbids_it() -> None:
-    """Sessiz düzeltme yok: iki mod birbirinin alanını kullanamaz."""
+def test_risk_mode_requires_a_stop() -> None:
+    """Sessiz düzeltme yok: stop'suz bir risk sinyalinin boyutlandırma paydası yoktur."""
     portfolio = Portfolio(_frictionless())
     with pytest.raises(ValueError, match="stop_price zorunludur"):
         portfolio.open_position(
             "b", symbol=SYMBOL, direction="long", stop_price=None,
             reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
         )
-    with pytest.raises(ValueError, match="stop_price verilemez"):
-        portfolio.open_position(
-            "b", symbol=SYMBOL, direction="long", stop_price=95.0,
-            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
-            sizing_mode="notional_fraction", notional_fraction=0.5,
-        )
+
+
+def test_fraction_mode_accepts_a_stop_because_replicas_have_one() -> None:
+    """Stop'lu notional_fraction ARTIK geçerli bir şekildir ve kapısı core/validate.py'dedir.
+
+    Çıpada stop yoktur (kural 15), dış sistem kopyasında vardır ve stop yönetimi
+    kopyalanan sistemin parçasıdır. İkisini ayıran bilgi modelin bayrağıdır; bu modül
+    defterle parayı bilir, model sınıflarını değil.
+    """
+    portfolio = Portfolio(_frictionless())
+    result = portfolio.open_position(
+        "b", symbol=SYMBOL, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+        sizing_mode="notional_fraction", notional_fraction=0.5,
+    )
+
+    assert result.position is not None
+    assert result.position.initial_stop_price == pytest.approx(95.0)
 
 
 def test_notional_fraction_pays_the_same_fees_as_everyone() -> None:

@@ -465,14 +465,23 @@
         <b>Bu tablo yukarıdakiyle AYNI YARIŞ DEĞİLDİR.</b> Scalp modelleri 15 dakikalık barda,
         sabit 14 sembollük bir evrende ve kendi defterlerinde koşar
         (<code>data/metrics_scalp.json</code>); 4 saatlik modellerle aynı tabloda sıralamak,
-        zaman dilimi farkını bir performans farkı gibi gösterirdi. Katman içi kıyas ise
-        geçerlidir: <b>scalp_bandit</b> kolları arasındaki tahsisi öğrenir,
-        <b>scalp_fixed</b> aynı kolları eşit ağırlıkla oynar — aradaki ortalama R farkı
-        adaptasyonun katkısıdır.
+        zaman dilimi farkını bir performans farkı gibi gösterirdi. Katman İÇİ kıyas ise tam
+        olarak tasarımın amacıdır ve üç eksende okunur:
+      </p>
+      <p class="note">
+        <b>Adaptasyonun katkısı</b> — <b>scalp_bandit</b> kollar arasındaki tahsisi öğrenir,
+        <b>scalp_fixed</b> aynı kolları eşit ağırlıkla oynar.<br>
+        <b>Çıkış yönetiminin katkısı</b> — <b>scalp_managed</b>, scalp_fixed'in ikizidir:
+        aynı kol, aynı tur, aynı çekiliş; tek farkı üç aşamalı çıkış yönetimi (1R'da stop
+        girişe, 1.5R'da yarısı kapanır ve stop oraya çekilir, sonra kazancın en çok yarısını
+        geri veren takip).<br>
+        <b>Ev kurallarının katkısı</b> — <b>vwap_managed</b>, kopya modelin sinyalini ev
+        kurallarıyla (risk boyutlandırma, %1 stop tabanı, 1.5R kapısı) oynar.
       </p>
       <p class="note" id="scalp-stamp"></p>
       <div class="card wide" id="scalp-models"></div>
       <div class="rows narrow" id="scalp-models-cards"></div>
+      <div id="scalp-replicas"></div>
       <h3 class="sub">Kol kırılımı</h3>
       <p class="note">
         Hangi kolun kaç işlem yaptığı ve ne ürettiği. Tahsisi öğrenen modelde kol dağılımının
@@ -757,7 +766,15 @@ function scalpRow(model) {
 
 function renderScalp(d) {
   el("sec-scalp").hidden = false;
-  const models = d.models || [];
+  /* Kopya modeller (is_replica) yarışmacı DEĞİLDİR: sabit teminat ve kendi kaldıraçlarıyla
+     koşarlar, yani 1R'leri yarışmacılarınkiyle aynı birim değildir. Aynı tabloya koymak
+     okuyucuya olmayan bir kıyas sunardı — bu yüzden ayrı bir bölümde dururlar. Ölçüt
+     satırın kendi bayrağıdır, ad değil: yükün `replicas` listesi yalnızca yedektir. */
+  const replicaNames = d.replicas || [];
+  const all = d.models || [];
+  const isReplica = (m) => !!m.is_replica || replicaNames.includes(m.name || m.model);
+  const models = all.filter((m) => !isReplica(m));
+  const replicas = all.filter(isReplica);
 
   el("scalp-stamp").innerHTML =
     "Son tur <b>" + esc(shortTs(d.as_of)) + "</b> — bar " + esc((d.settings || {}).timeframe || "15m") +
@@ -789,6 +806,23 @@ function renderScalp(d) {
         "<div><span>" + esc(k) + '</span> <b><span class="nw">' + esc(String(v)) + "</span></b></div>").join("") +
       "</div></article>";
   }).join("");
+
+  el("scalp-replicas").innerHTML = replicas.length
+    ? '<h3 class="sub">Referans (dış sistem)</h3>' +
+      '<p class="note">Bu satır <b>yarışmacı değildir</b> ve ortalama R sıralamasına girmez: ' +
+      "sabit teminat ve kendi kaldıracıyla koşar, yani 1R'si yukarıdaki modellerinkiyle " +
+      "aynı birim değildir. Maliyet ölçeği kolonları (<code>cost/R</code>, " +
+      "<code>stop %</code>) bu yüzden boştur — R başına maliyet ancak ortak risk birimiyle " +
+      'koşan satırlar arasında bir kıyas ölçüsüdür. Taşıdığı bilgi sıralamada değil, ' +
+      '<b>hesap düzeyi getirisinde</b>: dış sistem bizim maliyet, kayma, funding ve ' +
+      'likidasyon varsayımlarımız altında ne yapardı? Likidasyon modellemesi korunur — ' +
+      'kapatmak kopyayı haksız biçimde iyi gösterirdi.</p>' +
+      '<div class="card wide"><table class="grid"><thead><tr>' +
+      SCALP_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
+      replicas.map((m) => '<tr class="data">' + scalpRow(m).map(([cls, v]) =>
+        '<td class="' + cls + '">' + v + "</td>").join("") + "</tr>").join("") +
+      "</tbody></table></div>"
+    : "";
 
   renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol");
   renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol");

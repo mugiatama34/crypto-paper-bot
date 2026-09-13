@@ -6,8 +6,8 @@ Bir TUR şu akıştan ibarettir:
     B. Son işlenmiş bardan `as_of`'a kadar geçen her barı SIRAYLA ilerlet:
          1. funding tahakkuku (bara taşınan pozisyonlara, barın açılış fiyatından)
          2. bekleyen emirlerin dolumu — barın AÇILIŞINDAN (kural 13)
-         3. mum içi kontrol: likidasyon -> stop -> TP (core/portfolio.py)
-         4. trailing stop güncellemesi (kontrolden SONRA)
+         3. mum içi kontrol: likidasyon -> stop -> kısmi çıkış -> TP (core/portfolio.py)
+         4. stop güncellemeleri (kontrolden SONRA): breakeven, giveback takibi, ATR trailing
          5. bar kapanışında özsermaye kaydı
     C. `as_of` barında sinyal üret: önce normal modeller, sonra meta modeller (kural 4),
        ardından stop mesafesi bandını aşan sinyalleri ele (kural 14).
@@ -22,6 +22,19 @@ işlediği ilk bardır — emirlerin koşular arasında defterde taşınması bu
 Neden trailing stop kontrolden SONRA güncellenir: barın high/low'una bakıp aynı barın
 stop'unu değiştirmek, o barın içinde geçmişe dönük karar vermek olurdu (kural 12). Yeni
 stop ancak bir sonraki barda geçerlidir.
+
+Aynı gerekçe ÜÇ AŞAMALI ÇIKIŞ YÖNETİMİNİN stop hareketleri için de geçerlidir ve ikisi
+tek adımda (4) birlikte yürür:
+
+    breakeven_at_r      -> pozisyon o R'a ULAŞTIYSA stop girişe çekilir
+    trail_giveback_pct  -> KISMİ ÇIKIŞTAN SONRA stop, en iyi kazancın en çok bu oranını
+                           geri verecek yerde durur ve orijinal hedefi asla aşmaz
+    trailing_atr        -> mevcut chandelier kuralı (kural 9)
+
+Üçü de yalnızca SIKIŞTIRIR (core/portfolio.py gevşemeyi zaten reddeder) ve hiçbiri
+stratejide uygulanmaz — strateji yalnızca isteğini `Signal` alanlarıyla bildirir.
+Kısmi çıkışın KENDİSİ bir dolumdur, bir stop hareketi değil: onu mum içi sırada
+core/portfolio.py uygular (likidasyon -> stop -> kısmi -> TP).
 
 Bu modül iş mantığı taşımaz: fiyat/komisyon/marj kararları core/portfolio.py'de, funding
 kuralı core/funding.py'de, doğrulama core/validate.py'dedir.
@@ -48,13 +61,22 @@ from core.ledger import Ledger
 # R'nin tek tanımı core/metrics.py'dedir (pnl / risk_amount). Motorun kendi bölmesi,
 # modelin öğrendiği R ile tabloda raporlanan R'nin sessizce ayrışması demekti.
 from core.metrics import r_multiple
-from core.portfolio import SIZING_FAILURES, Bar, Portfolio, Trade
+from core.portfolio import (
+    SIZING_FAILURES,
+    Bar,
+    OpenPosition,
+    Portfolio,
+    Trade,
+    partial_tp_from_state,
+    partial_tp_to_state,
+)
 from core.validate import validate_signal
 from strategies.base import (
     ClosedTrade,
     Direction,
     ExitInstruction,
     MarketData,
+    PartialTakeProfit,
     Signal,
     SizingMode,
     Strategy,
@@ -80,6 +102,12 @@ class PendingOrder:
     notional_fraction: float | None = None
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
+    # Üç aşamalı çıkış yönetimi isteği. Emir koşular arası defterde taşınır (kural 13),
+    # dolayısıyla istek de taşınmalıdır: taşınmasaydı bir sonraki turda dolan emir
+    # modelin bildirdiği yönetim kuralı olmadan açılırdı.
+    breakeven_at_r: float | None = None
+    partial_tp: PartialTakeProfit | None = None
+    trail_giveback_pct: float | None = None
     fraction: float = 1.0
     reason: str = ""
 
@@ -94,6 +122,9 @@ class PendingOrder:
             "notional_fraction": self.notional_fraction,
             "take_profits": [{"price": tp.price, "fraction": tp.fraction} for tp in self.take_profits],
             "trailing_atr": self.trailing_atr,
+            "breakeven_at_r": self.breakeven_at_r,
+            "partial_tp": partial_tp_to_state(self.partial_tp),
+            "trail_giveback_pct": self.trail_giveback_pct,
             "fraction": self.fraction,
             "reason": self.reason,
         }
@@ -117,6 +148,10 @@ class PendingOrder:
             trailing_atr=(
                 None if payload.get("trailing_atr") is None else float(payload["trailing_atr"])
             ),
+            # Eski defterlerde alan yok: yokluk "yönetim kapalı" demektir.
+            breakeven_at_r=_opt_float(payload.get("breakeven_at_r")),
+            partial_tp=partial_tp_from_state(payload.get("partial_tp")),
+            trail_giveback_pct=_opt_float(payload.get("trail_giveback_pct")),
             fraction=float(payload.get("fraction", 1.0)),
             reason=str(payload.get("reason", "")),
         )
@@ -243,6 +278,9 @@ class Engine:
                     notional_fraction=signal.notional_fraction,
                     take_profits=signal.take_profits,
                     trailing_atr=signal.trailing_atr,
+                    breakeven_at_r=signal.breakeven_at_r,
+                    partial_tp=signal.partial_tp,
+                    trail_giveback_pct=signal.trail_giveback_pct,
                     reason=signal.reason,
                 )
                 for signal in model_signals
@@ -310,7 +348,7 @@ class Engine:
 
             run.filled += self._fill_pending(run, ts=ts, bars=bars, marks=opens)
             run.trades.extend(self._portfolio.process_bar(model, ts=ts, bars=bars))
-            self._update_trailing_stops(run, market, ts=ts)
+            self._update_stops(run, market, ts=ts)
 
             closes = {symbol: bar.close for symbol, bar in bars.items()}
             run.equity_rows.append(self._equity_row(model, ts=ts, marks=closes))
@@ -450,6 +488,12 @@ class Engine:
                 notional_fraction=order.notional_fraction,
                 take_profits=order.take_profits,
                 trailing_atr=order.trailing_atr,
+                breakeven_at_r=order.breakeven_at_r,
+                partial_tp=order.partial_tp,
+                trail_giveback_pct=order.trail_giveback_pct,
+                # Limitler MODELE aittir (yalnızca kopya modellerde dolu, kapı
+                # core/validate.py::validate_model): kök kotaları daraltır.
+                limits=run.strategy.limits,
                 reason=order.reason,
             )
             if result.position is None:
@@ -468,35 +512,57 @@ class Engine:
 
         return filled
 
-    def _update_trailing_stops(self, run: _ModelRun, market: MarketData, *, ts: pd.Timestamp) -> None:
-        """Trailing stop uygulaması buradadır, stratejide değil (kural 9).
+    def _update_stops(self, run: _ModelRun, market: MarketData, *, ts: pd.Timestamp) -> None:
+        """Bar KAPANDIKTAN sonraki stop hareketleri: breakeven, giveback takibi, ATR trailing.
 
-        Chandelier kuralı: long'da (giriş sonrası görülen en yüksek zirve − ATR × kat),
-        short'ta (en düşük dip + ATR × kat). Stop yalnızca sıkışır; portfolio gevşemeyi
-        zaten reddeder.
+        Hepsi burada, stratejide değil (kural 9): strateji yalnızca `Signal` alanlarıyla
+        isteğini bildirir. Hepsi barın mum içi kontrolünden SONRA çalışır, çünkü barın
+        high/low'una bakıp aynı barın stop'unu değiştirmek o barın içinde geçmişe dönük
+        karar vermek olurdu (kural 12) — yeni stop ancak bir sonraki barda geçerlidir.
+
+        Sıra önemsizdir: üçü de yalnızca SIKIŞTIRIR (portfolio gevşemeyi reddeder), yani
+        sonuç hangi kuralın önce çalıştığına bağlı değildir — her zaman en sıkı olan kalır.
+        `trailing_atr` ile `trail_giveback_pct` zaten aynı anda kullanılamaz
+        (core/validate.py), breakeven ise ikisiyle de birlikte anlamlıdır.
         """
         model = run.strategy.name
         for position in self._portfolio.positions(model):
-            if position.trailing_atr is None:
-                continue
-            frame = market.ohlcv.get(position.symbol)
-            if frame is None:
-                continue
-            atr = average_true_range(frame.loc[:ts], self._atr_period)
-            if atr is None or atr <= 0.0:
-                continue
-            offset = atr * position.trailing_atr
-            candidate = (
-                position.high_water - offset
-                if position.direction == "long"
-                else position.low_water + offset
-            )
-            if self._portfolio.set_stop_price(
-                model, symbol=position.symbol, direction=position.direction, stop_price=candidate
+            for candidate, rule in (
+                (_breakeven_stop(position), "breakeven"),
+                (_giveback_stop(position), "giveback"),
+                (self._trailing_stop(position, market, ts=ts), "trailing_atr"),
             ):
-                logger.debug(
-                    "%s %s trailing stop -> %.10g (ts=%s)", model, position.symbol, candidate, ts
-                )
+                if candidate is None:
+                    continue
+                if self._portfolio.set_stop_price(
+                    model,
+                    symbol=position.symbol,
+                    direction=position.direction,
+                    stop_price=candidate,
+                ):
+                    logger.debug(
+                        "%s %s stop -> %.10g [%s] (ts=%s)",
+                        model, position.symbol, candidate, rule, ts,
+                    )
+
+    def _trailing_stop(
+        self, position: OpenPosition, market: MarketData, *, ts: pd.Timestamp
+    ) -> float | None:
+        """Chandelier kuralı (kural 9): long'da zirve − ATR × kat, short'ta dip + ATR × kat."""
+        if position.trailing_atr is None:
+            return None
+        frame = market.ohlcv.get(position.symbol)
+        if frame is None:
+            return None
+        atr = average_true_range(frame.loc[:ts], self._atr_period)
+        if atr is None or atr <= 0.0:
+            return None
+        offset = atr * position.trailing_atr
+        return (
+            position.high_water - offset
+            if position.direction == "long"
+            else position.low_water + offset
+        )
 
     def _equity_row(
         self, model: str, *, ts: pd.Timestamp, marks: Mapping[str, float]
@@ -591,6 +657,7 @@ class Engine:
                     allowed_directions=list(strategy.allowed_directions),
                     symbol_universe=list(universe),
                     is_benchmark=strategy.is_benchmark,
+                    is_replica=strategy.is_replica,
                 )
         except Exception as exc:
             # Sessiz filtreleme yok: hata loglanır ve modelin o turu boş geçer, koşu sürer.
@@ -744,6 +811,49 @@ def _validated_exits(
             continue
         valid.append(instruction)
     return valid
+
+
+def _breakeven_stop(position: OpenPosition) -> float | None:
+    """`breakeven_at_r`a ULAŞILDIYSA stop'un çekileceği yer: GİRİŞ fiyatı.
+
+    Ölçü en iyi hareket (`favorable_excursion_r`), kapanış değil: soru "pozisyon o R'a
+    ulaştı mı", "şu an o R'da mı" değil. Girişe çekmek tam olarak "risksiz taşı"
+    demektir — girişin biraz ötesine çekip komisyonu da kurtarmak ayrı bir tez olurdu ve
+    modelin bildirdiği kural bu değil.
+    """
+    threshold = position.breakeven_at_r
+    if threshold is None:
+        return None
+    reached = position.favorable_excursion_r()
+    if reached is None or reached < threshold:
+        return None
+    return position.entry_price
+
+
+def _giveback_stop(position: OpenPosition) -> float | None:
+    """KISMİ ÇIKIŞTAN SONRA: kazancın en çok `trail_giveback_pct` kadarını geri veren stop.
+
+    Kısmi çıkış olmadan devreye girmez (sözleşme, core/validate.py): mekanizmanın tezi
+    "kârın bir kısmını aldım, kalanı koşsun ama kazandığımın çoğunu geri vermeyeyim".
+
+    Stop ORİJİNAL HEDEFİ asla aşmaz: aşsaydı stop hedefin ötesine geçer, hedef hiç dolmaz
+    ve pozisyon her koşulda stop'la kapanırdı — "hedefe ulaştı" ile "takip stop'u aldı"
+    defterde ayırt edilemez hâle gelirdi (exit_reason kolonunun tüm anlamı budur).
+    """
+    giveback = position.trail_giveback_pct
+    if giveback is None or not position.partial_done:
+        return None
+    distance = position.r_distance
+    reached = position.favorable_excursion_r()
+    if distance is None or reached is None or reached <= 0.0:
+        return None
+
+    sign = 1.0 if position.direction == "long" else -1.0
+    candidate = position.entry_price + sign * reached * (1.0 - giveback) * distance
+    target = position.final_target_price
+    if target is None:
+        return candidate
+    return min(candidate, target) if position.direction == "long" else max(candidate, target)
 
 
 def _closed_trade(row: Mapping[str, Any]) -> ClosedTrade:

@@ -35,9 +35,10 @@ def _direction(**overrides: Any) -> dict[str, Any]:
 
 
 def _model(model: str, *, avg_r: float | None = 0.2, trades: int = 40,
-           total_return: float = 0.05, benchmark: bool = False) -> dict[str, Any]:
+           total_return: float = 0.05, benchmark: bool = False,
+           replica: bool = False) -> dict[str, Any]:
     return {
-        "model": model, "name": model, "is_benchmark": benchmark,
+        "model": model, "name": model, "is_benchmark": benchmark, "is_replica": replica,
         "total": _direction(avg_r=avg_r, trades=trades),
         "long": _direction(), "short": _direction(direction="short"),
         "account": {"total_return": total_return, "max_drawdown": -0.03,
@@ -305,3 +306,24 @@ def test_successful_send_posts_html_to_the_chat(
     assert sent["json"]["chat_id"] == "-100123"
     assert sent["json"]["parse_mode"] == "HTML"
     assert "LONG vs SHORT" in sent["json"]["text"]
+
+
+def test_replicas_are_not_ranked_as_competitors() -> None:
+    """Kural 15b: kopyanın 1R'si başka bir birimdedir, sıralamaya giremez.
+
+    Özet `core/metrics.py`nin dışarıda bıraktığı kıyası geri getiremez: kopya en yüksek
+    ortalama R'ye sahip olsa bile listenin başına oturmamalıdır.
+    """
+    payload = _payload(
+        replicas=["vwap_clone"],
+        models=[
+            _model("trend", avg_r=0.4, total_return=0.11),
+            _model("random_ctrl", avg_r=0.0, total_return=0.0),
+            _model("buyhold", avg_r=None, total_return=0.06, benchmark=True),
+            _model("vwap_clone", avg_r=9.0, total_return=0.90, replica=True),
+        ],
+    )
+
+    competitors = telegram_report._competitors(payload)
+
+    assert {row["model"] for row in competitors} == {"trend", "random_ctrl"}
