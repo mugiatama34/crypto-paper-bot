@@ -313,5 +313,9 @@ def test_build_dashboard_sections_are_all_present(tmp_path: Path) -> None:
     payload = build_dashboard(metrics, ledger=ledger, config=config, market=_market())
     assert set(payload) == {
         "pooled", "acceptance", "correlation", "equity",
-        "open_positions", "recent_trades", "model_trades", "activity",
+        "open_positions", "recent_trades", "model_trades", "activity", "breakdowns",
     }
+    # Kırılım bölümü katmana bağlıdır: `breakdowns` verilmediğinde (4 saatlik katman)
+    # bölüm boştur ama VARDIR — sayfanın "eski JSON mu, kırılımsız katman mı" ayrımını
+    # bir anahtarın yokluğundan tahmin etmesi gerekmesin.
+    assert payload["breakdowns"] == {}

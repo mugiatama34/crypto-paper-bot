@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 
 from core.ledger import (
@@ -187,3 +188,95 @@ def test_appending_nothing_is_a_no_op(tmp_path: Path) -> None:
     before = (tmp_path / "alpha" / "trades.csv").read_text()
     ledger.append_trades("alpha", [])
     assert (tmp_path / "alpha" / "trades.csv").read_text() == before
+
+
+# --------------------------------------------------------------------------- #
+# equity.csv sıkıştırması (katman saklama penceresi)
+# --------------------------------------------------------------------------- #
+def _equity_rows(days: int, per_day: int = 4) -> list[dict[str, object]]:
+    """`days` gün × `per_day` bar: sıkıştırmanın neyi düşürdüğü sayılabilsin."""
+    rows: list[dict[str, object]] = []
+    for day in range(days):
+        for bar in range(per_day):
+            stamp = pd.Timestamp("2026-01-01", tz="UTC") + pd.Timedelta(days=day, hours=6 * bar)
+            rows.append(
+                {
+                    "ts": stamp.isoformat(),
+                    "cash": 10_000 + day,
+                    "margin_used": 0,
+                    "unrealized_pnl": 0,
+                    "equity": 10_000 + day * 10 + bar,
+                    "open_positions": 0,
+                }
+            )
+    return rows
+
+
+def test_compaction_keeps_one_row_per_old_day(tmp_path: Path) -> None:
+    """Eski dönem GÜNLÜK özete iner; kalan satır o günün SONUNCUSU (kapanış özsermayesi)."""
+    ledger = Ledger(tmp_path)
+    ledger.reset_model("m", initial_capital=10_000.0)
+    ledger.append_equity("m", _equity_rows(days=10))
+
+    removed = ledger.compact_equity("m", older_than="2026-01-08T00:00:00+00:00")
+
+    rows = ledger.read_equity("m")
+    assert removed == 21  # 7 eski gün × 4 bar -> 7 satır
+    old = [row for row in rows if row["ts"] < "2026-01-08T00:00:00+00:00"]
+    assert len(old) == 7
+    assert [row["ts"][11:] for row in old] == ["18:00:00+00:00"] * 7
+
+
+def test_compaction_leaves_the_fresh_window_untouched(tmp_path: Path) -> None:
+    """Taze pencere bar bazında kalır: drawdown ve Sharpe son dönemde tam çözünürlükte ölçülür."""
+    ledger = Ledger(tmp_path)
+    ledger.reset_model("m", initial_capital=10_000.0)
+    ledger.append_equity("m", _equity_rows(days=10))
+
+    ledger.compact_equity("m", older_than="2026-01-08T00:00:00+00:00")
+
+    fresh = [row for row in ledger.read_equity("m") if row["ts"] >= "2026-01-08T00:00:00+00:00"]
+    assert len(fresh) == 12  # 3 gün × 4 bar, hepsi duruyor
+
+
+def test_compaction_is_idempotent(tmp_path: Path) -> None:
+    """İkinci çağrı hiçbir şey yazmaz: her tur koşan bir bakım işi dosyayı boşuna değiştirmemeli."""
+    ledger = Ledger(tmp_path)
+    ledger.reset_model("m", initial_capital=10_000.0)
+    ledger.append_equity("m", _equity_rows(days=10))
+    ledger.compact_equity("m", older_than="2026-01-08T00:00:00+00:00")
+
+    before = (tmp_path / "m" / "equity.csv").read_text(encoding="utf-8")
+    assert ledger.compact_equity("m", older_than="2026-01-08T00:00:00+00:00") == 0
+    assert (tmp_path / "m" / "equity.csv").read_text(encoding="utf-8") == before
+
+
+def test_compaction_never_touches_trades(tmp_path: Path) -> None:
+    """Denetim izi `trades.csv`'dir ve append-only sözleşmesi orada İSTİSNASIZDIR."""
+    ledger = Ledger(tmp_path)
+    ledger.reset_model("m", initial_capital=10_000.0)
+    ledger.append_equity("m", _equity_rows(days=10))
+    ledger.append_trades("m", [_trade_row()])
+    before = ledger.read_trades("m")
+
+    ledger.compact_equity("m", older_than="2026-01-09T00:00:00+00:00")
+
+    assert ledger.read_trades("m") == before
+
+
+def test_compaction_on_an_empty_ledger_is_a_noop(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path)
+    ledger.reset_model("m", initial_capital=10_000.0)
+
+    assert ledger.compact_equity("m", older_than="2026-01-01T00:00:00+00:00") == 0
+
+
+def test_compaction_keeps_the_header_schema(tmp_path: Path) -> None:
+    """Başlık değişirse sonraki append `LedgerError` verir: şema korunmalı."""
+    ledger = Ledger(tmp_path)
+    ledger.reset_model("m", initial_capital=10_000.0)
+    ledger.append_equity("m", _equity_rows(days=5))
+    ledger.compact_equity("m", older_than="2026-01-04T00:00:00+00:00")
+
+    ledger.append_equity("m", _equity_rows(days=1))  # patlamamalı
+    assert ledger.read_equity("m")

@@ -1058,3 +1058,145 @@ ve dolmuş bir hedefi hâlâ beklenen gibi çizmek yanlış olurdu.
 
 Açık pozisyonların güncel fiyatı ve gerçekleşmemiş K/Z'si zaten yükte vardı (karar 15) —
 eklenmedi, olduğu gibi kullanıldı.
+
+
+## 17. Scalp katmanı (15 dakika): model 11 ve 12, `--layer` ve `core/layers.py`
+
+Yeni bir zaman dilimi eklendi ve mevcut 4 saatlik boru hattına dokunulmadı. Ölçülmek istenen
+soru ikisi birden: (a) 15 dakikalık scalp kurulumları ölçülebilir bir edge üretiyor mu,
+(b) **kollar arası tahsisi ÖĞRENMEK, eşit dağıtmaktan daha iyi mi.** İkinci soru bu katmanın
+varlık sebebidir ve cevabı ancak model 11 ile 12 arasındaki fark tek bir şeye indirgenirse
+okunabilir.
+
+### Katman mı, ayrı giriş noktası mı
+
+Üç seçenek tartıldı:
+
+1. `main.py --layer scalp` + `config.yaml > layers` bloğu (seçilen)
+2. `main_scalp.py` + `core/runner.py` (main.py'nin gövdesi ortak bir modüle taşınır)
+3. `main_scalp.py` + `scalp_config.yaml` (tam ayrışma)
+
+(3) elendi: `risk_per_trade`, `fee_rate`, `slippage_*`, `leverage_cap`, `initial_capital` ve
+`maintenance_margin` iki katmanda da birebir aynı olmak ZORUNDA (kural 6). İki dosyaya
+bölmek, bir gün birinin sessizce ayrışması ve iki katmanın farklı maliyet varsayımlarıyla
+koşması demekti — üstelik bunu hiçbir test yakalamazdı.
+
+(2) elendi çünkü ayrışan şey ölçümün AKIŞI değil KOŞULLARI. Çekirdek zaten tamamen config
+sürümlüydü (`core/engine.py`, `core/portfolio.py`, `core/metrics.py`, `core/data.py` barı,
+evreni ve tavanı config'ten okuyor); ayrı bir giriş noktası yalnızca orkestrasyonu — model
+kurulumu, iki katmanlı hata izolasyonu, dry-run kopyası, yük yazımı — ikinci kez yazmak
+olurdu. Mevcut `main.py`'yi refactor etme maliyeti de cabası; oysa istek 4 saatlik boru
+hattına dokunmamaktı.
+
+`core/layers.py` katman bloğunu kökün üzerine **derin birleştirmeyle** bindirir ve çözülmüş
+config'ten `layers` anahtarını DÜŞÜRÜR: çekirdek modüller `get_setting(config, "timeframe")`
+ile okuduğu için, blok kalsaydı bir modül yanlışlıkla diğer katmanın barını görebilirdi.
+Katmanın kimliği (defter kökü, rapor dosyası, sabit evren, saklama penceresi, kırılımlar)
+çözülmüş config'e karışmaz; yalnızca `main.py` okur. Böylece `Engine`, `Portfolio` ve
+`metrics` katmanı hiç bilmez — katman farkındalığı tek bir dosyada durur.
+
+Tanınmayan katman adı sessizce `base`e düşmez: bir yazım hatası, scalp turunun 4 saatlik
+defteri ezmesi demek olurdu.
+
+### Evren neden sabit, stop tavanı neden 8×ATR
+
+Evren elle yazılmış 14 semboldür ve hacimden hesaplanmaz. Gerekçe kıyasın kendisidir: evren
+zamanla kayarsa geçmiş performans başka bir sembol kümesine ait olur ve iki modelin sayıları
+aynı yarışın sayıları olmaktan çıkar.
+
+Stop tavanı (kural 14) scalp'te 3× değil **8×ATR**'dir. 15 dakikalık barda ATR tipik olarak
+fiyatın %0.15-0.25'idir, oysa scalp modellerinin stop TABANI %1'dir (aşağıya bakınız). 3×
+tavanı bırakmak, kurulumların neredeyse tamamının "band dışı" diye elenmesi ve iki modelin de
+30 işlemlik örneklem kapısına hiç ulaşamaması demekti — ölçüm başlamadan biterdi. Tavan katman
+İÇİ kıyası bozmaz: iki model de aynı tavanı görür, katmanlar arası kıyas ise zaten yapılmıyor.
+
+### İki modelin farkı tek satır: `choose_arm`
+
+Beş kol (`strategies/scalp/arms.py`) ve tüm kapılar (`strategies/scalp/model.py`) tek
+kopyadır; `scalp_bandit` ve `scalp_fixed` yalnızca `choose_arm`u uygular. Kollar kopyalansaydı
+iki modelin farkı zamanla "adaptasyonun katkısı" olmaktan çıkar, iki ayrı uygulamanın farkı
+hâline gelirdi — oysa model 12 tam da model 11'in NULL HİPOTEZİDİR.
+
+**Stop her kolda aynı, hedef her kolda kendi yapısından.** Stop mesafesi maliyet ölçeğidir
+(kural 14): kollar farklı stop mantıkları kullansaydı kol bazlı ortalama R tablosu bir sinyal
+değil bir stop-mesafesi karşılaştırması olurdu ve bandit sinyali değil, en ucuz stop ölçeğini
+öğrenirdi. Hedef ise kolun tezinin parçası: projeksiyon (`2R`) ile kolun yapısal engelinin
+(günün zirvesi, aralığın ölçülü hareketi, Bollinger orta bandı, patlamanın büyüklüğü, VWAP)
+YAKIN olanı alınır. Bu ikili kural bir denemenin sonucudur: yalnızca projeksiyon, her
+kurulumun hedef/stop oranını aynı sayıya sabitleyip 1.5R kapısını ölü koda çeviriyordu;
+yalnızca yapısal seviye ise sentetik veride kurulumların tamamını kapıda eliyordu (RR 0.02-0.33)
+— iki model de hiç işlem açamıyordu.
+
+### Bandit durumu: ayrı dosya YOK
+
+Posterior `ledgers_scalp/scalp_bandit/trades.csv`'nin saf bir fonksiyonudur ve her turda
+sıfırdan kurulur. Ayrı bir `bandit_state.json` daha açık bir "durum" olurdu ama defterle
+senkron kalması ayrıca test edilmesi gereken İKİNCİ bir doğruluk kaynağı yaratırdı; ikisi
+ayrıştığında hangisinin doğru olduğu bilinemezdi. Artımlı sayaç da aynı nedenle reddedildi
+(bir tur atlanır, bir satır elle düzeltilir — hafıza defterden ayrılır).
+
+Modelin kendi kapanmış işlemlerini görmesi için sözleşmeye dar bir kanca eklendi
+(kural 16, `Strategy.observe_closed_trades`), `peer_signals` kadar dar: **açık pozisyon bu
+listeye hiçbir yoldan giremez** ve model yalnızca KENDİ işlemlerini görür. Kancayı
+uygulamayan modeller için defter hiç okunmaz — 4 saatlik katmanın on bir modeli bu eklemeden
+etkilenmez. Besleme, defterdeki satırlara BU turda kapanan işlemleri de ekler: 15 dakikalık
+bir modelde pozisyon aynı turda açılıp kapanabilir ve defteri beklemek, modelin en taze
+sonucu bir tur geç görmesi demekti.
+
+Kol etiketi (`| arm=... | post_r=...`) `core/tags.py`'de tek yerde tanımlıdır; okuyan taraf
+etiketi bulamazsa `TagError` fırlatır. Sessizce atlamak, posterior'ı ve kol kırılımını
+defterde görünmeyen bir geçmişe bağlardı.
+
+### Thompson sampling neden Normal-Normal
+
+Ödül R'dir: sürekli, sınırsız (likidasyonda −1'in altına iner) ve işaretli. Beta/Bernoulli
+posterior yalnızca kazanma oranını öğrenirdi — 1R kazanan kol ile 3R kazanan kolu aynı sayardı.
+Kolun ortalama R'si üzerine normal posterior kullanılır, çekiliş `Normal(ortalama, σ/√n)`dan
+yapılır; gözlemsiz kolun σ'sı önselden gelir.
+
+Üç koruma: **ısınma** (kolların HEPSİ 20 işleme ulaşana kadar eşit çekiliş — erken öğrenme
+2-3 işlemlik gürültüyü kalıcı tercihe çevirir), **taban tahsis** (%5 × uygun kol sayısı
+olasılıkla eşit çekiliş — susturulan kol bir daha ÖLÇÜLEMEZ) ve **kayan pencere** (kol başına
+son 100 işlem — iki yıl önceki bir ortalama bugünkü tahsisi belirlememeli). Taban bir kota
+değil bir OLASILIKTIR; testler de bunu dalgalanma payıyla ölçer.
+
+### Saklama penceresi: `equity.csv` sıkıştırması
+
+Günde 96 tur × 2 model, her tur commit ediliyor: sıkıştırma olmadan `equity.csv` yılda ~35
+bin satıra çıkar ve depo geçmişi ölçümle ilgisiz satırlarla şişer. 30 günden eski satırlar
+GÜNLÜK özete (o günün SON barı — ortalaması değil; ortalama, eski dönemin drawdown'ını
+olduğundan iyi gösterirdi) indirilir. Bu, `core/ledger.py`'nin append-only sözleşmesinde
+bilinçli ve dar bir istisnadır: `equity.csv` bar başına bir ANLIK GÖRÜNTÜ serisidir, aynı
+bilginin türevi; `trades.csv` ise denetim izidir ve orada istisna YOKTUR. Taze 30 gün bar
+bazında kalır, sıkıştırma her model için birebir aynı uygulanır ve metrikler sıkıştırılmış
+eğriden hesaplanır (rapor ile defter her zaman aynı şeyi söylesin).
+
+JSON'a model başına son 100 değil **50** işlem yazılır; aynı gerekçe (dosya her 15 dakikada
+bir commit ediliyor). İkisi de `layers.<ad>.retention` altındadır — katmana göre değiştikleri
+için `core/report.py`'deki tek değerli sunum sabitlerinin yanına konamazlardı.
+
+### Dashboard: ayrı bölüm, ayrı dosya
+
+Sayfa ikinci bir `fetch` ile `data/metrics_scalp.json`u okur ve scalp modellerini kendi
+bölümünde, kendi tablosunda gösterir. Tek dosyada birleştirmek, 15 dakikada bir koşan
+katmanın 4 saatlik raporu da her seferinde yeniden yazması demekti. Aynı tabloda sıralamak
+ise zaman dilimi farkını bir performans farkı gibi gösterirdi: işlem sıklığı, maliyetin R
+içindeki payı ve tutma süresi bambaşka. Dosya yoksa bölüm sessizce gizli kalır — eksik bir
+dosya bir arıza değil, henüz olmayan bir ölçümdür.
+
+Kırılımlar (`core/metrics.py::breakdown`) katman ayarıdır: kol kırılımı tahsisin eşitten
+sapıp sapmadığını, sembol kırılımı kayma varsayımının ince kitaplı sembollerde (PENGU, ETHFI)
+tutup tutmadığını gösterir. Grup başına yön ayrımı YAPILMAZ (JSON'u üçe katlardı ve yön
+sorusunun cevabı zaten model tablosunda ve havuz panelinde duruyor).
+
+### Bilinen sınır: nakit, eşzamanlı pozisyon sayısını ~1'e indiriyor
+
+Boyutlandırma kuralı (kural 11) + %1 stop tabanı birlikte şu sonucu veriyor:
+`notional = risk / stop%` = `100 / 0.01` = **$10.000**, yani başlangıç sermayesinin tamamı.
+Bir pozisyon açıldığında serbest nakit tükeniyor ve aynı turdaki ikinci sinyal `zero_size`
+ile reddediliyor. Yani scalp modelleri pratikte `max_positions` (5) kotasına hiç ulaşmıyor,
+aynı anda ~1 pozisyon taşıyor ve devir hızını zaman stop'u belirliyor (16+1 bar ≈ 4.25 saat,
+günde ~5 işlem). Kural 11 tek yetkili boyutlandırma kuralıdır ve katmana göre değiştirilemez;
+bu yüzden davranış olduğu gibi bırakıldı ve burada kayda geçirildi. Ölçümü bozmuyor (iki model
+de aynı kısıtı görüyor) ama tur loglarında sık `zero_size` WARNING'i üretiyor — bunlar bir
+arıza değil, sermayenin dolu olması.

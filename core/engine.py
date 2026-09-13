@@ -45,9 +45,13 @@ from core.data import bar_duration
 # yeniden dışa verilir — motorun ATR'yi "kendi" hesaplaması bu garantiyi bozardı.
 from core.indicators import average_true_range
 from core.ledger import Ledger
+# R'nin tek tanımı core/metrics.py'dedir (pnl / risk_amount). Motorun kendi bölmesi,
+# modelin öğrendiği R ile tabloda raporlanan R'nin sessizce ayrışması demekti.
+from core.metrics import r_multiple
 from core.portfolio import SIZING_FAILURES, Bar, Portfolio, Trade
 from core.validate import validate_signal
 from strategies.base import (
+    ClosedTrade,
     Direction,
     ExitInstruction,
     MarketData,
@@ -163,6 +167,7 @@ class _ModelRun:
     signals: int = 0
     exits: int = 0
     skipped_signals: int = 0
+    history_failed: bool = False
     rejections: dict[str, int] = field(default_factory=dict)
     skipped: str = ""
 
@@ -206,6 +211,8 @@ class Engine:
         # Aynı `as_of` ile ikinci kez koşmak (elle tekrar, cron retry) aksi hâlde aynı
         # sinyali ikinci kez kuyruğa alır ve model tek bir bar için çift pozisyon açardı.
         fresh = [run for run in runs if run.reached_as_of]
+        for run in fresh:
+            self._observe_history(run)
         signals = self._collect_signals(fresh, market, universe=universe)
         for run in runs:
             if not run.reached_as_of:
@@ -446,6 +453,36 @@ class Engine:
     # ------------------------------------------------------------------ #
     # C) İki geçişli sinyal üretimi
     # ------------------------------------------------------------------ #
+    def _observe_history(self, run: _ModelRun) -> None:
+        """Modele KENDİ kapanmış işlemlerini verir (yalnızca kancayı uygulayan modellere).
+
+        Defter okuması kancayı uygulamayan modeller için HİÇ yapılmaz: 4 saatlik katmanın
+        on bir modeli her turda gereksiz yere `trades.csv` okumaz ve davranışları bu
+        eklemeden etkilenmez.
+
+        Besleme, defterdeki satırlara BU turda kapanan işlemleri de ekler. 15 dakikalık
+        bir modelde bir pozisyon aynı turda açılıp kapanabilir; defteri beklemek, modelin
+        en taze sonucu bir tur geç görmesi demekti. Satırlar henüz yazılmamış olsa da
+        KAPANMIŞTIR — açık pozisyon hiçbir yoldan bu listeye giremez.
+
+        Kanca patlarsa (ör. beklenen etiketi taşımayan bir satır) yalnızca bu modelin turu
+        boş geçer: yarım öğrenilmiş bir posterior ile sinyal üretmek, modelin ne ölçtüğünü
+        bilinmez kılardı. Koşu sürer (kural 8).
+        """
+        strategy = run.strategy
+        if type(strategy).observe_closed_trades is Strategy.observe_closed_trades:
+            return
+        rows = [
+            *self._ledger.read_trades(strategy.name),
+            *(trade.as_row() for trade in run.trades),
+        ]
+        try:
+            strategy.observe_closed_trades(tuple(_closed_trade(row) for row in rows))
+        except Exception as exc:
+            logger.error("%s modeli atlandı (observe_closed_trades): %s", strategy.name, exc)
+            run.skipped = _join(run.skipped, f"observe_closed_trades: {exc}")
+            run.history_failed = True
+
     def _collect_signals(
         self, runs: Sequence[_ModelRun], market: MarketData, *, universe: Sequence[str]
     ) -> dict[str, list[Signal]]:
@@ -483,6 +520,8 @@ class Engine:
     ) -> list[Signal]:
         """Bir modelin sinyalleri; doğrulamadan geçemezse YALNIZCA o model atlanır (kural 8)."""
         strategy = run.strategy
+        if run.history_failed:
+            return []
         try:
             signals = strategy.generate_signals(market, peer_signals)
             for signal in signals:
@@ -645,6 +684,19 @@ def _validated_exits(
             continue
         valid.append(instruction)
     return valid
+
+
+def _closed_trade(row: Mapping[str, Any]) -> ClosedTrade:
+    """Defter satırını modelin göreceği salt okunur görünüme çevirir."""
+    return ClosedTrade(
+        symbol=str(row.get("symbol", "")),
+        direction=str(row.get("direction", "")),  # type: ignore[arg-type]
+        opened_at=_to_utc(row.get("opened_at")),
+        closed_at=_to_utc(row.get("closed_at")),
+        r_multiple=r_multiple(row),
+        signal_reason=str(row.get("signal_reason", "")),
+        exit_reason=str(row.get("exit_reason", "")),
+    )
 
 
 def _assert_unique_names(strategies: Sequence[Strategy]) -> None:

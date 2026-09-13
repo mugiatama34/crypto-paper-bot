@@ -321,6 +321,7 @@
   .pager .count { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
   /* ---------------- korelasyon ---------------- */
+  h3.sub { margin: 18px 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
   table.heat { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 10.5px; }
   table.heat th, table.heat td { padding: 2px; text-align: center; }
   table.heat th.col { height: 84px; vertical-align: bottom; padding-bottom: 6px; }
@@ -456,6 +457,37 @@
           <span>ters ↔ birlikte hareket</span>
         </div>
       </div>
+    </section>
+
+    <section id="sec-scalp" hidden>
+      <h2>Scalp katmanı — 15 dakika</h2>
+      <p class="note">
+        <b>Bu tablo yukarıdakiyle AYNI YARIŞ DEĞİLDİR.</b> Scalp modelleri 15 dakikalık barda,
+        sabit 14 sembollük bir evrende ve kendi defterlerinde koşar
+        (<code>data/metrics_scalp.json</code>); 4 saatlik modellerle aynı tabloda sıralamak,
+        zaman dilimi farkını bir performans farkı gibi gösterirdi. Katman içi kıyas ise
+        geçerlidir: <b>scalp_bandit</b> kolları arasındaki tahsisi öğrenir,
+        <b>scalp_fixed</b> aynı kolları eşit ağırlıkla oynar — aradaki ortalama R farkı
+        adaptasyonun katkısıdır.
+      </p>
+      <p class="note" id="scalp-stamp"></p>
+      <div class="card wide" id="scalp-models"></div>
+      <div class="rows narrow" id="scalp-models-cards"></div>
+      <h3 class="sub">Kol kırılımı</h3>
+      <p class="note">
+        Hangi kolun kaç işlem yaptığı ve ne ürettiği. Tahsisi öğrenen modelde kol dağılımının
+        eşitten sapması beklenir; kontrol modelinde sapmaması. Taban tahsis (%5) hiçbir kolun
+        sıfıra düşmemesini garanti eder — susturulan kol bir daha ölçülemez.
+      </p>
+      <div id="scalp-arms"></div>
+      <h3 class="sub">Sembol kırılımı</h3>
+      <p class="note">
+        Kayma varsayımı (<code>slippage_base</code>) evrendeki her sembol için tek bir sayıdır.
+        İnce kitapta işlem gören bir sembolün <code>cost_per_r</code> kolonu diğerlerinden
+        belirgin biçimde ayrışıyorsa, varsayım orada tutmuyor demektir ve o satırın sonucu
+        yorumlanmadan önce bu bilinmelidir.
+      </p>
+      <div id="scalp-symbols"></div>
     </section>
 
   </main>
@@ -674,6 +706,7 @@ function render(d) {
   renderGroups(d);
   renderEquity(d);
   renderCorrelation(d);
+  loadScalp();
 
   window.addEventListener("hashchange", route);
   el("back").addEventListener("click", (ev) => {
@@ -682,6 +715,114 @@ function render(d) {
     if (entryWasDetail) { entryWasDetail = false; location.replace("#"); } else { history.back(); }
   });
   route();
+}
+
+
+/* ------------------------------------------------------------------ *
+ * SCALP KATMANI (15 dakika) — AYRI yük, AYRI bölüm
+ *
+ * İkinci bir fetch, çünkü iki katman ayrı turlarda koşar ve ayrı dosyalara
+ * yazar (config.yaml > layers): tek dosyada birleştirmek, 15 dakikada bir
+ * koşan katmanın 4 saatlik raporu da her seferinde yeniden yazması demekti.
+ * Dosya yoksa (katman henüz hiç koşmadı, fork) bölüm sessizce gizli kalır —
+ * eksik bir dosya bir arıza değil, henüz olmayan bir ölçümdür.
+ *
+ * Scalp modelleri ana tabloya HİÇBİR KOŞULDA karışmaz: zaman dilimi farkı
+ * doğrudan kıyası yanıltıcı yapar.
+ * ------------------------------------------------------------------ */
+function loadScalp() {
+  fetch("data/metrics_scalp.json?t=" + Date.now(), { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (d) renderScalp(d); })
+    .catch(() => { /* katman henüz koşmadı: bölüm gizli kalır */ });
+}
+
+const SCALP_COLUMNS = ["model", "işlem", "ort. R", "medyan R", "kazanma", "toplam R", "getiri", "cost/R", "stop %"];
+
+function scalpRow(model) {
+  const total = model.total || {};
+  const account = model.account || {};
+  return [
+    ["", esc(model.name || model.model)],
+    ["", total.trades ?? DASH],
+    [signClass(total.avg_r), fmtSigned(total.avg_r)],
+    [signClass(total.median_r), fmtSigned(total.median_r)],
+    ["", pct(total.win_rate)],
+    [signClass(total.total_r), fmtSigned(total.total_r, 1)],
+    [signClass(account.total_return), pctSigned(account.total_return)],
+    ["", fmt(total.cost_per_r, 3)],
+    ["", pctRaw(total.avg_stop_distance_pct)],
+  ];
+}
+
+function renderScalp(d) {
+  el("sec-scalp").hidden = false;
+  const models = d.models || [];
+
+  el("scalp-stamp").innerHTML =
+    "Son tur <b>" + esc(shortTs(d.as_of)) + "</b> — bar " + esc((d.settings || {}).timeframe || "15m") +
+    ", " + (d.universe_size ?? DASH) + " sembol, stop tavanı " +
+    fmt((d.settings || {}).max_stop_atr_multiple, 1) + "×ATR.";
+
+  el("scalp-models").innerHTML = '<table class="grid"><thead><tr>' +
+    SCALP_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
+    models.map((m) => '<tr class="data">' + scalpRow(m).map(([cls, v]) =>
+      '<td class="' + cls + '">' + v + "</td>").join("") + "</tr>").join("") +
+    "</tbody></table>";
+
+  /* Dar ekranda tablo yerine kart: 9 kolon telefonda ancak yatay kaydırmayla sığardı. */
+  el("scalp-models-cards").innerHTML = models.map((m) => {
+    const total = m.total || {}, account = m.account || {};
+    const fields = [
+      ["işlem", total.trades ?? DASH],
+      ["kazanma", pct(total.win_rate)],
+      ["toplam R", fmtSigned(total.total_r, 1)],
+      ["getiri", pctSigned(account.total_return)],
+      ["cost/R", fmt(total.cost_per_r, 3)],
+      ["stop %", pctRaw(total.avg_stop_distance_pct)],
+    ];
+    return '<article class="row">' +
+      '<div class="row-top"><div><span class="row-sym">' + esc(m.name || m.model) + "</span></div>" +
+      '<div style="text-align:right"><div class="row-val ' + signClass(total.avg_r) + '">' +
+      fmtSigned(total.avg_r) + "R</div><div class=\"row-val-sub\">ort. R</div></div></div>" +
+      '<div class="row-grid">' + fields.map(([k, v]) =>
+        "<div><span>" + esc(k) + '</span> <b><span class="nw">' + esc(String(v)) + "</span></b></div>").join("") +
+      "</div></article>";
+  }).join("");
+
+  renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol");
+  renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol");
+}
+
+const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "kazanma", "toplam R", "cost/R"];
+
+function renderBreakdown(hostId, byModel, label) {
+  const host = el(hostId);
+  if (!byModel || !Object.keys(byModel).length) {
+    host.innerHTML = '<p class="empty">Henüz kırılım üretecek kapanmış işlem yok.</p>';
+    return;
+  }
+  host.innerHTML = Object.keys(byModel).sort().map((model) => {
+    const groups = byModel[model] || {};
+    const names = Object.keys(groups).sort();
+    if (!names.length) {
+      return '<div class="card"><b>' + esc(model) + "</b> — henüz kapanmış işlem yok.</div>";
+    }
+    /* Kırılım her zaman tablo: satır sayısı az (5 kol / 14 sembol) ve kolonlar dar,
+       dar ekranda da okunur. Kaydırma kabı yalnızca gerekirse devreye girer. */
+    return '<div class="card"><b>' + esc(model) + "</b>" +
+      '<div style="overflow-x:auto"><table class="grid"><thead><tr><th>' + esc(label) + "</th>" +
+      BREAKDOWN_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
+      names.map((name) => {
+        const g = groups[name] || {};
+        return '<tr class="data"><td>' + esc(name) + "</td>" +
+          "<td>" + (g.trades ?? DASH) + "</td>" +
+          '<td class="' + signClass(g.avg_r) + '">' + fmtSigned(g.avg_r) + "</td>" +
+          "<td>" + pct(g.win_rate) + "</td>" +
+          '<td class="' + signClass(g.total_r) + '">' + fmtSigned(g.total_r, 1) + "</td>" +
+          "<td>" + fmt(g.cost_per_r, 3) + "</td></tr>";
+      }).join("") + "</tbody></table></div></div>";
+  }).join("");
 }
 
 /* ---------------------------- yönlendirme ---------------------------- */

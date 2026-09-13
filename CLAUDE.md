@@ -12,12 +12,21 @@ reddedilir.
 Projenin cevaplamaya çalıştığı ana soru: **short işlemler long işlemlerden daha mı
 başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. `core/metrics.py`).
 
+Ölçüm **iki KATMANDA** yürür ve ikisi de aynı çekirdeği kullanır (bkz. "Katmanlar"):
+`base` 4 saatlik ana yarışma, `scalp` 15 dakikalık scalp katmanıdır. Katman ölçümün
+koşullarını (bar, sembol evreni, model listesi, defter, rapor dosyası) değiştirir;
+kurallarını — maliyet, risk, likidasyon, dolum, metrik tanımları — DEĞİŞTİREMEZ. İki
+katmanın sonuçları aynı tabloda sıralanmaz: zaman dilimi farkı doğrudan kıyası yanıltıcı
+yapar.
+
 ## Klasör Yapısı ve Modül Sorumlulukları
 
 | Yol | Tek Sorumluluk |
 |---|---|
-| `main.py` | Bir turu uçtan uca çalıştıran giriş noktası: veri çek -> `as_of` -> config'deki modelleri çalıştır -> metrikleri üret -> `docs/data/metrics.json`. İnce bir orkestrasyon katmanıdır, iş mantığı taşımaz. `--dry-run` deftere yazmadan raporlar. Model KURULUMU burada izole edilir (tanınmayan/patlayan model atlanır, koşu hata koduyla biter); defter ve veri hataları izole edilmez — onlar ölçüm hatasıdır, tur düşer. |
+| `main.py` | Bir turu uçtan uca çalıştıran giriş noktası: katmanı çöz -> veri çek -> `as_of` -> katmanın modellerini çalıştır -> metrikleri üret -> katmanın rapor dosyası. `--layer` hangi katmanın koşacağını seçer (varsayılan `base`); İKİ katman da bu tek giriş noktasını ve tek çekirdeği kullanır — ayrı bir giriş noktası orkestrasyonu (model kurulumu, hata izolasyonu, dry-run kopyası, yük yazımı) kopyalar ve iki katmanın sessizce ayrışmasına kapı açardı. İnce bir orkestrasyon katmanıdır, iş mantığı taşımaz. `--dry-run` deftere yazmadan raporlar. Model KURULUMU burada izole edilir (tanınmayan/patlayan model atlanır, koşu hata koduyla biter); defter ve veri hataları izole edilmez — onlar ölçüm hatasıdır, tur düşer. |
 | `config.yaml` | Evrensel ayarlar: sembol evreni, zaman dilimi, başlangıç bakiyesi, çalışma sıklığı, funding parametreleri ve tüm risk/maliyet sabitleri — `risk_per_trade`, `leverage_cap`, `max_positions`, `max_short_positions`, `fee_rate`, `slippage_base`, `slippage_short_stop`, `maintenance_margin`, `max_stop_atr_multiple`, `random_seed`. Tüm modeller için tek kaynak; hiçbir modül bu değerlerin kendi kopyasını taşımaz. Değerler için bkz. "config.yaml Değerleri". |
+| `core/layers.py` | Katman çözücü: `config.yaml > layers.<ad>` bloğunu kök ayarların üzerine derin birleştirmeyle bindirir ve katmanın kimliğini (defter kökü, rapor dosyası, sabit evren, saklama penceresi, kırılımlar) verir. Çözülmüş config'te `layers` anahtarı YOKTUR — çekirdek modüller tek bir "şimdi geçerli" değer görür. Eksik katman anahtarı `ConfigError`; tanınmayan katman adı sessizce `base`e düşmez. |
+| `core/tags.py` | Defter `reason` alanındaki `\| anahtar=değer` etiketlerinin tek tanımı. Etiketi yazan taraf strateji, okuyan taraf `core/metrics.py`'dir; format tek yerde durur. `parse_tag` bulamadığı etikette `TagError` fırlatır — kol kırılımının anlamı "her işlem bir kola aittir" varsayımına dayanır ve etiketsiz satırı atlamak kırılımı sessizce eksiltirdi. |
 | `core/config.py` | `config.yaml`'ı okuyan tek kapı. Eksik anahtarda `ConfigError` fırlatır; hiçbir varsayılan değer taşımaz — sessiz varsayılan, modellerin farklı maliyet/risk varsayımlarıyla yarışması demektir. |
 | `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u BTC referansından belirlemek burasının işidir; `as_of` barına sahip olmayan semboller o tur dışlanır ve loglanır. Strateji mantığı barındırmaz. |
 | `core/engine.py` | Orkestrasyon: her turu **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. Doldurulamayan emirleri sebep koduna göre sayıp tur raporuna yazar (bkz. kural 15). |
@@ -25,9 +34,13 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
 | `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. Salt okunur — ledger'ı değiştirmez. |
 | `core/report.py` | Dashboard yükü: `docs/data/metrics.json`'un tablo dışında kalan bölümleri (özsermaye eğrileri, açık pozisyonlar, son işlemler, model başına son 100 kapanmış işlem, son 24 saatin hareketi, havuz ve kabul bayraklarının toplanması). Salt okunur; hiçbir şey hesaplamaz ki `core/portfolio.py` zaten hesaplamış olsun. Tek istisna açık pozisyonun güncel PnL'idir ve kapanış formülünün aynı parçalarından kurulur (brüt − giriş komisyonu + funding; çıkış maliyeti YOK). Sunum sabitleri (kaç işlem gösterilir, eğri kaç noktaya seyreltilir) burada durur, `config.yaml`'da değil. |
-| `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde `ledgers/` altına yazar. Sistemin denetim izi (audit trail) burasıdır. |
+| `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde katmanın defter kökü altına yazar. Sistemin denetim izi (audit trail) burasıdır. **Tek istisna `compact_equity`:** katmanın saklama penceresinden eski `equity.csv` satırlarını günlük özete indirir (bkz. "Katmanlar > Saklama penceresi"). `trades.csv` için istisna YOKTUR — bir işlem satırı hiçbir gerekçeyle değişmez veya silinmez. |
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni. Geçersiz sinyalde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
+| `strategies/scalp/arms.py` | Scalp katmanının **beş ortak kolu** (VWAP geri çekilme, açılış aralığı kırılımı, RSI(2) dönüşü, momentum patlaması, funding sıçraması fade'i). İki model de bu tek kopyayı görür. Stop mesafesi her kolda aynıdır (`stop_atr_multiple × ATR`) — kollar stop ölçeğinde ayrışsaydı kol tablosu bir sinyal değil maliyet karşılaştırması olurdu. Hedef ise projeksiyon (`target_reward_risk × stop`) ile kolun yapısal engelinin YAKIN olanıdır. |
+| `strategies/scalp/model.py` | İki scalp modelinin ortak gövdesi: stop tabanı (%1), hedef/stop kapısı (1.5R), zaman stop'u (16 bar), sinyal kurulumu, kol etiketi. Alt sınıflar YALNIZCA `choose_arm`u uygular — fark tek satıra indirgenmezse iki modelin farkı adaptasyonun katkısı olmaktan çıkar. |
+| `strategies/scalp_bandit.py` | **Model 11:** Thompson sampling ile kollar arası tahsis. Posterior yalnızca KAPANMIŞ işlemlerin gerçekleşmiş R'sinden beslenir ve her turda defterden sıfırdan kurulur (ayrı durum dosyası yoktur — ikinci bir doğruluk kaynağı olurdu). Isınma 20 işlem/kol, taban tahsis %5, kayan pencere 100 işlem. |
+| `strategies/scalp_fixed.py` | **Model 12 (KONTROL):** aynı beş kol, eşit ağırlıklı çekiliş, öğrenme yok. Model 11'in null hipotezi; `observe_closed_trades`ı bilinçli olarak UYGULAMAZ, yani geçmişe erişimi hiç yoktur. |
 | `strategies/buyhold.py` | **Referans çıpası** (kural 15), yarışmacı değil: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınır ve hiç satılmaz. `is_benchmark = True`. |
 | `strategies/registry.py` | Model adı -> strateji sınıfı eşlemesi. `config.yaml`'ın `models` listesi buradan çözülür; tanınmayan ad sessizce atlanmaz. |
 | `strategies/*.py` (ileride) | `Strategy`'den türeyen, yalnızca `generate_signals` uygulayan bağımsız, birbirinden habersiz modüller. |
@@ -37,6 +50,8 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `docs/index.html` | GitHub Pages dashboard'u: tek dosya, harici framework/CDN yok, build adımı yok. Tek veri kaynağı `docs/data/metrics.json`. **İki seviye:** (1) genel bakış — üç özet kartı, LONG vs SHORT paneli (ana soru), tez tipine göre gruplanmış model kartları (ort. R, getiri, işlem sayısı, mini eğri, kabul rozetleri, rütbe), özsermaye eğrileri (tıklayınca izole), modeller arası getiri korelasyonu; (2) model detayı — üst şerit metrikler + rozet gerekçeleri, modelin long/short kırılımı, açık pozisyonlar, sayfalı kapanmış işlem listesi (20'şer, yön filtresiyle), modelin kendi eğrisi. Detayın adresi `#model=<ad>` hash'idir: geri tuşu, yer imi ve paylaşılan link çalışır. Koyu tema, mobil öncelikli: yatay kaydırma yoktur, geniş tablolar dar ekranda kart düzenine döner, dokunma hedefleri en az 44px. Süs katmanıdır: ölçüm defterde ve JSON'dadır, sayfa yalnızca onu çizer. |
 | `scripts/telegram_report.py` | Günlük Telegram özeti. `as_of` saati 20:00 (UTC) olan turda yollanır; token'lar ortamdan (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) okunur. **Her yolda 0 döner** — eksik token, ağ hatası, Telegram 4xx'i, bozuk JSON: hepsi loglanıp geçilir. Özet bir bildirimdir, ölçümün parçası değil; Telegram kesintisi turu kırmızıya çeviremez. |
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
+| `ledgers_scalp/` | Scalp katmanının defteri. İki katman asla aynı defteri paylaşmaz: paylaşsalardı 15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı. |
+| `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`, 15 dakikada bir). Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. |
 | `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
 
 ### config.yaml Değerleri
@@ -65,6 +80,8 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
 | `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
+| `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, …). Bkz. "Katmanlar". |
+| `scalp.*` | scalp kısıtları | İki scalp modelinin de BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
 
 ## Değişmez Kurallar
 
@@ -182,6 +199,93 @@ başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. 
       tekrar `INFO`, boyutlandırma arızası `WARNING`. Kodsuz bir "hiç dolmadı" turu yalnızca
       kural 13'ün kuyruğudur (emir bir sonraki barda dolacak) ve ayrıca öyle loglanır.
 
+16. **Model kendi KAPANMIŞ işlemlerini okuyabilir, açık pozisyonlarını okuyamaz.** Uyarlanabilir
+    modeller (bkz. `strategies/scalp_bandit.py`) geçmiş sonuçlarından öğrenir; bunun tek meşru
+    kaynağı defterin kapanmış satırlarıdır. Motor, `Strategy.observe_closed_trades` kancasını
+    **uygulayan** modellere her turda kendi kapanmış işlemlerinin salt okunur bir görünümünü
+    (`ClosedTrade`) verir; uygulamayan model için defter hiç okunmaz ve davranışı değişmez.
+    - **Açık pozisyon bu listeye hiçbir yoldan giremez.** Girseydi model, henüz gerçekleşmemiş
+      bir sonucu öğrenir ve kâğıt üstündeki kârı ölçüme sokardı — üstelik pozisyon kapandığında
+      aynı sonucu ikinci kez sayardı.
+    - **İzolasyon korunur (kural 4):** model yalnızca KENDİ işlemlerini görür; başka modelin
+      işlemine, pozisyonuna, bakiyesine ya da iç durumuna erişimi yoktur.
+    - **Kural 1/7 korunur:** bu bir OKUMA yüzeyidir. Model deftere yazmaz, bakiye/pozisyon
+      durumu tutmaz; gördüğü `r_multiple` `core/metrics.py`'deki tek R tanımından gelir.
+    - Besleme, defterdeki satırlara **bu turda kapanan** işlemleri de ekler: 15 dakikalık bir
+      modelde pozisyon aynı turda açılıp kapanabilir ve defteri beklemek, modelin en taze
+      sonucu bir tur geç görmesi demekti.
+    - Kanca patlarsa yalnızca o modelin turu boş geçer (kural 8): yarım öğrenilmiş bir
+      posterior ile sinyal üretmek, modelin ne ölçtüğünü bilinmez kılardı.
+
+## Katmanlar (`core/layers.py`)
+
+Ölçüm iki zaman diliminde yürür ve ikisi de **AYNI çekirdeği** koşar: `core/engine.py`,
+`core/portfolio.py`, `core/ledger.py`, `core/funding.py`, `core/metrics.py`, `core/report.py`
+ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
+
+| | `base` | `scalp` |
+|---|---|---|
+| Bar | 4H | 15m |
+| Evren | hacme göre ilk 50 (30 günde bir yenilenir) | **SABİT 14 sembol**, otomatik seçim yok |
+| Modeller | 10 yarışmacı + 1 referans çıpası | `scalp_bandit` (11) ve `scalp_fixed` (12) |
+| Defter | `ledgers/` | `ledgers_scalp/` |
+| Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
+| Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (15 dakikada bir) |
+| Stop tavanı (kural 14) | 3×ATR | 8×ATR |
+| Kırılımlar | yok | kol + sembol |
+
+**Neden ayrı bir `scalp_config.yaml` değil.** `risk_per_trade`, `fee_rate`, `slippage_*`,
+`leverage_cap`, `initial_capital`, `maintenance_margin` iki katmanda da BİREBİR aynıdır
+(kural 6). İki dosyaya bölmek, bir gün birinin sessizce ayrışması demekti — ve iki katman
+farklı maliyet varsayımlarıyla koştuğunda bunu hiçbir test yakalamazdı. Kök tek kaynaktır;
+katman bloğu yalnızca **farkı** yazar (derin birleştirme: `data.history_bars` yazmak `data`nın
+geri kalanını silmez).
+
+**Neden ayrı bir giriş noktası değil.** Çekirdek zaten tamamen config sürümlüdür; ayrı bir
+`main_scalp.py` yalnızca orkestrasyonu (model kurulumu, hata izolasyonu, dry-run kopyası, yük
+yazımı) ikinci kez yazmak olurdu. Ayrışan şey ölçümün koşulları, akışı değil.
+
+**Katmanlar arası kıyas YAPILMAZ.** Dashboard scalp modellerini ayrı bir bölümde, ayrı bir
+tabloda gösterir. 15 dakikalık bir modelin ortalama R'si ile 4 saatlik bir modelinki aynı
+sütuna konsaydı, aradaki fark strateji farkı gibi okunurdu — oysa işlem sıklığı, maliyetin R
+içindeki payı ve tutma süresi bambaşkadır. Katman **içi** kıyas (model 11 ↔ model 12) ise
+tam olarak tasarımın amacıdır.
+
+**Saklama penceresi (`retention`).** 15 dakikalık katman günde 96 tur koşar ve her turu commit
+eder: `equity.csv` yılda on binlerce satıra çıkar ve depo geçmişi ölçümle ilgisiz satırlarla
+şişer. Bu yüzden scalp katmanında 30 günden eski özsermaye satırları **günlük özete** (o günün
+son barı) indirilir ve JSON'a model başına son **50** işlem yazılır. İkisi de ölçümü
+değiştirmez: `trades.csv` — denetim izi — hiçbir koşulda dokunulmaz, taze 30 gün bar bazında
+kalır ve sıkıştırma her model için birebir aynı uygulanır.
+
+### Scalp katmanının model kuralları
+
+İki model de **beş ortak kolu** (`strategies/scalp/arms.py`) aynı kapılardan geçirir; tek
+farkları **hangi kolun oynanacağına nasıl karar verdikleridir.** Bu yüzden aralarındaki
+ortalama R farkı tek bir şeyin ölçüsüdür: **adaptasyonun katkısı.**
+
+- **Stop tabanı %1** — tur maliyeti ~%0.25'tir; daha dar stop'ta maliyet 0.25R'yi aşar ve
+  model daha başlamadan geride başlar. Stop **genişletilmez**, işlem **atlanır** (kural 14'ün
+  aynı gerekçesi) ve her atlama `logger.info` ile yazılır.
+- **Hedef/stop ≥ 1.5** — sağlamayan kurulum atlanır. Hedef, projeksiyon
+  (`target_reward_risk × stop`) ile kolun yapısal engelinin YAKIN olanıdır: yalnızca
+  projeksiyon kullanmak kapıyı ölü koda çevirirdi, yalnızca yapısal seviye kullanmak ise
+  15 dakikalık barda hemen hiçbir kurulumun 1.5R'ye ulaşmaması demekti.
+- **Zaman stop'u 16 bar (4 saat)** — `manage_positions` üzerinden istenir (kural 10), dolum
+  bir sonraki barın açılışındadır (kural 13), yani gerçek ömür 17 bardır.
+- **Trailing yok** — yürüyen stop, gerçekleşen R ile kurulumun vaat ettiği R arasındaki bağı
+  koparır ve bandit'in öğrendiği sinyali bulanıklaştırırdı.
+- **Turda tek sinyal** — beş kolu birden oynamak kol tahsisini anlamsız kılardı.
+
+**Bandit durumu deftere yazılır ve tekrar üretilebilir.** Ayrı bir `bandit_state.json`
+YOKTUR: posterior `ledgers_scalp/scalp_bandit/trades.csv`'nin saf bir fonksiyonudur (kol
+etiketi + gerçekleşen R + kayan pencere) ve her turda sıfırdan kurulur. Ayrı bir durum
+dosyası, defterle senkron kalması ayrıca test edilmesi gereken ikinci bir doğruluk kaynağı
+yaratırdı. Denetim izi `reason` kuyruğundadır: `... | arm=vwap_pullback | post_r=0.31`.
+Etiketi olmayan bir satır **sessizce atlanmaz**, `TagError` fırlatılır (kural 8 gereği
+yalnızca o modelin turu boş geçer) — atlamak, posterior'ı defterde görünmeyen bir geçmişe
+bağlardı.
+
 ## Rapor Kolonları
 
 `core/metrics.py` her modeli **aynı tabloda**, her metriği **long / short / toplam** olarak
@@ -202,6 +306,18 @@ Bu kolonlar opsiyonel değildir, çünkü projenin ana sorusunu doğrudan kirlet
 kullanıp R başına daha az maliyet ödemesinden mi? İki modelin `avg_stop_distance_pct` değerleri
 bandın dışında ayrışıyorsa ve `cost_per_r` farkı performans farkını tek başına açıklayabiliyorsa,
 kıyas **geçersiz** sayılır; sonuç yorumlanmaz, modelin stop parametresi düzeltilir.
+
+**Kırılımlar (yalnızca katmanın istediği yerde).** `core/metrics.py::breakdown` işlemleri bir
+gruplama ölçütüne göre böler ve her grup için aynı metrikleri hesaplar; hangi kırılımların
+üretileceği katman ayarıdır (`layers.<ad>.breakdowns`). Scalp katmanı ikisini de ister:
+
+- **kol** (`arm`) — hangi kolun kaç işlem yaptığı, ortalama R'si ve kazanma oranı. Grup ölçütü
+  `signal_reason` kuyruğundaki `arm=` etiketidir; etiket yoksa `TagError` fırlatılır, satır
+  sessizce atlanmaz (atlamak kırılım toplamı ile model toplamını ayrıştırırdı).
+- **sembol** (`symbol`) — sembol başına işlem sayısı, ortalama R ve `cost_per_r`. Kayma
+  varsayımı (`slippage_base`) evrendeki her sembol için tek bir sayıdır; ince kitapta işlem
+  gören bir sembolde (PENGU, ETHFI) `cost_per_r` belirgin biçimde ayrışıyorsa varsayım orada
+  tutmuyor demektir ve o satırın sonucu yorumlanmadan önce bu bilinmelidir.
 
 Referans modeller (kural 15) bu iki kolonu **`nan`** alır ve tablonun ayrı bir bölümünde durur:
 stop'u olmayanın 1R'si yoktur, dolayısıyla "R başına maliyet" de tanımsızdır. Onların taşıdığı
@@ -311,6 +427,14 @@ class Strategy(ABC):
         """Mevcut pozisyonlarda kapanış/kısmi çıkış önerir. Varsayılan: hiçbir şey yapma."""
         return []
 
+    def observe_closed_trades(self, trades: Sequence[ClosedTrade]) -> None:
+        """Modelin KENDİ kapanmış işlemleri; generate_signals'tan ÖNCE, turda bir kez.
+
+        Varsayılan: hiçbir şey yapma. Motor kancayı yalnızca uygulayan modeller için
+        doldurur (kural 16); açık pozisyon bu listeye asla giremez.
+        """
+        return None
+
 
 @dataclass(frozen=True, kw_only=True)
 class TakeProfit:
@@ -344,6 +468,18 @@ class Position:
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
     opened_at: pd.Timestamp
+
+
+@dataclass(frozen=True, kw_only=True)
+class ClosedTrade:
+    """Modelin KENDİ kapanmış işleminin salt okunur görünümü (kural 16)."""
+    symbol: str
+    direction: Direction
+    opened_at: pd.Timestamp
+    closed_at: pd.Timestamp
+    r_multiple: float | None           # pnl / risk_amount; risk bilinmiyorsa None (0.0 değil)
+    signal_reason: str
+    exit_reason: str
 
 
 @dataclass(frozen=True, kw_only=True)

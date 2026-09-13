@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -42,20 +43,34 @@ def _market(bars: int = 30, *, last_close: float = 100.0) -> MarketData:
 
 
 class Sandbox:
-    """İzole bir koşu ortamı: tmp defter + sahte borsa. `bars` turun "şimdi"sini ilerletir."""
+    """İzole bir koşu ortamı: tmp defter + sahte borsa. `bars` turun "şimdi"sini ilerletir.
+
+    İzolasyon KATMANIN üzerinden kurulur (core/layers.py): gerçek katman çözülür, yalnızca
+    defter kökü ve rapor dosyası tmp dizine çevrilir. Yolları main.py'nin içinden
+    yamalamak, katmanın yolu nereden okuduğunu testin varsaymasını gerektirirdi.
+    """
 
     def __init__(self, root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self.root = root
         self.ledgers = root / "ledgers"
         self.ledgers.mkdir()
+        self.metrics_path = root / "docs" / "data" / "metrics.json"
         self._bars = 30
-        monkeypatch.setattr(main_module, "PROJECT_ROOT", root)
-        monkeypatch.setattr(main_module, "project_path", lambda relative: root / relative)
+
+        real_resolve = main_module.resolve_layer
+
+        def _resolve(config: Any, name: str = "base") -> Any:
+            return replace(
+                real_resolve(config, name),
+                ledger_root=self.ledgers,
+                metrics_path=self.metrics_path,
+            )
+
+        monkeypatch.setattr(main_module, "resolve_layer", _resolve)
         monkeypatch.setattr(
-            main_module, "Ledger", lambda ledger_root=None: Ledger(ledger_root or self.ledgers)
-        )
-        monkeypatch.setattr(
-            main_module, "load_market_data", lambda config: _market(bars=self._bars)
+            main_module,
+            "load_market_data",
+            lambda config, symbols=None: _market(bars=self._bars),
         )
 
     def advance_to(self, bars: int) -> None:
@@ -67,7 +82,7 @@ class Sandbox:
         return Ledger(self.ledgers)
 
     def metrics(self) -> dict[str, Any]:
-        return json.loads((self.root / main_module.METRICS_PATH).read_text(encoding="utf-8"))
+        return json.loads(self.metrics_path.read_text(encoding="utf-8"))
 
 
 @pytest.fixture()
@@ -95,7 +110,7 @@ def test_run_writes_ledger_and_metrics(sandbox: Sandbox) -> None:
 def test_metrics_json_is_valid_json_with_null_not_nan(sandbox: Sandbox) -> None:
     """`json.dumps` nan'ı `NaN` yazar ve dosya GEÇERSİZ JSON olur; sayfa onu okuyamaz."""
     main_module.main([])
-    text = (sandbox.root / main_module.METRICS_PATH).read_text(encoding="utf-8")
+    text = sandbox.metrics_path.read_text(encoding="utf-8")
     assert "NaN" not in text
     payload = json.loads(text)  # katı parser: nan görse patlardı
     total = payload["models"][0]["total"]
@@ -119,7 +134,7 @@ def test_metrics_json_carries_the_dashboard_sections(sandbox: Sandbox) -> None:
 def test_dashboard_sections_are_also_nan_free(sandbox: Sandbox) -> None:
     """Tanımsız metrik yalnızca model tablosunda değil, her bölümde null olmalı."""
     main_module.main([])
-    text = (sandbox.root / main_module.METRICS_PATH).read_text(encoding="utf-8")
+    text = sandbox.metrics_path.read_text(encoding="utf-8")
     assert "NaN" not in text
     payload = json.loads(text)
     assert payload["pooled"]["directions"]["short"]["avg_r"] is None
@@ -128,7 +143,7 @@ def test_dashboard_sections_are_also_nan_free(sandbox: Sandbox) -> None:
 def test_dry_run_does_not_write_the_dashboard_sections(sandbox: Sandbox) -> None:
     """Sayfa defterin türevidir: kalıcı olmayan bir turdan üretilmiş hâli ikisini ayrıştırır."""
     main_module.main(["--dry-run"])
-    assert not (sandbox.root / main_module.METRICS_PATH).exists()
+    assert not sandbox.metrics_path.exists()
 
 
 def test_benchmark_opens_once_then_holds(sandbox: Sandbox) -> None:
@@ -188,7 +203,7 @@ def test_benchmark_r_columns_stay_undefined_after_filling(sandbox: Sandbox) -> N
 def test_dry_run_writes_nothing(sandbox: Sandbox, capsys: pytest.CaptureFixture[str]) -> None:
     assert main_module.main(["--dry-run"]) == 0
 
-    assert not (sandbox.root / main_module.METRICS_PATH).exists()
+    assert not sandbox.metrics_path.exists()
     assert list(sandbox.ledgers.iterdir()) == []
     assert "buyhold" in capsys.readouterr().out  # rapor yine de basıldı
 
@@ -241,7 +256,9 @@ def test_broken_model_does_not_stop_the_round(
     config["models"] = ["buyhold", "bozuk"]
     monkeypatch.setattr(main_module, "load_config", lambda path=None: config)
     monkeypatch.setattr(
-        main_module, "build", lambda name: _Broken() if name == "bozuk" else _real_build(name)
+        main_module,
+        "build",
+        lambda name, config=None: _Broken() if name == "bozuk" else _real_build(name, config=config),
     )
 
     assert main_module.main([]) == 0  # kurulum başarılı, koşu sürdü
@@ -298,7 +315,7 @@ def _run_with_broken_sizing(monkeypatch: pytest.MonkeyPatch) -> None:
     config["models"] = ["kobay"]
     config["risk_per_trade"] = 0.0
     monkeypatch.setattr(main_module, "load_config", lambda path=None: config)
-    monkeypatch.setattr(main_module, "build", lambda name: _FixedStop())
+    monkeypatch.setattr(main_module, "build", lambda name, config=None: _FixedStop())
 
 
 def test_sizing_failure_reports_a_different_code(

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Literal, Mapping
+from typing import Literal, Mapping, Sequence
 
 import pandas as pd
 
@@ -76,6 +76,32 @@ class Position:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ClosedTrade:
+    """`observe_closed_trades`a verilen, modelin KENDİ kapanmış işleminin salt okunur görünümü.
+
+    Neden sözleşmede: uyarlanabilir (bandit) modeller kendi geçmiş sonuçlarından öğrenir ve
+    bu bilginin tek meşru kaynağı defterin KAPANMIŞ satırlarıdır. Açık pozisyon buraya
+    hiç girmez — girse, henüz gerçekleşmemiş bir sonucu öğrenmeye katmak, kâğıt üstündeki
+    kârı ölçüme sokmak olurdu (ve hangi modelin ne zaman "şanslı durduğu" görülemezdi).
+
+    Kural 4'ün izolasyonu korunur: model yalnızca KENDİ işlemlerini görür, başka modelin
+    işlemini, pozisyonunu ya da bakiyesini değil. Kural 1/7 de korunur: bu bir OKUMA
+    yüzeyidir, model deftere yazmaz ve bakiye/pozisyon durumu tutmaz.
+
+    `r_multiple` `pnl / risk_amount`tır (core/metrics.py'deki tek tanım) ve risk bilinmiyorsa
+    None'dır — 0.0 değil: "ölçülemedi" ile "ölçüldü, sıfır çıktı" aynı hücreye yazılamaz.
+    """
+
+    symbol: str
+    direction: Direction
+    opened_at: pd.Timestamp
+    closed_at: pd.Timestamp
+    r_multiple: float | None
+    signal_reason: str
+    exit_reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class ExitInstruction:
     symbol: str
     action: Literal["close", "reduce"]
@@ -117,3 +143,15 @@ class Strategy(ABC):
     ) -> list[ExitInstruction]:
         """Mevcut pozisyonlarda kapanış/kısmi çıkış önerir. Varsayılan: hiçbir şey yapma."""
         return []
+
+    def observe_closed_trades(self, trades: Sequence[ClosedTrade]) -> None:
+        """Modelin KENDİ kapanmış işlemleri; `generate_signals`tan ÖNCE, turda bir kez.
+
+        Varsayılan: hiçbir şey yapma. Motor bu kancayı yalnızca gerçekten uygulayan
+        modeller için doldurur (bkz. core/engine.py) — geri kalan modeller defteri hiç
+        okumaz ve davranışları değişmez.
+
+        Liste yalnızca KAPANMIŞ işlemleri taşır (açık pozisyon asla girmez) ve kapanış
+        sırasındadır. Sözleşme salt okunur: veriyi değiştirmek değil, ondan öğrenmek için.
+        """
+        return None

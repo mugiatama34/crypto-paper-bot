@@ -4,6 +4,11 @@
 paper-trading yaptığı bir **ölçüm projesi.** Amaç kâr etmek değil, stratejileri adil ve
 tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLAUDE.md`](./CLAUDE.md).
 
+Ölçüm **iki katmanda** yürür ve ikisi de aynı çekirdeği kullanır: `base` 4 saatlik ana
+yarışma, `scalp` 15 dakikalık scalp katmanıdır (bkz. [Katmanlar](#katmanlar)). Katmanlar ayrı
+defterlere yazar, ayrı cron'la koşar ve **aynı tabloda kıyaslanmaz** — zaman dilimi farkı
+doğrudan kıyası yanıltıcı yapar.
+
 ## Nasıl çalışır (özet)
 
 - `core/engine.py` her turda tüm stratejileri aynı `MarketData` anlık görüntüsüyle çağırır.
@@ -20,8 +25,9 @@ tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLA
 ## Çalıştırma
 
 ```bash
-python main.py              # bir tur: veri çek -> modelleri koştur -> defteri ve metrikleri yaz
-python main.py --dry-run    # deftere ve docs/data/metrics.json'a YAZMADAN aynı turu raporla
+python main.py                    # 4 saatlik katmanda bir tur (varsayılan: --layer base)
+python main.py --layer scalp      # 15 dakikalık scalp katmanında bir tur
+python main.py --dry-run          # deftere ve rapor dosyasına YAZMADAN aynı turu raporla
 ```
 
 `main.py` bir turu uçtan uca yürütür: veriyi çeker, `as_of`'u belirler, `config.yaml`'daki
@@ -34,6 +40,13 @@ Hata izolasyonu kasten iki katmanlıdır: **model kurulumu** (tanınmayan ad, ku
 bir model koşuyu ayrıca hata koduyla bitirir; sessizce eksik yarışan bir küme kural 6'yı bozardı.
 **Defter ve veri hataları izole EDİLMEZ:** bozuk defter ya da bayat anlık görüntü turu tümden
 düşürür — bunlar model hatası değil ölçüm hatasıdır.
+
+Scalp katmanı `.github/workflows/run-scalp.yml` ile 15 dakikada bir koşar (`3,18,33,48 * * * *`)
+ve yalnızca `ledgers_scalp/` + `docs/data/metrics_scalp.json` commit eder; `run.yml`e hiç
+dokunmaz. GitHub cron'u bu kadansta gecikebilir ya da bir tetiklemeyi atlayabilir — bu ölçümü
+bozmaz: motor son işlenmiş bardan `as_of`'a kadar aradaki tüm barları sırayla ilerletir,
+kaybedilen tek şey atlanan barlarda üretilmeyen sinyallerdir ve iki model de aynı turları
+kaçırır.
 
 `.github/workflows/run.yml` bunu `5 0,4,8,12,16,20 * * *` cron'uyla çalıştırır: 4H barlar
 00/04/08/12/16/20 UTC'de kapanır, 5 dakikalık pay hem kapanmamış barı beklemeye hem GitHub
@@ -49,6 +62,56 @@ zaten taşıdığı pozisyon) ile gerçek bir boyutlandırma arızası (`zero_si
 `insufficient_cash`). Kod olmadan ikisi aylar sonra ayırt edilemez. Log seviyesi de aynı
 ayrımı taşır: beklenen tekrar `INFO`, arıza `WARNING`.
 
+## Katmanlar
+
+`config.yaml > layers` iki katman tanımlar; ikisi de **aynı** `main.py`, `core/engine.py`,
+`core/portfolio.py`, `core/ledger.py` ve `core/metrics.py` kodunu koşar. Kopyalanan hiçbir
+şey yoktur — katman yalnızca ölçümün koşullarını değiştirir.
+
+| | `base` | `scalp` |
+|---|---|---|
+| Bar | 4H | 15m |
+| Evren | hacme göre ilk 50, 30 günde bir yenilenir | **sabit 14 sembol** (BTC, ETH, SOL, XRP, DOGE, BNB, AVAX, LINK, ADA, SUI, NEAR, PENGU, TON, ETHFI) |
+| Modeller | 10 yarışmacı + `buyhold` çıpası | `scalp_bandit` (11), `scalp_fixed` (12) |
+| Defter | `ledgers/` | `ledgers_scalp/` |
+| Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
+| Cron | `run.yml` | `run-scalp.yml` (15 dakikada bir) |
+| Stop tavanı | 3×ATR | 8×ATR |
+
+**Maliyet ve risk sabitleri iki katmanda da birebir aynıdır** (`risk_per_trade`, `fee_rate`,
+`slippage_*`, `leverage_cap`, `initial_capital`, `maintenance_margin`): kök config tek
+kaynaktır, katman bloğu yalnızca farkı yazar. Ayrı bir `scalp_config.yaml`, bu sabitlerin bir
+gün sessizce ayrışmasına kapı açardı.
+
+Evrenin **sabit** olması bir tercih değil bir kıyas koşuludur: evren zamanla kayarsa geçmiş
+performans başka bir sembol kümesine ait olur ve iki modelin sayıları aynı yarışın sayıları
+olmaktan çıkar.
+
+### Scalp modelleri (11 ve 12)
+
+İkisi de **beş ortak kolu** (`strategies/scalp/arms.py`) oynar:
+
+1. **VWAP geri çekilme** — gün-çapalı VWAP'e trend yönünde dokunuş
+2. **Açılış aralığı kırılımı** — günün ilk 4 barının aralığı + hacim teyidi
+3. **RSI(2) aşırılık dönüşü** — yalnızca aralık rejiminde
+4. **Momentum patlaması devamı** — 3 bar üst üste aynı yön + hacim
+5. **Funding sıçraması fade'i** — funding aniden yükseldiğinde short
+
+Tek farkları **kol seçimidir**: `scalp_bandit` Thompson sampling ile tahsisi öğrenir,
+`scalp_fixed` aynı kolları eşit ağırlıkla oynar. Aradaki ortalama R farkı **adaptasyonun
+katkısıdır** — başka hiçbir şey farklı olmadığı için.
+
+Her iki modelde de aynı kısıtlar: stop mesafesi girişin **%1'inin altındaysa işlem alınmaz**
+(tur maliyeti ~%0.25; daha dar stop'ta maliyet 0.25R'yi aşar), **hedef/stop en az 1.5**,
+**16 bar (4 saat) sonra zaman stop'u**, long ve short açık, bütçe ve risk kuralları 4 saatlik
+modellerle aynı. Stop **genişletilmez**, kurulum atlanır ve her atlama loglanır.
+
+Bandit'in durumu ayrı bir dosyada tutulmaz: posterior `ledgers_scalp/scalp_bandit/trades.csv`
+üzerinden her turda yeniden kurulur (kol etiketi + gerçekleşen R + son 100 işlem). Her
+işlemin `signal_reason` kuyruğunda o anki karar durur:
+`... | arm=vwap_pullback | post_r=0.31`. Kol etiketi olmayan bir satır sessizce atlanmaz,
+hata fırlatılır.
+
 ## Dashboard (GitHub Pages)
 
 `docs/index.html` statik bir tek sayfadır: harici framework yok, CDN yok, build adımı yok.
@@ -56,6 +119,13 @@ Tek veri kaynağı kardeş dosya `docs/data/metrics.json`'dır — her turda `ma
 koşu workflow'u defterlerle birlikte commit eder. Sayfayı yayına almak için depo
 ayarlarında **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`** seçmek
 yeterlidir; ayrı bir deploy workflow'u gerekmez.
+
+Sayfa scalp katmanını **ayrı bir bölümde** gösterir ve ikinci bir dosyadan okur
+(`docs/data/metrics_scalp.json`): scalp modelleri 4 saatliklerle aynı tabloda hiçbir koşulda
+sıralanmaz. O bölümde ayrıca **kol** ve **sembol** kırılımı vardır — kol kırılımı tahsisin
+eşitten sapıp sapmadığını, sembol kırılımı ise kayma varsayımının ince kitaplı sembollerde
+(PENGU, ETHFI) tutup tutmadığını gösterir. Dosya yoksa (katman henüz koşmadıysa) bölüm
+sessizce gizli kalır.
 
 Sayfa **iki seviyelidir**: genel bakış tüm modelleri yan yana koyar, model kartına
 dokunulduğunda o modelin detayı açılır. Detayın adresi `#model=<ad>` hash'idir — geri tuşu,
@@ -96,6 +166,10 @@ saatte açılan/kapanan işlemler ve kabul çıtasını geçen model olup olmad�
 hangi kapıda takıldığı). Band uyarısı geçen modelin yanında `⚠` olarak anılır — kapı
 olmadığı için "geçemedi" diye raporlanmaz.
 
+Özet yalnızca **4 saatlik katmanı** kapsar (`docs/data/metrics.json`): günde 96 tur koşan
+scalp katmanını aynı bildirime eklemek, günlük bir özeti iki farklı zaman ölçeğinin
+karışımına çevirirdi.
+
 ```bash
 python scripts/telegram_report.py --dry-run --force   # yollamadan mesajı gör
 ```
@@ -114,7 +188,7 @@ Telegram 4xx'i, bozuk JSON — hepsi loglanıp geçilir), workflow adımı ayrı
 onun kesintisi yüzünden turun kırmızı dönmesi, defterin commit'lenip commit'lenmediğine dair
 gerçek sinyali gürültüye boğardı.
 
-## Defter formatı (`ledgers/<model>/`)
+## Defter formatı (`ledgers/<model>/`, scalp için `ledgers_scalp/<model>/`)
 
 | Dosya | İçerik |
 |---|---|
@@ -122,7 +196,11 @@ gerçek sinyali gürültüye boğardı.
 | `trades.csv` | Kapanan her işlem (kısmi çıkışlar dâhil): giriş/çıkış zamanı ve fiyatı, yön, miktar, notional, ilk stop, **riske edilen tutar (`risk_amount`)**, kaldıraç, marj, komisyon, funding, **ödenen kayma (`slippage_cost`)**, PnL, çıkış sebebi (`stop`/`tp`/`liquidation`/`signal`) ve stratejinin gerekçesi. |
 | `equity.csv` | Bar başına nakit, kullanılan marj, gerçekleşmemiş PnL, özsermaye ve açık pozisyon sayısı. |
 
-Yazmalar atomiktir (geçici dosya + `rename`); yazılmış bir satır asla değiştirilmez.
+Yazmalar atomiktir (geçici dosya + `rename`); yazılmış bir işlem satırı asla değiştirilmez.
+Tek istisna `equity.csv`'dir ve yalnızca saklama penceresi tanımlı katmanlarda geçerlidir:
+scalp katmanında 30 günden eski özsermaye satırları günlük özete indirilir (günde 96 tur ×
+2 model, yılda on binlerce satır — depo geçmişi ölçümle ilgisiz satırlarla şişmesin). Taze 30
+gün bar bazında kalır ve `trades.csv` hiçbir koşulda dokunulmaz: denetim izi odur.
 Kapanan işlemlerin `pnl` toplamı bakiyedeki değişime eşittir — defter bu yüzden
 denetlenebilir. `risk_amount` (`adet × |giriş − ilk stop|`) deftere yazılır çünkü
 karşılaştırmanın birinci sınıf metriği olan **R** (`pnl / risk_amount`) onun üzerinden
@@ -174,8 +252,9 @@ dışlanır ve loglanır; böylece tek bir gecikmiş sembol turun "şimdi"sini g
 
 ## Model listesi
 
-Aktif küme `config.yaml`'ın `models` listesidir; adlar `strategies/registry.py`'de çözülür.
-Yarışmanın tamamlanması için 10 model gerekir.
+Aktif küme **katmanın** `models` listesidir (`config.yaml` kökü `base` için, `layers.scalp`
+scalp için); adlar `strategies/registry.py`'de çözülür. 4 saatlik yarışmanın tamamlanması
+için 10 model gerekir; 11 ve 12 ayrı bir katmanda koşar ve onlarla aynı tabloda yarışmaz.
 
 | # | Strateji | Yön | Durum |
 |---|---|---|---|
@@ -190,6 +269,8 @@ Yarışmanın tamamlanması için 10 model gerekir.
 | 8 | `avwap` | long + short | kesinleşmiş pivota çapalı VWAP'tan ±2σ sapma |
 | 9 | `random_ctrl` | long + short | **kontrol grubu**: bilgisiz çekiliş, edge'in referansı |
 | 10 | `ensemble` | long + short | **meta** (kural 4): akranların o turdaki sinyallerinden konsensüs |
+| 11 | `scalp_bandit` | long + short | **scalp katmanı (15m):** 5 kol arasında Thompson sampling ile tahsis |
+| 12 | `scalp_fixed` | long + short | **scalp katmanı (15m), KONTROL:** aynı 5 kol, eşit ağırlık, öğrenme yok |
 
 `buyhold` sayıya dâhil değildir: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınıp hiç satılmaz.
 Tek işi yarışmacılara bir zemin vermektir.

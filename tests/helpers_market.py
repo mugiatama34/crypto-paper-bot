@@ -23,20 +23,29 @@ def frame(
     spread: float = 0.5,
     volumes: Sequence[float] | None = None,
     start: pd.Timestamp = START,
+    freq: str = "4h",
+    highs: Sequence[float] | None = None,
+    lows: Sequence[float] | None = None,
 ) -> pd.DataFrame:
     """Kapanış dizisinden OHLCV çerçevesi; high/low kapanışın `spread` kadar uzağında.
 
     `volumes` yalnızca hacim teyidini ölçen modeller için doldurulur (varsayılan sabit 1.0,
     yani "hacim ayrımı yok"). `start` ise dengeleme barına duyarlı modeller içindir: takvim
     gününü sabitlemeden Pazartesi 00:00 UTC koşulu test edilemez.
+
+    `freq` scalp katmanı içindir ("15min"): iki katman aynı kurucuyu kullanmalı ki testler
+    de "aynı veriyi gördüler" varsayımını iki zaman diliminde birden kurabilsin. `highs`/
+    `lows` ise barın aralığını kapanıştan bağımsız kurması gereken testler için (VWAP'e
+    dokunuş, açılış aralığı): `spread` tüm barlara aynı genişliği verir, bu ikisi bara
+    özel aralık yazar.
     """
-    index = pd.date_range(start, periods=len(closes), freq="4h", tz="UTC", name="ts")
+    index = pd.date_range(start, periods=len(closes), freq=freq, tz="UTC", name="ts")
     values = [float(close) for close in closes]
     return pd.DataFrame(
         {
             "open": values,
-            "high": [close + spread for close in values],
-            "low": [close - spread for close in values],
+            "high": [close + spread for close in values] if highs is None else [float(h) for h in highs],
+            "low": [close - spread for close in values] if lows is None else [float(l) for l in lows],
             "close": values,
             "volume": [1.0] * len(values) if volumes is None else [float(v) for v in volumes],
         },
