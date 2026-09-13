@@ -131,6 +131,12 @@ class ModelReport:
     signals: int = 0
     exits: int = 0
     skipped_signals: int = 0  # stop bandı nedeniyle elenen sinyal sayısı (kural 14)
+    # Anlık görüntünün `last_processed_bar`a ulaşamadığı, yani TELAFİ EDİLEMEYEN bar sayısı.
+    # Olağan bir cron gecikmesinde 0'dır: atlanan turların barları bu turda sırayla işlenir.
+    # Sıfırdan büyük olması, o barlarda stop/TP/likidasyon kontrolünün hiç yapılmadığı ve
+    # funding'in hiç tahakkuk etmediği anlamına gelir — raporda durur ki atlama sessiz
+    # kalmasın (bkz. Engine._record_missing_bars).
+    missing_bars: int = 0
     # Doldurulamayan emirlerin SEBEP KODU -> adet dökümü (bkz. core/portfolio.RejectReason).
     # Bu alan olmadan "sinyal üretildi ama işlem açılmadı" tek bir görünüme çöker ve beklenen
     # bir tekrar (referansın zaten taşıdığı pozisyon) gerçek bir boyutlandırma arızasından
@@ -167,6 +173,7 @@ class _ModelRun:
     signals: int = 0
     exits: int = 0
     skipped_signals: int = 0
+    missing_bars: int = 0
     history_failed: bool = False
     rejections: dict[str, int] = field(default_factory=dict)
     skipped: str = ""
@@ -254,6 +261,7 @@ class Engine:
                     signals=run.signals,
                     exits=run.exits,
                     skipped_signals=run.skipped_signals,
+                    missing_bars=run.missing_bars,
                     rejections=dict(sorted(run.rejections.items())),
                     skipped=run.skipped,
                 )
@@ -317,6 +325,12 @@ class Engine:
         sembollerinin ızgarasını kullanmak, aynı turda modellerin farklı sayıda bar
         ilerlemesi demek olurdu.
 
+        Tur ATLANDIĞINDA (cron gecikmesi/atlaması) aradaki barlar burada geri gelir ve
+        `_advance` hepsini SIRAYLA işler: bekleyen emirler kendi barının açılışından dolar,
+        stop/TP/likidasyon her barın kendi high/low'uyla kontrol edilir. Yalnızca son bara
+        atlamak, atlanan barlardaki stop'ları hiç tetiklemeyip pozisyonu ölçümde hayatta
+        tutardı.
+
         Defteri yeni açılan model için yalnızca `as_of` işlenir: ortada ne pozisyon ne
         bekleyen emir varken geçmişi geriye dönük işlemek yalnızca boş özsermaye satırları
         üretirdi.
@@ -324,7 +338,53 @@ class Engine:
         index = [ts for ts in market.btc.index if ts <= market.as_of]
         if run.last_bar is None:
             return index[-1:]
-        return [ts for ts in index if ts > run.last_bar]
+        timeline = [ts for ts in index if ts > run.last_bar]
+        self._record_missing_bars(run, market, last_bar=run.last_bar, timeline=timeline)
+        return timeline
+
+    def _record_missing_bars(
+        self,
+        run: _ModelRun,
+        market: MarketData,
+        *,
+        last_bar: pd.Timestamp,
+        timeline: Sequence[pd.Timestamp],
+    ) -> None:
+        """Anlık görüntünün `last_processed_bar`a ULAŞAMADIĞI barları sayar ve söyler.
+
+        Telafi yalnızca bar elimizdeyse mümkündür. Çıpanın penceresi son işlenmiş bara
+        kadar geri gitmiyorsa (kesinti `data.history_bars`ı aşmış, ya da seride delik var)
+        aradaki barlar hiç işlenmez — ama `last_processed_bar` yine `as_of`a taşınır, yani
+        defter o barları işlenmiş SAYAR. Bu, kural 14/15'in yasakladığı sessiz atlamanın
+        ta kendisidir: o barlarda tetiklenmesi gereken stop/TP/likidasyon hiç sorulmamış,
+        funding hiç tahakkuk etmemiş olur ve sonraki satırlar eksik bir geçmişin üstüne
+        yazılır.
+
+        Tur DÜŞÜRÜLMEZ: borsanın penceresinden düşmüş bar geri getirilemez, hata vermek
+        katmanı kalıcı olarak kilitlerdi. Bunun yerine atlama denetlenebilir kayda
+        dönüşür — sayı tur raporuna (ve metrics JSON'una) girer.
+
+        Log seviyesi ayrımı taşır: modelin o boşluğa taşıdığı pozisyon ya da bekleyen
+        emir varsa ölçüm gerçekten etkilenmiştir (WARNING); açık hesapla geçilen boşluk
+        yalnızca eksik özsermaye satırı demektir (INFO).
+        """
+        grid = pd.date_range(last_bar + self._bar_duration, market.as_of, freq=self._bar_duration)
+        missing = len(grid) - len(set(grid) & set(timeline))
+        if missing <= 0:
+            return
+
+        run.missing_bars = missing
+        model = run.strategy.name
+        exposed = bool(self._portfolio.positions(model)) or bool(run.pending)
+        logger.log(
+            logging.WARNING if exposed else logging.INFO,
+            "%s: %s ile %s arasında %d bar anlık görüntüde yok, telafi edilemedi%s",
+            model,
+            last_bar,
+            market.as_of,
+            missing,
+            " (o boşlukta açık pozisyon/bekleyen emir vardı)" if exposed else "",
+        )
 
     def _fill_pending(
         self,

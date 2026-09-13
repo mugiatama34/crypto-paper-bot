@@ -131,7 +131,6 @@ ROWS = [
     (102.0, 104.0, 101.5, 103.5),  # bar2 08:00
 ]
 
-
 # --------------------------------------------------------------------------- #
 # Dolum kuralı (kural 13)
 # --------------------------------------------------------------------------- #
@@ -209,6 +208,157 @@ def test_bars_are_processed_once(tmp_path: Path) -> None:
     timestamps = [row["ts"] for row in ledger.read_equity("m")]
     assert timestamps == sorted(set(timestamps))
     assert len(timestamps) == 2  # ilk tur yalnızca as_of'u, ikinci tur yeni barı işler
+
+
+# --------------------------------------------------------------------------- #
+# Kaçırılan turların telafisi (cron gecikmesi/atlaması)
+# --------------------------------------------------------------------------- #
+# GitHub cron'u garantili değildir: 15 dakikalık kadansta tetikleme gecikebilir ya da
+# tamamen atlanabilir. Motor yalnızca son bara atlasaydı, atlanan barlardaki stop/TP hiç
+# sorulmaz ve pozisyon ölçümde haksız yere hayatta kalırdı.
+GAP_ROWS = [
+    (100.0, 101.0, 99.0, 100.0),   # bar0 00:00 — sinyal burada üretilir
+    (100.0, 101.0, 99.5, 100.5),   # bar1 04:00 — dolum burada
+    (100.0, 101.0, 90.0, 100.0),   # bar2 08:00 — KAÇIRILAN tur; stop (95) burada vurulur
+    (100.0, 101.0, 99.0, 100.0),   # bar3 12:00 — koşunun geri döndüğü bar
+]
+GAP_ROWS_INDEX = pd.date_range(START, periods=len(GAP_ROWS), freq="4h", tz="UTC")
+
+
+def test_missed_round_backfills_every_bar_in_order(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path)
+    engine = Engine(
+        [_Scripted("m", signals={START: [_long_signal(stop=95.0)]})],
+        config=_config(),
+        ledger=ledger,
+    )
+    engine.run_round(_market(GAP_ROWS, bars=1))
+    engine.run_round(_market(GAP_ROWS, bars=2))  # dolum @100
+    report = engine.run_round(_market(GAP_ROWS, bars=4))  # bar2'nin turu ATLANDI
+
+    assert report.by_model("m").bars_processed == 2  # type: ignore[union-attr]
+    (trade,) = ledger.read_trades("m")
+    # Stop, koşunun geri döndüğü barda değil, ATLANAN barda ve o barın fiyatından tetiklenir.
+    assert trade["exit_reason"] == "stop"
+    assert float(trade["exit_price"]) == pytest.approx(95.0)
+    assert trade["closed_at"] == GAP_ROWS_INDEX[2].isoformat()
+    assert [row["ts"] for row in ledger.read_equity("m")] == [
+        ts.isoformat() for ts in GAP_ROWS_INDEX
+    ]
+
+
+def test_pending_order_survives_a_missed_round_and_fills_at_its_own_bar(tmp_path: Path) -> None:
+    """Kuyruktaki emir atlanan turda kaybolmaz; kural 13'ün barında dolar, `as_of`ta değil."""
+    ledger = Ledger(tmp_path)
+    engine = Engine(
+        [_Scripted("m", signals={START: [_long_signal(stop=95.0)]})],
+        config=_config(),
+        ledger=ledger,
+    )
+    engine.run_round(_market(GAP_ROWS, bars=1))  # emir kuyruğa girer
+    engine.run_round(_market(GAP_ROWS, bars=4))  # bar1 ve bar2'nin turları ATLANDI
+
+    (trade,) = ledger.read_trades("m")
+    assert float(trade["entry_price"]) == pytest.approx(100.0)  # bar1'in açılışı
+    assert trade["opened_at"] == GAP_ROWS_INDEX[1].isoformat()
+
+
+def test_bar_missing_from_the_snapshot_is_counted_and_warned(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Telafi ancak bar elimizdeyse mümkündür; olmayan bar SESSİZ atlanamaz.
+
+    Çıpanın penceresi son işlenmiş bara kadar geri gitmiyorsa (kesinti data.history_bars'ı
+    aşmış ya da seride delik var) o barlar hiç işlenmez, ama `last_processed_bar` yine
+    `as_of`a taşınır. Sayı tur raporunda durmalı, log da uyarmalı.
+    """
+    ledger = Ledger(tmp_path)
+    engine = Engine(
+        [_Scripted("m", signals={START: [_long_signal(stop=95.0)]})],
+        config=_config(),
+        ledger=ledger,
+    )
+    engine.run_round(_market(GAP_ROWS, bars=1))  # last_bar = 00:00, emir kuyrukta
+
+    window = _frame(GAP_ROWS).tail(2)  # pencere 08:00'da başlıyor: 04:00 barı YOK
+    truncated = MarketData(
+        ohlcv={SYMBOL: window}, btc=window, funding={}, as_of=window.index[-1]
+    )
+    with caplog.at_level(logging.WARNING, logger="core.engine"):
+        report = engine.run_round(truncated)
+
+    assert report.by_model("m").missing_bars == 1  # type: ignore[union-attr]
+    assert any("telafi edilemedi" in record.message for record in caplog.records)
+
+
+def test_gap_without_exposure_is_reported_but_not_a_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Açık pozisyonsuz/emirsiz boşluk yalnızca eksik özsermaye satırıdır: INFO yeter.
+
+    Seviyeyi ayırmak, gerçekten ölçümü etkileyen boşluğun (pozisyon taşınıyordu) gürültüde
+    kaybolmasını engeller.
+    """
+    ledger = Ledger(tmp_path)
+    engine = Engine([_Scripted("m")], config=_config(), ledger=ledger)
+    engine.run_round(_market(GAP_ROWS, bars=1))
+
+    window = _frame(GAP_ROWS).tail(2)
+    truncated = MarketData(
+        ohlcv={SYMBOL: window}, btc=window, funding={}, as_of=window.index[-1]
+    )
+    with caplog.at_level(logging.INFO, logger="core.engine"):
+        report = engine.run_round(truncated)
+
+    assert report.by_model("m").missing_bars == 1  # type: ignore[union-attr]
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_a_day_of_missed_scalp_rounds_is_caught_up_bar_by_bar(tmp_path: Path) -> None:
+    """15m katmanı günde 96 tur koşar; bir günlük kesinti tek turda telafi edilmelidir.
+
+    Stop yalnızca TEK bir barın içinde vurulur (bar 40). Motor yalnızca son bara atlasaydı
+    o bar hiç sorulmaz ve pozisyon ölçümde haksız yere hayatta kalırdı.
+    """
+    rows = [(100.0, 101.0, 99.0, 100.0)] * 97
+    rows[40] = (100.0, 101.0, 90.0, 100.0)  # stop (95) YALNIZCA bu barda
+    index = pd.date_range(START, periods=len(rows), freq="15min", tz="UTC", name="ts")
+    frame = pd.DataFrame(list(rows), index=index, columns=["open", "high", "low", "close"])
+    frame["volume"] = 1.0
+
+    def snapshot(bars: int) -> MarketData:
+        window = frame.head(bars)
+        return MarketData(
+            ohlcv={SYMBOL: window}, btc=window, funding={}, as_of=window.index[-1]
+        )
+
+    ledger = Ledger(tmp_path)
+    engine = Engine(
+        [_Scripted("m", signals={START: [_long_signal(stop=95.0)]})],
+        config=_config(timeframe="15m"),
+        ledger=ledger,
+    )
+    engine.run_round(snapshot(1))
+    engine.run_round(snapshot(2))  # dolum @100
+    report = engine.run_round(snapshot(97))  # araya 95 tur ATLANDI
+
+    model = report.by_model("m")
+    assert model.bars_processed == 95  # type: ignore[union-attr]
+    assert model.missing_bars == 0  # type: ignore[union-attr]
+    (trade,) = ledger.read_trades("m")
+    assert trade["exit_reason"] == "stop"
+    assert trade["closed_at"] == index[40].isoformat()
+
+
+def test_uninterrupted_round_reports_no_missing_bars(tmp_path: Path) -> None:
+    """Olağan gecikme bir arıza değildir: telafi edilen barlar `missing_bars`a yazılmaz."""
+    ledger = Ledger(tmp_path)
+    engine = Engine([_Scripted("m")], config=_config(), ledger=ledger)
+    engine.run_round(_market(GAP_ROWS, bars=1))
+    report = engine.run_round(_market(GAP_ROWS, bars=4))
+
+    assert report.by_model("m").missing_bars == 0  # type: ignore[union-attr]
+    assert report.by_model("m").bars_processed == 3  # type: ignore[union-attr]
 
 
 # --------------------------------------------------------------------------- #
