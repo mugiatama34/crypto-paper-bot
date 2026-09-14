@@ -905,3 +905,67 @@ def test_band_skipped_signal_is_not_recorded_as_emitted(tmp_path: Path) -> None:
 
     assert report.by_model("m").skipped_signals == 1  # type: ignore[union-attr]
     assert report.by_model("m").emitted == ()         # type: ignore[union-attr]
+
+
+# --------------------------------------------------------------------------- #
+# Tarama sayımı (Strategy.take_survey -> ModelReport.survey)
+# --------------------------------------------------------------------------- #
+# Neden burada: sayım bir DENETİM İZİDİR (kural 15, `rejections`/`emitted` ile aynı
+# statü) ve motorun onu toplamaması hâlinde "bu barda hiç kurulum yoktu" ile "sinyal
+# modülü sessizce bozuldu" ayırt edilemez. Koşu logları siliniyor; tur raporu kalıyor.
+class _Surveying(_Scripted):
+    """Her `generate_signals` çağrısında sabit bir sayım döndüren sahte model."""
+
+    def __init__(self, name: str, counts: Mapping[str, int], **kwargs: Any) -> None:
+        super().__init__(name, **kwargs)
+        self._counts = dict(counts)
+        self.survey_calls = 0
+
+    def take_survey(self) -> Mapping[str, int] | None:
+        self.survey_calls += 1
+        return dict(self._counts)
+
+
+def test_survey_reaches_the_round_report(tmp_path: Path) -> None:
+    strategy = _Surveying("m", {"kurulum": 1, "bant_ici": 3})
+    engine = Engine([strategy], config=_config(), ledger=Ledger(tmp_path))
+
+    report = engine.run_round(_market(ROWS, bars=1))
+
+    assert report.by_model("m").survey == {"bant_ici": 3, "kurulum": 1}  # type: ignore[union-attr]
+    assert strategy.survey_calls == 1
+
+
+def test_survey_is_summed_over_every_backfilled_bar(tmp_path: Path) -> None:
+    """`signals_per_bar` açıkken her barın kendi taraması vardır; sayım TOPLANIR.
+
+    Son barınkini saklamak, telafi edilen barlarda kolun ne gördüğünü kaydın dışında
+    bırakırdı — oysa o barlar ölçüme tam olarak giriyor.
+    """
+    strategy = _Surveying("m", {"kurulum": 1})
+    engine = Engine([strategy], config=_config(signals_per_bar=True), ledger=Ledger(tmp_path))
+    engine.run_round(_market(ROWS, bars=1))
+
+    report = engine.run_round(_market(ROWS, bars=3))  # iki bar birden işlenir
+
+    assert strategy.survey_calls == 3  # 1 + 2
+    assert report.by_model("m").survey == {"kurulum": 2}  # type: ignore[union-attr]
+
+
+def test_a_model_without_a_survey_reports_nothing(tmp_path: Path) -> None:
+    """Varsayılan kanca `None` döner: sayım tutmayan model rapora boş alanla girer."""
+    engine = Engine([_Scripted("m")], config=_config(), ledger=Ledger(tmp_path))
+
+    report = engine.run_round(_market(ROWS, bars=1))
+
+    assert report.by_model("m").survey == {}  # type: ignore[union-attr]
+
+
+def test_a_crashing_model_leaves_no_survey(tmp_path: Path) -> None:
+    """Patlayan çağrının yarım sayımı kaydedilmez: "kaç sembol incelendi" yanlış olurdu."""
+    engine = Engine([_Broken()], config=_config(), ledger=Ledger(tmp_path))
+
+    report = engine.run_round(_market(ROWS, bars=1))
+
+    assert report.by_model("broken").survey == {}  # type: ignore[union-attr]
+    assert "generate_signals" in report.by_model("broken").skipped  # type: ignore[union-attr]

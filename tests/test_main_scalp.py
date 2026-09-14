@@ -114,7 +114,7 @@ def test_scalp_layer_requests_the_fixed_universe(sandbox: Sandbox) -> None:
     main_module.main(["--layer", "scalp"])
 
     assert sandbox.requested and sandbox.requested[0] is not None
-    assert len(sandbox.requested[0]) == 14
+    assert len(sandbox.requested[0]) == 13
     assert "PENGU-USDT-SWAP" in sandbox.requested[0]
 
 

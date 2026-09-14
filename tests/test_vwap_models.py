@@ -1,9 +1,15 @@
-"""Modeller 13 (`vwap_clone`) ve 14 (`vwap_managed`): ortak sinyal, ayrışan kurallar.
+"""Modeller 13 (`vwap_clone`) ve 14 (`vwap_managed`): AYRI sinyaller, ayrı kurallar.
 
-İkisinin SİNYALİ tek kopyadır (`strategies/vwap/signal.py`); ayrışan şey boyutlandırma,
-kapılar ve parametre öğrenimidir. Buradaki testler ayrımın doğru yerden geçtiğini çiviler:
-sinyal ortaksa 13 ↔ 14 farkı "ev kurallarının katkısı" olarak okunabilir, ortak değilse
-iki ayrı sinyalin farkına dönüşür.
+İkisi bir zamanlar tek bir sinyal modülünü paylaşırdı; artık paylaşmıyor. Model 13 dış
+bir sistemin SADIK kopyasıdır (`strategies/vwap/clone_signal.py`) ve o sistemin sinyal
+kuralları evinkilerden ayrışır; model 14 ev kurallarıyla koşar
+(`strategies/vwap/signal.py`). 13 ↔ 14 ekseni bu yüzden "ev kurallarının katkısı"nı
+ölçer ve o katkı yalnızca boyutlandırma/kapı farkı değil, SİNYAL farkını da içerir.
+
+Buradaki testler MODEL düzeyindedir: boyutlandırma, limitler, etiketler, öğrenme,
+evren, tarama sırası. Kaynağın sinyal kurallarının tek tek çivilendiği yer
+`tests/test_vwap_clone_signal.py`'dir — orada her kural için sinyal üreten ve üretmeyen
+birer senaryo vardır.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from core.layers import resolve_layer
 from core.tags import find_tag, parse_tag
 from core.validate import validate_signal
 from strategies.base import ClosedTrade, MarketData
+from strategies.vwap import clone_signal
 from strategies.vwap import signal as vwap_signal
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_managed import VwapManaged
@@ -127,15 +134,24 @@ def test_the_band_multiple_actually_gates() -> None:
     assert _candidates(data, band_mult=50.0) == []
 
 
-def test_both_models_see_the_same_candidate(config: dict[str, Any]) -> None:
-    """13 ↔ 14 farkının "ev kurallarının katkısı" olabilmesinin ön koşulu."""
+def test_the_two_models_do_not_share_a_signal_module(config: dict[str, Any]) -> None:
+    """Kopya kendi modülünü okur; ev modeli evinkini. Paylaşım bir REGRESYON olurdu.
+
+    Aynı barda ikisi de sinyal üretebilir (fikstür bilerek öyle kurulmuştur) ama bunu
+    AYRI kurallarla yapar: kopyanın kolu bile ayrı bir etiket taşır. Modüller yeniden
+    tek kopyaya indirilirse bu test düşer — ve düşmesi gerekir, çünkü o gün model 13
+    artık bir kopya olmaz.
+    """
     data = _market()
     clone = VwapClone(config=config).generate_signals(data)
     managed = VwapManaged(config=config).generate_signals(data)
 
     assert clone and managed
-    assert clone[0].symbol == managed[0].symbol
-    assert clone[0].direction == managed[0].direction
+    assert parse_tag(clone[0].reason, "arm") == clone_signal.ARM_NAME
+    assert parse_tag(managed[0].reason, "arm") == vwap_signal.ARM_NAME
+    assert clone_signal.ARM_NAME != vwap_signal.ARM_NAME
+    # Stop ölçekleri de ayrı: kopya σ'dan, ev modeli ATR'den türetir.
+    assert clone[0].stop_price != pytest.approx(managed[0].stop_price)
 
 
 def test_candidates_are_ordered_by_strength() -> None:
@@ -210,19 +226,30 @@ def test_clone_ignores_the_house_gates(config: dict[str, Any]) -> None:
 
 
 def test_clone_stays_inside_its_own_universe(config: dict[str, Any]) -> None:
-    """Kaynak sistemde SUI yoktur: katmanın evreni geniş olsa da kopya onu oynamaz."""
+    """Katmanın evreni geniş olsa da kopya yalnızca kendi 12 sembolünü oynar.
+
+    İki sembol bilerek dışarıdadır ve gerekçeleri farklıdır: SUI kaynak sistemde hiç
+    yoktur (fazladan bir sembolde işlem açmak kopyayı kopya olmaktan çıkarırdı), TON ise
+    OKX'te kalıcı olarak yoktur (51001) ve listede tutmak hiç taranmayan bir sembolü
+    taranıyormuş gibi gösterirdi.
+    """
     model = VwapClone(config=config)
+    assert len(model._universe) == 12
     assert "SUI-USDT-SWAP" not in model._universe
+    assert "TON-USDT-SWAP" not in model._universe
 
-    data = _market(symbol="SUI-USDT-SWAP")
+    for outsider in ("SUI-USDT-SWAP", "TON-USDT-SWAP"):
+        assert model.generate_signals(_market(symbol=outsider)) == []
 
-    assert model.generate_signals(data) == []
 
+def _multi_symbol_market(config: dict[str, Any], *, count: int = 7) -> tuple[MarketData, list[str]]:
+    """Kopyanın evreninin ilk `count` sembolünde AYNI kurulum; güçleri bilerek farklı.
 
-def test_clone_never_exceeds_its_own_position_quota(config: dict[str, Any]) -> None:
-    """Kotanın ötesindeki emir zaten reddedilirdi; tur raporunu sahte retle doldurmaz."""
-    symbols = ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA"]
-    universe = [f"{name}-USDT-SWAP" for name in symbols]
+    `spike` sembol sırasına göre büyür: evren sırasında SONRAKİ semboller daha güçlü
+    saparlar. Sıra ölçütünü güçten ayırt edebilmenin tek yolu budur — ikisi aynı yöne
+    işaret etseydi test hangi kuralın geçerli olduğunu söyleyemezdi.
+    """
+    universe = [str(s) for s in config["vwap"]["clone"]["universe"]][:count]
     data = market(
         {
             symbol: frame(_reverting(spike=0.5 * index), spread=SPREAD,
@@ -230,19 +257,62 @@ def test_clone_never_exceeds_its_own_position_quota(config: dict[str, Any]) -> N
             for index, symbol in enumerate(universe)
         }
     )
+    return data, universe
+
+
+def test_clone_scans_in_universe_order_not_by_strength(config: dict[str, Any]) -> None:
+    """Kaynak `POPULAR_COINS`i baştan sona gezer; güce göre sıralama YOKTUR.
+
+    Model 14 en güçlü adayı seçer (`vwap_signal.strongest`); kopya seçmez. Fikstürde en
+    güçlü sapma evren sırasının SONUNDADIR, yani iki kural farklı cevaplar verir.
+    """
+    data, universe = _multi_symbol_market(config)
 
     signals = VwapClone(config=config).generate_signals(data)
 
-    assert len(signals) == 5
+    assert [signal.symbol for signal in signals] == universe[:5]
+
+    strongest = vwap_signal.propose(data, atr_period=14, band_mult=2.0, min_vwap_bars=8)
+    assert strongest[0].symbol == universe[-1]  # güç sırası TERS yönde
+
+
+def test_clone_never_exceeds_its_own_position_quota(config: dict[str, Any]) -> None:
+    """Kotanın ötesindeki emir zaten reddedilirdi; tur raporunu sahte retle doldurmaz.
+
+    Kırpma listenin SONUNDAN yapılır: kaynak kota dolunca kalan sembollere hiç bakmaz.
+    """
+    data, universe = _multi_symbol_market(config)
+
+    signals = VwapClone(config=config).generate_signals(data)
+
+    assert len(signals) == 5 < len(universe)
 
 
 def test_clone_tags_the_arm_and_the_combo(config: dict[str, Any]) -> None:
     """Kol etiketi kırılım için, combo etiketi öğrenme için — ikisi de defterden okunur."""
     signal = VwapClone(config=config).generate_signals(_market())[0]
 
-    assert parse_tag(signal.reason, "arm") == vwap_signal.ARM_NAME
-    assert parse_tag(signal.reason, "combo").startswith("atr")
-    assert find_tag(signal.reason, "pick") in {"explore", "exploit"}
+    assert parse_tag(signal.reason, "arm") == clone_signal.ARM_NAME
+    assert parse_tag(signal.reason, "combo").startswith("band")
+    assert find_tag(signal.reason, "pick") in {"unexplored", "explore", "exploit"}
+
+
+def test_clone_reports_its_survey(config: dict[str, Any]) -> None:
+    """Sayım tur raporuna düşer (kural 15); sinyalleri etkilemez."""
+    model = VwapClone(config=config)
+    assert model.take_survey() is None  # tarama yapılmadan sayım da yok
+
+    data, universe = _multi_symbol_market(config)
+    signals = model.generate_signals(data)
+    survey = model.take_survey()
+
+    assert survey is not None
+    # Evrenin TAMAMI incelenir; verisi olmayan semboller de sebebiyle sayılır.
+    assert sum(survey.values()) == len(model._universe)
+    assert survey[clone_signal.SETUP] == len(universe)
+    assert survey[clone_signal.NO_BAR] == len(model._universe) - len(universe)
+    # Kota kırpması sayımı DEĞİŞTİRMEZ: sayım taramanın izidir, dolumun değil.
+    assert len(signals) == 5 < survey[clone_signal.SETUP]
 
 
 # --------------------------------------------------------------------------- #
@@ -255,36 +325,80 @@ def _closed(combo: str, r: float, *, symbol: str = SYMBOL, hour: int = 0) -> Clo
         opened_at=START,
         closed_at=START + pd.Timedelta(hours=hour),
         r_multiple=r,
-        signal_reason=f"test | arm={vwap_signal.ARM_NAME} | combo={combo}",
+        signal_reason=f"test | arm={clone_signal.ARM_NAME} | combo={combo}",
         exit_reason="tp",
     )
 
 
-def _never_explores() -> random.Random:
-    """Keşif dalını kapatan RNG: seçim tamamen istatistiğe kalsın."""
+class _Exploit(random.Random):
+    """Keşif dalını kapatan RNG: seçim tamamen istatistiğe kalsın.
 
-    class _Exploit(random.Random):
-        def random(self) -> float:
-            return 1.0
+    `choice` de geçersiz kılınır: yalnızca `random`ı geçersiz kılan bir alt sınıfta
+    `random.Random.choice`, `_randbelow_without_getrandbits` üzerinden sonsuz döngüye
+    girer (sabit 1.0 hiçbir zaman eşiğin altına inmez). Dönen değer testlerde
+    kullanılmaz; önemli olan çağrının SONLANMASIDIR.
+    """
 
-    return _Exploit()
+    def random(self) -> float:
+        return 1.0
+
+    def choice(self, seq: Any) -> Any:
+        return seq[0]
 
 
-def test_clone_learns_the_best_combination_from_its_own_ledger(
+def _warmed(model: VwapClone, *, symbol: str = SYMBOL, hour: int = 0) -> list[ClosedTrade]:
+    """Her kombinasyonun o sembolde EN AZ bir örneği: "denenmemiş öncelik" kapansın.
+
+    Isınma olmadan `choose_combo` birinci adımda takılır ve sömürü dalı hiç
+    çalışmazdı — kaynak sistemin davranışı da tam olarak budur.
+    """
+    return [
+        _closed(combo.key, 0.0, symbol=symbol, hour=hour + index)
+        for index, combo in enumerate(model._combos)
+    ]
+
+
+def test_clone_tries_every_untested_combination_before_exploiting(
+    config: dict[str, Any]
+) -> None:
+    """Kaynağın ısınması: o sembolde hiç denenmemiş kol varsa önce o çekilir.
+
+    Kontrol SEMBOLÜN KENDİ sayımına bakar, genele düşmüş hücreye değil: başka bir
+    sembolde ölçülmüş bir kolu burada "denenmiş" saymak, ısınmayı ilk sembolden sonra
+    tamamen atlamak olurdu.
+    """
+    model = VwapClone(config=config)
+    best = model._combos[0].key
+    untested = model._combos[-1].key
+    model.observe_closed_trades(
+        [_closed(best, 9.0, hour=index) for index in range(5)]
+        + [_closed(combo.key, 0.0, symbol=OTHER, hour=50 + index)
+           for index, combo in enumerate(model._combos)]
+    )
+
+    combo, _, pick = model.choose_combo(SYMBOL, rng=_Exploit())
+
+    assert pick == "unexplored"
+    assert combo.key != best
+    assert combo.key == untested or not model._seen(SYMBOL, combo)
+
+
+def test_clone_exploits_once_every_combination_has_been_tried(
     config: dict[str, Any]
 ) -> None:
     model = VwapClone(config=config)
-    good, bad = "atr1_tp2", "atr0_tp0"
+    good, bad = model._combos[4].key, model._combos[0].key
     model.observe_closed_trades(
-        [_closed(good, 2.0, hour=i) for i in range(5)]
-        + [_closed(bad, -1.0, hour=10 + i) for i in range(5)]
+        _warmed(model)
+        + [_closed(good, 2.0, hour=100 + i) for i in range(5)]
+        + [_closed(bad, -1.0, hour=200 + i) for i in range(5)]
     )
 
-    combo, stats, explored = model.choose_combo(SYMBOL, rng=_never_explores())
+    combo, stats, pick = model.choose_combo(SYMBOL, rng=_Exploit())
 
-    assert explored is False
+    assert pick == "exploit"
     assert combo.key == good
-    assert stats.mean_r == pytest.approx(2.0)
+    assert stats.mean_r > 0.0
 
 
 def test_clone_falls_back_to_the_global_average_below_the_sample_floor(
@@ -292,7 +406,7 @@ def test_clone_falls_back_to_the_global_average_below_the_sample_floor(
 ) -> None:
     """Az örnekli sembolde sembolün kendi gürültüsü, genel ortalamadan daha kötü bir tahmin."""
     model = VwapClone(config=config)
-    good = "atr1_tp2"
+    good = "band1_tp2"
     model.observe_closed_trades(
         # OTHER'da bolca veri: bu kombinasyon genelde iyi.
         [_closed(good, 3.0, symbol=OTHER, hour=i) for i in range(5)]
@@ -310,7 +424,7 @@ def test_clone_prefers_the_symbols_own_statistics_once_there_is_enough_data(
     config: dict[str, Any]
 ) -> None:
     model = VwapClone(config=config)
-    combo = "atr1_tp2"
+    combo = "band1_tp2"
     model.observe_closed_trades(
         [_closed(combo, 3.0, symbol=OTHER, hour=i) for i in range(10)]
         + [_closed(combo, -2.0, symbol=SYMBOL, hour=20 + i) for i in range(3)]
@@ -325,11 +439,11 @@ def test_clone_prefers_the_symbols_own_statistics_once_there_is_enough_data(
 def test_clone_state_is_rebuilt_from_scratch_every_round(config: dict[str, Any]) -> None:
     """Ayrı bir durum dosyası yok: posterior defterin SAF bir fonksiyonu olmalı."""
     model = VwapClone(config=config)
-    model.observe_closed_trades([_closed("atr0_tp0", 5.0)])
-    model.observe_closed_trades([_closed("atr0_tp0", -5.0)])
+    model.observe_closed_trades([_closed("band0_tp0", 5.0)])
+    model.observe_closed_trades([_closed("band0_tp0", -5.0)])
 
-    assert model.stats_for(SYMBOL)["atr0_tp0"].trades == 1
-    assert model.stats_for(SYMBOL)["atr0_tp0"].mean_r == pytest.approx(-5.0)
+    assert model.stats_for(SYMBOL)["band0_tp0"].trades == 1
+    assert model.stats_for(SYMBOL)["band0_tp0"].mean_r == pytest.approx(-5.0)
 
 
 def test_clone_ignores_rows_from_a_retired_combination(config: dict[str, Any]) -> None:
@@ -341,31 +455,47 @@ def test_clone_ignores_rows_from_a_retired_combination(config: dict[str, Any]) -
 
 
 def test_clone_exploration_share_never_drops_to_zero(config: dict[str, Any]) -> None:
-    """Susturulan kombinasyon bir daha ÖLÇÜLEMEZ; keşif payı bunu engeller."""
+    """Susturulan kombinasyon bir daha ÖLÇÜLEMEZ; keşif payı bunu engeller.
+
+    Isınma bilerek tamamlanır (`_warmed`): birinci adım açıkken her çekiliş zaten
+    "denenmemiş" olurdu ve epsilon'un payı hiç ölçülemezdi.
+    """
     model = VwapClone(config=config)
-    model.observe_closed_trades([_closed("atr0_tp0", 9.0, hour=i) for i in range(10)])
+    model.observe_closed_trades(
+        _warmed(model) + [_closed(model._combos[0].key, 9.0, hour=100 + i) for i in range(10)]
+    )
     rng = random.Random(7)
 
-    explored = sum(model.choose_combo(SYMBOL, rng=rng)[2] for _ in range(400))
+    picks = [model.choose_combo(SYMBOL, rng=rng)[2] for _ in range(400)]
 
-    assert explored == pytest.approx(100, rel=0.35)  # epsilon = 0.25
+    assert "unexplored" not in picks
+    assert picks.count("explore") == pytest.approx(100, rel=0.35)  # epsilon = 0.25
 
 
-def test_clone_has_twelve_combinations(config: dict[str, Any]) -> None:
+def test_clone_grid_is_the_sources_grid(config: dict[str, Any]) -> None:
+    """3 bant × 3 hedef = 9 kombinasyon; `sl_mult` bir eksen DEĞİLDİR (kaynakta sabit)."""
     model = VwapClone(config=config)
 
-    assert len(model._combos) == 12
-    assert len({combo.key for combo in model._combos}) == 12
+    assert len(model._combos) == 9
+    assert len({combo.key for combo in model._combos}) == 9
+    assert sorted({combo.band_mult for combo in model._combos}) == [1.5, 2.0, 2.5]
+    assert sorted({combo.tp_mult for combo in model._combos}) == [0.5, 0.75, 1.0]
+    assert {combo.params.sl_mult for combo in model._combos} == {0.5}
 
 
-def test_clone_target_multiples_never_undercut_the_partial_level(
-    config: dict[str, Any]
-) -> None:
-    """Hedef 1.5R'ın altında olsaydı kısmi çıkış hiç tetiklenmez, aşama 2-3 ölçülemezdi."""
+def test_clone_does_not_learn_a_reward_risk_target(config: dict[str, Any]) -> None:
+    """Kaynakta dayatılmış bir hedef/stop oranı yoktur: hedef VWAP mesafesinin kesridir.
+
+    Ev tarafında (model 14) hedef bir R projeksiyonudur ve 1.5R kapısına tabidir; kopyada
+    öyle bir eksen hiç bulunmaz. Bu testin düşmesi, ev kuralının kopyaya sızdığı anlamına
+    gelir.
+    """
     model = VwapClone(config=config)
-    partial_r = model._exit.partial_r
 
-    assert min(combo.target_reward_risk for combo in model._combos) >= partial_r
+    assert all(not hasattr(combo, "target_reward_risk") for combo in model._combos)
+    assert all(combo.tp_mult <= 1.0 for combo in model._combos)
+    assert "target_reward_risks" not in config["vwap"]["clone"]
+    assert "atr_multiples" not in config["vwap"]["clone"]
 
 
 # --------------------------------------------------------------------------- #
@@ -572,3 +702,36 @@ def test_propose_logs_the_survey_with_the_model_label(
         "vwap_clone" in record.message and vwap_signal.ARM_NAME in record.message
         for record in caplog.records
     )
+
+
+# --------------------------------------------------------------------------- #
+# Model 13 — kurulum kapıları (bozuk config sessizce sinyalsiz bir modele dönüşmesin)
+# --------------------------------------------------------------------------- #
+def _clone_config(config: dict[str, Any], **overrides: Any) -> dict[str, Any]:
+    broken = dict(config)
+    broken["vwap"] = {**config["vwap"], "clone": {**config["vwap"]["clone"], **overrides}}
+    return broken
+
+
+def test_a_std_window_wider_than_the_minimum_bar_count_is_refused(
+    config: dict[str, Any]
+) -> None:
+    """σ son barda hiç hesaplanamazdı: model her turu sessizce `band_yok` ile geçerdi."""
+    with pytest.raises(ValueError, match="std_window"):
+        VwapClone(config=_clone_config(config, std_window=30, min_bars=25))
+
+
+def test_a_vwap_window_below_the_minimum_bar_count_is_refused(config: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="vwap_window"):
+        VwapClone(config=_clone_config(config, vwap_window=20, min_bars=25))
+
+
+def test_a_target_multiple_above_one_is_refused(config: dict[str, Any]) -> None:
+    """Hedef VWAP'i ASLA aşmaz; kural çarpanın kendisinde durur, bir kırpmada değil."""
+    with pytest.raises(ValueError, match="tp_mults"):
+        VwapClone(config=_clone_config(config, tp_mults=[0.5, 1.5]))
+
+
+def test_the_shipped_configuration_builds(config: dict[str, Any]) -> None:
+    """Kapılar gerçek config'i reddetmiyor — testin kendisi de bir regresyon kapısıdır."""
+    assert VwapClone(config=config)._combos

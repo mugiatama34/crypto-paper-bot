@@ -70,19 +70,35 @@ class VwapManaged(Strategy):
         self._min_stop_pct = float(get_setting(settings, "scalp.min_stop_pct"))
         self._min_reward_risk = float(get_setting(settings, "scalp.min_reward_risk"))
         self._exit = ExitManagement.from_config(settings)
+        # Son taramanın eleme sayımı (kural 15). Ölçüme girmez, sinyalleri etkilemez.
+        self._survey: vwap_signal.Survey | None = None
 
     def generate_signals(
         self,
         market: MarketData,
         peer_signals: Mapping[str, tuple[Signal, ...]] | None = None,
     ) -> list[Signal]:
-        """Kapılardan geçen en güçlü tek aday. Evren katmanın kendi evrenidir (filtre yok)."""
-        candidates = vwap_signal.propose(
+        """Kapılardan geçen en güçlü tek aday. Evren katmanın kendi evrenidir (filtre yok).
+
+        `propose` yerine `scan` çağrılır ve log satırı burada yazılır: ikisinin döndürdüğü
+        ADAY LİSTESİ birebir aynıdır (`propose` = `scan` + tek bir log satırı), fark
+        yalnızca sayımın bir DEĞER olarak elde kalmasıdır — tur raporuna düşebilmesi için
+        (bkz. `take_survey`). Modelin gördüğü adaylar, sıraları ve seçimi değişmez.
+        """
+        candidates, survey = vwap_signal.scan(
             market,
             atr_period=self._atr_period,
             band_mult=self._band_mult,
             min_vwap_bars=self._min_vwap_bars,
-            model=self.name,
+        )
+        self._survey = survey
+        logger.info(
+            "%s %s %s bandı=%.2fσ -> %s",
+            self.name,
+            vwap_signal.ARM_NAME,
+            market.as_of.isoformat(),
+            self._band_mult,
+            survey.describe(),
         )
         for candidate in candidates:
             stop = vwap_signal.stop_price(candidate, atr_multiple=self._atr_multiple)
@@ -94,6 +110,16 @@ class VwapManaged(Strategy):
                 continue
             return [self._signal(candidate, stop=stop, target=target)]
         return []
+
+    def take_survey(self) -> Mapping[str, int] | None:
+        """Son taramanın eleme sayımı (kural 15). Sinyalleri hiçbir biçimde etkilemez.
+
+        Yalnızca SAYIM döner; `Survey.max_extension` ("en uzak sembol kaç σ'daydı") sayı
+        olmadığı için rapora değil loga kalır — sözleşme `Mapping[str, int]`tir ve tek bir
+        kayan noktayı sayaçların arasına sıkıştırmak, okuyanın onu da bir sayım sanmasına
+        açık kapı bırakırdı.
+        """
+        return None if self._survey is None else dict(self._survey.counts)
 
     def _passes_gates(
         self, candidate: vwap_signal.VwapCandidate, *, stop: float, target: float

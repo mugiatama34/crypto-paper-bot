@@ -236,6 +236,12 @@ class ModelReport:
     # Turda kuyruğa GİREN sinyallerin dökümü (bkz. EmittedSignal). `signals` sayısıyla
     # aynı kümedir: band elemesinden (kural 14) geçmiş, bekleyen emre dönüşmüş sinyaller.
     emitted: tuple[EmittedSignal, ...] = ()
+    # Modelin kendi tarama sayımı (Strategy.take_survey): eleme sebebi -> sembol sayısı,
+    # turun İŞLENEN TÜM barları boyunca toplanmış. `rejections` "emir neden dolmadı"yı,
+    # bu ise "sinyal neden hiç üretilmedi"yi sayar; ikisi turun iki ayrı aşamasıdır ve
+    # tek bir sayıya çökerse "kurulum yoktu" ile "sinyal modülü bozuldu" ayırt edilemez.
+    # Sayım tutmayan modelde boştur (varsayılan kanca None döner).
+    survey: Mapping[str, int] = field(default_factory=dict)
     skipped: str = ""
 
 
@@ -276,10 +282,18 @@ class _ModelRun:
     history_rows: list[dict[str, str]] | None = None
     rejections: dict[str, int] = field(default_factory=dict)
     emitted: list[EmittedSignal] = field(default_factory=list)
+    # Bar bazında toplanır: `signals_per_bar` açıkken bir tur birden çok bar işler ve her
+    # barın kendi taraması vardır. Son barınkini saklamak, telafi edilen barlarda kolun
+    # ne gördüğünü kaydın dışında bırakırdı.
+    survey: dict[str, int] = field(default_factory=dict)
     skipped: str = ""
 
     def reject(self, code: str) -> None:
         self.rejections[code] = self.rejections.get(code, 0) + 1
+
+    def record_survey(self, counts: Mapping[str, int]) -> None:
+        for reason, count in counts.items():
+            self.survey[reason] = self.survey.get(reason, 0) + int(count)
 
 
 class Engine:
@@ -360,6 +374,7 @@ class Engine:
                     missing_bars=run.missing_bars,
                     rejections=dict(sorted(run.rejections.items())),
                     emitted=tuple(run.emitted),
+                    survey=dict(sorted(run.survey.items())),
                     skipped=run.skipped,
                 )
                 for run in runs
@@ -831,6 +846,12 @@ class Engine:
             logger.error("%s modeli atlandı (sinyal üretimi/doğrulama): %s", strategy.name, exc)
             run.skipped = _join(run.skipped, f"generate_signals: {exc}")
             return []
+        # Tarama sayımı sinyallerden SONRA ve yalnızca başarılı bir çağrıdan sonra okunur
+        # (kural 15, bkz. Strategy.take_survey). Patlayan bir çağrının yarım sayımını
+        # kaydetmek, "bu barda şu kadar sembol incelendi" satırını yanlış yapardı.
+        survey = strategy.take_survey()
+        if survey:
+            run.record_survey(survey)
         return list(signals)
 
     def _within_stop_band(
