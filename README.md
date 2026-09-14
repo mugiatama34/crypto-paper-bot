@@ -214,6 +214,42 @@ Telegram 4xx'i, bozuk JSON — hepsi loglanıp geçilir), workflow adımı ayrı
 onun kesintisi yüzünden turun kırmızı dönmesi, defterin commit'lenip commit'lenmediğine dair
 gerçek sinyali gürültüye boğardı.
 
+## Scalp sinyal bildirimi (anlık)
+
+`scripts/telegram_signals.py` yukarıdaki günlük özetten **ayrıdır** ve ona dokunmaz: özet
+"hangi model önde" der ve okunması zamana bağlı değildir, bu ise **"şu anda ne açılıyor"**
+der ve cevabın raf ömrü bir bardır. Scalp katmanının her turunda (saatlik) koşar ve
+**yalnızca yeni sinyalde** mesaj yollar — pozisyon kapanışı, funding tahakkuku ve bar
+ilerlemesi mesaj üretmez.
+
+Mesaj şunları taşır: model ve kol (`scalp_bandit / rsi2_reversal`), sembol, yön, sinyalin
+üretildiği bar ve o barın kapanış fiyatı, planlanan stop/hedef ve R:R oranı, kısaltılmış
+gerekçe — ve zorunlu bir uyarı satırı:
+
+> ⚠️ Bot bu emri bir sonraki bar açılışından dolduracak (… UTC). Senin girişin farklı bir
+> fiyattan olacak.
+
+Uyarı opsiyonel değildir: bildirim barın kapanışında gider, emir ise bir **sonraki** barın
+açılışından dolar (kural 13) — arada piyasadan giren kişinin fiyatı botunkiyle aynı olmaz.
+
+**Üç filtre gürültüyü keser:**
+
+- **Yalnızca son barın sinyalleri.** Saatlik cron her turda dört 15m barını işler ve telafi
+  edilen barlar da kendi sinyallerini üretir; onlar deftere yazılır ve ölçüme girer ama
+  bildirilmez — 45 dakika önceki bir barın emri çoktan dolmuştur.
+- **Aynı (model, sembol, yön) için 4 bar susturma.** Durum `state/telegram_scalp.json`'da
+  tutulur ve koşular arası commit edilir; ölçümün parçası değildir, silinse en kötü ihtimalle
+  bir mesaj tekrar eder.
+- **5'ten fazla sinyalde tek toplu mesaj**, tek tek değil.
+
+```bash
+python scripts/telegram_signals.py --dry-run --force   # yollamadan mesajları gör
+```
+
+Secret'lar günlük özetle **aynıdır** (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) ve söz de
+aynı: script her yolda 0 döner, workflow adımı `continue-on-error: true` taşır ve defter
+commit'inden **sonra** gelir. Bildirim ölçümü düşüremez.
+
 ## Defter formatı (`ledgers/<model>/`, scalp için `ledgers_scalp/<model>/`)
 
 | Dosya | İçerik |
@@ -379,5 +415,9 @@ Projenin "tamamlandı" sayılması için:
       istatistiğe girmiyor (`tests/test_report.py`).
 - [x] `scripts/telegram_report.py` günlük özeti yolluyor ve hatası turu düşürmüyor
       (`tests/test_telegram_report.py`).
+- [x] `scripts/telegram_signals.py` scalp katmanının yeni sinyallerini anlık bildiriyor;
+      yalnızca son barın sinyalleri gidiyor, aynı kurulum 4 bar susturuluyor, 5'ten fazla
+      sinyal tek mesajda toplanıyor ve hatası turu düşürmüyor
+      (`tests/test_telegram_signals.py`).
 
 Bu çıta taslaktır, onay/düzeltme bekliyor.

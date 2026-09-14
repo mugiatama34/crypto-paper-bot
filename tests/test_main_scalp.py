@@ -100,6 +100,15 @@ def test_scalp_payload_separates_the_replica(sandbox: Sandbox) -> None:
     assert "vwap_clone" not in flagged
 
 
+def test_scalp_round_report_always_has_the_emitted_slot(sandbox: Sandbox) -> None:
+    """Alan sinyal üretilmeyen turda da durur: bildirim onu okuyamazsa (KeyError yerine)
+    sessizce "hiç sinyal yok" derdi ve gerçek bir arıza sessiz kalırdı."""
+    main_module.main(["--layer", "scalp"])
+
+    models = sandbox.metrics()["round"]["models"]
+    assert models and all(isinstance(model["emitted"], list) for model in models)
+
+
 def test_scalp_layer_requests_the_fixed_universe(sandbox: Sandbox) -> None:
     """Sabit evren katmandan gelir: hacimden otomatik seçim scalp'te YOK."""
     main_module.main(["--layer", "scalp"])

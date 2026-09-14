@@ -178,6 +178,42 @@ class PendingOrder:
 
 
 @dataclass(frozen=True, kw_only=True)
+class EmittedSignal:
+    """Kuyruğa GİREN bir sinyalin salt okunur denetim kaydı.
+
+    `ModelReport.signals` bir SAYIDIR: turda kaç sinyal üretildiğini söyler ama hangisinin
+    üretildiğini söylemez. Anlık bildirim (scripts/telegram_signals.py) tam olarak bunu
+    sorar ve cevabı tur raporundan başka bir yerde ARAMAMALIDIR: defterde yalnızca DOLAN
+    emirler görünür (dolum bir sonraki barda, kural 13), `pending_orders` ise turun son
+    barından sonrası için tutulur ve hangi barın kapanışında üretildiğini taşımaz.
+
+    Kayıt ölçüme GİRMEZ: metrikler defterden hesaplanır, bu alan yalnızca tur raporuna
+    (ve oradan `docs/data/metrics_*.json`'a) düşer — `rejections` ile aynı statüde bir
+    denetim izidir.
+
+    `bar` sinyalin üretildiği barın zamanı, `fills_at` emrin dolacağı bar (kural 13).
+    İkisi ayrı durur çünkü telafi edilen barlarda (`signals_per_bar`) ikisi de turun
+    `as_of`'undan farklı olabilir ve "bu sinyal hangi barın kapanışına ait" sorusunun
+    cevabı sonradan geri hesaplanamaz.
+    """
+
+    model: str
+    symbol: str
+    direction: Direction
+    bar: pd.Timestamp
+    fills_at: pd.Timestamp
+    # Modelin sinyali üretirken gördüğü son fiyat: `bar`ın KAPANIŞI. Dolum fiyatı değildir
+    # ve olamaz — o, bir sonraki barın açılışında belli olur.
+    close: float
+    stop_price: float | None = None
+    # Pozisyonu KAPATAN hedef (birden çok TP varsa sonuncusu); stop'suz referans
+    # sinyalinde (kural 15) ve hedefsiz sinyalde None.
+    target_price: float | None = None
+    reward_risk: float | None = None
+    reason: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
 class ModelReport:
     model: str
     bars_processed: int = 0
@@ -197,6 +233,9 @@ class ModelReport:
     # bir tekrar (referansın zaten taşıdığı pozisyon) gerçek bir boyutlandırma arızasından
     # ayırt edilemez. Serbest metin gerekçe yalnızca logda; burada sayılabilir kod durur.
     rejections: Mapping[str, int] = field(default_factory=dict)
+    # Turda kuyruğa GİREN sinyallerin dökümü (bkz. EmittedSignal). `signals` sayısıyla
+    # aynı kümedir: band elemesinden (kural 14) geçmiş, bekleyen emre dönüşmüş sinyaller.
+    emitted: tuple[EmittedSignal, ...] = ()
     skipped: str = ""
 
 
@@ -236,6 +275,7 @@ class _ModelRun:
     # okumak demekti; turda kapanan işlemler zaten `trades` üzerinden eklenir.
     history_rows: list[dict[str, str]] | None = None
     rejections: dict[str, int] = field(default_factory=dict)
+    emitted: list[EmittedSignal] = field(default_factory=list)
     skipped: str = ""
 
     def reject(self, code: str) -> None:
@@ -319,6 +359,7 @@ class Engine:
                     skipped_signals=run.skipped_signals,
                     missing_bars=run.missing_bars,
                     rejections=dict(sorted(run.rejections.items())),
+                    emitted=tuple(run.emitted),
                     skipped=run.skipped,
                 )
                 for run in runs
@@ -404,6 +445,16 @@ class Engine:
                 run, signals.get(run.strategy.name, []), snapshot
             )
             run.signals += len(model_signals)
+            run.emitted.extend(
+                _emitted_signal(
+                    run.strategy.name,
+                    signal,
+                    snapshot,
+                    ts=ts,
+                    fills_at=ts + self._bar_duration,
+                )
+                for signal in model_signals
+            )
             run.pending.extend(
                 PendingOrder(
                     kind="open",
@@ -904,6 +955,44 @@ def _reference_price(market: MarketData, symbol: str) -> float:
     if frame is None or market.as_of not in frame.index:
         raise ValueError(f"{symbol} bu turun anlık görüntüsünde yok")
     return float(frame.loc[market.as_of, "close"])
+
+
+def _emitted_signal(
+    model: str,
+    signal: Signal,
+    market: MarketData,
+    *,
+    ts: pd.Timestamp,
+    fills_at: pd.Timestamp,
+) -> EmittedSignal:
+    """Kuyruğa giren sinyalin denetim kaydı (bkz. EmittedSignal).
+
+    Referans fiyat `_reference_price` ile okunur, yani doğrulamanın gördüğü fiyatın
+    AYNISIDIR: kayıt ile doğrulama farklı bir "giriş" varsayarsa raporlanan R:R oranı
+    modelin kurduğu orandan sessizce ayrışırdı. Sembol bu noktada anlık görüntüde
+    kesinlikle vardır — sinyal aynı fiyatla doğrulanmış olmasaydı model atlanmıştı.
+
+    R:R, hedef ve stop'un referans fiyata olan mesafelerinin oranıdır ve ölçülemediğinde
+    `None`dır (0.0 değil): stop'suz referans sinyalinde (kural 15) payda, hedefsiz
+    sinyalde pay yoktur.
+    """
+    close = _reference_price(market, signal.symbol)
+    target = signal.take_profits[-1].price if signal.take_profits else None
+    risk = None if signal.stop_price is None else abs(close - signal.stop_price)
+    return EmittedSignal(
+        model=model,
+        symbol=signal.symbol,
+        direction=signal.direction,
+        bar=ts,
+        fills_at=fills_at,
+        close=close,
+        stop_price=signal.stop_price,
+        target_price=target,
+        reward_risk=(
+            None if target is None or not risk else abs(target - close) / risk
+        ),
+        reason=signal.reason,
+    )
 
 
 def _validated_exits(

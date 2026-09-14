@@ -87,3 +87,66 @@ jobs:
           done
           echo "push 4 denemede başarısız oldu"
           exit 1
+
+      # Anlık sinyal bildirimi (scripts/telegram_signals.py). `run.yml`in GÜNLÜK ÖZETİNDEN
+      # ayrıdır ve ona dokunmaz: bu, scalp katmanının YENİ SİNYAL olayını bildirir.
+      #
+      # Defter commit'inden SONRA gelir, günlük özetle aynı gerekçeyle: bildirim ölçümün
+      # parçası değildir, burada ne olursa olsun tur çoktan kaydedilmiştir. `if: always()`
+      # push çakışmasının bildirimi susturmaması, `continue-on-error` ve script'in
+      # koşulsuz 0 dönmesi ise iki ayrı emniyet kemeridir.
+      #
+      # Hangi sinyalin bildirileceğine (son bar, susturma penceresi, toplu mesaj) script
+      # karar verir: kapıyı cron'a taşımak, gecikmiş ya da elle tetiklenmiş bir koşuda
+      # mesajı ya iki kez ya hiç yollardı.
+      - name: Telegram scalp signal alerts
+        if: always()
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/telegram_signals.py --log-level INFO
+
+      # Susturma penceresinin durumu (state/telegram_scalp.json) koşular arası TAŞINMAK
+      # zorundadır: runner her koşuda sıfırdan kurulur, commit edilmezse "bu sinyali 4 bar
+      # önce bildirmiştim" bilgisi her turda kaybolurdu.
+      #
+      # Neden ayrı bir commit: dosyayı yukarıdaki defter commit'ine katmak, bildirim
+      # adımını commit'ten ÖNCE koşmayı gerektirirdi — yani ağ erişimi olan bir adımı turun
+      # kaydedilmesinin önüne koymayı. Ayrı ve `continue-on-error` bir adım, en kötü
+      # ihtimalde tekrar eden bir mesaja mal olur; ölçüme hiç dokunmaz. Defter ve rapor
+      # dosyaları bu adımda KAPSAM DIŞIDIR (`git add` yalnızca durum dosyasını alır).
+      - name: Commit notification state
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Dosya yoksa bildirim hiç yollanmamıştır (sinyal yok, secret yok, hata).
+          # `git add` bu durumda hata verirdi; `set -e` ile adım kırmızıya dönerdi.
+          if [ ! -f state/telegram_scalp.json ]; then
+            echo "bildirim durumu dosyası yok, commit atlanıyor"
+            exit 0
+          fi
+
+          git add state/telegram_scalp.json
+
+          if git diff --cached --quiet; then
+            echo "bildirim durumu değişmedi, commit atlanıyor"
+            exit 0
+          fi
+
+          git commit -m "scalp-telegram: bildirim durumu"
+
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız oldu"
+          exit 1
