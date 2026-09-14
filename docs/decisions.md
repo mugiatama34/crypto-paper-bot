@@ -1576,3 +1576,111 @@ gösterirdi.
 `risk_amount` ile `margin` ayrı kolonlardır ve biri diğerinden türetilemez: marj
 notional/kaldıraçtır, risk ise ilk stop'a olan mesafedir (kural 11'in paydası). "Ne kadarı
 bağlı" ile "ne kadarı riskte" aynı soru değildir.
+
+---
+
+## 21. Ölçümün birimi: dolum değil, POZİSYON
+
+Karar 20 sayfaya "kısmi çıkışlar görünür ama sayılmaz" ilkesini yazdı ve bunu
+`docs/positions.html` içinde uyguladı. Denetim (`@yapisal-denetci`, PR #20 sonrası) aynı
+ilkenin **ölçümün kendisinde uygulanmadığını** buldu: `core/metrics.py::direction_stats`
+`trades.csv`'nin TÜM satırlarını bir işlem sayıyordu. İki yüzey açıkça çelişiyordu ve aynı
+model iki sayfada iki farklı kazanma oranı gösterecekti.
+
+### Sorun `exit_reason == "partial"`den büyük
+
+`trades.csv` bir **dolum** defteridir: `core/portfolio.py::_close` `fraction_of_initial`
+kadarını kapatır ve o dilim için bir satır yazar. Bir pozisyonun birden çok satır üretmesinin
+İKİ yolu var ve yalnızca biri "partial" kodunu taşıyor:
+
+| Yol | `exit_reason` | Kullanan |
+|---|---|---|
+| Üç aşamalı çıkışın kısmi dolumu | `partial` | modeller 13, 14, 15 (`exit_management`) |
+| `TakeProfit.fraction < 1.0` | `tp` | `avwap` (0.5 + 0.5), `downtrend_rally` (0.5) |
+
+Yani `exit_reason == "partial"` filtresi scalp katmanını düzeltir ama **ana yarışmadaki iki
+yarışmacıyı** (`avwap`, `downtrend_rally`) çift saymaya devam ederdi. Kodun ayırt etmesi
+gereken şey çıkış sebebi değil, **pozisyon kimliği**dir.
+
+### Neden kısmi satırı atmak da yanlış olurdu
+
+İlk akla gelen düzeltme kısmi satırları elemekti. O yol ölçümü **ters yönde** bozardı.
+Somut örnek — giriş 100, ilk stop 99, 100 adet (1R = 100 USDT), kısmi çıkış 1.5R'da yarı
+boyutla, kalan dilim 3R hedefinde:
+
+| Satır | `pnl` | `risk_amount` | satırın R'si |
+|---|---|---|---|
+| kısmi (1.5R) | +75 | 50 | 1.5 |
+| kalan (3R) | +150 | 50 | 3.0 |
+| **pozisyon** | **+225** | **100** | **2.25** |
+
+- **Hepsini saymak:** 2 işlem, kazanma oranı %100, örneklem kapısı iki kat hızlı geçilir.
+- **Kısmiyi atmak:** 1 işlem ama R = **3.0** — kilitlenen 75 USDT ölçümden düşer.
+  Kalan dilim başabaşa çekilmiş stop'ta kapansaydı daha da kötü: pozisyonun gerçek R'si
+  +0.75 iken ölçüm **0.0** derdi. Yönetimli model (15), yönetimsiz ikizine (12) karşı
+  haksızca kötü görünürdü — ki 12 ↔ 15 ekseninin ölçtüğü şey tam olarak yönetimin katkısı.
+- **Toplamak:** 1 işlem, R = 225/100 = **2.25**. Doğru olan bu.
+
+### Karar
+
+`core/metrics.py::merge_fills` dolum satırlarını pozisyon başına tek ölçüm satırına
+indirger. Kimlik `strategy + symbol + direction + opened_at`; `strategy` şarttır çünkü
+havuz (`pooled_direction_stats`) birden çok modelin satırını tek listede birleştirir ve
+onsuz iki modelin aynı sembolde aynı barda açtığı pozisyonlar tek pozisyon sanılırdı
+(kural 4'ün izolasyonu ölçümde delinirdi).
+
+- **Nakit kolonları TOPLANIR, atılmaz** (`pnl`, `fee`, `slippage_cost`, `funding`):
+  "Σpnl = bakiye değişimi" değişmezi böyle korunur. Denetim izi (`trades.csv`) zaten
+  dokunulmazdır (kural 1); birleştirme yalnızca OKUMA tarafındadır.
+- **Kapanış alanları pozisyonu KAPATAN son dolumdan gelir** (`closed_at`, `exit_reason`,
+  `notes`). Ara dilimin sebebini pozisyonun sebebi saymak, kısmi çıkışla kapanmış gibi
+  görünen bir işlem üretirdi — likidasyonla kapanan bir pozisyon "kısmi çıkış" görünürdü.
+- **`opened_at` taşımayan satır kendi başına bir pozisyondur.** Bilinmeyen kimliği ortak
+  kabul edip hepsini tek pozisyonda toplamak sessiz bir veri kaybı olurdu.
+- Kapı tek yerdedir: `direction_stats`. `breakdown` (kol/sembol) ve `pooled_direction_stats`
+  onu çağırdığı için kırılımlar da pozisyon birimiyle çalışır; kol ve sembol pozisyonun
+  özellikleri olduğu için bir pozisyonun tüm dilimleri zaten aynı gruba düşer.
+
+**Yan kazanç:** `cost_per_r` artık tanımına uyuyor. CLAUDE.md "işlemin TÜM dolumlarında
+ödenen komisyon + kayma" der; satır bazında hesaplandığında bu yalnızca o dilimin
+maliyetiydi. Birleştirilmiş satırda hem pay hem payda pozisyonun tamamını taşır.
+
+### Sayfa hesaplamayı bıraktı (kural 7)
+
+Aynı denetim `docs/positions.html`'in ortalama R'yi ve kazanma oranını **JS'te kendi
+kuralıyla** hesapladığını buldu. İki hesap yolu bugün hizalansa bile yarın ayrışır —
+birinin kısmi çıkışı sayması yeter — ve JS tarafında hiçbir test yoktur. `docs/shared.css`'in
+tek kopya olma gerekçesi burada da geçerli: aynı sayının iki sayfada farklı görünmesi
+okuyucuya iki ayrı ölçüm gibi gelir.
+
+Karar: sayfa ölçümü **yükten okur** (`docs/shared.js::statsSlice`, iki sayfanın da tek
+yolu). Model seçiliyse `models[<ad>][<yön>]`, seçili değilse havuz (`pooled`) okunur —
+havuz yalnızca yarışmacıları içerir (kural 15/15b) ve kart bunu SÖYLER, çünkü tablo
+çıpanın ve kopyanın satırlarını yine gösterir.
+
+Yükün cevaplayamadığı filtreler (sonuç, tarih aralığı) yalnızca **tabloyu** daraltır;
+ölçüm defterin tamamından gelir ve bu da yazılır. Sessiz kalmak, okuyucuya "seçtiğim
+aralığın ortalaması" dedirtirdi. Dolum satırları listede kalmaya devam eder ve "DİLİM"
+rozetiyle "istatistiğe dahil değil" der — KAZANÇ/KAYIP yazmak, kârda gerçekleşen bir
+kısmi çıkışı tamamlanmış bir kazanç gibi gösterirdi.
+
+### Özet şeridi katman başına ayrı
+
+`view.layer` varsayılanı `"all"`dır ve eski şerit o filtreyle gelen satırların tamamından
+**tek** bir ortalama R üretiyordu: sayfa açılışta 4 saatlik ve 15 dakikalık katmanın
+R'lerini tek hücrede topluyordu. Kod "aktif filtreye göre" hesaplıyordu ama varsayılan
+filtre katman sınırı çizmiyordu — dashboard'ın ayrı tablolarla özenle engellediği kıyas,
+defter sayfasının ilk ekranında yapılmış oluyordu (karar 20'nin kendi ilkesinin ihlali).
+
+Karar: şerit **katman başına ayrı bir kart** verir ve kartlar alt alta durur. `layer=all`
+dâhil hiçbir görünümde iki katmanın R'si tek sayıda toplanmaz. Yan yana koymak da
+yapılmadı: aynı satırda duran iki sayı kıyaslanacak bir çift gibi okunur.
+
+### Ne yeniden hesaplanır
+
+`docs/data/metrics*.json` defterin **saf bir türevidir**: `compare()` her turda
+`trades.csv`'yi baştan okur ve `_write_metrics` dosyayı bütünüyle yeniden yazar. Yani
+geçmiş metrikler "eski kuralla yazılmış" olarak kalmaz — bir sonraki turda TÜM geçmiş yeni
+kuralla yeniden hesaplanır. Göç adımı, elle düzeltme ve `trades.csv`'ye dokunma yoktur
+(kural 1). `equity.csv` de etkilenmez: birleştirme nakit hareketini değiştirmez, yalnızca
+aynı nakdin kaç işlem olarak sayıldığını değiştirir.

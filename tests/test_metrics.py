@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 
 from core.config import load_config
@@ -24,6 +25,7 @@ from core.metrics import (
     cost_per_r,
     direction_stats,
     format_report,
+    merge_fills,
     model_metrics,
     periods_per_year,
     pooled_direction_stats,
@@ -768,3 +770,184 @@ def test_breakdown_raises_when_the_arm_tag_is_missing() -> None:
 
     with pytest.raises(TagError):
         breakdown([orphan], key=arm_of)
+
+
+# --------------------------------------------------------------------------- #
+# Dolum -> pozisyon birleştirme (bir POZİSYON = bir ölçüm satırı)
+# --------------------------------------------------------------------------- #
+def _fill(
+    *, closed_at: str, pnl: float, risk: float, exit_reason: str, **overrides: Any
+) -> dict[str, Any]:
+    """AYNI pozisyonun bir dilimi: kimlik alanları (strategy/symbol/direction/opened_at) ortak."""
+    return _trade(
+        pnl=pnl,
+        risk=risk,
+        opened_at="2026-01-01T00:00:00+00:00",
+        closed_at=closed_at,
+        entry_price=100.0,
+        exit_reason=exit_reason,
+        **overrides,
+    )
+
+
+def test_partial_exit_and_its_remainder_are_one_trade() -> None:
+    """Kısmi çıkış tamamlanmış bir işlem değil, hâlâ açık bir pozisyonun dilimidir.
+
+    İki satırı ayrı işlem saymak aynı pozisyonu iki kez ölçüme sokar ve
+    `acceptance.min_trades` örneklem kapısını iki kat hızlı geçirirdi.
+    """
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=50.0, exit_reason="partial"),
+        _fill(closed_at="2026-01-01T08:00:00+00:00", pnl=150.0, risk=50.0, exit_reason="tp"),
+    ]
+
+    stats = direction_stats(rows, direction="total")
+
+    assert stats.trades == 1
+    # R pozisyonun tamamından: 225 / 100. Kalan dilimin kendi R'si (3.0) değil.
+    assert stats.avg_r == pytest.approx(2.25)
+
+
+def test_position_r_keeps_the_profit_locked_in_by_the_partial_exit() -> None:
+    """Kısmi satırı ATMAK, ölçümü ters yönde bozardı.
+
+    Kilitlenen kâr ölçümden düşer ve kalan dilimin R'si tüm pozisyonun R'si sanılırdı:
+    yönetimli model (15), yönetimsiz ikizine (12) karşı haksızca kötü görünürdü.
+    """
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=50.0, exit_reason="partial"),
+        # Kalan dilim başabaşa çekilmiş stop'ta kapanır: kendi başına 0.0R.
+        _fill(closed_at="2026-01-01T08:00:00+00:00", pnl=0.0, risk=50.0, exit_reason="stop"),
+    ]
+
+    stats = direction_stats(rows, direction="total")
+
+    assert stats.trades == 1
+    assert stats.avg_r == pytest.approx(0.75)  # kalan dilimin 0.0'ı değil
+    assert stats.win_rate == pytest.approx(1.0)
+
+
+def test_a_winning_partial_does_not_make_a_losing_position_a_win() -> None:
+    """Kısmi çıkış tanımı gereği kârda gerçekleşir; ayrı sayılsaydı kazanma oranı şişerdi."""
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=50.0, exit_reason="partial"),
+        _fill(closed_at="2026-01-01T08:00:00+00:00", pnl=-150.0, risk=50.0, exit_reason="stop"),
+    ]
+
+    stats = direction_stats(rows, direction="total")
+
+    assert stats.trades == 1
+    assert stats.win_rate == pytest.approx(0.0)
+    assert stats.avg_r == pytest.approx(-0.75)
+
+
+def test_fractional_take_profits_collapse_too() -> None:
+    """Ayrım `exit_reason == "partial"` değil, POZİSYON kimliğidir.
+
+    `avwap` iki TP seviyesi, `downtrend_rally` yarım TP kullanır: ikisi de aynı pozisyon
+    için birden çok "tp" satırı yazar ve hiçbiri "partial" kodunu taşımaz. Koda
+    `exit_reason` filtresi koymak bu modelleri çift saymaya devam ederdi.
+    """
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=50.0, risk=50.0, exit_reason="tp"),
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=100.0, risk=50.0, exit_reason="tp"),
+    ]
+
+    assert direction_stats(rows, direction="total").trades == 1
+
+
+def test_merge_keeps_the_closing_fill_as_the_positions_exit() -> None:
+    """Ara dilimin çıkış sebebi pozisyonun sebebi değildir."""
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=50.0, exit_reason="partial"),
+        _fill(closed_at="2026-01-01T08:00:00+00:00", pnl=-90.0, risk=50.0, exit_reason="liquidation"),
+    ]
+
+    merged = merge_fills(rows)
+
+    assert len(merged) == 1
+    assert merged[0]["exit_reason"] == "liquidation"
+    assert merged[0]["fills"] == 2
+    assert direction_stats(rows, direction="total").liquidations == 1
+
+
+def test_merge_does_not_join_two_models_holding_the_same_symbol() -> None:
+    """Havuz birden çok modelin satırlarını tek listede birleştirir (kural 4 ölçümde de geçerli)."""
+    mine = _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=50.0, exit_reason="stop")
+    theirs = {**mine, "strategy": "other"}
+
+    assert len(merge_fills([mine, theirs])) == 2
+
+
+def test_rows_without_an_open_timestamp_stay_separate() -> None:
+    """Bilinmeyen kimliği ortak kabul edip hepsini tek pozisyonda toplamak veri kaybı olurdu."""
+    rows = [_trade(pnl=10.0), _trade(pnl=-20.0), _trade(pnl=30.0)]
+    assert all(row["opened_at"] == "" for row in rows)
+
+    assert direction_stats(rows, direction="total").trades == 3
+
+
+def test_cash_columns_are_summed_not_dropped_by_the_merge() -> None:
+    """"Σpnl = bakiye değişimi" değişmezi: nakit kolonları birleştirmede TOPLANIR."""
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=50.0, exit_reason="partial",
+              fee=0.5, slippage_cost=0.1, funding=-0.2),
+        _fill(closed_at="2026-01-01T08:00:00+00:00", pnl=-150.0, risk=50.0, exit_reason="stop",
+              fee=0.7, slippage_cost=0.3, funding=-0.4),
+    ]
+
+    stats = direction_stats(rows, direction="total")
+
+    assert stats.pnl == pytest.approx(sum(row["pnl"] for row in rows))
+    assert stats.fees == pytest.approx(sum(row["fee"] for row in rows))
+    assert stats.slippage_cost == pytest.approx(sum(row["slippage_cost"] for row in rows))
+    assert stats.funding == pytest.approx(sum(row["funding"] for row in rows))
+
+
+def test_cost_per_r_covers_every_fill_of_the_position() -> None:
+    """CLAUDE.md > Rapor Kolonları: pay TÜM dolumların (giriş, kısmi TP'ler, çıkış) maliyeti."""
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=50.0, exit_reason="partial",
+              fee=1.0, slippage_cost=0.5),
+        _fill(closed_at="2026-01-01T08:00:00+00:00", pnl=-150.0, risk=50.0, exit_reason="stop",
+              fee=2.0, slippage_cost=0.5),
+    ]
+
+    # (1.0 + 0.5 + 2.0 + 0.5) / (50 + 50)
+    assert direction_stats(rows, direction="total").cost_per_r == pytest.approx(0.04)
+
+
+def test_the_pnl_total_still_equals_the_balance_change_with_a_partial_exit() -> None:
+    """Uçtan uca: gerçek bir kısmi çıkış senaryosunda değişmez korunuyor mu.
+
+    Birleştirme sayımı değiştirir, nakdi DEĞİŞTİRMEZ: metriklerin `pnl` toplamı hâlâ
+    portföyün bakiye değişimine eşit olmalıdır, yoksa defter denetlenemez hâle gelir.
+    """
+    from core.portfolio import Bar, Portfolio
+    from strategies.base import TakeProfit
+
+    ts = pd.Timestamp("2026-01-01 00:00:00", tz="UTC")
+    symbol = "BTC-USDT-SWAP"
+    portfolio = Portfolio(load_config())
+    start = portfolio.cash("m")
+    portfolio.open_position(
+        "m", symbol=symbol, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=ts, marks={symbol: 100.0},
+        take_profits=(TakeProfit(price=105.0, fraction=0.5),),
+    )
+    fills = portfolio.process_bar(
+        "m", ts=ts, bars={symbol: Bar(open=100.0, high=106.0, low=99.0, close=105.5)}
+    )
+    fills.append(
+        portfolio.close_position(
+            "m", symbol=symbol, direction="long", reference_price=104.0,
+            ts=ts + pd.Timedelta(hours=4),
+        )
+    )
+    assert len(fills) == 2  # tek pozisyon, iki dolum
+
+    stats = direction_stats([fill.as_row() for fill in fills], direction="total")
+
+    assert stats.trades == 1
+    assert stats.pnl == pytest.approx(portfolio.cash("m") - start)
+    assert portfolio.positions("m") == ()

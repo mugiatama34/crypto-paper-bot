@@ -145,10 +145,16 @@ paylaşılabilir (durum adres çubuğunda durur).
 | Açık pozisyonlar | model, sembol, yön, giriş, anlık fiyat, anlık K/Z (USDT), anlık R, TP, SL, **durum rozetleri** (başabaş alındı mı / kısmi alındı mı / takip aktif mi), kaldıraç, margin, riske edilen tutar, birikmiş funding, açılış (UTC) ve kırpılmamış strateji gerekçesi. |
 | Kapanmış işlemler | model, sembol, yön, **sonuç** (KAZANÇ/KAYIP + çıkış sebebi: TP / stop / takip eden stop / likidasyon / zaman stop'u), giriş, çıkış, miktar, kaldıraç, K/Z, komisyon, funding, R, açılış ve kapanış (UTC), gerekçe. Sayfalı, 50'şer. |
 
-**Kısmi çıkışlar ayrı satır olarak görünür ama istatistiklere DAHİL EDİLMEZ** (tablo
-başlığında yazar): tamamlanmış işlem değil, hâlâ açık bir pozisyonun dilimidirler ve saymak
-aynı pozisyonu iki kez ölçüme sokardı. Katman etiketi her satırda durur, özet şeridi
-yalnızca aktif filtreye göre hesaplanır — katmanlar arası kıyas burada da yapılmaz. 480px
+Bu tablo bir **dolum** defteridir: kısmi çıkışlar ve fraksiyonel hedefler ayrı satır
+olarak görünür ama **istatistiğe DAHİL EDİLMEZ** ve "DİLİM" rozetiyle durur — tamamlanmış
+işlem değil, aynı pozisyonun dilimidirler. Ölçüm onları pozisyon başına birleştirir
+(`core/metrics.py::merge_fills`), bu yüzden **işlem sayısı satır sayısından az olabilir**.
+
+Sayfa ortalama R'yi ve kazanma oranını **hesaplamaz**, yükten okur
+(`docs/shared.js::statsSlice`): ikinci bir hesap yolu bugün hizalansa bile yarın ayrışır ve
+aynı model iki sayfada iki farklı kazanma oranı gösterirdi. Katman etiketi her satırda
+durur ve ölçüm şeridi **katman başına ayrı bir kart** verir — katmanlar arası kıyas burada
+da yapılmaz. Sonuç ve tarih filtreleri yalnızca tabloyu daraltır; bu da yazar. 480px
 altında tablolar kart düzenine döner; hiçbir sayı kırpılmaz.
 
 **Seviye 1 — genel bakış**
