@@ -1,28 +1,35 @@
 name: run-scalp
 
 # 15 dakikalık scalp katmanının periyodik turu (config.yaml > layers.scalp).
-# `run.yml`e DOKUNULMAZ: iki katman ayrı workflow, ayrı cron, ayrı defter, ayrı rapor
+# `run.yml`e DOKUNULMAZ: iki katman ayrı workflow, ayrı tetikleme, ayrı defter, ayrı rapor
 # dosyasıdır — ama AYNI çekirdeği koşar (main.py --layer scalp).
 #
-# Zamanlama: bar 15m, yani barlar :00/:15/:30/:45'te KAPANIR. Cron SAATLİK tetiklenir ve
-# her koşu aradaki dört barı birden işler — tetikleme :03'tedir, çünkü core/data.py
-# kapanmamış barı atar (kural 12) ve :00'da tetiklenen bir koşu saatin son barını bir tur
-# geç görürdü.
+# Zamanlama: bar 15m, yani barlar :00/:15/:30/:45'te KAPANIR. Tur DIŞ BİR ZAMANLAYICIDAN
+# gelir: her saatin :01, :16, :31 ve :46'sında GitHub API üzerinden bir workflow_dispatch
+# çağrısı yapılır. Bir dakikalık kayma bilinçlidir — core/data.py kapanmamış barı atar
+# (kural 12) ve tam :00'da tetiklenen bir koşu o barı bir tur geç görürdü.
 #
-# NEDEN 15 dakikalık değil de SAATLİK cron. GitHub'ın zamanlanmış tetiklemeleri garantili
+# NEDEN dış zamanlayıcı, GitHub cron'u değil. GitHub'ın zamanlanmış tetiklemeleri garantili
 # değildir ve kadans sıklaştıkça düşme oranı artar: bu depoda 15 dakikalık cron ölçüldü —
-# 14 saatte 57 slot, 5 tetikleme (~%9). Saatlik kadans belirgin biçimde güvenilir
-# tetikleniyor ve SİNYAL KAYBI üretmiyor, çünkü `layers.scalp.signals_per_bar` açıktır:
-# motor son işlenmiş bardan `as_of`'a kadarki HER barı sırayla işler ve her barın kendi
-# sinyalini üretir (core/engine.py > _trade_step). Tur, o dört barın her birinde ayrı
-# ayrı koşulmuş gibi sonuçlanır — emirler kendi barlarının ertesinde dolar (kural 13) ve
-# pozisyon limitleri her barda yeniden sorulur.
+# 14 saatte 57 slottan yalnızca 5'i tetiklendi (~%9), yani tablo modelin değil CRON'un
+# kadansını ölçüyordu. Saatlik cron güvenilir tetikleniyordu ama bir sinyalin deftere
+# yazılmasını bir saate kadar geciktiriyordu. Dış zamanlayıcının workflow_dispatch çağrısı
+# ikisini birden çözer: tetikleme kaçmaz ve kadans barın kendi kadansına döner.
 #
-# Gecikmenin bedeli yalnızca ZAMANLAMADIR: bir sinyal, üretildiği bardan en çok bir saat
-# sonra deftere yazılır. Fiyatlar barın kendi fiyatlarıdır, yani ölçüm değişmez.
+# `schedule:` bloğu bu yüzden KALDIRILDI; ikisini birlikte tutmak aynı barı iki koşunun
+# işlemesi (concurrency grubunda sırada bekleyen ikinci bir tur) demekti.
+# `workflow_dispatch` tek giriştir ve elle tetiklemeye de açık kalır.
+#
+# Tetikleme yine de kaçarsa (zamanlayıcı düşer, API çağrısı hata alır) SİNYAL KAYBI
+# olmaz, çünkü `layers.scalp.signals_per_bar` açıktır: motor son işlenmiş bardan
+# `as_of`'a kadarki HER barı sırayla işler ve her barın kendi sinyalini üretir
+# (core/engine.py > _trade_step). Tur, atlanan barların her birinde ayrı ayrı koşulmuş
+# gibi sonuçlanır — emirler kendi barlarının ertesinde dolar (kural 13) ve pozisyon
+# limitleri her barda yeniden sorulur.
+#
+# Gecikmenin bedeli yalnızca ZAMANLAMADIR: bir sinyal, üretildiği bardan sonra deftere
+# geç yazılabilir. Fiyatlar barın kendi fiyatlarıdır, yani ölçüm değişmez.
 on:
-  schedule:
-    - cron: "3 * * * *"
   workflow_dispatch:
 
 # Defter koşular arası taşınan DURUMDUR: iki tur aynı anda koşarsa ikisi de aynı
