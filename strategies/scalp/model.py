@@ -60,10 +60,7 @@ import random
 from abc import abstractmethod
 from typing import Any, Mapping, Sequence
 
-import pandas as pd
-
 from core.config import get_setting, load_config
-from core.data import bar_duration
 from core.tags import format_tags
 from strategies.base import (
     Direction,
@@ -76,6 +73,7 @@ from strategies.base import (
 )
 from strategies.exit_management import ExitManagement
 from strategies.scalp.arms import ARM_NAMES, ArmParams, ArmSetup, propose_all
+from strategies.time_stop import TimeStop
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +102,10 @@ class ScalpModel(Strategy):
         )
         self._min_stop_pct = float(get_setting(settings, "scalp.min_stop_pct"))
         self._min_reward_risk = float(get_setting(settings, "scalp.min_reward_risk"))
-        self._time_stop_bars = int(get_setting(settings, "scalp.time_stop_bars"))
-        self._bar_duration = bar_duration(str(get_setting(settings, "timeframe")))
+        # Zaman stop'u tek kopyadır (strategies/time_stop.py): model 14 bu gövdeden
+        # türemiyor ama aynı kuralı okuyor — iki uygulama, sessiz bir dördüncü
+        # değişken demekti (bkz. o modülün docstring'i).
+        self._time_stop = TimeStop.from_config(settings)
         self._seed = int(get_setting(settings, "random_seed"))
 
     # ------------------------------------------------------------------ #
@@ -184,7 +184,7 @@ class ScalpModel(Strategy):
             reason=format_tags(
                 f"{setup.detail}; stop {setup.stop_distance_pct * 100:.2f}% "
                 f"({setup.stop_price:.6g}), hedef {setup.target_price:.6g} "
-                f"({setup.reward_risk:.2f}R), zaman stop'u {self._time_stop_bars} bar"
+                f"({setup.reward_risk:.2f}R), {self._time_stop.describe()}"
                 + ("" if managed is None else f"; {managed.describe()}"),
                 arm=setup.arm,
                 post_r=posterior,
@@ -211,26 +211,13 @@ class ScalpModel(Strategy):
     def manage_positions(
         self, market: MarketData, positions: list[Position]
     ) -> list[ExitInstruction]:
-        """16 bardan uzun süredir açık olan pozisyonları piyasa fiyatından kapatır."""
-        deadline = self._bar_duration * self._time_stop_bars
-        instructions: list[ExitInstruction] = []
-        for position in positions:
-            age = market.as_of - pd.Timestamp(position.opened_at)
-            if age < deadline:
-                continue
-            bars = int(age / self._bar_duration)
-            instructions.append(
-                ExitInstruction(
-                    symbol=position.symbol,
-                    action="close",
-                    reason=format_tags(
-                        f"zaman stop'u: pozisyon {bars} bardır açık "
-                        f"({self._time_stop_bars} bar sınırı), piyasa fiyatından kapatılıyor",
-                        exit_rule="time_stop",
-                    ),
-                )
-            )
-        return instructions
+        """16 bardan uzun süredir açık olan pozisyonları piyasa fiyatından kapatır.
+
+        Kuralın kendisi `strategies/time_stop.py`dedir: model 14 de aynı kuralı okur ve
+        bu gövdeden türemez, yani kopyalanmış bir uygulama iki modelin arasına ölçülmeyen
+        bir fark koyardı.
+        """
+        return self._time_stop.instructions(market, positions)
 
     # ------------------------------------------------------------------ #
     # Alt sınıfın tek işi

@@ -735,3 +735,68 @@ def test_a_target_multiple_above_one_is_refused(config: dict[str, Any]) -> None:
 def test_the_shipped_configuration_builds(config: dict[str, Any]) -> None:
     """Kapılar gerçek config'i reddetmiyor — testin kendisi de bir regresyon kapısıdır."""
     assert VwapClone(config=config)._combos
+
+
+# --------------------------------------------------------------------------- #
+# Survey: |z_prev| kovaları (denetim izi, kural 15)
+# --------------------------------------------------------------------------- #
+def _scan(data: MarketData, *, band_mult: float = 2.0):
+    return vwap_signal.scan(
+        data, atr_period=14, band_mult=band_mult, min_vwap_bars=8
+    )[1]
+
+
+def test_elimination_counts_stay_exhaustive() -> None:
+    """`counts` AYRIKTIR: Σ = taranan sembol. Kovalar buraya karışsaydı bu bozulurdu."""
+    survey = _scan(_market())
+
+    assert sum(survey.counts.values()) == survey.examined
+
+
+def test_extension_buckets_are_cumulative() -> None:
+    """Kova "en az bu kadar uzaktı" sayar: eşik büyüdükçe sayı ARTAMAZ."""
+    survey = _scan(_market())
+    values = [survey.extensions[vwap_signal.bucket_key(t)]
+              for t in vwap_signal.EXTENSION_BUCKETS]
+
+    assert values == sorted(values, reverse=True)
+    assert values[0] >= 1  # kurulumun kendisi en az 2σ'daydı, yani 1.0 kovasındadır
+
+
+def test_a_symbol_without_a_vwap_lands_in_no_bucket() -> None:
+    """z hesaplanamamışsa kova da sayılmaz: `nan` bir uzaklık değildir."""
+    survey = _scan(_market([100.0] * 40))
+
+    assert survey.examined == 1
+    assert survey.counts[vwap_signal.NO_VWAP] == 1
+    assert set(survey.extensions.values()) == {0}
+
+
+def test_the_report_merges_reasons_and_buckets() -> None:
+    survey = _scan(_market())
+    report = survey.report()
+
+    assert report[vwap_signal.SETUP] == survey.counts[vwap_signal.SETUP]
+    assert report["z_ge_2_0"] == survey.extensions["z_ge_2_0"]
+
+
+def test_managed_take_survey_carries_the_buckets(config: dict[str, Any]) -> None:
+    """Kovalar tur raporuna düşmezse `bant_ici=13` satırı bandın ölçeğini denetleyemez."""
+    model = VwapManaged(config=config)
+    model.generate_signals(_market())
+    survey = model.take_survey()
+
+    assert survey is not None
+    assert set(survey) >= {"z_ge_1_0", "z_ge_1_5", "z_ge_2_0", "z_ge_2_5"}
+    assert all(isinstance(value, int) for value in survey.values())
+
+
+def test_the_buckets_never_change_the_candidates() -> None:
+    """Sayım bir denetim izidir (kural 15): adayları ve sıralarını etkilemez."""
+    data = _market()
+    candidates, survey = vwap_signal.scan(
+        data, atr_period=14, band_mult=2.0, min_vwap_bars=8
+    )
+
+    assert [item.symbol for item in candidates] == [item.symbol for item in _candidates(data)]
+    assert survey.candidates == len(candidates)

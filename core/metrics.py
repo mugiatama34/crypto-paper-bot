@@ -65,7 +65,7 @@ import pandas as pd
 from core.config import get_setting
 from core.data import bar_duration
 from core.ledger import Ledger
-from core.tags import parse_tag
+from core.tags import find_tag, parse_tag
 from strategies.base import Direction
 
 logger = logging.getLogger(__name__)
@@ -520,6 +520,40 @@ def arm_of(row: Mapping[str, Any]) -> str:
 
 def symbol_of(row: Mapping[str, Any]) -> str:
     return str(row.get("symbol", ""))
+
+
+def exit_rule_of(row: Mapping[str, Any]) -> str:
+    """Çıkışın TAM kimliği: `exit_reason` + varsa `notes` kuyruğundaki `exit_rule`.
+
+    Neden gerekli: `exit_reason` beş kaba koddur ve ikisi birleşiktir (kural 13c) —
+    `stop` hem ilk stop'u hem takip eden stop'u, `signal` hem zaman stop'unu hem başka
+    bir strateji çıkışını anlatır. Oysa modeller 13/14/15'in ölçtüğü şey tam olarak
+    yönetimin katkısıdır: "geri verme takibi bu katmanda hiç tetiklendi mi" sorusunun
+    cevabı tek tek satırlara bakmadan okunamıyorsa, üç aşamalı yönetimin üçüncü aşaması
+    ölçülmemiş demektir.
+
+    İkisi birlikte etiketlenir (`stop:giveback`), çünkü ad uzayları ÇAKIŞIR: `partial`
+    hem bir `exit_reason`dır (kısmi dolum satırı) hem bir stop kuralıdır (stop'un kısmi
+    seviyeye çekilmesi). Tek başına "partial" grubu iki farklı olayı aynı satırda
+    toplardı.
+
+    **Etiketin YOKLUĞU bir bilgidir** (kural 13c): `stop` grubu "stop hiç hareket etmedi"
+    demektir. Uydurma bir `initial` değeri ne deftere yazılır ne de burada üretilir.
+
+    `parse_tag` DEĞİL `find_tag` kullanılır: `arm_of`un aksine etiketin yokluğu burada bir
+    hata değil, anlamın kendisidir.
+
+    **Dikkat — bu kırılımın birimi DİLİMDİR, pozisyon değil.** Kol ve sembol pozisyonun
+    özellikleridir, yani bir pozisyonun tüm dilimleri aynı gruba düşer; çıkış kuralı ise
+    dilimin özelliğidir. Kısmi çıkışlı bir pozisyon iki gruba birden düşer (`partial` ve
+    kapatan dilimin grubu) ve iki ölçüm satırı üretir. Nakit toplamı korunur
+    (Σpnl değişmez), işlem SAYISI korunmaz: grupların `trades` toplamı modelin pozisyon
+    sayısından büyük olabilir. Kırılımın cevapladığı soru "hangi kural kaç kez tetikledi",
+    "model kaç pozisyon açtı" değildir — ikincisi model tablosunda durur.
+    """
+    reason = str(row.get("exit_reason", ""))
+    rule = find_tag(str(row.get("notes", "")), "exit_rule")
+    return f"{reason}:{rule}" if rule else reason
 
 
 # --------------------------------------------------------------------------- #

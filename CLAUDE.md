@@ -41,8 +41,9 @@ yapar.
 | `strategies/scalp/model.py` | Scalp modellerinin ortak gövdesi: stop tabanı (%1), hedef/stop kapısı (1.5R), zaman stop'u (16 bar), sinyal kurulumu, kol etiketi. Alt sınıfın değiştirebileceği YALNIZCA üç nokta vardır ve her biri ölçülen bir eksene karşılık gelir: `choose_arm` (kol seçimi), `exit_management` (çıkış yönetimi), `rng_identity` (çekiliş kimliği). Fark bu üç noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü olmaktan çıkar. |
 | `strategies/scalp_bandit.py` | **Model 11:** Thompson sampling ile kollar arası tahsis. Posterior yalnızca KAPANMIŞ işlemlerin gerçekleşmiş R'sinden beslenir ve her turda defterden sıfırdan kurulur (ayrı durum dosyası yoktur — ikinci bir doğruluk kaynağı olurdu). Isınma 20 işlem/kol, taban tahsis %5, kayan pencere 100 işlem. |
 | `strategies/scalp_fixed.py` | **Model 12 (KONTROL):** aynı beş kol, eşit ağırlıklı çekiliş, öğrenme yok. Model 11'in null hipotezi; `observe_closed_trades`ı bilinçli olarak UYGULAMAZ, yani geçmişe erişimi hiç yoktur. |
+| `strategies/time_stop.py` | Zaman stop'unun TEK tanımı (modeller 11, 12, 14 ve 15 aynı kopyayı okur): `scalp.time_stop_bars` bar boyunca ne stop'a ne hedefe değmiş pozisyon piyasa fiyatından kapatılır. Yalnızca config'i okuyup `ExitInstruction` üretir (kural 10); dolum bir SONRAKİ barın açılışındadır (kural 13), yani gerçek ömür `bars + 1` bardır. Beş kollu modeller kuralı `ScalpModel` gövdesinden alıyordu, model 14 o gövdeden türemediği için HİÇ almıyordu — kural buraya çıkarıldı, çünkü iki uygulama `model 14 ↔ scalp_fixed` kıyasına ölçülmeyen bir değişken koyardı. Model 13'e UYGULANMAZ (kaynak sistemde yok, kural 15b). |
 | `strategies/exit_management.py` | Üç aşamalı çıkış yönetiminin TEK tanımı (modeller 13, 14, 15 aynı kopyayı okur): breakeven -> kısmi çıkış + stop kaydırma -> geri verme takibi. Yalnızca config'i okuyup `Signal` alanlarına çevirir; uygulama `core/engine.py` (stop hareketleri) ve `core/portfolio.py`dedir (kısmi dolum) — kural 9'un `trailing_atr` için koyduğu sınırın aynısı. Üç dosyaya kopyalansaydı model 15 ile `scalp_fixed` arasındaki fark "yönetimin katkısı" olmaktan çıkar, "iki ayrı yönetimin farkı" olurdu. |
-| `strategies/vwap/signal.py` | **Model 14'ün** sinyali (EV kuralları): gün-çapalı VWAP'ten `band_mult × hacim ağırlıklı sapma` kadar uzaklaşıp DÖNMEYE BAŞLAYAN bar — önceki bar bandın DIŞINDA kapanmış, bu bar VWAP'e doğru bir adım atmış ve HÂLÂ aynı tarafta olmalıdır. Dönüş şartı zorunludur: yalnızca "bant dışında" olmak, güçlü bir trendde her barda aynı sinyali üretirdi. Modül kurulumun YERİNİ verir; stop (sabit ATR katı) ve hedef (projeksiyon ile VWAP'in yakın olanı) model 14'ün kuralıdır. **Model 13 bu modülü OKUMAZ** — onun kuralları kaynak sistemin kurallarıdır ve `strategies/vwap/clone_signal.py`'dedir. Aday BULAMADIĞI barı da kaydeder (`Survey`): her tarama eleme sebeplerine göre sayılır, loglanır ve `take_survey` ile tur raporuna düşer — kural 15'in "ret sebep koduyla kaydedilir" şartının bu koldaki karşılığı. Sayım salt denetim izidir: hangi adayın üretileceğini ve sıralarını etkilemez. |
+| `strategies/vwap/signal.py` | **Model 14'ün** sinyali (EV kuralları): gün-çapalı VWAP'ten `band_mult × hacim ağırlıklı sapma` kadar uzaklaşıp DÖNMEYE BAŞLAYAN bar — önceki bar bandın DIŞINDA kapanmış, bu bar VWAP'e doğru bir adım atmış ve HÂLÂ aynı tarafta olmalıdır. Dönüş şartı zorunludur: yalnızca "bant dışında" olmak, güçlü bir trendde her barda aynı sinyali üretirdi. Modül kurulumun YERİNİ verir; stop (sabit ATR katı) ve hedef (projeksiyon ile VWAP'in yakın olanı) model 14'ün kuralıdır. **Model 13 bu modülü OKUMAZ** — onun kuralları kaynak sistemin kurallarıdır ve `strategies/vwap/clone_signal.py`'dedir. Aday BULAMADIĞI barı da kaydeder (`Survey`): her tarama eleme sebeplerine göre sayılır, loglanır ve `take_survey` ile tur raporuna düşer — kural 15'in "ret sebep koduyla kaydedilir" şartının bu koldaki karşılığı. Sayım İKİ parçalıdır: eleme SEBEPLERİ (ayrık, Σ = taranan sembol) ve `|z_prev|` KOVALARI (`z_ge_1_0/1_5/2_0/2_5`, kümülatif, üst üste biner). Kovalar olmadan `bant_ici=13` satırı bandın kıl payı mı yoksa fersah fersah mı kaçırdığını söylemez — yani bandın ÖLÇEĞİ denetlenemez. İkisi ayrı alanlarda tutulur (`counts` / `extensions`), tur raporuna birlikte düşer (`Survey.report`). Sayım salt denetim izidir: hangi adayın üretileceğini ve sıralarını etkilemez. |
 | `strategies/vwap/clone_signal.py` | **Model 13'ün** sinyali: kaynak sistemin (`vwap_detector.py`) kuralları, olduğu gibi. VWAP son `vwap_window` barın KÜMÜLATİFİdir (gün çapası yok, çapa her barda kayar); σ o sapma serisinin AĞIRLIKSIZ örneklem sapmasıdır (`rolling(std_window)`, ddof=1) — VWAP ağırlıklı, σ değil, ve bu tutarsızlık kaynakta gerçekten böyledir. Bant dışı olma şartı MEVCUT bara bakar; dönüş şartının tamamı `close > prev_close`tur ("sapma daraldı" şartı YOK). Stop ve hedef BURADA kurulur (`band_mult × sl_mult × σ` ve `max(\|VWAP − giriş\|,0) × tp_mult`), çünkü kaynakta geometri kontrolü (`sl < entry < tp`) onlara bakar — "VWAP geçilmiş" için ayrı bir eleme kuralı yoktur, eleme oradan gelir. `signal.py` ile kural mantığı PAYLAŞILMAZ (paylaşılsaydı model 13 ↔ 14 ekseninin tanımı bir dallanmanın durumuna bağlı olurdu); ortak olan yalnızca `core/indicators.py` yardımcılarıdır. Kendi `Survey`'i ve kendi kol etiketi (`vwap_revert_src`) vardır. Bkz. docs/decisions.md > 23. || `strategies/vwap_clone.py` | **Model 13 (KOPYA, `is_replica=True`):** dış bir sistemin kurallarını birebir yeniden üretir. Sinyali `strategies/vwap/clone_signal.py`'dedir (model 14 ile PAYLAŞILMAZ). Sabit teminat × 10x (`notional_fraction` + `ModelLimits.leverage`), üç aşamalı çıkış yönetimi, kendi limitleri (5 pozisyon, yönde 3, portföy riski %8), 12 sembollük kendi evreni, epsilon-greedy parametre öğrenimi (3 bant × 3 hedef = 9 kombinasyon, sembol bazlı, 3 örnek altında genele düşer). Seçim kaynağın üç adımıdır: o sembolde DENENMEMİŞ kombinasyon varsa önce o, sonra `epsilon` ile keşif, sonra sömürü. Evreni SIRAYLA tarar — güce göre sıralama yoktur. Ev kapıları (%1 stop tabanı, 1.5R, zaman stop'u) UYGULANMAZ — kaynak sistemde yok. Kopyalanamayan sapmalar docs/decisions.md > "Sadık kopyanın sınırları" altında yazılıdır. Yarışmacı değildir. |
 | `strategies/vwap_managed.py` | **Model 14:** VWAP sapma-dönüş sinyali, EV kurallarıyla (`strategies/vwap/signal.py`; model 13 kendi kurallarını okuduğu için sinyal artık ortak DEĞİLDİR ve 13 ↔ 14 farkı sinyal farkını da içerir) — `sizing="risk"`, katmanın `leverage_cap`i, %1 stop tabanı ve 1.5R kapısı geçerli, parametre öğrenimi YOK (sabit çarpanlar config'te). Barda tek sinyal. Tam yarışmacı; kıyas hedefleri model 13 (ev kurallarının katkısı) ve `scalp_fixed`. |
 | `strategies/scalp_managed.py` | **Model 15:** `scalp_fixed`in BİREBİR ikizi (aynı beş kol, aynı eşit ağırlıklı çekiliş — `choose_arm` miras alınır, kopyalanmaz), tek farkı üç aşamalı çıkış yönetimi. Çekiliş kimliği (`rng_identity`) bilinçli olarak `scalp_fixed` ile PAYLAŞILIR: iki model her turda aynı kolu ve aynı sembolü seçer, aradaki ortalama R farkı yalnızca yönetimden gelir (eşleştirilmiş deney). |
@@ -95,7 +96,7 @@ yapar.
 | `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, `signals_per_bar`, …). Bkz. "Katmanlar". |
 | `scalp.*` | scalp kısıtları | Beş kollu modellerin (11, 12, 15) ve model 14'ün BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
 | `exit_management.*` | üç aşamalı çıkış | Modeller 13, 14 ve 15'in TEK kaynağı: `breakeven_at_r` (1.0), `partial_tp.r` (1.5), `partial_tp.fraction` (0.5), `trail_giveback_pct` (0.5). Model başına ayrı bloklar, bir gün birinin sessizce ayrışması ve model 15 ↔ `scalp_fixed` farkının "iki ayrı yönetimin farkı"na dönüşmesi demekti. |
-| `vwap.*` | modeller 13-14 | Model 14'ün sinyali (`band_mult` 2.0, `min_vwap_bars` 8) ve sabit çarpanları (`managed.*`); kopyanın KENDİ kuralları (`clone.*`: sabit teminat oranı, kaldıraç, limitler, kaynağın sinyal sabitleri `vwap_window` 300 / `std_window` 20 / `min_bars` 25 / `sl_mult` 0.5, 3×3 = 9 kombinasyon, epsilon, 12 sembollük evren). İki blok ayrıdır ve `band_mult`i paylaşmaz: model 13 onu ÖĞRENİR, model 14 config'ten sabit okur. |
+| `vwap.*` | modeller 13-14 | Model 14'ün sinyali (`band_mult` 2.0, `min_vwap_bars` 8 — YALNIZCA model 14'ün, kopya okumaz) ve sabit çarpanları (`managed.*`); kopyanın KENDİ kuralları (`clone.*`: sabit teminat oranı, kaldıraç, limitler, kaynağın sinyal sabitleri `vwap_window` 300 / `std_window` 20 / `min_bars` 25 / `sl_mult` 0.5, 3×3 = 9 kombinasyon, epsilon, 12 sembollük evren). İki blok ayrıdır ve `band_mult`i paylaşmaz: model 13 onu ÖĞRENİR, model 14 config'ten sabit okur. |
 
 ## Değişmez Kurallar
 
@@ -318,7 +319,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (saatlik; tur başına 4 bar) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
-| Kırılımlar | yok | kol + sembol |
+| Kırılımlar | yok | kol + sembol + çıkış kuralı |
 | Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) |
 
 **Neden ayrı bir `scalp_config.yaml` değil.** `risk_per_trade`, `fee_rate`, `slippage_*`,
@@ -385,7 +386,26 @@ Katmanda **üç ölçüm ekseni** vardır ve her eksende yalnızca TEK bir deği
 |---|---|---|
 | Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi |
 | Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış |
-| Ev kurallarının katkısı | `vwap_clone` (13) ↔ `vwap_managed` (14) | boyutlandırma + kapılar |
+| İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_managed` (14) | **tek değişken DEĞİL** — bkz. aşağısı |
+
+**13 ↔ 14 bir EKSEN DEĞİL, bir toplam farktır.** Bu satır bir zamanlar "ev kurallarının
+katkısı" olarak yazılıydı ve o zaman doğruydu: iki model aynı sinyal modülünü okuyordu.
+Karar 23'ten sonra model 13 kendi kurallarına (`strategies/vwap/clone_signal.py`) geçti ve
+fark altı eksende birden ayrıştı:
+
+| # | Ayrışan | model 13 | model 14 |
+|---|---|---|---|
+| 1 | sinyal kuralları | kayan kümülatif VWAP, ağırlıksız σ (`rolling(20)`), `close > prev_close` | gün-çapalı VWAP, hacim ağırlıklı σ, bant dışı + dönüş + aynı taraf |
+| 2 | boyutlandırma | sabit teminat × 10x | risk %1, `leverage_cap` 5 |
+| 3 | ev kapıları | yok | %1 stop tabanı + 1.5R + zaman stop'u |
+| 4 | seçim politikası | evren listesi sırası | en güçlü tek aday |
+| 5 | bar başına sinyal | kotaya kadar 5 | 1 |
+| 6 | evren | kaynağın 12 sembolü | katmanın tamamı |
+
+Altı değişkenli bir fark "ev kurallarının katkısı" olarak OKUNAMAZ; okunabilen tek şey
+"iki sistemin toplam farkı"dır ve tabloda da öyle durur. Tek değişkenli bir eksen
+isteniyorsa yolu yeni bir model açmaktır — mevcut ikisinden birini diğerine yaklaştırmak
+değil (bu, model 13'ü kopya olmaktan çıkarırdı, kural 15b).
 
 **Çekiliş, ölçülmeyen eksende PAYLAŞILIR, ölçülen eksende BAĞIMSIZDIR.** `ScalpModel`in
 `rng_identity` alanı bunu taşır. Model 11 ↔ 12'de ölçülen şey seçimin kendisidir; çekilişi
@@ -422,7 +442,11 @@ gibi gösterirdi.
   o kadar sinyal üretilir (saatlik cron'da 4). Model 14 de barda tek sinyal oynar (kıyas
   hedefi `scalp_fixed` bar başına tek pozisyon açar); model 13 ise kaynak sistemin kuralı
   gereği kendi pozisyon kotasına (5) kadar sinyal üretir.
-- **Ev kapıları (stop tabanı, 1.5R, zaman stop'u) model 13'e UYGULANMAZ** — kaynak sistemde
+- **Ev kapıları (stop tabanı, 1.5R, zaman stop'u) modeller 11, 12, 14 ve 15'te GEÇERLİ,
+  model 13'e UYGULANMAZ.** Zaman stop'unun uygulaması `strategies/time_stop.py`de tek
+  kopyadır; model 14 `ScalpModel` gövdesinden türemediği için kuralı oradan alamaz ve iki
+  ayrı uygulama, `model 14 ↔ scalp_fixed` kıyasına ölçülmeyen bir dördüncü değişken
+  koyardı. Kopyaya uygulanmamasının gerekçesi ise şudur: kaynak sistemde
   yoktur; eklemek kopyayı model 14'e çevirirdi ve ikisinin farkı ölçülemez hâle gelirdi.
   Kopyanın hedefi VWAP mesafesinin bir KESRİDİR (`tp_mult ≤ 1`), yani hedef/stop oranı
   dayatılmaz, kurulumdan doğar ve sık sık 1.5'in altına düşer — kapı sızsaydı o
@@ -506,6 +530,21 @@ gruplama ölçütüne göre böler ve her grup için aynı metrikleri hesaplar; 
   varsayımı (`slippage_base`) evrendeki her sembol için tek bir sayıdır; ince kitapta işlem
   gören bir sembolde (PENGU, ETHFI) `cost_per_r` belirgin biçimde ayrışıyorsa varsayım orada
   tutmuyor demektir ve o satırın sonucu yorumlanmadan önce bu bilinmelidir.
+- **çıkış kuralı** (`exit_rule`) — hangi kuralın kaç kez tetiklediği. Grup ölçütü
+  `exit_reason` ile `notes` kuyruğundaki `exit_rule` etiketinin BİRLEŞİMİDİR
+  (`core/metrics.py::exit_rule_of`): `stop` "ilk stop aldı", `stop:giveback` "geri verme
+  takibinin çektiği stop aldı", `signal:time_stop` "zaman stop'u" demektir. İkisi birlikte
+  etiketlenir çünkü ad uzayları çakışır (`partial` hem bir `exit_reason` hem bir stop
+  kuralıdır). Etiketin YOKLUĞU bir bilgidir (kural 13c) ve uydurma bir `initial` değeri
+  üretilmez. Gerekçe: modeller 13/14/15'in ölçtüğü şey üç aşamalı yönetimin katkısıdır ve
+  bu katkı, üç aşamanın kaç kez tetiklendiği bilinmeden okunamaz — bugünkü geometride
+  (`R:R ∈ [1.5, 2.0]`, kısmi çıkış tam 1.5R'da) üçüncü aşamanın hiç tetiklenmemesi
+  mümkündür ve bu, ölçülmesi gereken bir olgudur.
+  **Bu kırılımın birimi DİLİMDİR, pozisyon değil:** çıkış kuralı pozisyonun değil dilimin
+  özelliğidir, yani kısmi çıkışlı bir pozisyon iki gruba birden düşer. Nakit toplamı
+  korunur (Σpnl değişmez), işlem SAYISI korunmaz — grupların `trades` toplamı model
+  tablosundan büyük olabilir. Kol ve sembol kırılımlarında bu sorun yoktur (ikisi de
+  pozisyonun özelliğidir).
 
 Referans çıpaları (kural 15) ve dış sistem kopyaları (kural 15b) bu iki kolonu **`nan`** alır
 ve tablonun AYRI İKİ bölümünde durur. Çıpada gerekçe hesaplanamazlıktır: stop'u olmayanın 1R'si
