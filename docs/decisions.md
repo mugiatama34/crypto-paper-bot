@@ -1315,6 +1315,10 @@ Aynı gerekçe `liquidation_price`ın giriş notional'ı üzerinden hesaplanmas�
 
 ### Model 13: kopyanın kendi kuralları
 
+> **Bu alt bölüm 23 numaralı kararla ÜSTÜNE YAZILDI.** Aşağıdaki sinyal, stop, hedef,
+> grid ve evren kuralları o zamanki hâli anlatır; bugünkü kurallar için bkz. 23.
+> Boyutlandırma, limitler, çıkış yönetimi ve "ev kapıları uygulanmaz" ilkesi DEĞİŞMEDİ.
+
 - **Sinyal:** gün-çapalı VWAP'ten `band_mult × sapma` kadar uzaklaşıp DÖNMEYE BAŞLAYAN bar.
   Dönüş şartı zorunludur: yalnızca "bant dışında" olmak, güçlü bir trendde her barda aynı
   sinyali üretirdi.
@@ -1388,6 +1392,9 @@ Scalp katmanı kol kırılımı üretir ve `core/metrics.py::arm_of` etiketsiz s
 fırlatır (kural: "her işlem bir kola aittir"). Model 13 ve 14'ün kolu yoktur ama etiketi
 vardır: ikisi de `arm=vwap_revert` yazar. Alternatif — kırılımı bu modeller için atlamak —
 kırılım toplamı ile model toplamını sessizce ayrıştırırdı.
+
+> **Güncelleme (karar 23):** iki model artık aynı kurulumu aramadığı için etiketleri de
+> ayrıldı — model 13 `arm=vwap_revert_src` yazar. Etiketin ZORUNLU olması değişmedi.
 
 ## 19. Telafi edilen barlarda sinyal (`signals_per_bar`) ve saatlik scalp cron'u
 
@@ -1770,3 +1777,204 @@ mesaja mal olur; ölçüme hiç dokunmaz.
 
 Bir mesaj yollanamadıysa durum dosyası da güncellenmez: yollanmamış bir mesajı "bildirildi"
 saymak, susturma penceresi boyunca o bildirimi sessizce kaybetmek olurdu.
+
+## 23. Model 13 SADIK kopyaya çevrildi: kaynağın kuralları, kendi sinyal modülünde
+
+Model 13, kaynak sistemin (klonnist/Hasanwavebot) kurallarını yeniden ürettiğini iddia
+ediyordu ama kaynak kodu satır satır okunduğunda **sinyal ve öğrenme katmanının
+kaynağınkiyle uyuşmadığı** görüldü. Hesap katmanı (sabit teminat × 10x, 5 pozisyon, yönde
+3, portföy riski %8, üç aşamalı çıkış yönetiminin dört parametresi) birebir oturuyordu;
+ayrışma tam olarak "kopya ne yapar" sorusunun cevabındaydı:
+
+| | Kaynak (`vwap_detector.py` + `learner.py`) | Model 13 (önce) |
+|---|---|---|
+| VWAP | son 300 barın KÜMÜLATİFİ, çapa her koşuda kayar | gün-çapalı |
+| σ | `dist.rolling(20).std()`, ağırlıksız, ddof=1 | hacim ağırlıklı, ddof=0, gün penceresi |
+| Bant dışı olan bar | MEVCUT bar | ÖNCEKİ bar |
+| Dönüş şartı | yalnızca `close > prev_close` | sapma daralmış + VWAP geçilmemiş |
+| Minimum bar | 25 bar, gün kavramı yok | gün çapasından ≥ 8 bar |
+| Stop | `band_mult × sl_mult × σ` (`sl_mult` sabit 0.5) | öğrenilen ATR çarpanı |
+| Hedef | `max(\|VWAP − giriş\|, 0) × tp_mult`, `tp_mult ≤ 1` | `target_reward_risk × stop` |
+| Öğrenilen eksenler | `band_mult` × `tp_mult` = 9 kombinasyon | `atr_multiple` × `target_reward_risk` = 12 |
+| Isınma | o sembolde denenmemiş kol ÖNCE | yok |
+| Tarama sırası | sembol listesi sırası | sapma gücüne göre |
+
+Sonuç şuydu: model 13 "dış sistem bizim varsayımlarımızla ne yapardı" sorusunu değil,
+"kaynağa benzeyen bir sinyal, ev-dışı ama ev-icadı kurallarla ne yapardı" sorusunu
+cevaplıyordu. Model 13 ↔ 14 ekseninin ("ev kurallarının katkısı") her iki ucu da ev
+yapımıydı, yani eksen boştu.
+
+Bu kararla yukarıdaki sekiz satırın tamamı kaynağın hâline çevrildi.
+
+### Neden ayrı bir dosya: `strategies/vwap/clone_signal.py`
+
+Alternatif, `strategies/vwap/signal.py`'ye bir bayrak (`source_rules=True`) koyup her
+kuralı dallandırmaktı. Daha az dosya, daha çok risk:
+
+- **Ölçülen fark, dallanmanın durumuna bağlı hâle gelirdi.** 13 ↔ 14 ekseni "ev
+  kurallarının katkısı"nı ölçer; o katkının tanımı, sekiz `if`in hangi dalının hangi model
+  için açık olduğuna bağlı bir şey olamaz.
+- **Bir gün biri diğerinin dalını değiştirirdi.** Ortak bir modülde model 14 için yapılan
+  masum bir düzeltme (ör. σ tanımını iyileştirmek) kopyayı sessizce kopya olmaktan
+  çıkarırdı — ve hiçbir test bunu yakalamazdı, çünkü iki dal aynı testlerden geçerdi.
+- **Kaynağın "kusurları" korunamazdı.** Kopyada σ hacim ağırlıksızken VWAP ağırlıklıdır,
+  `z` typical price'tan okunurken dönüş kapanıştan okunur, `std_window` parametre değil
+  sabittir. Bunlar ortak bir modülde birer bug gibi görünür ve er geç "düzeltilir".
+
+Bu yüzden kural mantığı PAYLAŞILMAZ, aritmetik paylaşılır: iki modül de
+`core/indicators.py`'nin `typical_price` ve `bars_until` yardımcılarını kullanır.
+`signal.py`'ye bu kararda **hiç dokunulmadı**; model 14'ün gördüğü adaylar, sıraları ve
+seçimi bit düzeyinde aynıdır (tek değişiklik, aşağıdaki sayım kaydı için `propose` yerine
+onun sessiz ikizi `scan`ın çağrılmasıdır — ikisi aynı listeyi döndürür).
+
+### Kol etiketi ayrıldı: `arm=vwap_revert_src`
+
+İki model artık aynı kurulumu aramıyor. Aynı `arm` etiketini yazmaya devam etselerdi kol
+kırılımı (`core/metrics.py::breakdown`) iki farklı kural kümesini tek bir ad altında
+gösterir ve okuyucu iki satırı "aynı kolun iki modeldeki hâli" sanırdı. Kırılım model
+BAZINDA üretildiği için bugün sayısal bir karışma olmazdı — ama etiketin işi sayıyı
+karıştırmamak değil, satırın ne olduğunu söylemektir.
+
+### Evrenden TON çıkarıldı: kopya 12 sembol
+
+TON-USDT-SWAP OKX'te kalıcı olarak yok (51001) ve her turda veri çekiminden düşüyor.
+Kaynak listede 13 sembol yazıyor, ama listede tutmak **hiç taranmayan bir sembolü
+taranıyormuş gibi göstermek** olurdu: `survey` sayımında her tur `bar_yok` olarak
+görünür ve "kopyanın evreni kaç sembol" sorusunun iki farklı cevabı olurdu.
+
+Katmanın kendi evreni (14) DEĞİŞTİRİLMEDİ ve bu bilinçlidir: oradan bir sembol çıkarmak
+modeller 11/12/15'in çekiliş uzayını değiştirir, yani ölçülmeyen bir eksende üç modelin
+geçmişiyle geleceğini ayrıştırırdı. Katman ile kopya arasındaki fark artık iki semboldür
+(SUI ve TON) ve ikisinin gerekçesi farklıdır: SUI kaynak sistemde hiç yok, TON borsada
+yok.
+
+### Sadık kopyanın sınırları
+
+Bir kopya, **kopyalanamayacak şeyleri de yazmak zorundadır.** Aşağıdaki beş sapma
+düzeltilmeyecektir ve her biri sonucu belirli bir yöne kaydırır; kopyanın satırı
+okunurken bunlar bilinmelidir.
+
+**C1 — Kaynak kapanmamış barı kullanır, kopya kullanmaz (kural 12).** Kaynağın
+`data_feed.fetch_ohlcv`i ccxt çıktısını olduğu gibi alır; son satır OLUŞMAKTA OLAN bardır.
+Yani kaynağın `z`si, dönüş kontrolü ve girişi canlı fiyattan hesaplanır. Burada tüm barlar
+kapanmıştır. **Etkisi:** kaynak aynı kurulumu bar içinde, kopya bar kapanışında görür;
+kopya bazı kurulumları hiç görmez (bar içinde bant dışına çıkıp kapanışta içeri dönenler)
+ve bazılarını farklı bir `z` ile görür. Bu kural tek bir modeli değil TÜM ölçümü geçersiz
+kılabilecek bir kuraldır (kural 12) ve kopya için de esnetilmez.
+
+**C2 — Kaynak anlık fiyattan girer, kopya bir sonraki barın açılışından (kural 13).**
+Kaynakta `entry = last_close` ve pozisyon o anda o fiyattan açılır. **Etkisi:** kopyanın
+gerçek giriş fiyatı, sinyalin doğduğu kapanıştan farklıdır (üstelik komisyon ve kayma da
+eklenir). Dönüş barının ertesinde devam eden bir harekette kopya daha kötü, geri çekilen
+bir harekette daha iyi girer. Ortalamada bu bir maliyet kalemidir ve kaynağın kâğıt
+hesabında yoktur.
+
+**C3 — Tarama kadansı farklıdır.** Kaynak 15 dakikada bir GitHub Actions koşusuyla tek bir
+tarama yapar; scalp katmanı saatte bir koşar ve dört 15m barını sırayla işler
+(`signals_per_bar`, karar 19). **Etkisi:** kopya, kaynağın düşen tetiklemelerinde
+kaçırdığı barları da tarar — yani kopya, kaynaktan DAHA ÇOK kurulum görür. Ters yönü
+düzeltmek (bazı barları kasten atlamak) ölçümü cron'un kadansına bağlardı ve karar 19'un
+tam tersi olurdu.
+
+**C4 — `as_of` tüm semboller için ortaktır, kaynakta her sembol kendi fetch anında
+değerlenir.** Kaynak `POPULAR_COINS`i sırayla gezerken her sembol için ayrı bir HTTP
+isteği yapar; listenin sonundaki sembol, başındakinden saniyeler sonraki bir "şimdi"yi
+görür. Burada tek bir anlık görüntü vardır (karar 4). **Etkisi:** kopyanın sembolleri
+arasında zaman tutarlılığı kaynaktakinden İYİDİR; bu bir sapma ama ölçümün lehine bir
+sapmadır ve kural 5'in ("tüm stratejiler aynı anlık görüntüyü görür") gereğidir.
+
+**A6 — Öğrenme durumu deftere bağlıdır, ayrı bir JSON dosyasına değil.** Kaynak
+`learner_state.json` ve `..._by_symbol.json` dosyalarını tutar ve commit eder; burada
+posterior her turda `trades.csv`den sıfırdan kurulur. **Etkisi:** sayısal olarak aynı
+sonucu verir (aynı işlemler, aynı R'ler, aynı ortalamalar) — fark dayanıklılıktadır:
+ikinci bir durum dosyası defterle ayrıştığında hangisinin doğru olduğu bilinemezdi
+(`scalp_bandit` ile aynı gerekçe). Tek gözlemlenebilir fark, kaynağın durum dosyası
+silindiğinde öğrenmeyi kaybetmesi, kopyanın kaybetmemesidir.
+
+**Bir de motorun tek ev kapısı kopyaya uygulanmaya devam eder:** stop mesafesi tavanı
+(kural 14, scalp katmanında 8×ATR, `core/engine.py::_within_stop_band`). Kaynakta böyle
+bir tavan yoktur. Kapı model düzeyinde değil MOTOR düzeyinde tanımlıdır ve onu kopya için
+delmek, "hangi modellerin hangi motor kurallarından muaf olduğu"nu model başına bir
+listeye çevirirdi — kural 6'nın engellemek istediği şeyin ta kendisi.
+
+Kapının pratikte bağlayıp bağlamayacağı **canlı veriyle ÖLÇÜLMEDİ** (bu kararın alındığı
+ortamda borsaya erişim yoktu). Yerine 1 dakikalık geometrik Brown hareketinden 15m OHLC
+üretilip σ/ATR oranına bakıldı — gerçek veri değil, bir MERTEBE TAHMİNİ: yıllık %30-%80
+oynaklık ve sıfırdan %500'e kadar sürüklenme altında stop mesafesi 0.9-1.6×ATR
+(p95 ≈ 2.1×) çıkıyor, yani 8× tavanının çok altında; 120 denemenin hiçbirinde tavan
+aşılmadı. Sebep, σ'nın sapmanın SEVİYESİ değil 20 barlık penceredeki DEĞİŞKENLİĞİ olması:
+trend σ'yı şişirmiyor, çünkü kümülatif VWAP'ten uzaklaşma pencere içinde düzgün ilerliyor.
+Gerçek veride bağladığı turlar `skipped_signals` kolonunda görünür; orada sıfırdan farklı
+bir sayı çıkarsa bu karar yeniden açılmalıdır.
+
+Aynı ölçüm bir başka şeyi de öngörüyor ve o beklenen bir sonuçtur, kusur değil: kopyanın
+stop mesafesi normal oynaklıkta fiyatın **%0.4-0.9'u** kadardır, yani evin %1'lik stop
+tabanının ALTINDA. Tur maliyeti ~%0.25 olduğuna göre kopya R başına 0.25-0.6R maliyet
+öder; model 14 ise tabanı uyguladığı için en fazla 0.25R. Kopyanın `cost_per_r` kolonu bu
+yüzden `nan`dır (kural 15b: kıyaslanamaz) ama fark hesap düzeyi getirisinde görünecektir —
+ve "ev kapılarının katkısı" sorusunun cevabının önemli bir parçası tam olarak budur.
+
+### Ev kapılarının kopyaya uygulanmadığı yeniden teyit edildi
+
+%1 stop tabanı, 1.5R hedef/stop kapısı ve 16 barlık zaman stop'u kaynak sistemde yoktur ve
+kopyaya geçmez (karar 18'de alınan karar; burada değişmedi). Yeni kural setiyle birlikte
+bu artık ÖLÇÜLEBİLİR bir fark: kopyanın hedefi VWAP mesafesinin kesridir, yani R:R sık sık
+1.5'in altına düşer — `tests/test_vwap_clone_signal.py::test_the_reward_risk_is_emergent_not_imposed`
+tam olarak bunu çiviler. Ev kapısı sızsaydı o kurulumların tamamı elenirdi ve iki model
+arasındaki fark yeniden görünmez olurdu.
+
+### `Survey` sayımı tur raporuna taşındı
+
+Sayım (hangi sembol hangi sebeple elendi) yalnızca koşu logunda duruyordu ve GitHub
+Actions logları siliniyor. Yeni bir sözleşme kancası eklendi — `Strategy.take_survey()`,
+varsayılanı `None` — ve motor her BARDAN sonra okuyup tur raporuna topluyor
+(`ModelReport.survey`, oradan `docs/data/metrics_*.json > round.models[].survey`).
+
+- **Neden `rejections`ın yanında ayrı bir alan:** `rejections` "emir neden dolmadı"yı,
+  `survey` "sinyal neden hiç üretilmedi"yi sayar. İkisi turun iki ayrı aşamasıdır ve tek
+  bir sayıya çökerse model 13'ün `signals=0` geçtiği bir tur, "bugün kurulum yoktu" ile
+  "sinyal modülü sessizce bozuldu" arasında ayrım bırakmaz. Model 13'ün hiçbir ev kapısı
+  olmadığı için bu ayrım onda özellikle kritiktir.
+- **Bar bazında TOPLANIR, son barınki saklanmaz.** `signals_per_bar` açıkken bir tur dört
+  bar işler ve dördü de ölçüme girer; yalnızca sonuncusunun sayımını tutmak, telafi edilen
+  barlarda kolun ne gördüğünü kaydın dışında bırakırdı.
+- **Patlayan bir `generate_signals`ın sayımı kaydedilmez** (kural 8): yarım bir sayım,
+  "bu barda şu kadar sembol incelendi" satırını yanlış yapardı.
+- **Ölçüme girmez.** `emitted` ve `rejections` ile aynı statüdedir: metrikler defterden
+  hesaplanmaya devam eder, sayım hangi sinyalin üretileceğini ya da sıralarını hiçbir
+  biçimde etkilemez. Sözleşme bunu açıkça yazar.
+
+Model 14 de kancayı uygular. Bunun için `generate_signals` artık `vwap_signal.propose`
+yerine `vwap_signal.scan` çağırıyor ve log satırını kendisi yazıyor: ikisi aynı aday
+listesini döndürür (`propose` = `scan` + tek bir log satırı) ve log metni `Survey.describe`
+ile tek kaynaktan gelmeye devam eder. Modelin davranışı değişmedi; değişen tek şey sayımın
+bir DEĞER olarak elde kalmasıdır.
+
+### Defter sıfırlaması gerekmedi
+
+`ledgers_scalp/vwap_clone/trades.csv` yalnızca başlık satırını taşıyordu (0 kapanmış
+işlem), yani eski kurallarla üretilmiş tek bir ölçüm satırı bile yoktu. Sıfırlama
+gerekseydi bu bir karar konusu olurdu: kural 1 defter satırının hiçbir gerekçeyle
+değişmeyeceğini söyler, dolayısıyla tek meşru yol yeni bir model ADI (dolayısıyla yeni bir
+defter klasörü) açmaktı. `equity.csv` başlangıç bakiyesinden başka bir şey taşımadığı için
+o da olduğu yerde kaldı.
+
+Eski kombinasyon anahtarları (`atr<i>_tp<j>`) yeni kümede (`band<i>_tp<j>`) tanınmaz ve
+`observe_closed_trades` onları `logger.warning` ile sayıp öğrenmenin dışında bırakır —
+defterde hiç satır olmasa da bu yol bilinçli olarak korundu ve test edildi
+(`test_clone_ignores_rows_from_a_retired_combination`).
+
+### Testler: her kural için üreten VE üretmeyen senaryo
+
+`tests/test_vwap_clone_signal.py` kaynağın her kuralını iki senaryoyla çiviler; yalnızca
+"üretiyor" tarafını test etmek, kuralın gerçekten bir kapı olduğunu göstermezdi (kaldırılsa
+da testler yeşil kalırdı). Beklenen sayılar üretim kodunun pandas çağrıları tekrarlanarak
+değil, `statistics.stdev` ile BAĞIMSIZ kurulur — aksi hâlde test kodun kendisini değil
+kendi kopyasını doğrulardı.
+
+Birkaç test kasten model 14 ile yan yana koşar (aynı bar, iki farklı cevap). Amaç
+karşılaştırma değil ayrımın gerçekten geçtiğini göstermektir: iki modül aynı cevabı
+verseydi 13 ↔ 14 ekseni boş olurdu. En keskin ikisi:
+
+- Banda geri dönmüş bir bar: model 14 için kurulum, kopya için `bant_ici`.
+- UTC gün başındaki ikinci bar: kopya için kurulum, model 14 için `vwap_yok`.

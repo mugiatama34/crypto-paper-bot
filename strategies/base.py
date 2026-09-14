@@ -254,3 +254,21 @@ class Strategy(ABC):
         sırasındadır. Sözleşme salt okunur: veriyi değiştirmek değil, ondan öğrenmek için.
         """
         return None
+
+    def take_survey(self) -> Mapping[str, int] | None:
+        """Son `generate_signals` çağrısının ELEME SAYIMI: sebep kodu -> sembol sayısı.
+
+        Varsayılan `None` = bu model sayım tutmaz. Motor her bardan sonra okur ve tur
+        raporuna toplar (`core/engine.py::ModelReport.survey`); oradan
+        `docs/data/metrics_*.json > round.models[].survey` altına düşer.
+
+        **Bu bir DENETİM İZİDİR, ölçüm değil** (`rejections` ve `emitted` ile aynı statü,
+        kural 15). Bir modelin `signals=0` ile geçtiği tur iki bambaşka şeyin aynı
+        görünümüdür: "bugün hiç kurulum yoktu" ve "sinyal modülü sessizce bozuldu". Sayım
+        olmadan ikisi ancak veriyi elle çekerek ayrılır — ve sebep yalnızca koşu logunda
+        dursaydı, o loglar silindiğinde cevap tamamen kaybolurdu.
+
+        Sözleşme gereği: sayım sinyalleri, sıralarını ya da seçimi HİÇBİR biçimde
+        etkilemez ve motor onu okumasa da modelin davranışı aynı kalır.
+        """
+        return None

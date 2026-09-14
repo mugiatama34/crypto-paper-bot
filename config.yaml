@@ -292,21 +292,32 @@ vwap:
     max_per_direction: 3    # aynı YÖNDE en fazla 3 (kök max_short_positions yalnızca short'u kapsar)
     max_portfolio_risk: 0.08  # açık toplam risk sermayenin %8'ini aşarsa yeni pozisyon açılmaz
 
-    # Epsilon-greedy bandit: 4 ATR çarpanı × 3 hedef çarpanı = 12 kombinasyon.
-    # ATR çarpanları 15 dakikalık barda tipik olarak %0.4-1.0 stop mesafesi verir; scalp
-    # katmanının 8×ATR tavanının (layers.scalp.max_stop_atr_multiple) altındadır.
-    # Hedef çarpanlarının en küçüğü (1.5) kısmi çıkış seviyesine EŞİTTİR: daha küçük bir
-    # hedef, kısmi çıkış hiç tetiklenmeden pozisyonu tamamen kapatır ve üç aşamalı
-    # yönetimin ikinci/üçüncü aşaması ölçülemez hâle gelirdi.
-    atr_multiples: [2.0, 3.0, 4.0, 5.0]
-    target_reward_risks: [1.5, 2.0, 3.0]
+    # --- Kaynak sistemin SİNYAL kuralları (vwap_detector.py + main.py) ---
+    # Bu blok `vwap.band_mult` / `vwap.min_vwap_bars`tan BAĞIMSIZDIR: o ikisi model 14'ün
+    # (ev kuralları) değerleridir ve kopya onları okumaz. Ayrışma bilinçlidir — iki model
+    # aynı sayıyı paylaşsaydı "ev kurallarının katkısı" ekseni o sayının da farkını
+    # taşırdı (bkz. docs/decisions.md > "Sadık kopya").
+    vwap_window: 300        # kaynak: main.py --limit 300; VWAP bu pencerenin KÜMÜLATİFİ
+    std_window: 20          # kaynak: compute_vwap_bands(std_window=20); sabit, grid'de yok
+    min_bars: 25            # kaynak: detect_vwap_signal -> len(df) < 25 ise sinyal yok
+    sl_mult: 0.5            # kaynak: VWAP_SL_MULT; SABİT, grid'i şişirmesin diye
+
+    # Epsilon-greedy bandit: 3 bant çarpanı × 3 hedef çarpanı = 9 kombinasyon
+    # (kaynak: learner.py::build_vwap_grid). Öğrenilen eksenler kaynağınkilerdir —
+    # `band_mult` giriş eşiğini VE stop mesafesini birlikte oynatır, `tp_mult` ise
+    # VWAP'e olan mesafenin ne kadarının hedefleneceğini. R:R bir kural değil, bu ikisinin
+    # SONUCUDUR: dayatılan bir hedef/stop oranı kaynakta yoktur.
+    band_mults: [1.5, 2.0, 2.5]
+    tp_mults: [0.5, 0.75, 1.0]
     bandit:
       epsilon: 0.25         # keşif payı; sıfıra İNMEZ — susturulan kombinasyon ölçülemez
       min_symbol_samples: 3 # sembolde bu kadar örnek yoksa tüm semboller ortalamasına düşülür
 
-    # Kaynak sistemin evreni: 13 sembol. Katmanın evreni 14'tür (SUI fazladan) ve aradaki
-    # fark BİLİNÇLİDİR — kaynak sistemde SUI yok, fazladan bir sembolde işlem açmak
-    # kopyayı kopya olmaktan çıkarırdı.
+    # Kaynak sistemin evreni: 12 sembol. Kaynakta 13 yazar ama TON-USDT-SWAP OKX'te
+    # kalıcı olarak yoktur (51001) ve her turda veri çekiminden düşer; listede tutmak,
+    # hiç taranmayan bir sembolü taranıyormuş gibi göstermek olurdu. Katmanın evreni
+    # 14'tür; aradaki fark (SUI ve TON) BİLİNÇLİDİR — kaynak sistemde SUI yok, fazladan
+    # bir sembolde işlem açmak kopyayı kopya olmaktan çıkarırdı.
     universe:
       - "BTC-USDT-SWAP"
       - "ETH-USDT-SWAP"
@@ -317,7 +328,6 @@ vwap:
       - "ADA-USDT-SWAP"
       - "AVAX-USDT-SWAP"
       - "LINK-USDT-SWAP"
-      - "TON-USDT-SWAP"
       - "ETHFI-USDT-SWAP"
       - "PENGU-USDT-SWAP"
       - "NEAR-USDT-SWAP"
