@@ -319,3 +319,114 @@ def test_build_dashboard_sections_are_all_present(tmp_path: Path) -> None:
     # bölüm boştur ama VARDIR — sayfanın "eski JSON mu, kırılımsız katman mı" ayrımını
     # bir anahtarın yokluğundan tahmin etmesi gerekmesin.
     assert payload["breakdowns"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# Çıkış yönetiminin DURUMU ve maliyet alanları (docs/positions.html'in okuduğu yüzey)
+# --------------------------------------------------------------------------- #
+def test_open_position_carries_the_risk_amount_and_margin(tmp_path: Path) -> None:
+    """Riske edilen tutar ile marj AYRI kolonlardır: biri diğerinden türetilemez."""
+    ledger = _ledger(tmp_path, "m", positions=[_position(margin=50.0)])
+    row = open_positions(["m"], ledger=ledger, marks={"BTC-USDT-SWAP": 100.0})[0]
+    assert row["risk_amount"] == pytest.approx(2.0 * abs(100.0 - 97.0))
+    assert row["margin"] == pytest.approx(50.0)
+    assert row["initial_qty"] == pytest.approx(2.0)
+
+
+def test_stopless_position_has_no_risk_amount(tmp_path: Path) -> None:
+    """Stop'suz referans pozisyonda (kural 15) 1R yoktur — 0.0 da değil, None."""
+    ledger = _ledger(tmp_path, "m", positions=[_position(stop_price=None, initial_stop_price=None)])
+    row = open_positions(["m"], ledger=ledger, marks={"BTC-USDT-SWAP": 100.0})[0]
+    assert row["risk_amount"] is None
+    assert math.isnan(row["r"])
+
+
+def test_position_without_exit_management_reports_no_state(tmp_path: Path) -> None:
+    """Mekanizmayı BİLDİRMEYEN model hiçbir rozet almaz (kural 13b: varsayılan kapalı)."""
+    ledger = _ledger(tmp_path, "m", positions=[_position(trailing_atr=None)])
+    row = open_positions(["m"], ledger=ledger, marks={"BTC-USDT-SWAP": 100.0})[0]
+    assert row["breakeven_at_r"] is None
+    assert row["breakeven_done"] is False
+    assert row["partial_tp"] is None
+    assert row["partial_done"] is False
+    assert row["trailing_active"] is False
+    assert row["stop_rule"] == ""
+    assert row["stop_moved"] is False
+
+
+def test_breakeven_is_reported_only_after_the_stop_actually_moved(tmp_path: Path) -> None:
+    """Rozet İSTEĞİ değil OLAYI gösterir: stop girişe çekilene kadar yanmaz."""
+    waiting = _position(breakeven_at_r=1.0, stop_price=97.0, initial_stop_price=97.0)
+    ledger = _ledger(tmp_path, "m", positions=[waiting])
+    row = open_positions(["m"], ledger=ledger, marks={"BTC-USDT-SWAP": 100.0})[0]
+    assert row["breakeven_at_r"] == pytest.approx(1.0)
+    assert row["breakeven_done"] is False
+    assert row["stop_moved"] is False
+
+    moved = _position(breakeven_at_r=1.0, stop_price=100.0, initial_stop_price=97.0,
+                      stop_rule="breakeven")
+    ledger = _ledger(tmp_path, "m2", positions=[moved])
+    row = open_positions(["m2"], ledger=ledger, marks={"BTC-USDT-SWAP": 100.0})[0]
+    assert row["breakeven_done"] is True
+    assert row["stop_moved"] is True
+    assert row["stop_rule"] == "breakeven"
+
+
+def test_short_breakeven_uses_the_favourable_side(tmp_path: Path) -> None:
+    """Short'ta başabaş stop'u girişin ALTINDA ya da girişte olur, üstünde değil."""
+    below = _position(direction="short", stop_price=100.0, initial_stop_price=103.0,
+                      breakeven_at_r=1.0, high_water=101.0, low_water=95.0)
+    ledger = _ledger(tmp_path, "m", positions=[below])
+    assert open_positions(["m"], ledger=ledger, marks={})[0]["breakeven_done"] is True
+
+    above = _position(direction="short", stop_price=103.0, initial_stop_price=103.0,
+                      breakeven_at_r=1.0, high_water=101.0, low_water=95.0)
+    ledger = _ledger(tmp_path, "m2", positions=[above])
+    assert open_positions(["m2"], ledger=ledger, marks={})[0]["breakeven_done"] is False
+
+
+def test_giveback_trailing_is_active_only_after_the_partial_filled(tmp_path: Path) -> None:
+    """Geri verme takibi kısmi çıkıştan ÖNCE devreye girmez (core/engine.py::_giveback_stop)."""
+    armed = _position(trailing_atr=None, trail_giveback_pct=0.5,
+                      partial_tp={"r": 1.5, "fraction": 0.5}, partial_done=False)
+    ledger = _ledger(tmp_path, "m", positions=[armed])
+    row = open_positions(["m"], ledger=ledger, marks={})[0]
+    assert row["partial_tp"] == {"r": 1.5, "fraction": 0.5}
+    assert row["trailing_active"] is False
+
+    filled = _position(trailing_atr=None, trail_giveback_pct=0.5,
+                       partial_tp={"r": 1.5, "fraction": 0.5}, partial_done=True)
+    ledger = _ledger(tmp_path, "m2", positions=[filled])
+    row = open_positions(["m2"], ledger=ledger, marks={})[0]
+    assert row["partial_done"] is True
+    assert row["trailing_active"] is True
+
+
+def test_atr_trailing_counts_as_active_without_a_partial(tmp_path: Path) -> None:
+    """ATR takibi (kural 9) kısmi çıkış şartına bağlı değildir."""
+    ledger = _ledger(tmp_path, "m", positions=[_position(trailing_atr=1.0)])
+    assert open_positions(["m"], ledger=ledger, marks={})[0]["trailing_active"] is True
+
+
+def test_trade_rows_carry_leverage_margin_and_the_exit_rule() -> None:
+    """Çıkışın ALT sebebi `notes` kuyruğundan okunur; `exit_reason` onu taşımaz."""
+    rows = recent_trades({"m": [_trade(
+        exit_reason="stop", leverage=3.0, margin=40.0,
+        notes="hedef 105 | exit_rule=trailing_atr",
+    )]})
+    assert rows[0]["leverage"] == pytest.approx(3.0)
+    assert rows[0]["margin"] == pytest.approx(40.0)
+    assert rows[0]["exit_rule"] == "trailing_atr"
+    assert rows[0]["is_partial"] is False
+
+
+def test_trade_without_an_exit_rule_tag_is_not_invented() -> None:
+    """Etiketi olmayan satır uydurulmaz: "ilk stop aldı" etiketin YOKLUĞUdur."""
+    rows = recent_trades({"m": [_trade(exit_reason="stop", notes="")]})
+    assert rows[0]["exit_rule"] == ""
+
+
+def test_partial_exit_rows_are_flagged() -> None:
+    """Kısmi çıkış tamamlanmış bir işlem değildir; sayfa onu istatistikten çıkarabilsin."""
+    rows = recent_trades({"m": [_trade(exit_reason="partial")]})
+    assert rows[0]["is_partial"] is True

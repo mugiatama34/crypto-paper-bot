@@ -816,3 +816,53 @@ def test_legacy_pending_order_without_sizing_defaults_to_risk() -> None:
     assert restored.sizing == "risk"
     assert restored.notional_fraction is None
     assert restored.stop_price == pytest.approx(95.0)
+
+
+# --------------------------------------------------------------------------- #
+# Çıkışın ALT sebebi: motorun yazdığı `exit_rule` etiketi
+# --------------------------------------------------------------------------- #
+def test_exit_instruction_tag_reaches_the_ledger(tmp_path: Path) -> None:
+    """`exit_reason` strateji çıkışında her zaman "signal"dır; talimatın kendi etiketi
+    (ör. scalp katmanının zaman stop'u) olmadan defterde zaman stop'u ile başka bir
+    strateji çıkışı ayırt edilemezdi."""
+    from core.tags import format_tags
+
+    ledger = Ledger(tmp_path)
+    exit_ts = pd.Timestamp("2026-01-01 04:00", tz="UTC")
+    strategy = _Scripted(
+        "m",
+        signals={START: [_long_signal()]},
+        exits={exit_ts: [ExitInstruction(
+            symbol=SYMBOL, action="close",
+            reason=format_tags("zaman stop'u: 16 bar", exit_rule="time_stop"),
+        )]},
+    )
+    engine = Engine([strategy], config=_config(), ledger=ledger)
+
+    engine.run_round(_market(ROWS, bars=1))
+    engine.run_round(_market(ROWS, bars=2))
+    engine.run_round(_market(ROWS, bars=3))
+
+    (trade,) = ledger.read_trades("m")
+    assert trade["exit_reason"] == "signal"
+    assert "exit_rule=time_stop" in trade["notes"]
+
+
+def test_trailing_stop_labels_the_rule_that_moved_it(tmp_path: Path) -> None:
+    """Takip eden stop'un aldığı işlem, ilk stop'un aldığından ayırt edilebilmeli."""
+    ledger = Ledger(tmp_path)
+    # ATR(14) hesaplanabilsin diye önce 15 sakin bar; sonra zirve, sonra düşüş.
+    rows = [(100.0, 101.0, 99.0, 100.0)] * 15
+    rows = rows + [
+        (100.0, 130.0, 99.0, 129.0),    # zirve: trailing stop yukarı taşınır
+        (129.0, 129.5, 100.0, 101.0),   # taşınmış stop alır (ilk stop 95'e hiç inilmedi)
+    ]
+    signal = _long_signal(stop=95.0, trailing_atr=1.0)
+    engine = Engine([_Scripted("m", signals={START: [signal]})], config=_config(), ledger=ledger)
+
+    engine.run_round(_market(rows, bars=1))
+    engine.run_round(_market(rows, bars=len(rows)))
+
+    (trade,) = ledger.read_trades("m")
+    assert trade["exit_reason"] == "stop"
+    assert "exit_rule=trailing_atr" in trade["notes"]

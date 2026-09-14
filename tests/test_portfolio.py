@@ -614,3 +614,82 @@ def test_notional_fraction_pays_the_same_fees_as_everyone() -> None:
     assert position is not None
     assert position.entry_price == pytest.approx(100.0 * 1.0005)  # kayma aleyhte
     assert position.entry_fee == pytest.approx(0.001 * position.qty * position.entry_price)
+
+
+# --------------------------------------------------------------------------- #
+# Çıkışın ALT sebebi (`exit_rule` etiketi)
+# --------------------------------------------------------------------------- #
+def test_moved_stop_is_recorded_on_the_closing_trade() -> None:
+    """Takip eden stop'un aldığı işlem, ilk stop'un aldığından AYIRT EDİLEBİLİR olmalı.
+
+    `exit_reason` ikisine de "stop" der; ayrım sonradan geri hesaplanamaz (defterde
+    yalnızca İLK stop yazılıdır), bu yüzden hareket anında saklanır.
+    """
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position("m", symbol=SYMBOL, direction="long", stop_price=95.0,
+                            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0})
+    assert portfolio.set_stop_price("m", symbol=SYMBOL, direction="long",
+                                    stop_price=99.0, rule="trailing_atr")
+    trades = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 101.0, 98.0, 99.5)})
+    assert [trade.exit_reason for trade in trades] == ["stop"]
+    assert "exit_rule=trailing_atr" in trades[0].notes
+
+
+def test_untouched_stop_carries_no_exit_rule() -> None:
+    """Stop hiç hareket etmediyse etiket YAZILMAZ: "ilk stop aldı" etiketin yokluğudur."""
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position("m", symbol=SYMBOL, direction="long", stop_price=95.0,
+                            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0})
+    trades = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 101.0, 94.0, 94.5)})
+    assert "exit_rule=" not in trades[0].notes
+
+
+def test_refused_stop_move_does_not_claim_a_rule() -> None:
+    """Gevşeme yönündeki hareket reddedilir; reddedilen bir kuralı etiketlemek,
+    işlemi hiç uygulanmamış bir yönetimle etiketlemek olurdu."""
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position("m", symbol=SYMBOL, direction="long", stop_price=95.0,
+                            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0})
+    assert not portfolio.set_stop_price("m", symbol=SYMBOL, direction="long",
+                                        stop_price=90.0, rule="trailing_atr")
+    trades = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 101.0, 94.0, 94.5)})
+    assert "exit_rule=" not in trades[0].notes
+
+
+def test_strategy_exit_carries_the_instruction_rule() -> None:
+    """Zaman stop'u ile başka bir strateji çıkışı defterde ayırt edilebilir olmalı:
+    `exit_reason` bu yolda her zaman "signal"dır."""
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position("m", symbol=SYMBOL, direction="long", stop_price=95.0,
+                            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0})
+    trade = portfolio.close_position("m", symbol=SYMBOL, direction="long",
+                                     reference_price=101.0, ts=TS, exit_rule="time_stop")
+    assert trade is not None
+    assert trade.exit_reason == "signal"
+    assert "exit_rule=time_stop" in trade.notes
+
+
+def test_stop_rule_survives_the_state_round_trip() -> None:
+    """Stop hareketi bir turda olup çıkış başka bir turda gerçekleşebilir: alan
+    `positions.json`'a yazılmazsa etiket sessizce kaybolurdu."""
+    from core.portfolio import OpenPosition
+
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position("m", symbol=SYMBOL, direction="long", stop_price=95.0,
+                            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0})
+    portfolio.set_stop_price("m", symbol=SYMBOL, direction="long", stop_price=99.0, rule="breakeven")
+    state = portfolio.positions("m")[0].as_state()
+    assert state["stop_rule"] == "breakeven"
+    assert OpenPosition.from_state(state).stop_rule == "breakeven"
+
+
+def test_state_without_stop_rule_reads_as_unmoved() -> None:
+    """Alanı olmayan ESKİ satır uydurulmaz, boş okunur."""
+    from core.portfolio import OpenPosition
+
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position("m", symbol=SYMBOL, direction="long", stop_price=95.0,
+                            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0})
+    state = portfolio.positions("m")[0].as_state()
+    state.pop("stop_rule")
+    assert OpenPosition.from_state(state).stop_rule == ""

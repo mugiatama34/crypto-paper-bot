@@ -1467,3 +1467,112 @@ azalması hem de günde 96 yerine 24 commit.
 Alternatif — 15 dakikalık cron'u bırakmak — reddedildi: telafi zaten aynı sonucu verdiği
 için sık tetikleme yalnızca dört kat commit ve dört kat runner dakikası demek olurdu,
 üstelik tetiklemelerin çoğu yine düşerdi.
+
+## 20. İkinci sayfa: `docs/positions.html`, paylaşılan varlıklar ve çıkışın alt sebebi
+
+Dashboard'ın (karar 15-16) cevapladığı soru "hangi model önde"dir: özet, kabul rozetleri,
+eğriler, model detayı. Cevaplamadığı soru ise **"şu anda tam olarak ne açık ve bugüne
+kadar tam olarak ne kapandı"**dır — açık pozisyonun margin'i, riske edilen tutarı, birikmiş
+funding'i, çıkış yönetiminin hangi aşamasında olduğu; kapanmış işlemin kaldıracı,
+komisyonu, çıkış sebebi. Bunlar ölçümün sonucunu değiştirmez ama denetlenebilirliğin
+kendisidir: defterdeki satırı okunur hâlde görmenin tek yolu.
+
+Bu bilgiyi model detayının içine sıkıştırmak iki şeyi bozardı: (a) detay sayfası "bu model
+nasıl işlem yapıyor" sorusuna odaklıdır ve 15 kolonluk bir tablo onu boğardı; (b) karşılaştırma
+tek modelle yapılmaz — "hangi modelde kaç pozisyon açık" sorusu tüm modellerin aynı tabloda
+olmasını gerektirir. Bu yüzden ikinci bir sayfa: `docs/positions.html`.
+
+### İki katman aynı sayfada, tek istatistikte değil
+
+Sayfa iki yükü de okur (`data/metrics.json` + `data/metrics_scalp.json`) ve satırları tek
+listeye indirger — ama **katman etiketi her satırda durur** ve özet şeridi yalnızca AKTİF
+FİLTREYE göre hesaplanır. Katmanlar arası kıyas yapılmaz (CLAUDE.md > Katmanlar); iki
+katmanın ortalama R'sini tek bir sayıda toplamak, tam da o yasağı sessizce delmek olurdu.
+Bir defter görünümünde ise satırların yan yana durması bir kıyas iddiası değildir: "şu an
+ne açık" sorusunun cevabı zaten iki katmanın toplamıdır.
+
+### Kısmi çıkışlar görünür ama sayılmaz
+
+`exit_reason="partial"` satırları tabloda **ayrı satır** olarak durur (defterde de öyle
+durur; kural 1) ama sayfanın istatistiğine **girmez** ve bu tablo başlığında yazar. Kısmi
+çıkış tamamlanmış bir işlem değildir: hâlâ açık bir pozisyonun bir dilimidir ve pozisyon
+kapandığında aynı kurulum ikinci kez satır üretir. Saymak, aynı pozisyonu iki kez ölçüme
+sokar ve kazanma oranını yapay olarak yukarı çekerdi — kısmi çıkış tanımı gereği kârda
+gerçekleşir. Gizlemek de olmazdı: o satır gerçekten deftere yazılmış bir nakit hareketidir.
+
+### Ortak varlıklar: `shared.css` + `shared.js`
+
+İki sayfa da aynı ölçümü çizer. Biçimlendirme ölçümün parçasıdır, süs değil: aynı sayının
+bir sayfada "—", diğerinde "0.00" görünmesi okuyucuya iki ayrı ölçüm gibi gelir. Bu yüzden
+renk paleti, sayı hizası, kart/tablo düzeni, dokunma hedefi tabanı ve tüm biçimleyiciler
+(`num`, `price`, `qty`, `usd`, `fullTs`, çıkış etiketleri, renk/kimlik ataması) tek kopya
+olarak kardeş dosyalarda durur. Sayfaya özgü görseller (eğri grafiği, korelasyon ısı
+haritası, model kartları, açık pozisyon rozetleri) kendi dosyalarında kalır.
+
+Kopyalamak (iki dosyaya aynı CSS/JS) reddedildi: bir gün birinin sessizce ayrışması ve
+aynı defterin iki sayfada farklı okunması demekti. Bir bundler/framework de reddedildi —
+"sıfır bağımlılık, build adımı yok" kuralı (karar 15) duruyor: iki ek `<link>`/`<script>`
+etiketi GitHub Pages'te build gerektirmez.
+
+### Kırılım: 480px
+
+Dashboard'ın tablo/kart eşiği 1060px'tir (11 kolon o genişlikte kırpılmadan sığıyor). Bu
+sayfanın tablosu 15 kolondur ve hiçbir genişlikte "tam sığdı" demek mümkün değil. Karar:
+**480px altında kart düzeni** (hiçbir sayı kırpılmaz, sayfa yatay kaymaz), üstünde tablo —
+ama tablo KENDİ konteynerinde kayar, sayfa değil. Sayfayı kaydırmak kritik kolonu (K/Z)
+ekranın dışında bırakır ve sayfa onu hiç göstermemiş olur; tabloyu kaydırmak ise okuyucunun
+bildiği bir hareket ve hiçbir sayıyı gizlemez.
+
+### `exit_rule`: `exit_reason`'ın taşıyamadığı ayrım
+
+Sayfa "çıkış sebebi" kolonunu isteyince ortaya çıktı ki defter bu soruyu **cevaplayamıyor**.
+`exit_reason` beş kaba koddur (`liquidation`/`stop`/`partial`/`tp`/`signal`) ve ikisi
+birleşiktir:
+
+- `stop` hem ilk stop'u hem takip eden stop'u (ATR trailing, breakeven, geri verme, kısmi
+  çıkışın çektiği stop) anlatır,
+- `signal` hem scalp katmanının **zaman stop'unu** hem başka bir strateji çıkışını anlatır.
+
+Oysa modeller 13/14/15'in ölçtüğü şey tam olarak **yönetimin katkısıdır**: "takip eden
+stop'un aldığı işlem" ile "ilk stop'un aldığı işlem" aynı satıra çökerse o katkı defterden
+okunamaz. Ayrım sonradan geri hesaplanamaz — deftere yalnızca İLK stop yazılır
+(`stop_price` kolonu, R'nin paydası olduğu için) ve stop'un sonradan nereye çekildiği
+yalnızca kapanış anında bilinir.
+
+Çözüm iki parçalı ve dar tutuldu:
+
+1. `OpenPosition.stop_rule` — stop'u EN SON hangi kuralın taşıdığı, hareket anında
+   yazılır (`core/portfolio.py::_tighten_stop`, kuralı veren `core/engine.py::_update_stops`).
+   Yalnızca stop GERÇEKTEN hareket ettiğinde yazılır: reddedilen bir hareketin kuralını
+   saklamak, işlemi hiç uygulanmamış bir yönetimle etiketlemek olurdu.
+2. Kapanışta `| exit_rule=<kural>` etiketi `notes` kolonuna düşer (`core/tags.py`'nin tek
+   format tanımı). Strateji çıkışlarında kural talimatın kendi etiketinden gelir
+   (`ExitInstruction.reason` içindeki `exit_rule=time_stop`).
+
+**Neden yeni bir kolon değil:** `trades.csv` başlığı değişirse eski satırlar okunamaz hâle
+gelir (`core/ledger.py::_assert_header`) ve defterin elle taşınması gerekir. `notes` zaten
+serbest bir kuyruk ve etiket formatı zaten tek yerde tanımlı.
+
+**Neden "ilk stop aldı" için etiket yok:** etiketin YOKLUĞU o bilgiyi taşır. Uydurma bir
+`exit_rule=initial` yazmak, hiç hareket etmemiş bir stop'u bir yönetim kararıymış gibi
+gösterirdi.
+
+### Yeni rapor alanları
+
+`core/report.py` açık pozisyon satırına şunları ekledi: `risk_amount`, `margin`,
+`initial_qty`, `breakeven_at_r`, `breakeven_done`, `partial_tp`, `partial_done`,
+`trail_giveback_pct`, `trailing_active`, `stop_rule`, `stop_moved`; kapanmış işlem satırına
+`leverage`, `margin`, `exit_rule`, `is_partial`, `notes`.
+
+İki ayrım bilinçli:
+
+- **İstek ile OLAY ayrı taşınır.** `breakeven_at_r` modelin açılışta bildirdiği isteği,
+  `breakeven_done` stop'un gerçekten girişe çekilmiş olduğunu söyler. Tek alana indirmek,
+  mekanizmayı bildiren ama henüz tetiklenmemiş bir pozisyonu "yönetildi" gibi gösterirdi.
+- **`breakeven_done` stop'un KENDİSİNDEN okunur**, "pozisyon o R'a ulaştı mı" hesabı burada
+  tekrarlanmaz: `core/report.py` salt okunurdur ve motorun kuralını ikinci kez yazmak,
+  ikisinin bir gün sessizce ayrışması demekti (tek uygulayıcı `core/engine.py::_breakeven_stop`).
+
+`risk_amount` ile `margin` ayrı kolonlardır ve biri diğerinden türetilemez: marj
+notional/kaldıraçtır, risk ise ilk stop'a olan mesafedir (kural 11'in paydası). "Ne kadarı
+bağlı" ile "ne kadarı riskte" aynı soru değildir.

@@ -65,6 +65,7 @@ from typing import Any, Iterable, Literal, Mapping, Sequence
 import pandas as pd
 
 from core.config import get_setting
+from core.tags import format_tags
 from strategies.base import (
     Direction,
     ModelLimits,
@@ -224,6 +225,14 @@ class OpenPosition:
     partial_tp: PartialTakeProfit | None = None
     trail_giveback_pct: float | None = None
     partial_done: bool = False
+    # Stop'u EN SON hangi kuralın hareket ettirdiği ("breakeven" | "giveback" |
+    # "trailing_atr" | "partial"; boş = hiç hareket etmedi, ilk stop duruyor). Defterde
+    # `exit_reason` yalnızca "stop" der; oysa takip eden stop'un aldığı bir işlem ile ilk
+    # stop'un aldığı işlem iki ayrı sonuçtur ve modeller 13/14/15'in ölçtüğü şey tam olarak
+    # bu yönetimin katkısıdır. Sonradan geri hesaplanamaz (defterde yalnızca İLK stop
+    # yazılıdır), bu yüzden hareket anında saklanır ve kapanışta `notes` kuyruğuna
+    # `exit_rule=` etiketiyle düşer.
+    stop_rule: str = ""
     # Sinyalin EN UZAK hedefi. Takip eden stop bunu asla aşamaz (sözleşme): aşsaydı stop
     # hedefin ötesine geçer, hedef hiç dolmaz ve pozisyon her zaman stop'la kapanırdı —
     # yani model "hedefe ulaştım" diyemez hâle gelirdi. Hedef dolduğunda take_profits'ten
@@ -311,6 +320,7 @@ class OpenPosition:
             "partial_tp": partial_tp_to_state(self.partial_tp),
             "trail_giveback_pct": self.trail_giveback_pct,
             "partial_done": self.partial_done,
+            "stop_rule": self.stop_rule,
             "final_target_price": self.final_target_price,
             "funding": self.funding,
             "reason": self.reason,
@@ -348,6 +358,9 @@ class OpenPosition:
             partial_tp=partial_tp_from_state(payload.get("partial_tp")),
             trail_giveback_pct=_opt_float(payload.get("trail_giveback_pct")),
             partial_done=bool(payload.get("partial_done", False)),
+            # Alanı olmayan eski satır "stop hiç hareket etmedi" okunur: uydurmak yerine
+            # boş bırakmak, etiketi olmayan bir işlemi etiketlenmiş gibi göstermez.
+            stop_rule=str(payload.get("stop_rule", "") or ""),
             final_target_price=_opt_float(payload.get("final_target_price")),
             funding=float(payload.get("funding", 0.0)),
             reason=str(payload.get("reason", "")),
@@ -900,7 +913,7 @@ class Portfolio:
                                 fraction_of_initial=partial.fraction, exit_reason="partial")
                 )
                 if position.qty > 0.0:
-                    _tighten_stop(position, trigger)
+                    _tighten_stop(position, trigger, rule="partial")
 
         # 4) Take-profit. Buraya yalnızca stop AYNI mumda tetiklenmediyse gelinir: stop ve TP
         #    aynı mumun aralığındaysa mum içi sıralama bilinemeyeceği için kötü olan (stop)
@@ -938,8 +951,14 @@ class Portfolio:
         ts: pd.Timestamp,
         fraction: float = 1.0,
         exit_reason: ExitReason = "signal",
+        exit_rule: str = "",
     ) -> Trade | None:
-        """Strateji talimatıyla (manage_positions) kapatma/kısmi çıkış."""
+        """Strateji talimatıyla (manage_positions) kapatma/kısmi çıkış.
+
+        `exit_rule` talimatın KENDİ etiketidir (ör. `time_stop`): `exit_reason` bu yolda
+        her zaman "signal" olur ve zaman stop'u ile başka bir strateji çıkışı defterde
+        ayırt edilemez kalırdı — oysa scalp katmanının zaman stop'u ölçülen bir kuraldır.
+        """
         account = self.account(model)
         position = account.find(symbol, direction)
         if position is None:
@@ -949,7 +968,8 @@ class Portfolio:
         )
         return self._close(account, position, exit_price=exit_price,
                            exit_reference=reference_price, ts=ts,
-                           fraction_of_initial=fraction, exit_reason=exit_reason)
+                           fraction_of_initial=fraction, exit_reason=exit_reason,
+                           exit_rule=exit_rule)
 
     def _close(
         self,
@@ -961,6 +981,7 @@ class Portfolio:
         ts: pd.Timestamp,
         fraction_of_initial: float,
         exit_reason: ExitReason,
+        exit_rule: str = "",
     ) -> Trade:
         """Pozisyonun `fraction_of_initial` dilimini kapatır ve nakit etkisini işler.
 
@@ -1030,7 +1051,7 @@ class Portfolio:
             pnl=pnl,
             exit_reason=exit_reason,
             signal_reason=position.reason,
-            notes=position.notes,
+            notes=_exit_notes(position, exit_reason=exit_reason, exit_rule=exit_rule),
         )
 
     # ------------------------------------------------------------------ #
@@ -1055,24 +1076,56 @@ class Portfolio:
         return total
 
     def set_stop_price(
-        self, model: str, *, symbol: str, direction: Direction, stop_price: float
+        self,
+        model: str,
+        *,
+        symbol: str,
+        direction: Direction,
+        stop_price: float,
+        rule: str = "",
     ) -> bool:
         """Stop'u yalnızca SIKILAŞTIRIR (trailing mantığı core/engine.py'de).
 
         Gevşeme yönünde hareket, zarardaki bir pozisyonun stop'unu kaçırıp riski sessizce
         büyütmek olurdu; hesabın değişmezi olarak burada engellenir.
+
+        `rule` hareketi YAPAN kuralın adıdır (core/engine.py verir) ve pozisyonda saklanır;
+        stop'la kapanan işlemin `notes` kuyruğuna `exit_rule=` etiketi olarak düşer.
         """
         position = self.account(model).find(symbol, direction)
         if position is None:
             return False
         # Stop'suz referans pozisyona (kural 15) stop takmak, modelin sözleşmesini
         # ("alıp tut") sessizce değiştirmek olurdu — `_tighten_stop` onu da reddeder.
-        return _tighten_stop(position, stop_price)
+        return _tighten_stop(position, stop_price, rule=rule)
 
 
 # --------------------------------------------------------------------------- #
 # Yardımcılar
 # --------------------------------------------------------------------------- #
+def _exit_notes(
+    position: OpenPosition, *, exit_reason: ExitReason, exit_rule: str
+) -> str:
+    """Pozisyonun notlarına, varsa çıkışın ALT SEBEBİNİ `exit_rule=` etiketiyle ekler.
+
+    `exit_reason` beş kaba koddur (kural 13); rapor ise "stop" ile "takip eden stop'un
+    aldığı işlem"i ve "strateji çıkışı" ile "zaman stop'u"nu ayırmak zorundadır — modeller
+    13/14/15'in ölçtüğü şey tam olarak yönetimin katkısıdır. Ayrım sonradan geri
+    hesaplanamaz: defterde yalnızca İLK stop yazılıdır, stop'un sonradan nereye çekildiği
+    yalnızca kapanış anında bilinir. Etiket `notes` kolonuna düşer, yeni bir kolon
+    açılmaz — defter şeması değişirse eski satırlar okunamaz hâle gelirdi
+    (core/ledger.py::_assert_header).
+    """
+    rule = exit_rule
+    if not rule and exit_reason == "stop":
+        # Stop hiç hareket etmediyse etiket YAZILMAZ: "ilk stop aldı" etiketin yokluğudur,
+        # uydurma bir `exit_rule=initial` değil.
+        rule = position.stop_rule
+    if not rule:
+        return position.notes
+    return format_tags(position.notes, exit_rule=rule)
+
+
 def _gross_pnl(position: OpenPosition, price: float, qty: float) -> float:
     sign = 1.0 if position.direction == "long" else -1.0
     return sign * qty * (price - position.entry_price)
@@ -1084,13 +1137,16 @@ def _mark(position: OpenPosition, marks: Mapping[str, float]) -> float:
     return float(marks.get(position.symbol, position.entry_price))
 
 
-def _tighten_stop(position: OpenPosition, stop_price: float) -> bool:
+def _tighten_stop(position: OpenPosition, stop_price: float, *, rule: str = "") -> bool:
     """Stop'u YALNIZCA sıkıştırır (Portfolio.set_stop_price ile aynı değişmez).
 
     Ayrı bir fonksiyon, çünkü kısmi çıkış stop'u pozisyon nesnesi elde ikenken hareket
     ettirir; `set_stop_price` ise model adı + sembol ile arar. İkisi aynı kuralı
     uygulamalı: gevşeme yönünde hareket, zarardaki bir pozisyonun riskini sessizce
     büyütmek olurdu.
+
+    `rule` yalnızca stop GERÇEKTEN hareket ettiğinde yazılır: hareket etmeyen bir
+    denemenin kuralını saklamak, işlemi hiç uygulanmamış bir yönetimle etiketlerdi.
     """
     if position.stop_price is None:
         return False
@@ -1102,6 +1158,8 @@ def _tighten_stop(position: OpenPosition, stop_price: float) -> bool:
     if tightened == position.stop_price:
         return False
     position.stop_price = tightened
+    if rule:
+        position.stop_rule = rule
     return True
 
 
