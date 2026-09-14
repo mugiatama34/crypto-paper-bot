@@ -226,6 +226,7 @@ class VwapClone(Strategy):
             band_mult=self._band_mult,
             min_vwap_bars=self._min_vwap_bars,
             symbols=self._universe,
+            model=self.name,
         )
         limit = self.limits.max_positions if self.limits.max_positions else len(candidates)
         rng = self._round_rng(market)

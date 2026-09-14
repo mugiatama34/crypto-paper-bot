@@ -82,6 +82,7 @@ class VwapManaged(Strategy):
             atr_period=self._atr_period,
             band_mult=self._band_mult,
             min_vwap_bars=self._min_vwap_bars,
+            model=self.name,
         )
         for candidate in candidates:
             stop = vwap_signal.stop_price(candidate, atr_multiple=self._atr_multiple)

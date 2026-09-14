@@ -102,11 +102,21 @@ def test_a_bar_that_is_still_extending_is_not_a_setup() -> None:
 
 
 def test_a_bar_that_crossed_the_vwap_is_not_a_setup() -> None:
-    """VWAP'i geçmiş bar bir dönüş başlangıcı değil, başka bir kurulumdur."""
-    closes = _reverting()
-    closes[-1] = 120.0
+    """VWAP'i geçmiş bar bir dönüş başlangıcı değil, başka bir kurulumdur.
+
+    Toparlanma ÖLÇÜLÜ olmalı: son bar aynı zamanda gün-çapalı VWAP'in kendi penceresindedir
+    ve uç bir değer (ör. 120) VWAP ile sapmayı öyle kaydırır ki ÖNCEKİ bar da bandın içine
+    düşer — eleme o zaman "VWAP geçildi"den değil "bant içi"nden gelir ve test adının
+    söylediği dalı hiç çalıştırmaz. Sayım (`Survey`) bu ayrımı görünür kılar.
+    """
+    closes = _reverting(rebound=6.0)
+
+    _, survey = vwap_signal.scan(
+        _market(closes), atr_period=14, band_mult=2.0, min_vwap_bars=8
+    )
 
     assert _candidates(_market(closes)) == []
+    assert survey.counts[vwap_signal.CROSSED] == 1
 
 
 def test_the_band_multiple_actually_gates() -> None:
@@ -455,3 +465,110 @@ def test_short_setups_are_symmetric(config: dict[str, Any]) -> None:
     assert signals and signals[0].direction == "short"
     assert signals[0].stop_price is not None
     assert signals[0].stop_price > signals[0].take_profits[0].price
+
+
+# --------------------------------------------------------------------------- #
+# Eleme sayımı (Survey) — "aday yok" barının denetim izi
+# --------------------------------------------------------------------------- #
+# Neden test ediliyor: model 13'ün hiçbir kapısı yoktur, yani `signals=0` demek
+# "propose hiç aday bulmadı" demektir ve defterdeki boşluk tek başına bunu sessizce
+# bozulmuş bir sinyal modülünden ayırt etmez. Sayım o ayrımı taşıyan tek kayıttır.
+def test_the_survey_counts_a_found_setup() -> None:
+    candidates, survey = vwap_signal.scan(
+        _market(), atr_period=14, band_mult=2.0, min_vwap_bars=8
+    )
+
+    assert len(candidates) == 1
+    assert survey.examined == 1
+    assert survey.candidates == 1
+    assert survey.counts[vwap_signal.SETUP] == 1
+    assert survey.furthest_symbol == SYMBOL
+    assert survey.max_extension == pytest.approx(abs(candidates[0].z_prev))
+
+
+def test_the_survey_separates_no_reversal_from_a_crossed_vwap() -> None:
+    """İkisi farklı şeyler söyler: biri trendin sürdüğünü, diğeri dönüşün kaçırıldığını."""
+    extending = _reverting()
+    extending[-1] = extending[-2] - 1.0
+    _, still = vwap_signal.scan(
+        _market(extending), atr_period=14, band_mult=2.0, min_vwap_bars=8
+    )
+    _, crossed = vwap_signal.scan(
+        _market(_reverting(rebound=6.0)), atr_period=14, band_mult=2.0, min_vwap_bars=8
+    )
+
+    assert still.counts[vwap_signal.STILL_EXTENDING] == 1
+    assert still.counts[vwap_signal.CROSSED] == 0
+    assert crossed.counts[vwap_signal.CROSSED] == 1
+    assert crossed.counts[vwap_signal.STILL_EXTENDING] == 0
+
+
+def test_the_survey_reports_how_close_the_band_came() -> None:
+    """0 aday üreten bir barda "en uzak sembol kaç σ'daydı" sorusunun cevabı budur.
+
+    Bandı 2σ'da bırakıp hiç aday görmeyen bir gün ile bandın kıl payı ötesinde duran bir
+    gün bambaşka iki durumdur; sayım olmadan ikisi de "sinyal yok" satırıdır.
+    """
+    closes = _reverting()
+    closes[-1] = 120.0  # sapmayı öyle kaydırır ki önceki bar da bandın içine düşer
+
+    candidates, survey = vwap_signal.scan(
+        _market(closes), atr_period=14, band_mult=2.0, min_vwap_bars=8
+    )
+
+    assert candidates == []
+    assert survey.counts[vwap_signal.INSIDE_BAND] == 1
+    assert 0.0 < survey.max_extension < 2.0
+
+
+def test_the_survey_counts_symbols_without_a_usable_vwap() -> None:
+    """Sapması sıfır olan pencerede z tanımsızdır: bant içi DEĞİL, ölçülemez sayılır."""
+    flat = market({SYMBOL: frame([100.0] * 40, spread=SPREAD, freq="15min", start=START)})
+
+    _, survey = vwap_signal.scan(flat, atr_period=14, band_mult=2.0, min_vwap_bars=8)
+
+    assert survey.examined == 1
+    assert survey.counts[vwap_signal.NO_VWAP] == 1
+    assert survey.furthest_symbol is None
+    assert survey.describe()
+
+
+def test_the_survey_only_counts_the_models_own_universe() -> None:
+    """Kopyanın evreni dışındaki sembol taranmaz: sayım modelin gördüğü kadardır."""
+    data = market(
+        {
+            SYMBOL: frame(_reverting(), spread=SPREAD, freq="15min", start=START),
+            OTHER: frame(_reverting(), spread=SPREAD, freq="15min", start=START),
+        }
+    )
+
+    _, survey = vwap_signal.scan(
+        data, atr_period=14, band_mult=2.0, min_vwap_bars=8, symbols=[SYMBOL]
+    )
+
+    assert survey.examined == 1
+
+
+def test_the_survey_does_not_change_what_propose_returns() -> None:
+    """Sayım bir denetim izidir; ölçümü etkilerse eklenmemiş olması gerekirdi."""
+    data = _market()
+
+    proposed = vwap_signal.propose(data, atr_period=14, band_mult=2.0, min_vwap_bars=8)
+    scanned, _ = vwap_signal.scan(data, atr_period=14, band_mult=2.0, min_vwap_bars=8)
+
+    assert proposed == scanned
+
+
+def test_propose_logs_the_survey_with_the_model_label(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """İki model aynı barı ayrı evrenlerle tarar; iki sayım satırı ayırt edilebilmeli."""
+    with caplog.at_level("INFO", logger="strategies.vwap.signal"):
+        vwap_signal.propose(
+            _market(), atr_period=14, band_mult=2.0, min_vwap_bars=8, model="vwap_clone"
+        )
+
+    assert any(
+        "vwap_clone" in record.message and vwap_signal.ARM_NAME in record.message
+        for record in caplog.records
+    )
