@@ -1,0 +1,457 @@
+"""Modeller 13 (`vwap_clone`) ve 14 (`vwap_managed`): ortak sinyal, ayrışan kurallar.
+
+İkisinin SİNYALİ tek kopyadır (`strategies/vwap/signal.py`); ayrışan şey boyutlandırma,
+kapılar ve parametre öğrenimidir. Buradaki testler ayrımın doğru yerden geçtiğini çiviler:
+sinyal ortaksa 13 ↔ 14 farkı "ev kurallarının katkısı" olarak okunabilir, ortak değilse
+iki ayrı sinyalin farkına dönüşür.
+"""
+
+from __future__ import annotations
+
+import random
+from typing import Any
+
+import pandas as pd
+import pytest
+
+from core.config import load_config
+from core.layers import resolve_layer
+from core.tags import find_tag, parse_tag
+from core.validate import validate_signal
+from strategies.base import ClosedTrade, MarketData
+from strategies.vwap import signal as vwap_signal
+from strategies.vwap_clone import VwapClone
+from strategies.vwap_managed import VwapManaged
+from tests.helpers_market import frame, market
+
+SYMBOL = "BTC-USDT-SWAP"
+OTHER = "ETH-USDT-SWAP"
+START = pd.Timestamp("2026-01-01 00:00:00", tz="UTC")
+
+
+@pytest.fixture()
+def config() -> dict[str, Any]:
+    return resolve_layer(load_config(), "scalp").config
+
+
+# --------------------------------------------------------------------------- #
+# Sentetik kurulum: gün içinde aşağı sapma, sonra dönüş
+# --------------------------------------------------------------------------- #
+# Bar aralığı kasten DAR (spread=0.1): ATR barların kendi genişliğinden beslenir, VWAP
+# sapması ise günün fiyat YAYILIMINDAN. İkisini ayırmak, model 14'ün 1.5R kapısının
+# gerçekten canlı olduğu (hedefin VWAP tarafından kırpıldığı) bir kurulum üretmenin tek
+# yoludur — geniş barlarda stop mesafesi VWAP'e olan mesafeyi yutar ve her kurulum elenir.
+SPREAD = 0.1
+
+
+def _reverting(
+    *,
+    step: float = 0.5,
+    spike: float = 0.0,
+    flat_bars: int = 20,
+    ramp_bars: int = 14,
+    rebound: float = 0.25,
+) -> list[float]:
+    """Düz bir gün, ardından kademeli düşüş ve SON barda küçük bir toparlanma.
+
+    Bant dışına çıkan bar SON BAR DEĞİL bir öncekidir: kolun şartı "önceki bar bandın
+    dışında kapandı, bu bar VWAP'e doğru bir adım attı"dır.
+
+    `spike` son iniş barını derinleştirir, yani kurulumun GÜCÜNÜ (|z_prev|) artırır —
+    stop mesafesini neredeyse hiç değiştirmeden. Güç sırasını ölçen test bu kolu kullanır.
+    """
+    closes = [100.0] * flat_bars + [100.0 - step * (i + 1) for i in range(ramp_bars)]
+    closes[-1] -= spike
+    closes.append(closes[-1] + rebound)
+    return closes
+
+
+def _market(closes: list[float] | None = None, *, symbol: str = SYMBOL) -> MarketData:
+    values = _reverting() if closes is None else closes
+    frames = {symbol: frame(values, spread=SPREAD, freq="15min", start=START)}
+    return market(frames)
+
+
+def _candidates(data: MarketData, *, band_mult: float = 2.0) -> list[Any]:
+    return vwap_signal.propose(
+        data, atr_period=14, band_mult=band_mult, min_vwap_bars=8
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Ortak sinyal
+# --------------------------------------------------------------------------- #
+def test_a_reverting_bar_below_the_band_produces_a_long() -> None:
+    candidates = _candidates(_market())
+
+    assert [item.symbol for item in candidates] == [SYMBOL]
+    assert candidates[0].direction == "long"
+    assert candidates[0].z_prev <= -2.0
+    assert candidates[0].z_prev < candidates[0].z_now < 0.0
+
+
+def test_a_bar_that_is_still_extending_is_not_a_setup() -> None:
+    """Bant dışında olmak bir sinyal değildir: dönüş BAŞLAMIŞ olmalı.
+
+    Şart olmasaydı güçlü bir trendde kol her barda aynı sinyali üretirdi.
+    """
+    closes = _reverting()
+    closes[-1] = closes[-2] - 1.0  # dönüş yok, düşüş sürüyor
+
+    assert _candidates(_market(closes)) == []
+
+
+def test_a_bar_that_crossed_the_vwap_is_not_a_setup() -> None:
+    """VWAP'i geçmiş bar bir dönüş başlangıcı değil, başka bir kurulumdur."""
+    closes = _reverting()
+    closes[-1] = 120.0
+
+    assert _candidates(_market(closes)) == []
+
+
+def test_the_band_multiple_actually_gates() -> None:
+    """Bant çarpanı bir parametre değil, kolun tezinin kendisidir: yükseltmek eler."""
+    data = _market()
+
+    assert _candidates(data, band_mult=2.0)
+    assert _candidates(data, band_mult=50.0) == []
+
+
+def test_both_models_see_the_same_candidate(config: dict[str, Any]) -> None:
+    """13 ↔ 14 farkının "ev kurallarının katkısı" olabilmesinin ön koşulu."""
+    data = _market()
+    clone = VwapClone(config=config).generate_signals(data)
+    managed = VwapManaged(config=config).generate_signals(data)
+
+    assert clone and managed
+    assert clone[0].symbol == managed[0].symbol
+    assert clone[0].direction == managed[0].direction
+
+
+def test_candidates_are_ordered_by_strength() -> None:
+    """Sıra tekrarlanabilirliğin parçası: iki model de en güçlü adayı seçer."""
+    weak = _reverting(spike=0.0)
+    strong = _reverting(spike=3.0)
+    data = market(
+        {
+            SYMBOL: frame(weak, spread=SPREAD, freq="15min", start=START),
+            OTHER: frame(strong, spread=SPREAD, freq="15min", start=START),
+        }
+    )
+
+    candidates = _candidates(data)
+
+    assert [item.symbol for item in candidates] == [OTHER, SYMBOL]
+    assert candidates[0].extension > candidates[1].extension
+
+
+# --------------------------------------------------------------------------- #
+# Model 13 — kopya
+# --------------------------------------------------------------------------- #
+def test_clone_is_a_replica_with_its_own_leverage(config: dict[str, Any]) -> None:
+    model = VwapClone(config=config)
+
+    assert model.is_replica is True
+    assert model.is_benchmark is False
+    assert model.limits is not None
+    assert model.limits.leverage == pytest.approx(10.0)
+    assert model.limits.max_positions == 5
+    assert model.limits.max_per_direction == 3
+    assert model.limits.max_portfolio_risk == pytest.approx(0.08)
+
+
+def test_clone_signals_use_fixed_margin_sizing_and_keep_their_stop(
+    config: dict[str, Any]
+) -> None:
+    signals = VwapClone(config=config).generate_signals(_market())
+
+    assert signals
+    signal = signals[0]
+    assert signal.sizing == "notional_fraction"
+    assert signal.notional_fraction == pytest.approx(0.5)
+    # Çıpanın aksine kopyanın stop'u VARDIR: stop yönetimi kopyalanan sistemin parçasıdır.
+    assert signal.stop_price is not None and signal.stop_price < signal.take_profits[0].price
+    validate_signal(
+        signal,
+        entry_price=signal.take_profits[0].price - 1.0,
+        allowed_directions=["long", "short"],
+        symbol_universe=[SYMBOL],
+        is_replica=True,
+    )
+
+
+def test_clone_carries_the_three_stage_management(config: dict[str, Any]) -> None:
+    signal = VwapClone(config=config).generate_signals(_market())[0]
+
+    assert signal.breakeven_at_r == pytest.approx(1.0)
+    assert signal.partial_tp is not None
+    assert signal.partial_tp.r == pytest.approx(1.5)
+    assert signal.partial_tp.fraction == pytest.approx(0.5)
+    assert signal.trail_giveback_pct == pytest.approx(0.5)
+    assert signal.trailing_atr is None  # iki mekanizma aynı anda kullanılamaz
+
+
+def test_clone_ignores_the_house_gates(config: dict[str, Any]) -> None:
+    """%1 stop tabanı ve 1.5R kapısı kaynak sistemde yok; kopyaya da geçmez."""
+    tight = dict(config)
+    tight["scalp"] = {**config["scalp"], "min_stop_pct": 0.5, "min_reward_risk": 99.0}
+
+    assert VwapClone(config=tight).generate_signals(_market())
+
+
+def test_clone_stays_inside_its_own_universe(config: dict[str, Any]) -> None:
+    """Kaynak sistemde SUI yoktur: katmanın evreni geniş olsa da kopya onu oynamaz."""
+    model = VwapClone(config=config)
+    assert "SUI-USDT-SWAP" not in model._universe
+
+    data = _market(symbol="SUI-USDT-SWAP")
+
+    assert model.generate_signals(data) == []
+
+
+def test_clone_never_exceeds_its_own_position_quota(config: dict[str, Any]) -> None:
+    """Kotanın ötesindeki emir zaten reddedilirdi; tur raporunu sahte retle doldurmaz."""
+    symbols = ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA"]
+    universe = [f"{name}-USDT-SWAP" for name in symbols]
+    data = market(
+        {
+            symbol: frame(_reverting(spike=0.5 * index), spread=SPREAD,
+                          freq="15min", start=START)
+            for index, symbol in enumerate(universe)
+        }
+    )
+
+    signals = VwapClone(config=config).generate_signals(data)
+
+    assert len(signals) == 5
+
+
+def test_clone_tags_the_arm_and_the_combo(config: dict[str, Any]) -> None:
+    """Kol etiketi kırılım için, combo etiketi öğrenme için — ikisi de defterden okunur."""
+    signal = VwapClone(config=config).generate_signals(_market())[0]
+
+    assert parse_tag(signal.reason, "arm") == vwap_signal.ARM_NAME
+    assert parse_tag(signal.reason, "combo").startswith("atr")
+    assert find_tag(signal.reason, "pick") in {"explore", "exploit"}
+
+
+# --------------------------------------------------------------------------- #
+# Model 13 — epsilon-greedy öğrenme
+# --------------------------------------------------------------------------- #
+def _closed(combo: str, r: float, *, symbol: str = SYMBOL, hour: int = 0) -> ClosedTrade:
+    return ClosedTrade(
+        symbol=symbol,
+        direction="long",
+        opened_at=START,
+        closed_at=START + pd.Timedelta(hours=hour),
+        r_multiple=r,
+        signal_reason=f"test | arm={vwap_signal.ARM_NAME} | combo={combo}",
+        exit_reason="tp",
+    )
+
+
+def _never_explores() -> random.Random:
+    """Keşif dalını kapatan RNG: seçim tamamen istatistiğe kalsın."""
+
+    class _Exploit(random.Random):
+        def random(self) -> float:
+            return 1.0
+
+    return _Exploit()
+
+
+def test_clone_learns_the_best_combination_from_its_own_ledger(
+    config: dict[str, Any]
+) -> None:
+    model = VwapClone(config=config)
+    good, bad = "atr1_tp2", "atr0_tp0"
+    model.observe_closed_trades(
+        [_closed(good, 2.0, hour=i) for i in range(5)]
+        + [_closed(bad, -1.0, hour=10 + i) for i in range(5)]
+    )
+
+    combo, stats, explored = model.choose_combo(SYMBOL, rng=_never_explores())
+
+    assert explored is False
+    assert combo.key == good
+    assert stats.mean_r == pytest.approx(2.0)
+
+
+def test_clone_falls_back_to_the_global_average_below_the_sample_floor(
+    config: dict[str, Any]
+) -> None:
+    """Az örnekli sembolde sembolün kendi gürültüsü, genel ortalamadan daha kötü bir tahmin."""
+    model = VwapClone(config=config)
+    good = "atr1_tp2"
+    model.observe_closed_trades(
+        # OTHER'da bolca veri: bu kombinasyon genelde iyi.
+        [_closed(good, 3.0, symbol=OTHER, hour=i) for i in range(5)]
+        # SYMBOL'de yalnızca 1 örnek (eşik 3) ve kötü: sembol verisi yeterli değil.
+        + [_closed(good, -2.0, symbol=SYMBOL, hour=20)]
+    )
+
+    stats = model._stats_for_choice(SYMBOL)
+
+    assert stats[good].trades == 6  # genele düşüldü (5 + 1)
+    assert stats[good].mean_r > 0.0
+
+
+def test_clone_prefers_the_symbols_own_statistics_once_there_is_enough_data(
+    config: dict[str, Any]
+) -> None:
+    model = VwapClone(config=config)
+    combo = "atr1_tp2"
+    model.observe_closed_trades(
+        [_closed(combo, 3.0, symbol=OTHER, hour=i) for i in range(10)]
+        + [_closed(combo, -2.0, symbol=SYMBOL, hour=20 + i) for i in range(3)]
+    )
+
+    stats = model._stats_for_choice(SYMBOL)
+
+    assert stats[combo].trades == 3
+    assert stats[combo].mean_r == pytest.approx(-2.0)
+
+
+def test_clone_state_is_rebuilt_from_scratch_every_round(config: dict[str, Any]) -> None:
+    """Ayrı bir durum dosyası yok: posterior defterin SAF bir fonksiyonu olmalı."""
+    model = VwapClone(config=config)
+    model.observe_closed_trades([_closed("atr0_tp0", 5.0)])
+    model.observe_closed_trades([_closed("atr0_tp0", -5.0)])
+
+    assert model.stats_for(SYMBOL)["atr0_tp0"].trades == 1
+    assert model.stats_for(SYMBOL)["atr0_tp0"].mean_r == pytest.approx(-5.0)
+
+
+def test_clone_ignores_rows_from_a_retired_combination(config: dict[str, Any]) -> None:
+    """Çarpan listesi değişmişse eski satırlar yeni kolların ortalamasına karışmamalı."""
+    model = VwapClone(config=config)
+    model.observe_closed_trades([_closed("atr9_tp9", 5.0)])
+
+    assert all(not item.measured for item in model.stats_for(SYMBOL).values())
+
+
+def test_clone_exploration_share_never_drops_to_zero(config: dict[str, Any]) -> None:
+    """Susturulan kombinasyon bir daha ÖLÇÜLEMEZ; keşif payı bunu engeller."""
+    model = VwapClone(config=config)
+    model.observe_closed_trades([_closed("atr0_tp0", 9.0, hour=i) for i in range(10)])
+    rng = random.Random(7)
+
+    explored = sum(model.choose_combo(SYMBOL, rng=rng)[2] for _ in range(400))
+
+    assert explored == pytest.approx(100, rel=0.35)  # epsilon = 0.25
+
+
+def test_clone_has_twelve_combinations(config: dict[str, Any]) -> None:
+    model = VwapClone(config=config)
+
+    assert len(model._combos) == 12
+    assert len({combo.key for combo in model._combos}) == 12
+
+
+def test_clone_target_multiples_never_undercut_the_partial_level(
+    config: dict[str, Any]
+) -> None:
+    """Hedef 1.5R'ın altında olsaydı kısmi çıkış hiç tetiklenmez, aşama 2-3 ölçülemezdi."""
+    model = VwapClone(config=config)
+    partial_r = model._exit.partial_r
+
+    assert min(combo.target_reward_risk for combo in model._combos) >= partial_r
+
+
+# --------------------------------------------------------------------------- #
+# Model 14 — ev kuralları
+# --------------------------------------------------------------------------- #
+def test_managed_uses_risk_sizing(config: dict[str, Any]) -> None:
+    signal = VwapManaged(config=config).generate_signals(_market())[0]
+
+    assert signal.sizing == "risk"
+    assert signal.notional_fraction is None
+    assert signal.stop_price is not None
+
+
+def test_managed_applies_the_one_percent_stop_floor(config: dict[str, Any]) -> None:
+    """Stop GENİŞLETİLMEZ, kurulum ATLANIR (kural 14'ün aynı gerekçesi)."""
+    tight = dict(config)
+    tight["scalp"] = {**config["scalp"], "min_stop_pct": 0.9}
+
+    assert VwapManaged(config=tight).generate_signals(_market()) == []
+
+
+def test_managed_applies_the_reward_risk_gate(config: dict[str, Any]) -> None:
+    strict = dict(config)
+    strict["scalp"] = {**config["scalp"], "min_reward_risk": 99.0}
+
+    assert VwapManaged(config=strict).generate_signals(_market()) == []
+
+
+def test_managed_target_is_capped_by_the_vwap(config: dict[str, Any]) -> None:
+    """Hedef, projeksiyon ile VWAP'in YAKIN olanıdır — kapının canlı kalmasının koşulu."""
+    model = VwapManaged(config=config)
+    data = _market()
+    candidate = _candidates(data)[0]
+    signal = model.generate_signals(data)[0]
+
+    assert signal.take_profits[0].price <= candidate.vwap + 1e-9
+
+
+def test_managed_plays_one_signal_per_round(config: dict[str, Any]) -> None:
+    """Kıyas hedefi scalp_fixed tur başına tek pozisyon açar; beşi birden açmak farkı bozardı."""
+    universe = [f"{name}-USDT-SWAP" for name in ("BTC", "ETH", "SOL", "XRP")]
+    data = market(
+        {
+            symbol: frame(_reverting(spike=0.5 * index), spread=SPREAD,
+                          freq="15min", start=START)
+            for index, symbol in enumerate(universe)
+        }
+    )
+
+    assert len(VwapManaged(config=config).generate_signals(data)) == 1
+
+
+def test_managed_carries_the_same_management_as_the_clone(config: dict[str, Any]) -> None:
+    """Tek kopya sözleşmesi: iki model aynı çıkış kuralını görmezse fark yönetimin olmaz."""
+    data = _market()
+    clone = VwapClone(config=config).generate_signals(data)[0]
+    managed = VwapManaged(config=config).generate_signals(data)[0]
+
+    assert managed.breakeven_at_r == clone.breakeven_at_r
+    assert managed.partial_tp == clone.partial_tp
+    assert managed.trail_giveback_pct == clone.trail_giveback_pct
+
+
+def test_managed_does_not_learn(config: dict[str, Any]) -> None:
+    """Kanca uygulanmadığı için motor defteri hiç okutmaz — üçüncü değişken yok."""
+    from strategies.base import Strategy
+
+    assert VwapManaged.observe_closed_trades is Strategy.observe_closed_trades
+    assert VwapClone.observe_closed_trades is not Strategy.observe_closed_trades
+
+
+def test_managed_tags_the_arm(config: dict[str, Any]) -> None:
+    """Kol kırılımı scalp katmanının rapor sözleşmesi: etiketsiz satır TagError üretir."""
+    signal = VwapManaged(config=config).generate_signals(_market())[0]
+
+    assert parse_tag(signal.reason, "arm") == vwap_signal.ARM_NAME
+
+
+def test_managed_uses_the_same_stop_scale_as_the_scalp_arms(config: dict[str, Any]) -> None:
+    """Maliyet ölçeği eşit olmazsa 14 ↔ scalp_fixed farkı kısmen maliyet farkı olurdu."""
+    assert config["vwap"]["managed"]["atr_multiple"] == config["scalp"]["stop_atr_multiple"]
+
+
+def test_no_setup_means_no_signal(config: dict[str, Any]) -> None:
+    flat = market({SYMBOL: frame([100.0] * 40, spread=SPREAD, freq="15min", start=START)})
+
+    assert VwapClone(config=config).generate_signals(flat) == []
+    assert VwapManaged(config=config).generate_signals(flat) == []
+
+
+def test_short_setups_are_symmetric(config: dict[str, Any]) -> None:
+    closes = [200.0 - value for value in _reverting()]  # aynı kurulumun aynası
+    data = _market(closes)
+
+    signals = VwapManaged(config=config).generate_signals(data)
+
+    assert signals and signals[0].direction == "short"
+    assert signals[0].stop_price is not None
+    assert signals[0].stop_price > signals[0].take_profits[0].price

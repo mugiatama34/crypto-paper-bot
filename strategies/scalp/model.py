@@ -1,11 +1,18 @@
-"""İki scalp modelinin ORTAK gövdesi: kapılar, zaman stop'u, sinyal kurulumu.
+"""Scalp modellerinin ORTAK gövdesi: kapılar, zaman stop'u, sinyal kurulumu.
 
-Model 11 (`scalp_bandit`) ve model 12 (`scalp_fixed`) bu sınıftan türer ve **yalnızca tek
-bir metodu** farklı uygular: `choose_arm`. Geri kalan her şey — hangi kolların
-çağrıldığı, stop tabanı, hedef/stop kapısı, zaman stop'u, sinyalin nasıl kurulduğu, ret
-gerekçelerinin nasıl loglandığı — burada tek kopyadır. Fark tek satıra indirgenmezse iki
-model arasındaki ortalama R farkı "adaptasyonun katkısı" olmaktan çıkar ve iki ayrı
-uygulamanın farkı hâline gelir; oysa model 12 tam da model 11'in NULL HİPOTEZİDİR.
+Model 11 (`scalp_bandit`), model 12 (`scalp_fixed`) ve model 15 (`scalp_managed`) bu
+sınıftan türer. Her şey — hangi kolların çağrıldığı, stop tabanı, hedef/stop kapısı,
+zaman stop'u, sinyalin nasıl kurulduğu, ret gerekçelerinin nasıl loglandığı — burada tek
+kopyadır. Alt sınıfın değiştirebileceği yalnızca ÜÇ nokta vardır ve her biri ölçülen bir
+eksene karşılık gelir:
+
+    choose_arm       — kol seçimi (model 11 ↔ model 12: adaptasyonun katkısı)
+    exit_management  — üç aşamalı çıkış yönetimi (model 12 ↔ model 15: yönetimin katkısı)
+    rng_identity     — çekilişin kimliği (aşağıya bkz.)
+
+Fark bu üç noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü
+olmaktan çıkar ve iki ayrı uygulamanın farkı hâline gelir; oysa model 12 tam da model
+11'in NULL HİPOTEZİDİR ve model 15 de model 12'nin çıkış yönetimi eklenmiş İKİZİDİR.
 
 **Üç zorunlu kısıt (ikisi kapı, biri çıkış):**
 
@@ -32,9 +39,18 @@ bağı koparır. Kollar tam olarak o vaadin tutup tutmadığıyla ölçülüyor;
 tahsisini anlamsız kılardı (her kol her turda oynanıyorsa öğrenilecek bir tahsis yoktur);
 üstelik `max_positions` kotası turun ilk sembollerine keyfî bir öncelik verirdi.
 
+**`rng_identity` neden var.** Çekiliş `random_seed`, `as_of` ve model KİMLİĞİ ile
+tohumlanır. Kimlik varsayılan olarak modelin kendi adıdır: model 11 ile model 12 aynı
+turda BAĞIMSIZ çekiliş görmelidir, yoksa aradaki fark adaptasyonun değil tesadüfün ölçüsü
+olurdu. Model 15'te ise tam tersi gerekir — model 12 ile AYNI kimliği kullanır, böylece
+ikisi her turda aynı kolu ve aynı sembolü seçer ve aralarındaki ortalama R farkı yalnızca
+çıkış yönetiminden gelir (eşleştirilmiş deney). Hangi durumun geçerli olduğu ölçülen
+eksene bağlıdır, bu yüzden kimlik bir alan olarak durur ve alt sınıf gerekçesiyle
+değiştirir.
+
 Rollere dikkat: bu modül boyut/komisyon/bakiye hesaplamaz (kural 1/2/3/7) ve deftere
 yazmaz. Kol mantığı `strategies/scalp/arms.py`'de, gösterge matematiği
-`core/indicators.py`'dedir.
+`core/indicators.py`'de, çıkış yönetiminin tanımı `strategies/exit_management.py`'dedir.
 """
 
 from __future__ import annotations
@@ -58,6 +74,7 @@ from strategies.base import (
     Strategy,
     TakeProfit,
 )
+from strategies.exit_management import ExitManagement
 from strategies.scalp.arms import ARM_NAMES, ArmParams, ArmSetup, propose_all
 
 logger = logging.getLogger(__name__)
@@ -66,9 +83,15 @@ SIGNALS_PER_ROUND = 1
 
 
 class ScalpModel(Strategy):
-    """İki scalp modelinin ortak gövdesi. `choose_arm` dışında her şey burada."""
+    """Scalp modellerinin ortak gövdesi. Alt sınıfın değiştirebileceği üç nokta vardır."""
 
     allowed_directions: list[Direction] = ["long", "short"]
+    # Turluk çekilişin kimliği. None = modelin kendi adı (bağımsız çekiliş). Bir alt
+    # sınıf başka bir modelin adını yazarsa ikisi AYNI kurulumu seçer — eşleştirilmiş
+    # kıyas isteyen model bunu bilinçli olarak yapar (bkz. modül docstring'i).
+    rng_identity: str | None = None
+    # Üç aşamalı çıkış yönetimi; None = kapalı (model 11 ve 12'nin sözleşmesi).
+    exit_management: ExitManagement | None = None
 
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:
         settings = dict(config) if config is not None else load_config()
@@ -146,16 +169,23 @@ class ScalpModel(Strategy):
         Etiketler ayrıştırılabilir olmak zorundadır (bkz. core/tags.py): kol bazlı kırılım
         (`docs/data/metrics_scalp.json`) bu kuyruktan okunur. Etiketsiz bir satır kırılımı
         sessizce eksiltirdi, bu yüzden okuyan taraf etiketi bulamazsa hata fırlatır.
+
+        Çıkış yönetimi bildirilmişse alanları buraya açılır ve gerekçe metnine de yazılır:
+        aynı kolun aynı kurulumu iki modelde farklı yönetilecekse, hangi satırın hangi
+        kuralla kapandığı defterden okunabilmelidir.
         """
+        managed = self.exit_management
         return Signal(
             symbol=setup.symbol,
             direction=setup.direction,
             stop_price=setup.stop_price,
             take_profits=(TakeProfit(price=setup.target_price, fraction=1.0),),
+            **({} if managed is None else managed.signal_fields()),
             reason=format_tags(
                 f"{setup.detail}; stop {setup.stop_distance_pct * 100:.2f}% "
                 f"({setup.stop_price:.6g}), hedef {setup.target_price:.6g} "
-                f"({setup.reward_risk:.2f}R), zaman stop'u {self._time_stop_bars} bar",
+                f"({setup.reward_risk:.2f}R), zaman stop'u {self._time_stop_bars} bar"
+                + ("" if managed is None else f"; {managed.describe()}"),
                 arm=setup.arm,
                 post_r=posterior,
             ),
@@ -164,12 +194,16 @@ class ScalpModel(Strategy):
     def _round_rng(self, market: MarketData) -> random.Random:
         """Tur ve model başına bağımsız RNG.
 
-        Tohum sabittir ama `as_of` ve model adıyla karışır: aynı `as_of` ile yeniden
+        Tohum sabittir ama `as_of` ve model KİMLİĞİ ile karışır: aynı `as_of` ile yeniden
         koşulan tur birebir aynı seçimi üretir (tekrarlanabilirlik), iki model ise aynı
         turda bağımsız çekiliş görür — model 12'nin eşit ağırlıklı çekilişi model 11'in
         kararının kopyası olsaydı, aradaki fark adaptasyonun değil tesadüfün ölçüsü olurdu.
+
+        Kimlik varsayılan olarak modelin adıdır; `rng_identity` ile başka bir modelin adına
+        bağlanması EŞLEŞTİRİLMİŞ kıyas içindir (bkz. modül docstring'i ve model 15).
         """
-        return random.Random(f"{self._seed}:{market.as_of.isoformat()}:{self.name}")
+        identity = self.rng_identity or self.name
+        return random.Random(f"{self._seed}:{market.as_of.isoformat()}:{identity}")
 
     # ------------------------------------------------------------------ #
     # Çıkış: zaman stop'u

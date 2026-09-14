@@ -1200,3 +1200,191 @@ günde ~5 işlem). Kural 11 tek yetkili boyutlandırma kuralıdır ve katmana g�
 bu yüzden davranış olduğu gibi bırakıldı ve burada kayda geçirildi. Ölçümü bozmuyor (iki model
 de aynı kısıtı görüyor) ama tur loglarında sık `zero_size` WARNING'i üretiyor — bunlar bir
 arıza değil, sermayenin dolu olması.
+
+---
+
+## 18. Scalp katmanına üç model: çıkış yönetimi motoru, `is_replica` ve modeller 13-15
+
+Katmana üç model eklendi ve bunun için çekirdeğe **iki yeni yetenek** girdi: üç aşamalı
+çıkış yönetimi ve kopya (replica) model bayrağı. Üçü de aynı eksende ölçüm yapar ama üç
+farklı soruyu sorar:
+
+| Model | Soru | Kıyas hedefi |
+|---|---|---|
+| 13 `vwap_clone` | Dış sistem BİZİM varsayımlarımızla ne yapardı? | (yarışma dışı) |
+| 14 `vwap_managed` | Aynı sinyal ev kurallarıyla ne yapar? | `vwap_clone`, `scalp_fixed` |
+| 15 `scalp_managed` | Çıkış yönetimi TEK BAŞINA ne katar? | `scalp_fixed` |
+
+### Çıkış yönetimi: neden motorda, stratejide değil
+
+`breakeven_at_r`, `partial_tp` ve `trail_giveback_pct` `Signal`e eklendi; üçü de
+opsiyoneldir ve varsayılanı `None`dır — doldurmayan model (mevcut on üç modelin hepsi) bu
+eklemeden hiçbir biçimde etkilenmez. Uygulama kural 9'un `trailing_atr` için koyduğu sınırın
+aynısına tabidir: **strateji yalnızca isteğini bildirir.** Stop hareketleri
+`core/engine.py`de, kısmi dolum `core/portfolio.py`dedir. Stratejide uygulansaydı kural
+1/3/7 delinir (model kendi pozisyon durumunu tutmaya başlardı) ve iki modelin "aynı
+yönetim" iddiası koddan denetlenemez hâle gelirdi.
+
+**Mum içi sıralama: likidasyon -> stop -> kısmi -> TP.** Kısmi çıkışın stop'tan SONRA
+gelmesi kural 13'ün aynı kuralıdır: aynı mumda ikisi de aralığa giriyorsa mum içi sıra
+bilinemez ve KÖTÜ olan gerçekleşmiş varsayılır.
+
+**Kısmi çıkışın çektiği stop, o mumda bir daha kontrol edilmez.** Bu karar mekanizmanın
+ölçülebilirliğinin tamamıdır. Yeni stop, kısmi dolum gerçekleştikten SONRA verilmiş bir
+emirdir ve mumun daha önceki hareketleri sırasında piyasada durduğu varsayılamaz (kural
+13'ün "emir bir sonraki barda geçerlidir" ilkesi). Tersini yapmak — yeni stop'u aynı mumda
+da kontrol etmek — kısmi çıkışı neredeyse her mumda anında tam çıkışa çevirir ve "kalanı
+koştur" tezini hiç sınanamaz kılardı.
+
+**Stop hareketleri bar KAPANDIKTAN sonra.** Breakeven ve geri verme takibi, mevcut ATR
+trailing'iyle aynı adımda ve aynı gerekçeyle çalışır: barın high/low'una bakıp aynı barın
+stop'unu değiştirmek, o barın içinde geçmişe dönük karar vermek olurdu (kural 12). Üçü de
+yalnızca SIKIŞTIRIR, bu yüzden sıraları önemsizdir — her zaman en sıkı olan kalır.
+
+**`trailing_atr` ile `trail_giveback_pct` aynı anda kullanılamaz** (`core/validate.py`
+`ValueError` fırlatır). İkisi de stop'u sıkıştıran ayrı mekanizmalardır; birlikte
+çalıştıklarında çıkışı hangi kuralın ürettiği defterden okunamaz hâle gelir — oysa bu
+modeller tam olarak çıkış kuralını ölçmek için var. Aynı gerekçeyle `partial_tp.fraction`
+1.0 olamaz (o bir kısmi çıkış değil tam çıkıştır) ve takip eden stop **orijinal hedefi asla
+aşamaz**: aşsaydı hedef hiç dolmaz ve her işlem stop'la kapanırdı, yani `exit_reason`
+kolonunun tüm anlamı kaybolurdu.
+
+`ExitReason`a `"partial"` eklendi: kısmi çıkış aynı anda stop'u da hareket ettirir ve
+defterde `"tp"`den ayırt edilemezse "modelin hedefi doldu" ile "yönetim kuralı devreye
+girdi" aynı satıra çöker.
+
+### `is_replica`: neden `is_benchmark`in yanına ikinci bir bayrak
+
+Kopya model bir dış sistemin kurallarını yeniden üretir ve o sistemin boyutlandırması
+**sabit teminattır**, %1 risk değil. Kural 15'in muafiyetini (`notional_fraction`) ona da
+açmak gerekiyordu, ama `is_benchmark`i kullanmak iki ayrı şeyi tek bayrağa bindirirdi:
+
+- **Ölçtükleri soru farklı.** Çıpa "piyasa ne yaptı", kopya "dış sistem bizim maliyet,
+  kayma, funding ve likidasyon varsayımlarımız altında ne yapardı" der. Kabul çıtasının
+  "edge" kapısı çıpayı ZEMİN olarak kullanır (kural 15); kopyayı da zemin saymak, çıtayı
+  bir stratejinin performansına bağlamak olurdu. Bu yüzden `_benchmark_return` yalnızca
+  `is_benchmark` satırlarını okur.
+- **Stop kuralları TERS.** Çıpanın tanımı stop'suz olmasıdır ve uydurma bir stop uydurma
+  bir R üretir; bu yüzden `stop_price` None OLMALIDIR. Kopyanın stop'u ise kopyalanan
+  sistemin kendi kuralıdır ve stop yönetimi tam olarak ölçülmek istenen şeydir; bu yüzden
+  `stop_price` ZORUNLUDUR. Tek bayrakla iki kuralı birden ifade etmek imkânsızdı.
+
+Ortak yanları da var ve o yüzden ikisi de `is_competitor = False`: ikisi de kendi
+boyutlandırma kuralıyla koşar, dolayısıyla **ortalama R sıralamasına girmez**, kabul
+kapılarına tabi değildir, stop bandı medyanına katılmaz ve maliyet ölçeği kolonlarında
+(`avg_stop_distance_pct`, `cost_per_r`) `nan` alır.
+
+Kopyada bu son nokta bilinçli bir seçimdir: **sayı hesaplanabilir ama kıyas anlamsızdır.**
+Kopya 1R'yi sabit teminattan türetir, yarışmacılar sermayenin %1'inden; ikisini aynı sütuna
+koymak farklı paydaya sahip iki oranı karşılaştırılabilirmiş gibi sunardı. R'nin KENDİSİ
+ölçülmeye devam eder (kopyanın kendi geçmişi ve kendi bandit'i ona dayanır), yalnızca
+maliyet kolonları boştur.
+
+**`ModelLimits` yalnızca kopya modellere açıktır.** Kaynak sistemin eşzamanlı pozisyon
+sayısı, yön kotası, portföy riski tavanı ve kaldıracı onun kendi kurallarıdır. Model bunları
+kendi içinde uygulayamaz — açık pozisyonlarını `generate_signals`ta göremez (kural 4/16) ve
+boyut/kaldıraç hesabı zaten `core/portfolio.py`nindir (kural 3) — bu yüzden limitler bir
+BİLDİRİMDİR ve uygulayan yine tek yetkili yerdir. Yarışmacılara kapalı olması kural 6'nın
+kendisidir: tabloda yan yana duran iki satır farklı limitlerle koşamaz. Kapı
+`core/validate.py::validate_model`dedir ve `strategies/registry.py` modeli kurarken çağırır;
+kurulumda patlayan model `main.py` tarafından atlanır ve koşu hata koduyla biter (sessiz
+eksik yarışma olmaz).
+
+Kaldıraç tavanı `REPLICA_LEVERAGE_CAP = 10`dur. Kök `leverage_cap` (5) ölçümün ortak
+tavanıdır ve yarışmacıların hepsi ona tabidir; tavansız bırakmak ise tek bir config
+satırıyla 50x bir satırın tabloya girmesi demekti.
+
+### Kopya modelde likidasyon kapatılmaz
+
+**Bu kararın tek bir gerekçesi var ve pazarlık konusu değil: 10x'te likidasyon gerçek bir
+risktir.** Bakım marjı %0.5 iken 10x bir pozisyon girişin ~%9.5 ötesinde likide olur. Model
+13'ün stop'ları bundan dardır (tipik olarak %0.4-1.0), yani çoğu işlemde stop önce
+tetiklenir — ama boşluklu açılışlarda, funding birikiminde ve stop'un geniş kaldığı
+kombinasyonlarda likidasyon devreye girer ve girmelidir.
+
+Alternatif — kopya için likidasyon kontrolünü atlamak ya da bakım marjını gevşetmek —
+kopyayı **haksız biçimde iyi gösterirdi.** Kopyanın cevapladığı soru "dış sistem bizim
+varsayımlarımız altında ne yapardı"dır; o varsayımların içinde likidasyon da vardır ve
+kaldıracın bedeli tam olarak budur. Likidasyonu kapatmak, kopyaya yarışmacıların hiçbirinin
+sahip olmadığı bir muafiyet vermek ve "10x kullanmak bedava" demek olurdu. Kural 15'in
+"muafiyet YALNIZCA boyutlandırmadadır" cümlesi burada da geçerlidir: komisyon, kayma,
+funding, likidasyon, evren ve dolum kuralı kopyaya da birebir aynı uygulanır.
+
+Aynı gerekçe `liquidation_price`ın giriş notional'ı üzerinden hesaplanmasını da korur
+(karar 5): eşiği mum içi mark fiyatına göre yeniden hesaplamak tekrarlanabilirliği bozardı.
+
+### Model 13: kopyanın kendi kuralları
+
+- **Sinyal:** gün-çapalı VWAP'ten `band_mult × sapma` kadar uzaklaşıp DÖNMEYE BAŞLAYAN bar.
+  Dönüş şartı zorunludur: yalnızca "bant dışında" olmak, güçlü bir trendde her barda aynı
+  sinyali üretirdi.
+- **Boyutlandırma:** `notional_fraction = 0.5` + `leverage = 10`. Başlangıç sermayesinde
+  (10.000) bu tam olarak "500 USDT teminat, 5.000 notional"dır. Sabit bir USDT tutarı yazmak
+  yerine oran yazıldı: hesap iki katına çıktığında kopya, kaynak sistemin yarısı kadar risk
+  alan bir şeye dönüşürdü.
+- **Ev kapıları UYGULANMAZ.** %1 stop tabanı ve 1.5R kapısı kaynak sistemde yok; eklemek
+  kopyayı "ev kurallarıyla koşan bir model"e çevirirdi — ki o zaten model 14'tür ve ikisinin
+  farkı tam olarak bu kapıların (artı boyutlandırmanın) katkısıdır.
+- **Parametre öğrenimi:** epsilon-greedy (0.25), 4 ATR çarpanı × 3 hedef çarpanı = 12
+  kombinasyon. İstatistik SEMBOL bazındadır — aynı kurulum BTC'de ve PENGU'da aynı stop
+  çarpanıyla aynı sonucu vermez — ama sembol başına veri geç birikir; 3 örnekten az veri
+  varken sembolün kendi gürültüsüne uymak, genel ortalamadan DAHA KÖTÜ bir tahmindir, o
+  yüzden genele düşülür. Geri düşüş kombinasyon bazındadır, sembolün tamamı için değil:
+  bir kombinasyon 10 kez, diğeri 1 kez oynanmış olabilir.
+- **Durum deftere yazılır, ayrı state dosyası YOKTUR** (`scalp_bandit` ile aynı desen ve aynı
+  gerekçe): ikinci bir doğruluk kaynağı, defterle ayrıştığında hangisinin doğru olduğunu
+  bilinemez kılardı. Denetim izi `reason` kuyruğundadır: `| arm=vwap_revert | combo=atr2_tp1`.
+- **Hedef çarpanlarının en küçüğü (1.5) kısmi çıkış seviyesine EŞİTTİR.** Daha küçük bir
+  hedef, kısmi çıkış hiç tetiklenmeden pozisyonu tamamen kapatır ve üç aşamalı yönetimin
+  ikinci/üçüncü aşaması hiç ölçülemezdi.
+- **Evren: 13 sembol** (SUI yok). Katmanın evreni 14'tür ve aradaki fark bilinçlidir:
+  fazladan bir sembolde işlem açmak kopyayı kopya olmaktan çıkarırdı.
+
+### Model 15: eşleştirilmiş deney ve paylaşılan çekiliş kimliği
+
+Model 15 `ScalpFixed`ten TÜRER (`ScalpModel`den değil): kol seçimi kuralının ikinci bir
+kopyası, "aynı eşit ağırlıklı çekiliş" iddiasını koddan denetlenemez kılardı. Miras,
+iddiayı bir yorum olmaktan çıkarıp bir olguya çevirir — `choose_arm` tek bir yerde tanımlı.
+
+`ScalpModel`e `rng_identity` alanı eklendi ve model 15 onu `scalp_fixed`in adına bağlar.
+Bu, projenin başka bir yerinde bilinçli olarak TERSİ olan bir karardır ve ikisi de aynı
+ilkeden gelir: **çekiliş, ölçülmeyen eksende paylaşılmalı; ölçülen eksende bağımsız
+olmalı.**
+
+- Model 11 ↔ 12'de ölçülen şey SEÇİMİN kendisidir; çekilişi paylaşsalardı fark adaptasyonun
+  değil tesadüfün ölçüsü olurdu (karar 17).
+- Model 12 ↔ 15'te ölçülen şey seçim DEĞİL, aynı seçimin nasıl yönetildiğidir; bağımsız
+  çekiliş, farkın içine "hangi model şanslı kurulumu çekti" gürültüsünü katardı.
+
+Bu, iki modelin defterlerinin birebir aynı olacağı anlamına gelmez ve gelmemelidir: yönetim
+bazı pozisyonları erken kapatır, dolayısıyla `max_positions` doluluğu ve
+`duplicate_position` retleri zamanla ayrışır. Ayrışan şey DOLUMLARDIR, sinyaller değil — ve
+bu ayrışmanın kendisi yönetimin bir sonucudur, ölçümün bir kusuru değil.
+
+### Çıkış yönetimi tek bir modülde: `strategies/exit_management.py`
+
+Üç model de aynı config bloğunu (`exit_management`) aynı sınıf üzerinden okur. Model 15 ile
+`scalp_fixed` arasındaki ortalama R farkının "çıkış yönetiminin katkısı" olarak
+okunabilmesi, yönetimin tek bir yerde tanımlı olmasına bağlıdır: üç dosyaya kopyalansaydı
+bir gün birinin `partial_tp.r` değeri sessizce kayar ve fark "iki ayrı yönetimin farkı"
+hâline gelirdi. Aynı gerekçe `strategies/vwap/signal.py` için de geçerli — model 13 ve 14
+sinyali tek kopyadan görür.
+
+### Model 14'ün hedefi neden VWAP ile kırpılıyor
+
+Model 14'ün 1.5R kapısının canlı kalması için hedef, projeksiyon (`2.0 × stop`) ile
+yapısal engelin (VWAP) YAKIN olanıdır — `strategies/scalp/arms.py`nin aynı gerekçesi.
+Yalnızca projeksiyon kullanmak, oranı sabit bir sayıya çivileyip kapıyı ölü koda
+çevirirdi. Model 13 ise yalnızca projeksiyon kullanır, çünkü kaynak sistemde böyle bir kapı
+yok ve hedef çarpanı öğrenilen bir parametredir.
+
+Model 14'ün stop ölçeği (`vwap.managed.atr_multiple = 5.0`) scalp kollarınınkiyle
+(`scalp.stop_atr_multiple`) BİREBİR aynı tutuldu: ayrışsalardı 14 ↔ `scalp_fixed` farkı
+kısmen maliyet ölçeği farkı olurdu (kural 14 / Rapor Kolonları) ve sinyal farkı gölgelenirdi.
+
+### Kol etiketi: `arm=vwap_revert`
+
+Scalp katmanı kol kırılımı üretir ve `core/metrics.py::arm_of` etiketsiz satırda `TagError`
+fırlatır (kural: "her işlem bir kola aittir"). Model 13 ve 14'ün kolu yoktur ama etiketi
+vardır: ikisi de `arm=vwap_revert` yazar. Alternatif — kırılımı bu modeller için atlamak —
+kırılım toplamı ile model toplamını sessizce ayrıştırırdı.

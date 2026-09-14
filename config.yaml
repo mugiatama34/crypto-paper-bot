@@ -144,7 +144,13 @@ layers:
   scalp:
     # 15 dakikalık scalp katmanı: iki model (model 11 adaptif, model 12 kontrol).
     timeframe: "15m"
-    models: ["scalp_bandit", "scalp_fixed"]
+    # Katmanın BEŞ modeli, iki eksende:
+    #   adaptasyonun katkısı   scalp_bandit (11) ↔ scalp_fixed (12)
+    #   çıkış yönetiminin katkısı  scalp_fixed (12) ↔ scalp_managed (15)
+    #   ev kurallarının katkısı    vwap_clone (13) ↔ vwap_managed (14)
+    # vwap_clone bir YARIŞMACI DEĞİLDİR (is_replica): dış bir sistemin kopyasıdır, kendi
+    # boyutlandırmasıyla (sabit teminat × 10x) koşar ve tabloda ayrı bir bölümde durur.
+    models: ["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"]
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 14 sembol elle
@@ -216,3 +222,79 @@ scalp:
     min_allocation: 0.05    # hiçbir kol %5 tahsisin altına düşmez (susturulan kol ölçülemez)
     window_trades: 100      # kayan pencere: kol başına son 100 kapanmış işlem
     prior_r_sigma: 1.0      # posterior önseli: R'nin a priori standart sapması
+
+# --- Üç aşamalı çıkış yönetimi (modeller 13, 14 ve 15 BİREBİR aynı okur) ---
+# Tanımı strategies/exit_management.py'de, uygulaması core/engine.py (stop hareketleri) ve
+# core/portfolio.py'dedir (kısmi dolum) — kural 9'un trailing için koyduğu sınırın aynısı.
+#
+# Neden tek blok: model 15 ile scalp_fixed arasındaki ortalama R farkının "çıkış
+# yönetiminin katkısı" olarak okunabilmesi, üç modelin de AYNI kuralı görmesine bağlıdır.
+# Model başına ayrı bloklar, bir gün birinin sessizce ayrışması ve farkın "iki ayrı
+# yönetimin farkı"na dönüşmesi demekti.
+#
+# Bu blok yalnızca üç model tarafından okunur; diğer modeller anahtarı hiç sormaz ve
+# davranışları değişmez (scalp bloğuyla aynı desen).
+exit_management:
+  breakeven_at_r: 1.0       # 1R'a ULAŞILDIĞINDA stop girişe çekilir (risk sıfırlanır)
+  partial_tp:
+    r: 1.5                  # 1.5R'da kısmi çıkış; stop AYNI ANDA bu seviyeye çekilir
+    fraction: 0.5           # başlangıç boyutunun yarısı (1.0 olamaz — o tam çıkıştır)
+  trail_giveback_pct: 0.5   # kısmi sonrası: en iyi kazancın en çok yarısı geri verilir
+
+# --- VWAP sapma-dönüş modelleri (13 ve 14) ---
+# Sinyal tek kopyadır (strategies/vwap/signal.py); blok da tek kaynaktır. band_mult ve
+# min_vwap_bars İKİ MODELDE de aynıdır — ayrışsalardı 13 ↔ 14 farkı "ev kurallarının
+# katkısı" olmaktan çıkıp iki ayrı sinyalin farkı olurdu.
+vwap:
+  band_mult: 2.0            # VWAP'ten kaç hacim ağırlıklı standart sapma uzaklık "bant dışı"
+  min_vwap_bars: 8          # gün çapasından bu kadar bar geçmeden sapma anlamlı değil (8 × 15m = 2 saat)
+
+  # Model 14 — EV kurallarıyla koşan yarışmacı. Çarpanlar SABİT: öğrenme bu modelde yok,
+  # çünkü model 14 ↔ scalp_fixed kıyasının tek değişkeni sinyal + çıkış yönetimi olmalı.
+  managed:
+    atr_multiple: 5.0       # scalp kollarıyla AYNI stop ölçeği (scalp.stop_atr_multiple):
+                            # farklı olsaydı model 14 ↔ scalp_fixed farkı kısmen maliyet
+                            # ölçeği farkı olurdu (kural 14 / Rapor Kolonları).
+    target_reward_risk: 2.0 # hedef PROJEKSİYONU; gerçek hedef bununla VWAP'in yakın olanı
+
+  # Model 13 — dış sistem KOPYASI (is_replica). Buradaki her sayı kaynak sistemin kendi
+  # kuralıdır, ölçümün ortak koşulu değil; bu yüzden ev değerlerinden ayrı durur.
+  clone:
+    # Sabit teminat × kaldıraç. Başlangıç sermayesinde (10.000): notional = 0.5 × 10.000
+    # = 5.000 ve marj = 5.000 / 10 = 500 USDT. Oran olarak yazılır ki sermaye büyüdüğünde
+    # kopya, kaynak sistemin yarısı kadar risk alan bir şeye dönüşmesin.
+    notional_fraction: 0.5
+    leverage: 10            # tavanı core/validate.py::REPLICA_LEVERAGE_CAP (10x)
+    max_positions: 5
+    max_per_direction: 3    # aynı YÖNDE en fazla 3 (kök max_short_positions yalnızca short'u kapsar)
+    max_portfolio_risk: 0.08  # açık toplam risk sermayenin %8'ini aşarsa yeni pozisyon açılmaz
+
+    # Epsilon-greedy bandit: 4 ATR çarpanı × 3 hedef çarpanı = 12 kombinasyon.
+    # ATR çarpanları 15 dakikalık barda tipik olarak %0.4-1.0 stop mesafesi verir; scalp
+    # katmanının 8×ATR tavanının (layers.scalp.max_stop_atr_multiple) altındadır.
+    # Hedef çarpanlarının en küçüğü (1.5) kısmi çıkış seviyesine EŞİTTİR: daha küçük bir
+    # hedef, kısmi çıkış hiç tetiklenmeden pozisyonu tamamen kapatır ve üç aşamalı
+    # yönetimin ikinci/üçüncü aşaması ölçülemez hâle gelirdi.
+    atr_multiples: [2.0, 3.0, 4.0, 5.0]
+    target_reward_risks: [1.5, 2.0, 3.0]
+    bandit:
+      epsilon: 0.25         # keşif payı; sıfıra İNMEZ — susturulan kombinasyon ölçülemez
+      min_symbol_samples: 3 # sembolde bu kadar örnek yoksa tüm semboller ortalamasına düşülür
+
+    # Kaynak sistemin evreni: 13 sembol. Katmanın evreni 14'tür (SUI fazladan) ve aradaki
+    # fark BİLİNÇLİDİR — kaynak sistemde SUI yok, fazladan bir sembolde işlem açmak
+    # kopyayı kopya olmaktan çıkarırdı.
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "TON-USDT-SWAP"
+      - "ETHFI-USDT-SWAP"
+      - "PENGU-USDT-SWAP"
+      - "NEAR-USDT-SWAP"

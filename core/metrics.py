@@ -33,6 +33,20 @@ tanımsızdır ve `nan` raporlanır. Tabloda ortalama R sıralamasına da girmez
 gösterirdi. Referansın işi sıralamada yer almak değil, yarışmacıların hesap düzeyi
 getirisine bir zemin vermek: "model piyasayı yendi mi?"
 
+**Kopya (replica) modeller de yarışmacı değildir.** `is_replica=True` bir model bir DIŞ
+SİSTEMİN kurallarını yeniden üretir: boyutlandırması sabit teminattır (%1 risk değil) ve
+kaldıracı kendi sistemininkidir. Stop'u vardır — dolayısıyla defterde `risk_amount` da
+vardır — ama o R, yarışmacıların R'siyle AYNI BİRİM DEĞİLDİR: 1R burada "sermayenin %1'i"
+değil, "sabit teminatın stop mesafesi kadarı"dır. Bu yüzden kopya da ortalama R
+sıralamasına girmez, ayrı bir "REFERANS (dış sistem)" bölümünde durur ve maliyet ölçeği
+kolonlarında (`avg_stop_distance_pct`, `cost_per_r`) `nan` alır: "R başına maliyet" ancak
+ortak risk birimiyle koşan satırlar arasında bir kıyas ölçüsüdür. Kopyanın taşıdığı bilgi
+o kolonlarda değil, hesap düzeyi getirisinde ve kendi işlem geçmişindedir.
+
+Çıpa ile kopya aynı kefeye konmaz: ikisi de yarışma dışıdır ama ölçtükleri soru farklıdır
+("piyasa ne yaptı" ve "dış sistem bizim maliyet/likidasyon varsayımlarımızla ne yapardı"),
+bu yüzden tabloda ayrı bölümlerde dururlar. Kabul çıtasına (iki kapı) ikisi de girmez.
+
 Tanımsız bir metrik (işlem yok, varyans sıfır) `nan` döner; 0.0 döndürmek "ölçüldü ve
 sıfır çıktı" ile "ölçülemedi"yi aynı sayıya indirger ve karşılaştırmayı sessizce bozar.
 Hiç short açmamış bir modelin `cost_per_r`'si 0.0 olsaydı, "maliyetsiz short yapan model"
@@ -108,6 +122,18 @@ class ModelMetrics:
     total: DirectionStats
     account: AccountStats
     is_benchmark: bool = False  # kural 15: yarışmacı değil, referans çıpası
+    is_replica: bool = False    # yarışmacı değil, dış sistem kopyası
+
+    @property
+    def is_competitor(self) -> bool:
+        """Ortalama R sıralamasına ve kabul çıtasına giren satır mı?
+
+        Tek yerde tanımlı olması şart: "yarışmacı" ölçütü tabloda, kabul kapılarında,
+        havuzda ve stop bandı medyanında AYNI küme olmalıdır. Ayrışırlarsa bir modelin
+        bandı hesaplanır ama sıralamada görünmez (ya da tersi) ve iki sayı birbirinin
+        dilinden konuşmayı bırakır.
+        """
+        return not (self.is_benchmark or self.is_replica)
 
     def by_direction(self, direction: str) -> DirectionStats:
         return {"long": self.long, "short": self.short, TOTAL: self.total}[direction]
@@ -160,14 +186,21 @@ def direction_stats(
     *,
     direction: str = TOTAL,
     is_benchmark: bool = False,
+    is_replica: bool = False,
 ) -> DirectionStats:
     """`direction` ("long" | "short" | "total") için işlem metrikleri.
 
-    `is_benchmark=True` iken maliyet ölçeği kolonları koşulsuz `nan` olur (kural 15).
-    Stop'suz işlemde bu değerler zaten hesaplanamaz, ama garantiyi defterin içeriğine
-    bırakmak kırılgan olurdu: referans modelin defterine bir gün stop'lu bir satır girerse
-    (elle düzeltme, şema göçü) tablo sessizce onu yarışmacı bir maliyet ölçeği gibi
-    gösterirdi.
+    Maliyet ölçeği kolonları `is_benchmark` ya da `is_replica` iken KOŞULSUZ `nan` olur.
+
+    Çıpada (kural 15) stop yoktur, yani bu değerler defterden zaten hesaplanamaz — ama
+    garantiyi defterin içeriğine bırakmak kırılgan olurdu: çıpanın defterine bir gün
+    stop'lu bir satır girerse (elle düzeltme, şema göçü) tablo sessizce onu yarışmacı bir
+    maliyet ölçeği gibi gösterirdi.
+
+    Kopyada stop VARDIR ve sayı hesaplanabilir; yine de `nan` yazılır çünkü kolonun
+    anlamı kıyastır: kopya 1R'yi sabit teminattan türetir, yarışmacılar sermayenin
+    %1'inden. İkisini aynı sütunda göstermek, farklı paydaya sahip iki oranı
+    karşılaştırılabilirmiş gibi sunardı.
     """
     # Kapanış sırası: yön bazlı R-Sharpe, o yöndeki işlemlerin kapanış sırasına göre dizilmiş
     # R dizisinden hesaplanır (CLAUDE.md > Rapor Kolonları). Defter zaten bu sırada yazılır;
@@ -198,9 +231,13 @@ def direction_stats(
         avg_loss_r=_mean(losses),
         profit_factor=_ratio(sum(wins), loss_total) if r_values else _NAN,
         avg_stop_distance_pct=(
-            _NAN if is_benchmark else _mean(_collect(rows, stop_distance_pct))
+            _NAN
+            if (is_benchmark or is_replica)
+            else _mean(_collect(rows, stop_distance_pct))
         ),
-        cost_per_r=_NAN if is_benchmark else _mean(_collect(rows, cost_per_r)),
+        cost_per_r=(
+            _NAN if (is_benchmark or is_replica) else _mean(_collect(rows, cost_per_r))
+        ),
         pnl=_sum_column(rows, "pnl"),
         fees=_sum_column(rows, "fee"),
         slippage_cost=_sum_column(rows, "slippage_cost"),
@@ -296,16 +333,18 @@ def model_metrics(
     initial_capital: float,
     periods_per_year: float,
     is_benchmark: bool = False,
+    is_replica: bool = False,
 ) -> ModelMetrics:
+    flags = {"is_benchmark": is_benchmark, "is_replica": is_replica}
     return ModelMetrics(
         model=model,
-        long=direction_stats(trades, direction="long", is_benchmark=is_benchmark),
-        short=direction_stats(trades, direction="short", is_benchmark=is_benchmark),
-        total=direction_stats(trades, direction=TOTAL, is_benchmark=is_benchmark),
+        long=direction_stats(trades, direction="long", **flags),
+        short=direction_stats(trades, direction="short", **flags),
+        total=direction_stats(trades, direction=TOTAL, **flags),
         account=account_stats(
             equity_rows, initial_capital=initial_capital, periods_per_year=periods_per_year
         ),
-        is_benchmark=is_benchmark,
+        **flags,
     )
 
 
@@ -315,19 +354,21 @@ def compare(
     ledger: Ledger | None = None,
     config: Mapping[str, Any],
     benchmarks: Collection[str] = (),
+    replicas: Collection[str] = (),
 ) -> list[ModelMetrics]:
     """Defterleri okuyup her model için metrikleri üretir. Defter değiştirilmez.
 
-    `benchmarks` referans modellerin adlarıdır (kural 15). Bilgi stratejinin
-    `is_benchmark` alanından gelir ve buraya çağıran tarafından taşınır: metrics defteri
-    okur, strateji sınıflarını değil — `strategies/` importu, salt okunur bir metrik
-    modülünü tüm model koduna bağlardı.
+    `benchmarks` referans çıpalarının (kural 15), `replicas` ise dış sistem kopyalarının
+    adlarıdır. Bilgi stratejinin `is_benchmark` / `is_replica` alanından gelir ve buraya
+    çağıran tarafından taşınır: metrics defteri okur, strateji sınıflarını değil —
+    `strategies/` importu, salt okunur bir metrik modülünü tüm model koduna bağlardı.
     """
     active_ledger = ledger if ledger is not None else Ledger()
     config_dict = dict(config)
     initial_capital = float(get_setting(config_dict, "initial_capital"))
     per_year = periods_per_year(config_dict)
     benchmark_names = set(benchmarks)
+    replica_names = set(replicas)
     return [
         model_metrics(
             model,
@@ -336,6 +377,7 @@ def compare(
             initial_capital=initial_capital,
             periods_per_year=per_year,
             is_benchmark=model in benchmark_names,
+            is_replica=model in replica_names,
         )
         for model in models
     ]
@@ -437,8 +479,9 @@ class AcceptanceFlags:
       iki ayrı soruyu birbirine karıştırırdı: "bu model doğrulandı mı" ile "bu model
       şu modelle kıyaslanabilir mi". Bu yüzden raporda bir uyarı göstergesidir.
 
-    Kapılar YALNIZCA yarışmacılara uygulanır; referans çıpası yarışmacı değildir
-    (kural 15), ona bir çıta koymak ölçmediği bir yarışta not vermek olurdu.
+    Kapılar YALNIZCA yarışmacılara uygulanır; ne referans çıpası (kural 15) ne de dış
+    sistem kopyası yarışmacıdır — onlara bir çıta koymak, ölçmedikleri bir yarışta not
+    vermek olurdu.
     """
 
     model: str
@@ -475,11 +518,15 @@ def acceptance_flags(
     ortak volatilite ölçeğini taşır; band `medyan/√oran .. medyan×√oran` olarak kurulur,
     yani uçtan uca tam `stop_band_ratio` kadar geniştir.
 
+    Kopya modeller (is_replica) bandın medyanına da girmez: 1R'lerini sabit teminattan
+    türettikleri için stop mesafeleri yarışmacıların ortak volatilite ölçeğini taşımaz ve
+    medyanı kendi ölçeklerine doğru kaydırırlardı.
+
     Kontrol ya da referans modeli kümede yoksa ilgili koşul değerlendirilemez ve `edge`
     geri kalan koşullara düşer — ama bu sessiz olmaz, `logger.warning` ile söylenir:
     eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
     """
-    competitors = [item for item in metrics if not item.is_benchmark]
+    competitors = [item for item in metrics if item.is_competitor]
     band_low, band_high = _stop_band(competitors, ratio=stop_band_ratio)
     control_avg_r = _control_avg_r(metrics, control_model)
     benchmark_return = _benchmark_return(metrics)
@@ -691,12 +738,15 @@ def format_report(metrics: Sequence[ModelMetrics]) -> str:
     Sıralama ortalama R'ye göredir — tabloyu toplam getiriye göre sıralamak, tam da
     ayıklamaya çalıştığımız bileşiklenme etkisini geri sokardı.
 
-    Referans modeller (kural 15) sıralamaya girmez, tablonun altında ayrı bir bölümde
-    durur: farklı boyutlandırma kuralıyla çalışan bir satırı yarışmacılarla aynı sütunda
-    sıralamak, okuyucuya olmayan bir kıyas sunardı.
+    Referans çıpası (kural 15) ve dış sistem kopyası sıralamaya girmez, tablonun altında
+    AYRI İKİ bölümde durur: farklı boyutlandırma kuralıyla çalışan bir satırı
+    yarışmacılarla aynı sütunda sıralamak, okuyucuya olmayan bir kıyas sunardı. İkisi
+    de aynı bölümde toplanmaz, çünkü ölçtükleri soru farklıdır — çıpa "piyasa ne yaptı",
+    kopya "dış sistem bizim varsayımlarımızla ne yapardı".
     """
-    competitors = [item for item in metrics if not item.is_benchmark]
-    references = [item for item in metrics if item.is_benchmark]
+    competitors = [item for item in metrics if item.is_competitor]
+    benchmarks = [item for item in metrics if item.is_benchmark]
+    replicas = [item for item in metrics if item.is_replica and not item.is_benchmark]
 
     lines = [
         "  ".join(header.rjust(width) if index else header.ljust(width)
@@ -706,10 +756,22 @@ def format_report(metrics: Sequence[ModelMetrics]) -> str:
     for item in sorted(competitors, key=_rank_key):
         lines.extend(_model_block(item))
 
-    if references:
-        lines.append("REFERANS (yarışma dışı, kural 15) — kıyas zemini: model piyasayı yendi mi?")
+    for title, section in (
+        (
+            "REFERANS (yarışma dışı, kural 15) — kıyas zemini: model piyasayı yendi mi?",
+            benchmarks,
+        ),
+        (
+            "REFERANS (dış sistem) — yarışma dışı: sabit teminat/kendi kaldıracıyla koşar, "
+            "1R'si yarışmacılarınkiyle aynı birim değildir",
+            replicas,
+        ),
+    ):
+        if not section:
+            continue
+        lines.append(title)
         lines.append("-" * _TABLE_WIDTH)
-        for item in sorted(references, key=lambda entry: entry.model):
+        for item in sorted(section, key=lambda entry: entry.model):
             lines.extend(_model_block(item))
 
     return "\n".join(lines).rstrip() + "\n"
@@ -751,10 +813,11 @@ def _model_block(item: ModelMetrics) -> list[str]:
         f"maxDD {_fmt(_pct(account.max_drawdown), digits=2)}% | "
         f"Sharpe {_fmt(account.sharpe)} | {account.bars} bar"
     )
-    # Referansta R'siz satır beklenendir (stop yok), yarışmacıda ise denetlenmesi gereken
-    # bir anomalidir: uyarıyı ikisine de yazmak, gerçek uyarıyı gürültüye boğardı.
+    # Yarışma dışı satırda R'siz işlem beklenendir (çıpada stop yoktur, kopyanın kısmi
+    # dolumları farklı bir birimdedir); yarışmacıda ise denetlenmesi gereken bir
+    # anomalidir. Uyarıyı hepsine yazmak, gerçek uyarıyı gürültüye boğardı.
     unmeasured = item.total.unmeasured
-    if unmeasured and not item.is_benchmark:
+    if unmeasured and item.is_competitor:
         lines.append(
             f"{'':<{_WIDTHS[0]}}  UYARI: {unmeasured} işlemde risk_amount yok, R'ye girmedi"
         )

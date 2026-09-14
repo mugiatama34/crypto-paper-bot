@@ -14,6 +14,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Callable, Mapping
 
+from core.validate import validate_model
 from strategies.avwap import Avwap
 from strategies.base import Strategy
 from strategies.buyhold import BuyHold
@@ -26,8 +27,11 @@ from strategies.momentum import Momentum
 from strategies.random_ctrl import RandomControl
 from strategies.scalp_bandit import ScalpBandit
 from strategies.scalp_fixed import ScalpFixed
+from strategies.scalp_managed import ScalpManaged
 from strategies.squeeze import Squeeze
 from strategies.trend import Trend
+from strategies.vwap_clone import VwapClone
+from strategies.vwap_managed import VwapManaged
 
 StrategyFactory = Callable[[], Strategy]
 
@@ -47,6 +51,13 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # bağımsızdır: hangi modelin hangi turda koşacağını katmanın `models` listesi söyler.
     ScalpBandit.name: ScalpBandit,
     ScalpFixed.name: ScalpFixed,
+    # Scalp katmanının çıkış yönetimi kanadı (modeller 13-15):
+    #   vwap_clone    — dış sistem KOPYASI (is_replica), sabit teminat × 10x
+    #   vwap_managed  — aynı sinyal, EV kurallarıyla (risk boyutlandırma, %1 taban, 1.5R)
+    #   scalp_managed — scalp_fixed'in ikizi, tek farkı üç aşamalı çıkış yönetimi
+    ScalpManaged.name: ScalpManaged,
+    VwapClone.name: VwapClone,
+    VwapManaged.name: VwapManaged,
 }
 
 
@@ -78,6 +89,11 @@ def build(name: str, *, config: Mapping[str, Any] | None = None) -> Strategy:
             f"kayıt adı ({name!r}) ile strateji adı ({strategy.name!r}) uyuşmuyor: "
             "defter klasörü strateji adından türer, ikisi ayrışırsa defter kaybolur"
         )
+    # Bayrak/limit bildiriminin kapısı (core/validate.py): kaldıraç tavanı ve
+    # "ModelLimits yalnızca kopya modellere açıktır" kuralı KURULUMDA denetlenir. Sinyal
+    # kapısında denetlemek modeli aylarca "bu turda sinyal üretmedi" gibi gösterirdi;
+    # burada patlayan model main.py tarafından atlanır ve koşu hata koduyla biter.
+    validate_model(strategy)
     return strategy
 
 

@@ -66,11 +66,13 @@ def build_dashboard(
 ) -> dict[str, Any]:
     """`docs/data/metrics.json`'a eklenen dashboard bölümleri.
 
-    Havuz (`pooled`) ve kabul bayrakları YALNIZCA yarışmacılardan hesaplanır: referans
-    çıpasının R'si yoktur (kural 15), havuzun ortalama R'sine katılması "stop'suz bir
-    işlemi 1R'lik bir işlemmiş gibi saymak" olurdu. Korelasyon matrisi ise çıpayı DA
-    içerir — orada ölçülen R değil bar getirisidir ve "modeller piyasadan ne kadar
-    ayrışıyor" sorusunun cevabı tam olarak çıpayla karşılaştırmayı gerektirir.
+    Havuz (`pooled`) ve kabul bayrakları YALNIZCA yarışmacılardan hesaplanır (ölçüt tek
+    yerde: `ModelMetrics.is_competitor`). Referans çıpasının R'si yoktur (kural 15) ve
+    kopya modelin R'si başka bir birimdedir (sabit teminat); ikisini de havuza katmak,
+    projenin ana sorusunu (short işlemler daha mı başarılı) farklı boyutlandırmalarla
+    açılmış işlemlerin ortalamasına bağlamak olurdu. Korelasyon matrisi ise ikisini DE
+    içerir — orada ölçülen R değil bar getirisidir ve "modeller piyasadan/dış sistemden
+    ne kadar ayrışıyor" sorusunun cevabı tam olarak o karşılaştırmayı gerektirir.
 
     `model_trade_limit` ve `breakdowns` KATMAN ayarlarıdır (core/layers.py): 15 dakikalık
     katman günde 96 tur koşar ve JSON her turda commit edilir — sayfanın çizdiği pencere
@@ -78,7 +80,7 @@ def build_dashboard(
     yalnızca scalp modellerinde bir karşılığı vardır, 4 saatlik modellerde kol yoktur.
     """
     config_dict = dict(config)
-    competitors = [item.model for item in metrics if not item.is_benchmark]
+    competitors = [item.model for item in metrics if item.is_competitor]
     models = [item.model for item in metrics]
 
     trades = {model: ledger.read_trades(model) for model in models}

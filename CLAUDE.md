@@ -35,12 +35,17 @@ yapar.
 | `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. Salt okunur — ledger'ı değiştirmez. |
 | `core/report.py` | Dashboard yükü: `docs/data/metrics.json`'un tablo dışında kalan bölümleri (özsermaye eğrileri, açık pozisyonlar, son işlemler, model başına son 100 kapanmış işlem, son 24 saatin hareketi, havuz ve kabul bayraklarının toplanması). Salt okunur; hiçbir şey hesaplamaz ki `core/portfolio.py` zaten hesaplamış olsun. Tek istisna açık pozisyonun güncel PnL'idir ve kapanış formülünün aynı parçalarından kurulur (brüt − giriş komisyonu + funding; çıkış maliyeti YOK). Sunum sabitleri (kaç işlem gösterilir, eğri kaç noktaya seyreltilir) burada durur, `config.yaml`'da değil. |
 | `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde katmanın defter kökü altına yazar. Sistemin denetim izi (audit trail) burasıdır. **Tek istisna `compact_equity`:** katmanın saklama penceresinden eski `equity.csv` satırlarını günlük özete indirir (bkz. "Katmanlar > Saklama penceresi"). `trades.csv` için istisna YOKTUR — bir işlem satırı hiçbir gerekçeyle değişmez veya silinmez. |
-| `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni. Geçersiz sinyalde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
+| `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni, çıkış yönetimi alanlarının tutarlılığı (`trailing_atr` ile `trail_giveback_pct` aynı anda kullanılamaz). Ayrıca `validate_model`: model bayrak/limit bildiriminin kapısı (`ModelLimits` yalnızca `is_replica`, kaldıraç tavanı `REPLICA_LEVERAGE_CAP`), `strategies/registry.py` kurulumda çağırır. Geçersizde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
 | `strategies/scalp/arms.py` | Scalp katmanının **beş ortak kolu** (VWAP geri çekilme, açılış aralığı kırılımı, RSI(2) dönüşü, momentum patlaması, funding sıçraması fade'i). İki model de bu tek kopyayı görür. Stop mesafesi her kolda aynıdır (`stop_atr_multiple × ATR`) — kollar stop ölçeğinde ayrışsaydı kol tablosu bir sinyal değil maliyet karşılaştırması olurdu. Hedef ise projeksiyon (`target_reward_risk × stop`) ile kolun yapısal engelinin YAKIN olanıdır. |
-| `strategies/scalp/model.py` | İki scalp modelinin ortak gövdesi: stop tabanı (%1), hedef/stop kapısı (1.5R), zaman stop'u (16 bar), sinyal kurulumu, kol etiketi. Alt sınıflar YALNIZCA `choose_arm`u uygular — fark tek satıra indirgenmezse iki modelin farkı adaptasyonun katkısı olmaktan çıkar. |
+| `strategies/scalp/model.py` | Scalp modellerinin ortak gövdesi: stop tabanı (%1), hedef/stop kapısı (1.5R), zaman stop'u (16 bar), sinyal kurulumu, kol etiketi. Alt sınıfın değiştirebileceği YALNIZCA üç nokta vardır ve her biri ölçülen bir eksene karşılık gelir: `choose_arm` (kol seçimi), `exit_management` (çıkış yönetimi), `rng_identity` (çekiliş kimliği). Fark bu üç noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü olmaktan çıkar. |
 | `strategies/scalp_bandit.py` | **Model 11:** Thompson sampling ile kollar arası tahsis. Posterior yalnızca KAPANMIŞ işlemlerin gerçekleşmiş R'sinden beslenir ve her turda defterden sıfırdan kurulur (ayrı durum dosyası yoktur — ikinci bir doğruluk kaynağı olurdu). Isınma 20 işlem/kol, taban tahsis %5, kayan pencere 100 işlem. |
 | `strategies/scalp_fixed.py` | **Model 12 (KONTROL):** aynı beş kol, eşit ağırlıklı çekiliş, öğrenme yok. Model 11'in null hipotezi; `observe_closed_trades`ı bilinçli olarak UYGULAMAZ, yani geçmişe erişimi hiç yoktur. |
+| `strategies/exit_management.py` | Üç aşamalı çıkış yönetiminin TEK tanımı (modeller 13, 14, 15 aynı kopyayı okur): breakeven -> kısmi çıkış + stop kaydırma -> geri verme takibi. Yalnızca config'i okuyup `Signal` alanlarına çevirir; uygulama `core/engine.py` (stop hareketleri) ve `core/portfolio.py`dedir (kısmi dolum) — kural 9'un `trailing_atr` için koyduğu sınırın aynısı. Üç dosyaya kopyalansaydı model 15 ile `scalp_fixed` arasındaki fark "yönetimin katkısı" olmaktan çıkar, "iki ayrı yönetimin farkı" olurdu. |
+| `strategies/vwap/signal.py` | Model 13 ve 14'ün ORTAK sinyali: gün-çapalı VWAP'ten `band_mult × sapma` kadar uzaklaşıp DÖNMEYE BAŞLAYAN bar. Dönüş şartı zorunludur — yalnızca "bant dışında" olmak, güçlü bir trendde her barda aynı sinyali üretirdi. Modül kurulumun YERİNİ verir; stop ve hedefi her model kendi kuralıyla kurar (13 öğrenilen çarpanlar, 14 sabit çarpan + VWAP kırpması). |
+| `strategies/vwap_clone.py` | **Model 13 (KOPYA, `is_replica=True`):** dış bir sistemin kurallarını birebir yeniden üretir. Sabit teminat × 10x (`notional_fraction` + `ModelLimits.leverage`), üç aşamalı çıkış yönetimi, kendi limitleri (5 pozisyon, yönde 3, portföy riski %8), 13 sembollük kendi evreni, epsilon-greedy parametre öğrenimi (4×3 = 12 kombinasyon, sembol bazlı, 3 örnek altında genele düşer). Ev kapıları (%1 stop tabanı, 1.5R) UYGULANMAZ — kaynak sistemde yok. Yarışmacı değildir. |
+| `strategies/vwap_managed.py` | **Model 14:** model 13'ün sinyali, EV kurallarıyla — `sizing="risk"`, katmanın `leverage_cap`i, %1 stop tabanı ve 1.5R kapısı geçerli, parametre öğrenimi YOK (sabit çarpanlar config'te). Turda tek sinyal. Tam yarışmacı; kıyas hedefleri model 13 (ev kurallarının katkısı) ve `scalp_fixed`. |
+| `strategies/scalp_managed.py` | **Model 15:** `scalp_fixed`in BİREBİR ikizi (aynı beş kol, aynı eşit ağırlıklı çekiliş — `choose_arm` miras alınır, kopyalanmaz), tek farkı üç aşamalı çıkış yönetimi. Çekiliş kimliği (`rng_identity`) bilinçli olarak `scalp_fixed` ile PAYLAŞILIR: iki model her turda aynı kolu ve aynı sembolü seçer, aradaki ortalama R farkı yalnızca yönetimden gelir (eşleştirilmiş deney). |
 | `strategies/buyhold.py` | **Referans çıpası** (kural 15), yarışmacı değil: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınır ve hiç satılmaz. `is_benchmark = True`. |
 | `strategies/registry.py` | Model adı -> strateji sınıfı eşlemesi. `config.yaml`'ın `models` listesi buradan çözülür; tanınmayan ad sessizce atlanmaz. |
 | `strategies/*.py` (ileride) | `Strategy`'den türeyen, yalnızca `generate_signals` uygulayan bağımsız, birbirinden habersiz modüller. |
@@ -81,7 +86,9 @@ yapar.
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
 | `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
 | `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, …). Bkz. "Katmanlar". |
-| `scalp.*` | scalp kısıtları | İki scalp modelinin de BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
+| `scalp.*` | scalp kısıtları | Beş kollu modellerin (11, 12, 15) ve model 14'ün BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
+| `exit_management.*` | üç aşamalı çıkış | Modeller 13, 14 ve 15'in TEK kaynağı: `breakeven_at_r` (1.0), `partial_tp.r` (1.5), `partial_tp.fraction` (0.5), `trail_giveback_pct` (0.5). Model başına ayrı bloklar, bir gün birinin sessizce ayrışması ve model 15 ↔ `scalp_fixed` farkının "iki ayrı yönetimin farkı"na dönüşmesi demekti. |
+| `vwap.*` | modeller 13-14 | Ortak sinyal (`band_mult` 2.0, `min_vwap_bars` 8), model 14'ün sabit çarpanları (`managed.*`) ve kopyanın kendi kuralları (`clone.*`: sabit teminat oranı, kaldıraç, limitler, 12 kombinasyon, epsilon, 13 sembollük evren). |
 
 ## Değişmez Kurallar
 
@@ -137,6 +144,26 @@ yapar.
     bilinemeyeceği için **kötü olan (stop) gerçekleşmiş varsayılır.** Aynı barda likidasyon
     seviyesi de dokunulmuşsa likidasyon her ikisinden de önce gelir (bkz. `core/portfolio.py`).
 
+13b. **Üç aşamalı çıkış yönetimi motorun yeteneğidir, stratejinin değil** (kural 9'un aynı
+sınırı). `Signal.breakeven_at_r`, `Signal.partial_tp` ve `Signal.trail_giveback_pct`
+OPSİYONELDİR, varsayılanları `None`dır ve doldurmayan model bu yetenekten hiçbir biçimde
+etkilenmez. Strateji yalnızca isteğini bildirir; stop hareketlerini `core/engine.py`,
+kısmi dolumu `core/portfolio.py` uygular.
+- **Mum içi sıra likidasyon -> stop -> kısmi -> TP'dir.** Kısmi çıkışın stop'tan sonra
+  gelmesi kural 13'ün aynı kuralıdır: aynı mumda ikisi de aralığa giriyorsa kötü olan
+  gerçekleşmiş varsayılır.
+- **Kısmi çıkışın çektiği stop o mumda BİR DAHA KONTROL EDİLMEZ.** O stop, kısmi dolum
+  gerçekleştikten sonra verilmiş yeni bir emirdir ve mumun daha önceki hareketleri
+  sırasında piyasada durduğu varsayılamaz. Tersini yapmak kısmi çıkışı her mumda anında
+  tam çıkışa çevirir ve mekanizmayı ölçülemez kılardı.
+- **Stop hareketleri bar KAPANDIKTAN sonra uygulanır** (kural 12; ATR trailing ile aynı
+  adım) ve yalnızca SIKIŞTIRIR, bu yüzden aralarındaki sıra sonucu değiştirmez.
+- **`trailing_atr` ile `trail_giveback_pct` aynı anda kullanılamaz** (`ValueError`): ikisi
+  de stop'u sıkıştıran ayrı mekanizmalardır ve birlikte çalıştıklarında çıkışı hangi
+  kuralın ürettiği defterden okunamaz — oysa bu modeller tam olarak çıkış kuralını ölçüyor.
+- **Takip eden stop orijinal hedefi ASLA aşmaz:** aşsaydı hedef hiç dolmaz, her işlem
+  stop'la kapanır ve `exit_reason` kolonunun anlamı kaybolurdu.
+
 14. **Stop mesafesi bandı (maliyet karşılaştırılabilirliği):** Stop mesafesi yalnızca bir risk
     tercihi değil, aynı zamanda **maliyet ölçeğidir.** Boyut `risk / |giriş − stop|` olduğu için
     dar stop kuran model aynı 1R'yi daha büyük notional ile taşır ve R başına daha çok
@@ -175,9 +202,9 @@ yapar.
       çıpa için ise kaldıraç hiç devreye girmez — çıpanın işi "piyasa ne yaptı"yı ölçmek, onu
       kaldıraçla büyütmek değil.
     - **Kapı `core/validate.py`'dedir:** `sizing = "notional_fraction"` gelen bir sinyal
-      `is_benchmark = False` bir modelden geliyorsa `ValueError`. Bu kapı olmadan kural 3/11
-      delinir — her model kendi boyutunu "referans gibi" belirlemeye başlar, ortak risk birimi
-      (1R) ortadan kalkar ve modeller artık aynı ölçekte yarışmaz.
+      `is_benchmark` VE `is_replica` olmayan bir modelden geliyorsa `ValueError`. Bu kapı
+      olmadan kural 3/11 delinir — her model kendi boyutunu "referans gibi" belirlemeye başlar,
+      ortak risk birimi (1R) ortadan kalkar ve modeller artık aynı ölçekte yarışmaz.
     - **İki alan birbirini dışlar, sessiz düzeltme yoktur:** `sizing = "risk"` iken `stop_price`
       zorunludur ve `notional_fraction` dolu olamaz; `sizing = "notional_fraction"` iken
       `stop_price` **None olmalıdır** (dolu gelirse hata — yok saymak, deftere yazılan "ilk
@@ -198,6 +225,35 @@ yapar.
       (`docs/data/metrics.json` dâhil) sayılarak durur. Log seviyesi de ayrımı taşır: beklenen
       tekrar `INFO`, boyutlandırma arızası `WARNING`. Kodsuz bir "hiç dolmadı" turu yalnızca
       kural 13'ün kuyruğudur (emir bir sonraki barda dolacak) ve ayrıca öyle loglanır.
+
+15b. **Kopya (replica) modeller: `is_replica = True`.** Bir kopya, dış bir sistemin
+kurallarını bizim maliyet, kayma, funding ve likidasyon varsayımlarımız altında yeniden
+üretir. Çıpa gibi yarışmacı değildir ve aynı sonuçları doğurur — ortalama R sıralamasına
+girmez, kabul kapılarına tabi değildir, stop bandı medyanına katılmaz ve maliyet ölçeği
+kolonlarında `nan` alır — ama AYRI bir bayraktır, çünkü:
+- **Ölçtüğü soru farklıdır.** Çıpa "piyasa ne yaptı", kopya "dış sistem bizim
+  varsayımlarımızla ne yapardı" der. Kabul çıtasının zemini (kural 15) yalnızca
+  `is_benchmark` satırlarından gelir; kopyayı zemin saymak, çıtayı bir stratejinin
+  performansına bağlamak olurdu. Tabloda da ayrı bir **REFERANS (dış sistem)** bölümünde
+  durur.
+- **Stop kuralı TERSTİR.** Çıpanın `stop_price`ı None OLMALIDIR (stop'suzluk tanımının
+  kendisidir); kopyanın `stop_price`ı ZORUNLUDUR, çünkü stop yönetimi kopyalanan
+  sistemin parçasıdır ve tam olarak ölçülmek istenen şeydir.
+- **`nan` kolonları burada "hesaplanamaz" değil "kıyaslanamaz" demektir.** Kopya 1R'yi
+  sabit teminattan, yarışmacılar sermayenin %1'inden türetir; aynı sütuna koymak farklı
+  paydaya sahip iki oranı karşılaştırılabilirmiş gibi sunardı. R'nin kendisi ölçülmeye
+  devam eder (kopyanın kendi öğrenmesi ona dayanır).
+- **`ModelLimits` yalnızca kopya modellere açıktır** (kapı: `core/validate.py::validate_model`,
+  çağıran `strategies/registry.py`). Kaynak sistemin kaldıracı, eşzamanlı pozisyon sayısı,
+  yön kotası ve portföy riski tavanı onun kendi kurallarıdır; model bunları kendi içinde
+  uygulayamaz (kural 4/16: açık pozisyonlarını göremez; kural 3: boyut hesabı
+  `core/portfolio.py`nindir), bu yüzden bir BİLDİRİMDİR ve uygulayan yine tek yetkili
+  yerdir. Yarışmacılara kapalı olması kural 6'nın kendisidir. Limitler kök kotayı yalnızca
+  DARALTIR; kaldıraç tavanı `REPLICA_LEVERAGE_CAP` (10x).
+- **Muafiyet YALNIZCA boyutlandırmadadır** (kural 15 ile birebir aynı): komisyon, kayma,
+  funding, **likidasyon**, evren, `allowed_directions` ve dolum kuralı kopyaya da aynen
+  uygulanır. Likidasyonu kapatmak, 10x kullanmanın bedelini silip kopyayı haksız biçimde
+  iyi göstermek olurdu (bkz. docs/decisions.md > "Kopya modelde likidasyon kapatılmaz").
 
 16. **Model kendi KAPANMIŞ işlemlerini okuyabilir, açık pozisyonlarını okuyamaz.** Uyarlanabilir
     modeller (bkz. `strategies/scalp_bandit.py`) geçmiş sonuçlarından öğrenir; bunun tek meşru
@@ -227,12 +283,13 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 |---|---|---|
 | Bar | 4H | 15m |
 | Evren | hacme göre ilk 50 (30 günde bir yenilenir) | **SABİT 14 sembol**, otomatik seçim yok |
-| Modeller | 10 yarışmacı + 1 referans çıpası | `scalp_bandit` (11) ve `scalp_fixed` (12) |
+| Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (11, 12, 14, 15) + 1 dış sistem kopyası (13) |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
 | Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (15 dakikada bir) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
 | Kırılımlar | yok | kol + sembol |
+| Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) |
 
 **Neden ayrı bir `scalp_config.yaml` değil.** `risk_per_trade`, `fee_rate`, `slippage_*`,
 `leverage_cap`, `initial_capital`, `maintenance_margin` iki katmanda da BİREBİR aynıdır
@@ -260,9 +317,26 @@ kalır ve sıkıştırma her model için birebir aynı uygulanır.
 
 ### Scalp katmanının model kuralları
 
-İki model de **beş ortak kolu** (`strategies/scalp/arms.py`) aynı kapılardan geçirir; tek
-farkları **hangi kolun oynanacağına nasıl karar verdikleridir.** Bu yüzden aralarındaki
-ortalama R farkı tek bir şeyin ölçüsüdür: **adaptasyonun katkısı.**
+Katmanda **üç ölçüm ekseni** vardır ve her eksende yalnızca TEK bir değişken ayrışır:
+
+| Eksen | Çift | Ayrışan tek şey |
+|---|---|---|
+| Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi |
+| Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış |
+| Ev kurallarının katkısı | `vwap_clone` (13) ↔ `vwap_managed` (14) | boyutlandırma + kapılar |
+
+**Çekiliş, ölçülmeyen eksende PAYLAŞILIR, ölçülen eksende BAĞIMSIZDIR.** `ScalpModel`in
+`rng_identity` alanı bunu taşır. Model 11 ↔ 12'de ölçülen şey seçimin kendisidir; çekilişi
+paylaşsalardı fark adaptasyonun değil tesadüfün ölçüsü olurdu. Model 12 ↔ 15'te ise ölçülen
+şey seçim DEĞİL, aynı seçimin nasıl yönetildiğidir — bu yüzden model 15 `scalp_fixed`in
+çekiliş kimliğini kullanır ve ikisi her turda aynı kolu, aynı sembolü seçer (eşleştirilmiş
+deney). Bu, defterlerinin birebir aynı olacağı anlamına gelmez: yönetim bazı pozisyonları
+erken kapatır ve `max_positions` doluluğu zamanla ayrışır — ayrışan şey DOLUMLARDIR,
+sinyaller değil, ve bu ayrışmanın kendisi yönetimin bir sonucudur.
+
+Beş kollu üç model (11, 12, 15) **beş ortak kolu** (`strategies/scalp/arms.py`) aynı
+kapılardan geçirir; VWAP modelleri (13, 14) ise **ortak sinyali**
+(`strategies/vwap/signal.py`) görür ve kol kırılımında `arm=vwap_revert` etiketiyle durur.
 
 - **Stop tabanı %1** — tur maliyeti ~%0.25'tir; daha dar stop'ta maliyet 0.25R'yi aşar ve
   model daha başlamadan geride başlar. Stop **genişletilmez**, işlem **atlanır** (kural 14'ün
@@ -275,7 +349,13 @@ ortalama R farkı tek bir şeyin ölçüsüdür: **adaptasyonun katkısı.**
   bir sonraki barın açılışındadır (kural 13), yani gerçek ömür 17 bardır.
 - **Trailing yok** — yürüyen stop, gerçekleşen R ile kurulumun vaat ettiği R arasındaki bağı
   koparır ve bandit'in öğrendiği sinyali bulanıklaştırırdı.
-- **Turda tek sinyal** — beş kolu birden oynamak kol tahsisini anlamsız kılardı.
+- **Turda tek sinyal** — beş kolu birden oynamak kol tahsisini anlamsız kılardı. Model 14
+  de tek sinyal oynar (kıyas hedefi `scalp_fixed` tur başına tek pozisyon açar); model 13
+  ise kaynak sistemin kuralı gereği kendi pozisyon kotasına (5) kadar sinyal üretir.
+- **Ev kapıları (stop tabanı, 1.5R, zaman stop'u) model 13'e UYGULANMAZ** — kaynak sistemde
+  yoktur; eklemek kopyayı model 14'e çevirirdi ve ikisinin farkı ölçülemez hâle gelirdi.
+- **Üç aşamalı çıkış yönetimi** (`exit_management` bloğu) modeller 13, 14 ve 15'te aynıdır
+  ve tek kopyadan (`strategies/exit_management.py`) okunur.
 
 **Bandit durumu deftere yazılır ve tekrar üretilebilir.** Ayrı bir `bandit_state.json`
 YOKTUR: posterior `ledgers_scalp/scalp_bandit/trades.csv`'nin saf bir fonksiyonudur (kol
@@ -319,9 +399,12 @@ gruplama ölçütüne göre böler ve her grup için aynı metrikleri hesaplar; 
   gören bir sembolde (PENGU, ETHFI) `cost_per_r` belirgin biçimde ayrışıyorsa varsayım orada
   tutmuyor demektir ve o satırın sonucu yorumlanmadan önce bu bilinmelidir.
 
-Referans modeller (kural 15) bu iki kolonu **`nan`** alır ve tablonun ayrı bir bölümünde durur:
-stop'u olmayanın 1R'si yoktur, dolayısıyla "R başına maliyet" de tanımsızdır. Onların taşıdığı
-bilgi bu kolonlarda değil, hesap düzeyi getirisindedir.
+Referans çıpaları (kural 15) ve dış sistem kopyaları (kural 15b) bu iki kolonu **`nan`** alır
+ve tablonun AYRI İKİ bölümünde durur. Çıpada gerekçe hesaplanamazlıktır: stop'u olmayanın 1R'si
+yoktur. Kopyada ise sayı hesaplanabilir ama **kıyaslanamaz**: 1R'si sabit teminattan türer,
+yarışmacılarınki sermayenin %1'inden — aynı sütuna koymak farklı paydaya sahip iki oranı
+karşılaştırılabilirmiş gibi sunardı. İkisi de aynı bölümde toplanmaz, çünkü ölçtükleri soru
+farklıdır. Onların taşıdığı bilgi bu kolonlarda değil, hesap düzeyi getirisindedir.
 
 Tanım kararları:
 
@@ -408,6 +491,8 @@ class Strategy(ABC):
     allowed_directions: list[Direction]   # ["long"], ["short"] veya ["long", "short"]
     is_meta: bool = False                 # True ise engine'in ikinci geçişinde çalışır
     is_benchmark: bool = False            # True ise yarışmacı değil referans çıpası (kural 15)
+    is_replica: bool = False              # True ise yarışmacı değil dış sistem kopyası (kural 15b)
+    limits: ModelLimits | None = None     # yalnızca is_replica (kapı: core/validate.py)
 
     @abstractmethod
     def generate_signals(
@@ -442,6 +527,22 @@ class TakeProfit:
     fraction: float          # 0 < fraction <= 1.0; bir Signal içindeki toplam <= 1.0
 
 
+@dataclass(frozen=True, kw_only=True)
+class PartialTakeProfit:
+    """Kısmi çıkış İSTEĞİ: fiyat değil R SEVİYESİ (kural 13b)."""
+    r: float                 # giriş anındaki riskin katı; fiyata çeviren core/portfolio.py
+    fraction: float          # 0 < fraction < 1.0; 1.0 kısmi değil TAM çıkıştır
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModelLimits:
+    """Kopya modelin KENDİ kuralları; kök kotaları yalnızca DARALTIR (kural 15b)."""
+    max_positions: int | None = None
+    max_per_direction: int | None = None
+    max_portfolio_risk: float | None = None   # Σ açık risk / sermaye tavanı
+    leverage: float | None = None             # yalnızca sizing="notional_fraction"; tavan 10x
+
+
 SizingMode = Literal["risk", "notional_fraction"]
 
 
@@ -455,6 +556,10 @@ class Signal:
     entry_type: Literal["market", "limit"] = "market"   # v1'de yalnızca "market" işlenir
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None  # uygulaması core/engine.py'de, strateji yazmaz
+    # Üç aşamalı çıkış yönetimi (kural 13b): hepsi OPSİYONEL, varsayılan KAPALI.
+    breakeven_at_r: float | None = None        # bu R'a ulaşınca stop girişe çekilir
+    partial_tp: PartialTakeProfit | None = None  # bu R'da kısmi çıkış + stop o seviyeye
+    trail_giveback_pct: float | None = None    # kısmi SONRASI takip; trailing_atr ile birlikte OLMAZ
     reason: str = ""                   # deftere yazılacak serbest metin
 
 
@@ -464,9 +569,13 @@ class Position:
     symbol: str
     direction: Direction
     entry_price: float
-    stop_price: float | None           # referans modellerde stop yoktur (kural 15)
+    stop_price: float | None           # referans çıpasında stop yoktur (kural 15)
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
+    breakeven_at_r: float | None = None
+    partial_tp: PartialTakeProfit | None = None
+    trail_giveback_pct: float | None = None
+    partial_done: bool = False         # kısmi çıkış doldu mu (bir İSTEK değil, bir OLAY)
     opened_at: pd.Timestamp
 
 

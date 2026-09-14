@@ -8,13 +8,21 @@ Mum içi kontrol sırası — CLAUDE.md kural 13 ve modül tablosu:
 
     1. likidasyon (bakım marjı, mum içi high/low ile)
     2. stop
-    3. take-profit
+    3. kısmi çıkış (partial_tp) — varsa; aynı anda stop'u kısmi seviyeye çeker
+    4. take-profit
 
-Bir mumda hem stop hem TP aralığa giriyorsa mum içi sıralama bilinemez; bu yüzden KÖTÜ
-olan (stop) gerçekleşmiş varsayılır — iyimser varsayım her modelin sonucunu, en çok da
-geniş hedefli olanlarınkini, sistematik biçimde şişirirdi. Likidasyon her ikisinden de
-önce gelir: gerçek borsada bakım marjı ihlali stop emrini beklemez, kontrolü sonraya almak
-yüksek kaldıraçlı modellere gerçekte var olmayan bir kurtulma şansı verir.
+Bir mumda stop ile TP (ya da stop ile kısmi çıkış seviyesi) birlikte aralığa giriyorsa mum
+içi sıralama bilinemez; bu yüzden KÖTÜ olan (stop) gerçekleşmiş varsayılır — iyimser
+varsayım her modelin sonucunu, en çok da geniş hedefli olanlarınkini, sistematik biçimde
+şişirirdi. Likidasyon hepsinden önce gelir: gerçek borsada bakım marjı ihlali stop emrini
+beklemez, kontrolü sonraya almak yüksek kaldıraçlı modellere gerçekte var olmayan bir
+kurtulma şansı verir.
+
+Kısmi çıkışın ÇEKTİĞİ stop o mumda değil, BİR SONRAKİ mumdan itibaren geçerlidir: o stop,
+kısmi dolum gerçekleştikten sonra verilmiş YENİ bir emirdir ve mumun daha önceki
+hareketleri sırasında piyasada durduğu varsayılamaz (kural 13'ün "emir bir sonraki barda
+geçerlidir" ilkesi). Tersini yapmak — yeni stop'u aynı mumda da kontrol etmek — kısmi
+çıkışı neredeyse her mumda anında tam çıkışa çevirir ve mekanizmayı ölçülemez kılardı.
 
 Nakit muhasebesi (deftere birebir yansır):
 
@@ -29,12 +37,23 @@ kaybı dâhil): kapanan işlemlerin `pnl` toplamı, bakiyedeki toplam değişime
 Boyutlandırmanın iki modu vardır ve ikisi de BURADA uygulanır (kural 3 delinmez):
 
     "risk"             : boyut = risk_per_trade × sermaye / |giriş − stop|   (kural 11)
-    "notional_fraction": boyut = fraction × sermaye / giriş, kaldıraç 1x     (kural 15)
+    "notional_fraction": boyut = fraction × sermaye / giriş; kaldıraç çıpada 1x,
+                         kopya modelde modelin bildirdiği sabit kaldıraç
 
-İkincisi yalnızca `is_benchmark=True` referans modellere açıktır ve kapısı
-core/validate.py'dedir. Stop'suz pozisyonun `stop_price`/`initial_stop_price` alanı None
-kalır ve deftere BOŞ yazılır — 0.0 yazmak "stop girişin %100 altındaydı" demek olurdu ve
-`risk_amount` üzerinden R'yi, `avg_stop_distance_pct` üzerinden maliyet ölçeğini uydururdu.
+İkincisi yalnızca `is_benchmark=True` (referans çıpası, kural 15) ve `is_replica=True`
+(dış sistem kopyası) modellere açıktır; kapısı core/validate.py'dedir. Çıpada kaldıraç
+1x'e SABİTLENİR — çıpanın işi "piyasa ne yaptı"yı ölçmek, onu kaldıraçla büyütmek değil.
+Kopyada ise kaldıraç kopyalanan sistemin kuralıdır ve `ModelLimits.leverage` ile bildirilir
+(tavanı core/validate.py::REPLICA_LEVERAGE_CAP): kaldıracı 1x'e zorlamak, kopyanın
+likidasyon riskini yok etmek ve onu haksız biçimde iyi göstermek olurdu.
+
+Stop'suz pozisyonun `stop_price`/`initial_stop_price` alanı None kalır ve deftere BOŞ
+yazılır — 0.0 yazmak "stop girişin %100 altındaydı" demek olurdu ve `risk_amount`
+üzerinden R'yi, `avg_stop_distance_pct` üzerinden maliyet ölçeğini uydururdu.
+
+`ModelLimits` (yalnızca kopya modeller) kök limitleri DARALTIR, genişletmez: modelin
+kendi yön kotası ve portföy riski tavanı burada uygulanır, çünkü model kendi açık
+pozisyonlarını göremez (kural 4/16) ve boyut/marj hesabı zaten burasının işidir.
 """
 
 from __future__ import annotations
@@ -46,11 +65,22 @@ from typing import Any, Iterable, Literal, Mapping, Sequence
 import pandas as pd
 
 from core.config import get_setting
-from strategies.base import Direction, Position, SizingMode, TakeProfit
+from strategies.base import (
+    Direction,
+    ModelLimits,
+    PartialTakeProfit,
+    Position,
+    SizingMode,
+    TakeProfit,
+)
 
 logger = logging.getLogger(__name__)
 
-ExitReason = Literal["liquidation", "stop", "tp", "signal"]
+# "partial" ayrı bir sebeptir, "tp"nin bir türü değil: kısmi çıkış aynı anda stop'u da
+# hareket ettirir (bkz. Portfolio._process_position) ve defterde ayırt edilemezse
+# "modelin hedefi doldu" ile "yönetim kuralı devreye girdi" aynı satıra çöker — oysa
+# 14 ve 15 numaralı modellerin ölçtüğü şey tam olarak ikincisinin katkısıdır.
+ExitReason = Literal["liquidation", "stop", "partial", "tp", "signal"]
 
 # Açılış reddinin SEBEP KODU. Serbest metin gerekçe (OpenResult.rejected) insan içindir ve
 # sembol adı taşıdığı için toplanamaz; bu kod ise tur raporunda sayılabilir ve zaman içinde
@@ -65,6 +95,8 @@ RejectReason = Literal[
     "gap_past_stop",         # bar stop'un ötesinde açtı, emir doldurulmadı
     "zero_size",             # boyutlandırma sıfır adet üretti (ARIZA sinyali)
     "insufficient_cash",     # nakit marj + komisyonu karşılamıyor (ARIZA sinyali)
+    "max_direction_positions",  # modelin KENDİ yön kotası dolu (ModelLimits, kopya modeller)
+    "portfolio_risk_cap",       # açık toplam risk modelin KENDİ tavanını aşardı (ModelLimits)
 ]
 
 # Boyutlandırmanın "çalıştı ama sıfır çıktı" hâlleri. Bunlar beklenen bir tekrar değildir:
@@ -185,6 +217,18 @@ class OpenPosition:
     low_water: float
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
+    # --- Üç aşamalı çıkış yönetimi (CLAUDE.md > Strateji Arayüz Sözleşmesi) ---
+    # Modelin AÇILIŞTA bildirdiği istek; hiçbiri sonradan değişmez. Kısmi çıkış
+    # gerçekleştiğinde yalnızca `partial_done` True olur — o bir olaydır, bir istek değil.
+    breakeven_at_r: float | None = None
+    partial_tp: PartialTakeProfit | None = None
+    trail_giveback_pct: float | None = None
+    partial_done: bool = False
+    # Sinyalin EN UZAK hedefi. Takip eden stop bunu asla aşamaz (sözleşme): aşsaydı stop
+    # hedefin ötesine geçer, hedef hiç dolmaz ve pozisyon her zaman stop'la kapanırdı —
+    # yani model "hedefe ulaştım" diyemez hâle gelirdi. Hedef dolduğunda take_profits'ten
+    # düşüldüğü için tavan ayrıca saklanır.
+    final_target_price: float | None = None
     funding: float = 0.0
     reason: str = ""
     notes: str = ""
@@ -198,8 +242,49 @@ class OpenPosition:
             stop_price=self.stop_price,
             take_profits=self.take_profits,
             trailing_atr=self.trailing_atr,
+            breakeven_at_r=self.breakeven_at_r,
+            partial_tp=self.partial_tp,
+            trail_giveback_pct=self.trail_giveback_pct,
+            partial_done=self.partial_done,
             opened_at=self.opened_at,
         )
+
+    @property
+    def r_distance(self) -> float | None:
+        """1R'nin FİYAT karşılığı: |giriş − İLK stop|.
+
+        Payda her zaman İLK stop'tur, yürüyen stop değil (CLAUDE.md > Rapor Kolonları):
+        R giriş anında üstlenilen risktir. Takip eden stop paydayı da küçültseydi, iyi
+        giden bir işlemin "2R" dediği yer her barda başka bir fiyat olurdu.
+        """
+        if self.initial_stop_price is None:
+            return None
+        distance = abs(self.entry_price - self.initial_stop_price)
+        return distance if distance > 0.0 else None
+
+    def price_at_r(self, r: float) -> float | None:
+        """Pozisyonun LEHİNE `r` kadar R'lik seviyenin fiyatı; R tanımsızsa None."""
+        distance = self.r_distance
+        if distance is None:
+            return None
+        sign = 1.0 if self.direction == "long" else -1.0
+        return self.entry_price + sign * r * distance
+
+    def favorable_excursion_r(self) -> float | None:
+        """Açılıştan bu yana görülen EN İYİ hareketin R cinsinden büyüklüğü.
+
+        Ölçü `high_water`/`low_water`dur, kapanış değil: breakeven ve takip eden stop
+        "pozisyon şu kadar kâra ULAŞTI mı" sorusuna cevap verir, "şu an kârda mı"ya değil.
+        """
+        distance = self.r_distance
+        if distance is None:
+            return None
+        peak = (
+            self.high_water - self.entry_price
+            if self.direction == "long"
+            else self.entry_price - self.low_water
+        )
+        return peak / distance
 
     def as_state(self) -> dict[str, Any]:
         return {
@@ -222,6 +307,11 @@ class OpenPosition:
                 {"price": tp.price, "fraction": tp.fraction} for tp in self.take_profits
             ],
             "trailing_atr": self.trailing_atr,
+            "breakeven_at_r": self.breakeven_at_r,
+            "partial_tp": partial_tp_to_state(self.partial_tp),
+            "trail_giveback_pct": self.trail_giveback_pct,
+            "partial_done": self.partial_done,
+            "final_target_price": self.final_target_price,
             "funding": self.funding,
             "reason": self.reason,
             "notes": self.notes,
@@ -252,6 +342,13 @@ class OpenPosition:
             trailing_atr=(
                 None if payload.get("trailing_atr") is None else float(payload["trailing_atr"])
             ),
+            # Eski defterlerde bu alanlar yoktu: yokluk "yönetim kapalı" demektir ve
+            # o modellerin davranışı bu eklemeden etkilenmez.
+            breakeven_at_r=_opt_float(payload.get("breakeven_at_r")),
+            partial_tp=partial_tp_from_state(payload.get("partial_tp")),
+            trail_giveback_pct=_opt_float(payload.get("trail_giveback_pct")),
+            partial_done=bool(payload.get("partial_done", False)),
+            final_target_price=_opt_float(payload.get("final_target_price")),
             funding=float(payload.get("funding", 0.0)),
             reason=str(payload.get("reason", "")),
             notes=str(payload.get("notes", "")),
@@ -353,40 +450,50 @@ def size_notional_fraction(
     free_cash: float,
     entry_price: float,
     fraction: float,
+    leverage: float = 1.0,
 ) -> Sizing:
-    """CLAUDE.md kural 15: boyut = (fraction × sermaye) / giriş, kaldıraç ZORLA 1x.
+    """CLAUDE.md kural 15: boyut = (fraction × sermaye) / giriş, marj = notional / kaldıraç.
 
-    Bu mod yalnızca `is_benchmark=True` referans modellere açıktır (kapı:
-    core/validate.py). Kaldıraç bir sonuç bile değil, sabittir: referans çıpasının işi
-    "piyasa ne yaptı" sorusuna cevap vermek, kaldıraçla o cevabı büyütmek değil. 1x
-    olduğu için marj = notional'dır ve `liquidation_price` pratikte ulaşılamaz bir
-    seviye üretir — alım-tut çıpasının likide olması ölçtüğü şeyi yok ederdi.
+    Bu mod yalnızca `is_benchmark=True` referans çıpalarına ve `is_replica=True` kopya
+    modellere açıktır (kapı: core/validate.py).
 
-    `free_cash` yine tavandır: marj eldeki nakdi aşamaz, yani hesap toplamda 1x'in
-    üzerine çıkamaz.
+    **Çıpada `leverage` 1.0'dır ve öyle kalmalıdır:** kaldıraç bir sonuç bile değil,
+    sabittir — referans çıpasının işi "piyasa ne yaptı" sorusuna cevap vermek, kaldıraçla
+    o cevabı büyütmek değil. 1x'te marj = notional olur ve `liquidation_price` pratikte
+    ulaşılamaz bir seviye üretir; alım-tut çıpasının likide olması ölçtüğü şeyi yok ederdi.
+
+    **Kopyada `leverage` kopyalanan sistemin kuralıdır** (`ModelLimits.leverage`, tavanı
+    core/validate.py::REPLICA_LEVERAGE_CAP). Marj notional'ın kaldıraca bölümüdür, yani
+    "sabit teminat × kaldıraç = notional" kuralı doğrudan bu iki alanla ifade edilir.
+    Likidasyon modellemesi burada DEĞİŞMEZ: yüksek kaldıraçta likidasyon gerçek bir
+    risktir ve onu kapatmak kopyayı haksız biçimde iyi gösterirdi (bkz. docs/decisions.md).
+
+    `free_cash` yine tavandır: marj eldeki nakdi aşamaz.
     """
     if entry_price <= 0.0:
         raise ValueError(f"geçersiz giriş fiyatı: {entry_price}")
     if not 0.0 < fraction <= 1.0:
         raise ValueError(f"notional_fraction 0 ile 1.0 arasında olmalı: {fraction}")
+    if leverage <= 0.0:
+        raise ValueError(f"kaldıraç pozitif olmalı: {leverage}")
     if equity <= 0.0 or free_cash <= 0.0:
         return Sizing(qty=0.0, notional=0.0, margin=0.0, leverage=0.0, clipped=False,
                       note="sermaye/nakit kalmadı")
 
     wanted = fraction * equity
-    notional = min(wanted, free_cash)
+    notional = min(wanted, free_cash * leverage)
     clipped = notional < wanted
     note = (
-        f"referans boyutu nakde sığsın diye {notional / wanted:.4f} oranında kırpıldı "
-        f"(istenen notional {wanted:.2f}, nakit {free_cash:.2f})"
+        f"boyut nakde sığsın diye {notional / wanted:.4f} oranında kırpıldı "
+        f"(istenen notional {wanted:.2f}, nakit {free_cash:.2f}, kaldıraç {leverage:g}x)"
         if clipped
         else ""
     )
     return Sizing(
         qty=notional / entry_price,
         notional=notional,
-        margin=notional,  # kaldıraç 1x: marj notional'ın tamamıdır
-        leverage=1.0,
+        margin=notional / leverage,
+        leverage=float(leverage),
         clipped=clipped,
         note=note,
     )
@@ -460,6 +567,20 @@ class Portfolio:
     def margin_used(self, model: str) -> float:
         return sum(position.margin for position in self.account(model).positions)
 
+    def open_risk(self, model: str) -> float:
+        """Açık pozisyonların toplam AÇILIŞ riski: Σ kalan adet × |giriş − ilk stop|.
+
+        Payda yine İLK stop'tur (kapanan işlemlerin `risk_amount`'ı ile aynı tanım), ki
+        "portföy riski" ile deftere yazılan R aynı birimi konuşsun. Stop'suz pozisyon
+        (referans çıpası, kural 15) sıfır katkı verir: ölçülemeyen bir riski uydurmak,
+        tavanı sembolden sembole kayan bir sayıya bağlardı.
+        """
+        return sum(
+            position.qty * abs(position.entry_price - position.initial_stop_price)
+            for position in self.account(model).positions
+            if position.initial_stop_price is not None
+        )
+
     def unrealized_pnl(self, model: str, marks: Mapping[str, float]) -> float:
         return sum(
             _gross_pnl(position, _mark(position, marks), position.qty)
@@ -529,14 +650,19 @@ class Portfolio:
         notional_fraction: float | None = None,
         take_profits: Sequence[TakeProfit] = (),
         trailing_atr: float | None = None,
+        breakeven_at_r: float | None = None,
+        partial_tp: PartialTakeProfit | None = None,
+        trail_giveback_pct: float | None = None,
+        limits: ModelLimits | None = None,
         reason: str = "",
     ) -> OpenResult:
         """Bir sonraki barın açılışından pozisyon açar (kural 13); reddedilirse gerekçe döner."""
         account = self.account(model)
-        if sizing_mode == "notional_fraction" and stop_price is not None:
-            # core/validate.py bunu zaten reddeder; burada da tutmak, doğrulamadan
-            # geçmeyen bir yoldan (test, elle çağrı) sessiz bir tutarsızlık girmesini önler.
-            raise ValueError('sizing_mode="notional_fraction" ile stop_price verilemez')
+        # `sizing_mode="notional_fraction"` + stop ARTIK geçerli bir şekildir: referans
+        # çıpasında stop yoktur (kural 15) ama dış sistem kopyasında vardır ve stop
+        # yönetimi kopyalanan sistemin parçasıdır. İkisini ayıran bilgi modelin
+        # bayrağıdır (`is_benchmark` / `is_replica`) ve burada YOKTUR — bu modül defterle
+        # parayı bilir, model sınıflarını değil. Kapı tek yerdedir: core/validate.py.
         if sizing_mode == "risk" and stop_price is None:
             raise ValueError('sizing_mode="risk" için stop_price zorunludur')
 
@@ -545,9 +671,13 @@ class Portfolio:
                 rejected=f"{symbol} üzerinde zaten açık {direction} pozisyon var",
                 reason_code="duplicate_position",
             )
-        if len(account.positions) >= self.max_positions:
+        # Modelin KENDİ kotası kök kotayı yalnızca daraltabilir (ModelLimits sözleşmesi).
+        max_positions = self.max_positions
+        if limits is not None and limits.max_positions is not None:
+            max_positions = min(max_positions, int(limits.max_positions))
+        if len(account.positions) >= max_positions:
             return OpenResult(
-                rejected=f"max_positions={self.max_positions} dolu",
+                rejected=f"max_positions={max_positions} dolu",
                 reason_code="max_positions",
             )
         if direction == "short":
@@ -556,6 +686,16 @@ class Portfolio:
                 return OpenResult(
                     rejected=f"max_short_positions={self.max_short_positions} dolu",
                     reason_code="max_short_positions",
+                )
+        if limits is not None and limits.max_per_direction is not None:
+            same_side = sum(1 for p in account.positions if p.direction == direction)
+            if same_side >= int(limits.max_per_direction):
+                return OpenResult(
+                    rejected=(
+                        f"modelin {direction} kotası dolu "
+                        f"(ModelLimits.max_per_direction={limits.max_per_direction})"
+                    ),
+                    reason_code="max_direction_positions",
                 )
 
         entry_price = self.fill_price(
@@ -576,19 +716,24 @@ class Portfolio:
                     reason_code="gap_past_stop",
                 )
 
+        equity = self.equity(model, marks)
         if sizing_mode == "notional_fraction":
             if notional_fraction is None:
                 raise ValueError('sizing_mode="notional_fraction" için notional_fraction zorunludur')
             sizing = size_notional_fraction(
-                equity=self.equity(model, marks),
+                equity=equity,
                 free_cash=account.cash,
                 entry_price=entry_price,
                 fraction=notional_fraction,
+                # Kaldıraç yalnızca modelin bildirdiği kadardır; bildirilmemişse 1x
+                # (çıpanın kuralı). Kök `leverage_cap` bu modda hiç devreye girmez:
+                # o, risk boyutlandırmasının tavanıdır.
+                leverage=1.0 if limits is None or limits.leverage is None else float(limits.leverage),
             )
         else:
             assert stop_price is not None  # yukarıdaki kapı garanti eder
             sizing = size_position(
-                equity=self.equity(model, marks),
+                equity=equity,
                 free_cash=account.cash,
                 entry_price=entry_price,
                 stop_price=stop_price,
@@ -604,6 +749,24 @@ class Portfolio:
         qty, notional, margin = sizing.qty, sizing.notional, sizing.margin
         fee = self.fee_rate * notional
         notes = sizing.note
+
+        # Portföy riski tavanı (yalnızca kopya modeller, ModelLimits). Kural 11'in
+        # "küçült, atlama" ilkesi burada GEÇERLİ DEĞİLDİR: bu bir ölçüm kuralı değil,
+        # kopyalanan sistemin kendi kuralıdır ve o sistem işlemi hiç almaz. Atlama yine
+        # sessiz olmaz — sebep koduyla sayılır ve tur raporunda durur (kural 15).
+        if limits is not None and limits.max_portfolio_risk is not None and stop_price is not None:
+            open_risk = self.open_risk(model)
+            new_risk = qty * abs(entry_price - stop_price)
+            allowed = float(limits.max_portfolio_risk) * equity
+            if open_risk + new_risk > allowed:
+                return OpenResult(
+                    rejected=(
+                        f"portföy riski tavanı aşılırdı: açık {open_risk:.2f} + yeni "
+                        f"{new_risk:.2f} > %{float(limits.max_portfolio_risk) * 100:g} × "
+                        f"{equity:.2f} = {allowed:.2f}"
+                    ),
+                    reason_code="portfolio_risk_cap",
+                )
 
         # Marj + komisyon nakdi aşamaz. Her büyüklük miktarla doğrusal olduğu için
         # tek bir ölçekle tam olarak nakde sığdırılır (yine kırpma, atlama değil).
@@ -645,6 +808,10 @@ class Portfolio:
             low_water=entry_price,
             take_profits=_ordered_take_profits(direction, take_profits),
             trailing_atr=trailing_atr,
+            breakeven_at_r=breakeven_at_r,
+            partial_tp=partial_tp,
+            trail_giveback_pct=trail_giveback_pct,
+            final_target_price=_final_target(direction, take_profits),
             reason=reason,
             notes=notes,
         )
@@ -704,10 +871,40 @@ class Portfolio:
                                 exit_reference=reference, ts=ts,
                                 fraction_of_initial=1.0, exit_reason="stop")]
 
-        # 3) Take-profit. Buraya yalnızca stop AYNI mumda tetiklenmediyse gelinir: stop ve TP
+        trades: list[Trade] = []
+
+        # 3) Kısmi çıkış (partial_tp). Stop'tan SONRA, TP'den ÖNCE: aynı mumda hem stop hem
+        #    kısmi seviye aralığa giriyorsa mum içi sıralama bilinemez ve kötü olan (stop)
+        #    gerçekleşmiş varsayılır — yukarıdaki dal zaten dönmüştür.
+        #
+        #    Kısmi dolumla birlikte stop, kısmi çıkış SEVİYESİNE (kaymasız referans fiyata)
+        #    çekilir. Kayan dolum fiyatını kullanmak, stop'u modelin hiç istemediği bir
+        #    yere koyup mekanizmayı kayma varsayımına bağlardı. Yeni stop bu mumda bir daha
+        #    KONTROL EDİLMEZ (bkz. modül docstring'i): kısmi dolumdan sonra verilmiş bir
+        #    emrin, mumun daha önceki hareketleri sırasında piyasada durduğu varsayılamaz.
+        partial = position.partial_tp
+        if partial is not None and not position.partial_done:
+            trigger = position.price_at_r(partial.r)
+            touched = (
+                trigger is not None
+                and (bar.high >= trigger if long else bar.low <= trigger)
+            )
+            if trigger is not None and touched:
+                exit_price = self.fill_price(
+                    direction=position.direction, reference_price=trigger, side="exit"
+                )
+                position.partial_done = True
+                trades.append(
+                    self._close(account, position, exit_price=exit_price,
+                                exit_reference=trigger, ts=ts,
+                                fraction_of_initial=partial.fraction, exit_reason="partial")
+                )
+                if position.qty > 0.0:
+                    _tighten_stop(position, trigger)
+
+        # 4) Take-profit. Buraya yalnızca stop AYNI mumda tetiklenmediyse gelinir: stop ve TP
         #    aynı mumun aralığındaysa mum içi sıralama bilinemeyeceği için kötü olan (stop)
         #    gerçekleşmiş varsayılır ve yukarıdaki dal döner.
-        trades: list[Trade] = []
         for take_profit in list(position.take_profits):
             touched = bar.high >= take_profit.price if long else bar.low <= take_profit.price
             if not touched:
@@ -866,19 +1063,11 @@ class Portfolio:
         büyütmek olurdu; hesabın değişmezi olarak burada engellenir.
         """
         position = self.account(model).find(symbol, direction)
-        if position is None or position.stop_price is None:
-            # Stop'suz referans pozisyona (kural 15) stop takmak, modelin sözleşmesini
-            # ("alıp tut") sessizce değiştirmek olurdu.
+        if position is None:
             return False
-        tightened = (
-            max(position.stop_price, stop_price)
-            if direction == "long"
-            else min(position.stop_price, stop_price)
-        )
-        if tightened == position.stop_price:
-            return False
-        position.stop_price = tightened
-        return True
+        # Stop'suz referans pozisyona (kural 15) stop takmak, modelin sözleşmesini
+        # ("alıp tut") sessizce değiştirmek olurdu — `_tighten_stop` onu da reddeder.
+        return _tighten_stop(position, stop_price)
 
 
 # --------------------------------------------------------------------------- #
@@ -893,6 +1082,51 @@ def _mark(position: OpenPosition, marks: Mapping[str, float]) -> float:
     # Fiyatı olmayan sembol için giriş fiyatı kullanılır: bilgi yokken pozisyonu kâr ya da
     # zararda göstermek, boyutlandırmanın dayandığı sermayeyi uydurmak olurdu.
     return float(marks.get(position.symbol, position.entry_price))
+
+
+def _tighten_stop(position: OpenPosition, stop_price: float) -> bool:
+    """Stop'u YALNIZCA sıkıştırır (Portfolio.set_stop_price ile aynı değişmez).
+
+    Ayrı bir fonksiyon, çünkü kısmi çıkış stop'u pozisyon nesnesi elde ikenken hareket
+    ettirir; `set_stop_price` ise model adı + sembol ile arar. İkisi aynı kuralı
+    uygulamalı: gevşeme yönünde hareket, zarardaki bir pozisyonun riskini sessizce
+    büyütmek olurdu.
+    """
+    if position.stop_price is None:
+        return False
+    tightened = (
+        max(position.stop_price, stop_price)
+        if position.direction == "long"
+        else min(position.stop_price, stop_price)
+    )
+    if tightened == position.stop_price:
+        return False
+    position.stop_price = tightened
+    return True
+
+
+def _final_target(direction: Direction, take_profits: Sequence[TakeProfit]) -> float | None:
+    """Sinyalin EN UZAK hedefi — takip eden stop'un aşamayacağı tavan."""
+    if not take_profits:
+        return None
+    prices = [tp.price for tp in take_profits]
+    return min(prices) if direction == "short" else max(prices)
+
+
+def partial_tp_to_state(partial: PartialTakeProfit | None) -> dict[str, float] | None:
+    """Kısmi çıkış isteğinin defter gösterimi. TEK kopya: aynı istek hem açık pozisyonda
+    (OpenPosition) hem bekleyen emirde (core/engine.PendingOrder) saklanır ve iki ayrı
+    biçimlendirme, bir gün birinin diğerinin yazdığını okuyamaması demekti."""
+    if partial is None:
+        return None
+    return {"r": partial.r, "fraction": partial.fraction}
+
+
+def partial_tp_from_state(payload: Any) -> PartialTakeProfit | None:
+    """`partial_tp_to_state`in tersi. Alanı olmayan eski satır "yönetim kapalı" okunur."""
+    if not isinstance(payload, Mapping):
+        return None
+    return PartialTakeProfit(r=float(payload["r"]), fraction=float(payload["fraction"]))
 
 
 def _ordered_take_profits(

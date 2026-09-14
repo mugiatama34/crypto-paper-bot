@@ -360,12 +360,17 @@ def _benchmark_block(
 
 
 def _competitors(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Yarışmacı satırları. Referans çıpası listeye girmez (kural 15).
+    """Yarışmacı satırları. Referans çıpası (kural 15) ve dış sistem kopyası (kural 15b) girmez.
+
+    İkisi de kendi boyutlandırma kuralıyla koşar, yani 1R'leri yarışmacılarınkiyle aynı
+    birim değildir; ortalama R sıralamasına sokmak `core/metrics.py`nin tam da dışarıda
+    bıraktığı kıyası özette geri getirirdi.
 
     Kontrol grubu girer ve `_control` ile işaretlenir: bilgisiz çekilişin ilk üçte
     olması özetin taşıması gereken bir bilgidir, gizlenecek bir kusur değil.
     """
     control = (payload.get("acceptance") or {}).get("control_model")
+    replicas = set(payload.get("replicas") or ())
     rows = [
         {
             **item,
@@ -374,6 +379,8 @@ def _competitors(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
         }
         for item in (payload.get("models") or [])
         if not item.get("is_benchmark")
+        and not item.get("is_replica")
+        and (item.get("model") or item.get("name")) not in replicas
     ]
     return [row for row in rows if row["model"]]
 

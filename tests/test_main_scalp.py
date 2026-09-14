@@ -69,14 +69,35 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Sandbox:
     return Sandbox(tmp_path, monkeypatch)
 
 
-def test_scalp_layer_runs_both_models(sandbox: Sandbox) -> None:
+def test_scalp_layer_runs_every_model(sandbox: Sandbox) -> None:
     assert main_module.main(["--layer", "scalp"]) == 0
 
     payload = sandbox.metrics()
     assert payload["layer"] == "scalp"
     assert payload["settings"]["timeframe"] == "15m"
-    assert [model["name"] for model in payload["models"]] == ["scalp_bandit", "scalp_fixed"]
+    assert [model["name"] for model in payload["models"]] == ["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"]
     assert (sandbox.ledgers / "scalp_bandit" / "positions.json").is_file()
+
+
+def test_scalp_payload_separates_the_replica(sandbox: Sandbox) -> None:
+    """Kopya model (13) yarışmacı değildir: sayfa onu ayrı bölümde çizebilmeli.
+
+    Yük hem `replicas` listesini hem satırın kendi `is_replica` bayrağını taşır; sayfanın
+    "bu satır sıralamaya girer mi" sorusunu ada bakarak tahmin etmesi gerekmez.
+    """
+    main_module.main(["--layer", "scalp"])
+
+    payload = sandbox.metrics()
+    assert payload["replicas"] == ["vwap_clone"]
+    by_name = {model["name"]: model for model in payload["models"]}
+    assert by_name["vwap_clone"]["is_replica"] is True
+    assert by_name["vwap_managed"]["is_replica"] is False
+    # Maliyet ölçeği kolonları kopyada koşulsuz nan'dır (JSON'da null).
+    assert by_name["vwap_clone"]["total"]["cost_per_r"] is None
+    assert by_name["vwap_clone"]["total"]["avg_stop_distance_pct"] is None
+    # Kabul çıtası yalnızca yarışmacılara uygulanır.
+    flagged = {item["model"] for item in payload["acceptance"]["models"]}
+    assert "vwap_clone" not in flagged
 
 
 def test_scalp_layer_requests_the_fixed_universe(sandbox: Sandbox) -> None:
@@ -106,7 +127,7 @@ def test_scalp_payload_carries_the_layer_breakdowns(sandbox: Sandbox) -> None:
     breakdowns = sandbox.metrics()["breakdowns"]
 
     assert set(breakdowns) == {"arm", "symbol"}
-    assert set(breakdowns["arm"]) == {"scalp_bandit", "scalp_fixed"}
+    assert set(breakdowns["arm"]) == set(["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"])
 
 
 def test_scalp_settings_report_the_layer_ceiling(sandbox: Sandbox) -> None:

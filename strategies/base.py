@@ -13,11 +13,19 @@ Onaylanan tasarım (bkz. CLAUDE.md > "Strateji Arayüz Sözleşmesi"):
 - take_profits bir tuple'dır, liste değil: frozen dataclass içinde mutable liste
   taşımak dondurmayı yarım bırakır ve bir stratejinin (ya da meta modelin) kendi/
   başkasının sinyalini yerinde değiştirmesine izin verirdi.
-- sizing/notional_fraction ve is_benchmark yalnızca REFERANS modeller içindir
-  (CLAUDE.md kural 15). Yarışmacı modeller `sizing="risk"` kullanır ve boyutlarını
-  yine core/portfolio.py belirler (kural 3/11) — bu alanlar strateji başına
-  boyutlandırma yapma kapısı değildir; core/validate.py is_benchmark=False bir modelin
+- sizing/notional_fraction yalnızca REFERANS (`is_benchmark`, kural 15) ve KOPYA
+  (`is_replica`) modeller içindir. Yarışmacı modeller `sizing="risk"` kullanır ve
+  boyutlarını yine core/portfolio.py belirler (kural 3/11) — bu alanlar strateji başına
+  boyutlandırma yapma kapısı değildir; core/validate.py ikisi de olmayan bir modelin
   notional_fraction kullanmasını ValueError ile reddeder.
+- breakeven_at_r / partial_tp / trail_giveback_pct ÜÇ AŞAMALI ÇIKIŞ YÖNETİMİDİR ve
+  trailing_atr ile aynı sözleşme kuralına tabidir (kural 9): strateji yalnızca İSTEĞİNİ
+  bildirir, uygulaması core/engine.py ve core/portfolio.py'dedir. Üçü de OPSİYONELDİR ve
+  varsayılanları None'dır — doldurmayan model (mevcut on üç modelin hepsi) bu
+  eklemeden hiçbir biçimde etkilenmez.
+- ModelLimits yalnızca KOPYA modellerin kendi kaldıraç/limit kurallarını bildirdiği
+  dar bir kapıdır ve kapısı yine core/validate.py'dedir; yarışmacı bir model buraya
+  değer yazamaz (kural 6: limitler herkes için aynıdır).
 - MarketData.funding tek oran değil zaman indeksli seridir ve as_of sözleşmede yer
   alır: "şimdi"nin tek ve açık tanımı, look-ahead yasağını (kural 12) test edilebilir
   kılar.
@@ -35,9 +43,15 @@ import pandas as pd
 Direction = Literal["long", "short"]
 
 # Boyutlandırma modu. "risk" tüm yarışmacı modellerin tek modudur: boyut
-# risk_per_trade × sermaye / |giriş − stop| (kural 11). "notional_fraction" yalnızca
-# is_benchmark=True referans modellere açıktır (kural 15) — stop'u olmayan bir alım-tut
-# çıpası risk formülüne sokulamaz, çünkü paydası yoktur.
+# risk_per_trade × sermaye / |giriş − stop| (kural 11). "notional_fraction" İKİ istisnaya
+# açıktır (kapı: core/validate.py):
+#
+#   is_benchmark=True — kural 15: stop'u olmayan bir alım-tut çıpası risk formülüne
+#     sokulamaz, çünkü paydası yoktur. Kaldıraç ZORLA 1x'tir.
+#   is_replica=True   — model bir DIŞ SİSTEMİN kurallarını birebir yeniden üretir ve o
+#     sistemin boyutlandırması sabit teminattır, %1 risk değil. Çıpadan farkı: kopyanın
+#     stop'u VARDIR (stop yönetimi kopyalanan sistemin parçasıdır), bu yüzden stop_price
+#     ZORUNLUDUR — ama tabloda yine yarışmacılarla aynı sütunda sıralanmaz.
 SizingMode = Literal["risk", "notional_fraction"]
 
 
@@ -45,6 +59,60 @@ SizingMode = Literal["risk", "notional_fraction"]
 class TakeProfit:
     price: float
     fraction: float  # 0 < fraction <= 1.0; bir Signal içindeki toplam <= 1.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class PartialTakeProfit:
+    """Kısmi çıkış İSTEĞİ: R cinsinden bir seviye ve kapanacak oran.
+
+    Neden `TakeProfit` değil: `TakeProfit` bir FİYATTIR, bu ise bir R SEVİYESİDİR — ve
+    ikisi aynı şey değildir. R seviyesi giriş anındaki riski (|giriş − ilk stop|) birim
+    alır, yani stratejinin "kurulumum 1.5 katını verdiğinde yarısını al" isteğini
+    fiyattan bağımsız ifade eder. Fiyata çevirmek core/portfolio.py'nin işidir (kural 3):
+    strateji fiyatı kendisi hesaplasaydı, stop'un dolumda kaydığı (ya da kaldıraç tavanı
+    yüzünden boyutun küçüldüğü) durumlarda modelin "1.5R" dediği yer gerçek 1.5R
+    olmazdı.
+
+    `fraction` BAŞLANGIÇ miktarının oranıdır (core/portfolio.py::_close ile aynı taban)
+    ve 1.0 OLAMAZ: tamamı kapanıyorsa ortada "kısmi"den sonra taşınacak bir bakiye ve
+    çekilecek bir stop yoktur — o bir take-profit'tir ve `take_profits` ile ifade edilir.
+    """
+
+    r: float
+    fraction: float  # 0 < fraction < 1.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModelLimits:
+    """Bir modelin KENDİ pozisyon/kaldıraç kuralları — yalnızca `is_replica` modellere açık.
+
+    Neden var: kopya model bir dış sistemin kurallarını birebir yeniden üretir ve o
+    sistemin kaldıracı, eşzamanlı pozisyon sayısı ve portföy riski tavanı kendi
+    kurallarıdır. Bunları modelin içinde uygulamak imkânsızdır — model kendi açık
+    pozisyonlarını `generate_signals`ta göremez (kural 4/16) ve boyut/kaldıraç hesabı
+    zaten core/portfolio.py'nindir (kural 3). Bu yüzden limitler bir BİLDİRİMDİR ve
+    uygulayan yine tek yetkili yerdir.
+
+    Neden yarışmacılara kapalı: kural 6 "izin verilen evren, maliyet ve limitler tüm
+    modeller için birebir aynıdır" der. Yarışmacı bir modelin kendi limitini yazması,
+    tabloda yan yana duran iki satırın farklı kurallarla koşması demekti. Kapı
+    core/validate.py::validate_model'dedir.
+
+    Alanların hiçbiri zorunlu değildir; None = "kök ayar geçerli". `max_positions` ve
+    `max_per_direction` kök ayarları yalnızca DARALTIR (genişletemez): kopya kendi
+    kuralını bildirir, ölçümün ortak tavanını delemez.
+    """
+
+    max_positions: int | None = None
+    max_per_direction: int | None = None
+    # Açık pozisyonların toplam riski (Σ adet × |giriş − ilk stop|) sermayenin bu oranını
+    # aşacaksa yeni pozisyon AÇILMAZ. Kural 11'in "küçült, atlama" ilkesi burada
+    # geçerli değildir: bu bir ölçüm kuralı değil, kopyalanan sistemin kendi kuralıdır
+    # ve o sistem işlemi almaz. Atlama sessiz olmaz — sebep koduyla sayılır.
+    max_portfolio_risk: float | None = None
+    # Yalnızca sizing="notional_fraction" ile anlamlı ve yalnızca is_replica modellerde
+    # geçerli. Tavanı core/validate.py'deki REPLICA_LEVERAGE_CAP'tir.
+    leverage: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -59,6 +127,21 @@ class Signal:
     entry_type: Literal["market", "limit"] = "market"
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
+    # --- Üç aşamalı çıkış yönetimi (hepsi OPSİYONEL, varsayılan KAPALI) ---
+    # Üçü de yalnızca bir İSTEKTİR; uygulaması core/engine.py (stop hareketleri) ve
+    # core/portfolio.py'dedir (kısmi dolum) — kural 9'un trailing_atr için koyduğu
+    # sınırın aynısı. Doldurmayan model için hiçbir yol değişmez.
+    #
+    # breakeven_at_r: pozisyon bu R'a ulaştığında stop GİRİŞE çekilir.
+    breakeven_at_r: float | None = None
+    # partial_tp: bu R'da pozisyonun `fraction` kadarı kapanır VE stop aynı anda kısmi
+    # çıkış seviyesine çekilir. İkisi tek alanda durur çünkü tek bir karardır: "kârın bir
+    # kısmını al, kalanı risksiz taşı".
+    partial_tp: PartialTakeProfit | None = None
+    # trail_giveback_pct: KISMİ ÇIKIŞTAN SONRA stop, o ana kadarki en iyi kazancın en çok
+    # bu oranını geri verecek şekilde takip eder ve orijinal hedefi ASLA aşmaz.
+    # trailing_atr'dan AYRI bir mekanizmadır; ikisi aynı anda kullanılamaz (validate).
+    trail_giveback_pct: float | None = None
     reason: str = ""  # deftere yazılacak serbest metin
 
 
@@ -72,6 +155,13 @@ class Position:
     stop_price: float | None  # referans modellerde stop yoktur (kural 15)
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
+    # Modelin kendi çıkış yönetimi isteği, geri okunabilir hâliyle. `partial_done`
+    # gerçekleşmiş bir OLAYDIR (kısmi çıkış doldu mu) — modelin kendi pozisyonudur,
+    # kural 4'ün izolasyonuna girmez ve `manage_positions` kararını buna dayandırabilir.
+    breakeven_at_r: float | None = None
+    partial_tp: PartialTakeProfit | None = None
+    trail_giveback_pct: float | None = None
+    partial_done: bool = False
     opened_at: pd.Timestamp
 
 
@@ -125,6 +215,15 @@ class Strategy(ABC):
     # sizing="notional_fraction" kullanabilir ve metrics tablosunda ayrı bölümde,
     # R'ye dayalı kolonları nan olarak raporlanır.
     is_benchmark: bool = False
+    # True ise model bir DIŞ SİSTEMİN KOPYASIDIR: yarışmacı değil, ayrı bir referanstır.
+    # Çıpadan (is_benchmark) farkı, ölçtüğü sorudur — çıpa "piyasa ne yaptı" der, kopya
+    # "dışarıdaki şu sistem bizim maliyet/likidasyon varsayımlarımız altında ne yapardı"
+    # der. Ortak yanları: ikisi de kendi boyutlandırma kuralıyla koşar, bu yüzden
+    # ikisi de ortalama R sıralamasına GİRMEZ ve maliyet ölçeği kolonlarında nan alır
+    # (R başına maliyet, ancak ortak risk birimiyle koşan satırlar arasında kıyaslanır).
+    is_replica: bool = False
+    # Yalnızca is_replica modellerde dolu olabilir (kapı: core/validate.py).
+    limits: "ModelLimits | None" = None
 
     @abstractmethod
     def generate_signals(
