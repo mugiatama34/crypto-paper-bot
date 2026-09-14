@@ -176,8 +176,13 @@ layers:
     models: ["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"]
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
-    # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 14 sembol elle
+    # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle
     # seçilir ve sabit kalır; değişiklik bir commit'tir, bir yan etki değil.
+    #
+    # TON-USDT-SWAP bu listede DEĞİLDİR: OKX'te mevcut değil (51001) ve her turda veri
+    # çekiminden düşüyordu, yani zaten çekiliş uzayının parçası değildi. Listede durması
+    # yalnızca gürültü üretiyordu — evrenin kaç sembol olduğu sorusuna config'in verdiği
+    # cevap ile turun gerçekte gördüğü küme ayrışıyordu (bkz. docs/decisions.md > 24).
     universe:
       - "BTC-USDT-SWAP"
       - "ETH-USDT-SWAP"
@@ -191,7 +196,6 @@ layers:
       - "SUI-USDT-SWAP"
       - "NEAR-USDT-SWAP"
       - "PENGU-USDT-SWAP"
-      - "TON-USDT-SWAP"
       - "ETHFI-USDT-SWAP"
 
     ledger_dir: "ledgers_scalp"
@@ -314,10 +318,10 @@ vwap:
       min_symbol_samples: 3 # sembolde bu kadar örnek yoksa tüm semboller ortalamasına düşülür
 
     # Kaynak sistemin evreni: 12 sembol. Kaynakta 13 yazar ama TON-USDT-SWAP OKX'te
-    # kalıcı olarak yoktur (51001) ve her turda veri çekiminden düşer; listede tutmak,
-    # hiç taranmayan bir sembolü taranıyormuş gibi göstermek olurdu. Katmanın evreni
-    # 14'tür; aradaki fark (SUI ve TON) BİLİNÇLİDİR — kaynak sistemde SUI yok, fazladan
-    # bir sembolde işlem açmak kopyayı kopya olmaktan çıkarırdı.
+    # kalıcı olarak yoktur (51001); listede tutmak, hiç taranmayan bir sembolü
+    # taranıyormuş gibi göstermek olurdu — aynı gerekçeyle katmanın evreninde de yok.
+    # Katmanın evreni 13'tür ve aradaki TEK fark SUI'dir: kaynak sistemde SUI yok,
+    # fazladan bir sembolde işlem açmak kopyayı kopya olmaktan çıkarırdı.
     universe:
       - "BTC-USDT-SWAP"
       - "ETH-USDT-SWAP"

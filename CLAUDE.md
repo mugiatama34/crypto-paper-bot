@@ -310,7 +310,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | | `base` | `scalp` |
 |---|---|---|
 | Bar | 4H | 15m |
-| Evren | hacme göre ilk 50 (30 günde bir yenilenir) | **SABİT 14 sembol**, otomatik seçim yok |
+| Evren | hacme göre ilk 50 (30 günde bir yenilenir) | **SABİT 13 sembol**, otomatik seçim yok |
 | Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (11, 12, 14, 15) + 1 dış sistem kopyası (13) |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |

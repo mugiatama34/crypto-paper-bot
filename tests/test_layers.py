@@ -81,7 +81,11 @@ def test_scalp_universe_is_fixed_and_complete() -> None:
     scalp = resolve_layer(load_config(), "scalp")
 
     assert scalp.symbols is not None
-    assert len(scalp.symbols) == 14
+    assert len(scalp.symbols) == 13
+    # OKX'te mevcut olmayan sembol (51001) evrende duramaz: config'in yazdığı küme ile
+    # turun gerçekte gördüğü küme ayrışırsa "evren kaç sembol" sorusunun iki cevabı olur
+    # (bkz. docs/decisions.md > 24).
+    assert "TON-USDT-SWAP" not in scalp.symbols
     assert all(symbol.endswith("-USDT-SWAP") for symbol in scalp.symbols)
     assert "PENGU-USDT-SWAP" in scalp.symbols
     assert len(set(scalp.symbols)) == len(scalp.symbols)

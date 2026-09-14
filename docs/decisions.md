@@ -1104,6 +1104,11 @@ Evren elle yazılmış 14 semboldür ve hacimden hesaplanmaz. Gerekçe kıyasın
 zamanla kayarsa geçmiş performans başka bir sembol kümesine ait olur ve iki modelin sayıları
 aynı yarışın sayıları olmaktan çıkar.
 
+> **Güncelleme (karar 24):** liste 13 sembole indi — TON-USDT-SWAP OKX'te mevcut olmadığı
+> için zaten hiçbir turda çekiliş uzayına girmiyordu. Evrenin SABİT olması ilkesi
+> değişmedi; değişen, config'in yazdığı kümenin turun gerçekte gördüğü kümeyle
+> eşleşmesidir.
+
 Stop tavanı (kural 14) scalp'te 3× değil **8×ATR**'dir. 15 dakikalık barda ATR tipik olarak
 fiyatın %0.15-0.25'idir, oysa scalp modellerinin stop TABANI %1'dir (aşağıya bakınız). 3×
 tavanı bırakmak, kurulumların neredeyse tamamının "band dışı" diye elenmesi ve iki modelin de
@@ -1978,3 +1983,48 @@ verseydi 13 ↔ 14 ekseni boş olurdu. En keskin ikisi:
 
 - Banda geri dönmüş bir bar: model 14 için kurulum, kopya için `bant_ici`.
 - UTC gün başındaki ikinci bar: kopya için kurulum, model 14 için `vwap_yok`.
+
+## 24. TON-USDT-SWAP scalp evreninden çıkarıldı: 13 sembol
+
+Sembol OKX'te mevcut değil (`51001`). `core/data.py` her turda mum verisini çekemiyor,
+`logger.warning` ile atlıyor ve sembolü o turun anlık görüntüsüne hiç koymuyor — yani TON
+**hiçbir turda çekiliş uzayının parçası olmadı.** Listede durması ölçümü değiştirmiyordu;
+değiştirdiği tek şey, "bu katmanın evreni kaç sembol" sorusunun iki farklı cevabı
+olmasıydı: config 14 diyordu, turun gerçekte gördüğü küme 13'tü.
+
+Bu ayrışma tek başına bir arıza değil ama ölçüm hijyeni açısından kabul edilemez, çünkü
+evrenin SABİT olması (karar 17) bir kıyas koşuludur ve o koşulun denetlenebilir olması,
+yazılı listenin gerçekten koşulan liste olmasına bağlıdır. Her tur tekrarlanan bir uyarı,
+gerçek bir veri arızasının (ör. likit bir sembolün geçici olarak çekilememesi) gürültü
+içinde kaybolmasına da yol açar — uyarının anlamı "beklenmedik bir şey oldu" olmalıdır,
+"her zamanki gibi" değil.
+
+`core/validate.py`'nin sembol evreni kapısı da artık dürüst: kapı, bir modelin hiçbir
+koşulda işlem açamayacağı bir sembolü "izinli" saymıyor.
+
+**Katman içi kıyasa etkisi yok.** Beş modelin hiçbiri için çekiliş uzayı değişmedi; TON
+zaten hiçbirinin görmediği bir addı. Defterlerde TON satırı yok, dolayısıyla geçmiş
+performans da başka bir sembol kümesine ait hâle gelmiyor — karar 17'nin "evren kayarsa
+geçmiş performans başka bir kümeye ait olur" itirazı burada devreye girmiyor, çünkü kayan
+bir şey yok: yalnızca yazılı liste gerçeğe eşitlendi.
+
+Kopyanın (model 13) evreni 12'de kaldı. Katman ile kopya arasındaki fark artık TEK bir
+semboldür — SUI — ve gerekçesi tektir: kaynak sistemde SUI yok (karar 23).
+
+### Gerekçenin bir parçası doğrulanmadı
+
+Bu değişiklik istenirken öne sürülen gerekçelerden biri, `random_ctrl`ün var olmayan bir
+sembol seçebileceğiydi. **Bu mekanizma bu katmanda işlemiyor** ve karar ona dayanmıyor:
+
+- `random_ctrl` bir BASE katman modelidir (`config.yaml > models`), scalp katmanında hiç
+  koşmuyor;
+- seçimini config'in evren listesinden değil `market.ohlcv`den yapıyor
+  (`strategies/random_ctrl.py`), yani verisi çekilememiş bir sembol çekilişine zaten
+  giremiyor — aynı şey beş kollu modellerin `symbol_views` yardımcısı için de geçerli.
+
+Yanlış bir gerekçeyi karar kaydına doğruymuş gibi yazmak, ileride o mekanizmaya dayanan
+başka bir kararın sessizce hatalı kurulmasına yol açardı. Kararın gerçek gerekçesi
+yukarıdaki ilk iki paragraftır ve tek başına yeterlidir.
+
+Regresyon kapısı `tests/test_layers.py::test_scalp_universe_is_fixed_and_complete`
+içindedir: sembol listeye geri eklenirse test düşer.
