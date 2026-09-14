@@ -8,9 +8,12 @@
 <link rel="icon" href="data:,">
 <title>Paper Trading — model karşılaştırması</title>
 <!--
-  Statik tek sayfa. Harici framework yok, build adımı yok, CDN yok: GitHub Pages bu
+  Statik sayfa. Harici framework yok, build adımı yok, CDN yok: GitHub Pages bu
   dosyayı olduğu gibi sunar ve tek veri kaynağı kardeş dosya data/metrics.json'dır
-  (main.py üretir, koşu workflow'u commit eder).
+  (main.py üretir, koşu workflow'u commit eder). Ortak tasarım dili ve yardımcılar
+  kardeş dosyalarda durur (shared.css, shared.js) — iki sayfa (bu ve positions.html)
+  aynı ölçümü çizer, aynı sayının iki sayfada farklı görünmesi okuyucuya iki ayrı
+  ölçüm gibi gelirdi.
 
   Neden sıfır bağımlılık: sayfa ölçümün YÜZÜ, parçası değil. Bir grafik kütüphanesinin
   sürüm değişikliği ya da CDN kesintisi raporu okunamaz hâle getirebilmemeli; ölçüm
@@ -33,94 +36,14 @@
   (K/Z) ekran dışına taşarsa sayfa o sayıyı hiç göstermemiş olur. Dokunulabilir her
   öğe en az 44px yüksektedir.
 -->
+<link rel="stylesheet" href="shared.css">
 <style>
-  :root {
-    color-scheme: dark;
-    --plane:        #0d0d0d;
-    --surface:      #1a1a19;
-    --surface-2:    #222221;
-    --ink:          #ffffff;
-    --ink-2:        #c3c2b7;
-    --ink-muted:    #898781;
-    --grid:         #2c2c2a;
-    --axis:         #383835;
-    --hair:         rgba(255,255,255,0.10);
-
-    --s1: #3987e5;  --s2: #d95926;  --s3: #199e70;  --s4: #c98500;
-    --s5: #d55181;  --s6: #008300;  --s7: #9085e9;  --s8: #e66767;
-
-    --good:     #0ca30c;
-    --warning:  #fab219;
-    --critical: #d03b3b;
-
-    /* Diverging çift: SAYININ İŞARETİ için (pozitif/negatif). */
-    --pos: #3987e5;
-    --neg: #e66767;
-    /* Yön KİMLİĞİ için kategorik slotlar. Short'a negatif kırmızıyı vermek,
-       kârdaki bir short'u da kırmızı gösterip "kötü" diye okuturdu. */
-    --long:  #3987e5;
-    --short: #d95926;
-
-    --radius: 10px;
-    --gap: 14px;
-    --touch: 44px;   /* dokunma hedefi tabanı; hiçbir tıklanabilir öğe bundan kısa değil */
-    --font: system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body {
-    margin: 0;
-    background: var(--plane);
-    color: var(--ink);
-    font: 14px/1.5 var(--font);
-    padding: 0 0 56px;
-  }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
-
-  /* ---------------- başlık ---------------- */
-  header.top { padding: 22px 0 12px; }
-  h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  h1 span { color: var(--ink-muted); font-weight: 400; }
-  .sub { color: var(--ink-2); font-size: 12.5px; margin: 0; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .chip {
-    border: 1px solid var(--hair); border-radius: 999px; padding: 3px 9px;
-    font-size: 11.5px; color: var(--ink-2); background: var(--surface);
-    font-variant-numeric: tabular-nums; white-space: nowrap;
-  }
-  .chip b { color: var(--ink); font-weight: 600; }
-
-  section { margin-top: 26px; }
-  h2 {
-    font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--ink-muted); margin: 0 0 4px; font-weight: 600;
-  }
-  .note { color: var(--ink-muted); font-size: 12px; margin: 0 0 10px; max-width: 78ch; }
-
-  .card {
-    background: var(--surface); border: 1px solid var(--hair);
-    border-radius: var(--radius); padding: 14px;
-  }
-  .pos { color: var(--pos); }
-  .neg { color: var(--neg); }
-  .empty { color: var(--ink-muted); font-size: 12.5px; padding: 16px 0; margin: 0; }
-  [hidden] { display: none !important; }
-
-  /* ---------------- seviye 1: özet kartları ---------------- */
-  .sum-grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; }
-  .sum {
-    background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius);
-    padding: 14px; min-width: 0;
-  }
-  .sum-k { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
-  .sum-v {
-    font-size: clamp(24px, 7.5vw, 30px); font-weight: 650; line-height: 1.1;
-    letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 6px;
-    overflow-wrap: anywhere;
-  }
-  .sum-v small { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 5px; letter-spacing: 0; }
-  .sum-sub { color: var(--ink-2); font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
+  /* Ortak tasarım dili docs/shared.css'tedir (renk paleti, kart/tablo düzeni,
+     rozetler, filtre ve sayfalama kontrolleri): iki sayfa da aynı ölçümü çizer ve
+     aynı sayının iki sayfada farklı görünmesi okuyucuya iki ayrı ölçüm gibi gelir.
+     Burada YALNIZCA bu sayfaya özgü görseller kalır — başka hiçbir yerde karşılığı
+     olmayan şeyler: long/short paneli, model kartları, özsermaye grafiği, korelasyon
+     ısı haritası ve model detayının üst şeridi. */
 
   /* ---------------- long vs short ---------------- */
   .ls-grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; }
@@ -135,8 +58,6 @@
   .ls-hero small { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 6px; letter-spacing: 0; }
   .ls-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
   .ls-tiles > div { min-width: 0; }
-  .tile-k { color: var(--ink-muted); font-size: 11px; }
-  .tile-v { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .verdict { margin-top: var(--gap); }
   .verdict p { margin: 0; color: var(--ink-2); font-size: 13px; }
   .verdict b { color: var(--ink); }
@@ -172,34 +93,8 @@
   .mcard-row span { color: var(--ink-muted); }
   .mcard-spark { margin-top: auto; }
   .mcard-spark svg { display: block; width: 100%; height: 34px; overflow: visible; }
-  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: baseline; }
-  /* Slot döngüye girdiğinde renk tek başına kimlik taşıyamaz: içi boş kare, grafikteki
-     kesikli çizginin kart/tablo karşılığıdır. */
-  .swatch.dashed { background: transparent !important; box-shadow: inset 0 0 0 2px currentColor; }
-  .tag {
-    font-size: 9.5px; letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px;
-    border: 1px solid var(--hair); color: var(--ink-muted); margin-left: 7px; font-weight: 600;
-    white-space: nowrap;
-  }
 
-  /* ---------------- kabul rozetleri ---------------- */
-  .badges { display: inline-flex; gap: 4px; flex-wrap: wrap; }
-  .badge {
-    display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700;
-    letter-spacing: 0.03em; padding: 2px 6px; border-radius: 4px; border: 1px solid transparent;
-    background: transparent; font-family: inherit; white-space: nowrap;
-  }
-  .badge.on  { color: var(--good);      border-color: rgba(12,163,12,0.45); background: rgba(12,163,12,0.12); }
-  .badge.off { color: var(--ink-muted); border-color: var(--hair); }
-  .badge.na  { color: var(--ink-muted); border-color: transparent; }
-  /* Band bir KAPI değil uyarıdır: statü rengi taşır ve yalnızca uyaracak bir şey
-     varken görünür. Sessizken hiç çizilmez — her satırda duran bir uyarı, uyarı
-     olmaktan çıkıp süse döner. */
-  .badge.warn { color: var(--warning); border-color: rgba(250,178,25,0.45); background: rgba(250,178,25,0.10); }
-  /* Detayda rozet TIKLANABİLİR: `title` yalnızca fareyle gelene açılır, dokunmatikte
-     gerekçe hiç okunamazdı. Tıklanabilir olduğu için dokunma hedefi tabanına uyar. */
-  button.badge { min-height: var(--touch); padding: 0 11px; font-size: 11px; cursor: pointer; }
-  button.badge:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 1px; }
+  /* ---------------- rozet gerekçesi (seviye 2) ---------------- */
   .tipbox {
     margin-top: 10px; border: 1px solid var(--hair); border-left: 3px solid var(--ink-muted);
     border-radius: 8px; background: var(--surface-2); padding: 10px 12px;
@@ -246,82 +141,8 @@
     background: var(--surface); border: 1px solid var(--hair); border-radius: 8px;
     padding: 10px 11px; min-width: 0;
   }
-  .strip .tile-v { font-size: clamp(17px, 5vw, 19px); margin-top: 2px; }
-
-  /* ---------------- listeler: kart düzeni (mobil öncelikli) ---------------- */
-  .rows { display: grid; gap: 8px; }
-  .row {
-    background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius);
-    padding: 11px 12px; min-width: 0;
-  }
-  .row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .row-top > div { min-width: 0; }
-  .row-sym { font-weight: 650; font-size: 13.5px; overflow-wrap: anywhere; }
-  .row-model { color: var(--ink-muted); font-size: 11.5px; }
-  .dir { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
-  .dir.long  { color: var(--long);  background: rgba(57,135,229,0.14); }
-  .dir.short { color: var(--short); background: rgba(217,89,38,0.16); }
-  .row-grid {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin-top: 8px;
-    font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums;
-  }
-  .row-grid > div { min-width: 0; }
-  .row-grid span { color: var(--ink-muted); }
-  /* Hücre satır sonu ALABİLİR, ama sayının içinden değil: her sayı `.nw` ile atomiktir.
-     Hücreye top yekûn `nowrap` vermek iki hedefli bir "hedef" değerini ekranın dışına
-     taşırıyordu; `normal` bırakıp sayıyı sarmamak ise sayıyı ortadan bölerdi. */
-  .row-grid b { font-weight: 600; color: var(--ink-2); white-space: normal; }
-  .nw { white-space: nowrap; }
-  .reason {
-    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--grid);
-    font-size: 11.5px; color: var(--ink-muted); line-height: 1.45;
-    overflow-wrap: anywhere;
-  }
-  .row-val { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .row-val-sub { font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-  /* ---------------- listeler: tablo düzeni (yalnızca geniş ekran) ---------------- */
-  /* Tablo ile kart AYNI veriyi iki düzende verir; hangisinin görüneceğine yalnızca
-     genişlik karar verir. Geniş tabloyu dar ekranda kaydırma çubuğuna sarmak, K/Z
-     kolonunu ekranın dışında bırakıp sayfanın onu hiç göstermemesi demekti. */
-  .wide { display: none; }
-  table.grid { border-collapse: collapse; width: 100%; font-size: 12.5px; table-layout: auto; }
-  table.grid th, table.grid td { padding: 6px 7px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  /* Başlık SARILABİLİR, hücredeki sayı sarılmaz: iki satırlık bir başlık okunur,
-     ortadan bölünmüş bir K/Z okunmaz. Tabloyu sabit genişlikte tutmanın tek yolu
-     bu — aksi hâlde uzun bir başlık tablonun kendisini ekran dışına taşırıyor. */
-  table.grid th {
-    color: var(--ink-muted); font-weight: 600; font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: 0.04em; border-bottom: 1px solid var(--axis); white-space: normal;
-  }
-  table.grid th:first-child, table.grid td:first-child { text-align: left; }
-  table.grid td.symcell { white-space: normal; }
-  table.grid tbody tr.data { border-top: 1px solid var(--grid); }
-  table.grid td.wrapcell { white-space: normal; }
-  table.grid td.reason-cell {
-    text-align: left; white-space: normal; color: var(--ink-muted); font-size: 11.5px;
-    padding: 0 8px 9px; overflow-wrap: anywhere;
-  }
-
-  /* ---------------- filtre + sayfalama ---------------- */
-  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
-  .seg { display: inline-flex; border: 1px solid var(--hair); border-radius: 999px; background: var(--surface); overflow: hidden; }
-  .seg button {
-    min-height: var(--touch); padding: 0 14px; background: transparent; border: 0;
-    color: var(--ink-2); font: 600 12px/1 var(--font); cursor: pointer;
-  }
-  .seg button + button { border-left: 1px solid var(--hair); }
-  .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); }
-  .pager { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-  .pager button {
-    min-height: var(--touch); padding: 0 16px; border: 1px solid var(--hair); border-radius: 999px;
-    background: var(--surface); color: var(--ink-2); font: 600 12.5px/1 var(--font); cursor: pointer;
-  }
-  .pager button:disabled { opacity: 0.4; cursor: default; }
-  .pager .count { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
   /* ---------------- korelasyon ---------------- */
-  h3.sub { margin: 18px 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
   table.heat { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 10.5px; }
   table.heat th, table.heat td { padding: 2px; text-align: center; }
   table.heat th.col { height: 84px; vertical-align: bottom; padding-bottom: 6px; }
@@ -347,35 +168,22 @@
   .pair span { color: var(--ink-2); overflow-wrap: anywhere; }
   .pair b { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-  footer { color: var(--ink-muted); font-size: 11.5px; margin-top: 34px; line-height: 1.6; }
-  footer a {
-    color: var(--ink-2); display: inline-flex; align-items: center;
-    min-height: var(--touch); padding-right: 2px;
-  }
-  .banner {
-    border: 1px solid rgba(250,178,25,0.4); background: rgba(250,178,25,0.08);
-    color: var(--warning); border-radius: var(--radius); padding: 10px 12px; font-size: 12.5px;
-    margin-top: 12px;
-  }
+  /* Bu sayfanın tablo/kart kırılımı: tablo düzeni yalnızca 11 kolonun hiçbiri
+     kırpılmadan sığdığı genişlikte açılır. Eşik ölçülerek seçildi: uç değerlerle
+     (yedi haneli miktar, sekiz ondalıklı fiyat) tablo ~1040px istiyor; altında kart
+     düzeni kalır ve sayfa yatay kaymaz. */
+  .wide { display: none; }
 
   @media (min-width: 560px) {
-    .sum-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .mcards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ls-tiles { grid-template-columns: repeat(3, 1fr); }
-    .strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .row-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
   @media (min-width: 760px) {
     .ls-grid { grid-template-columns: 1fr 1fr; }
-    h1 { font-size: 21px; }
   }
   @media (min-width: 900px) {
     .mcards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .row-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
-  /* Tablo düzeni yalnızca 11 kolonun hiçbiri kırpılmadan sığdığı genişlikte açılır.
-     Eşik ölçülerek seçildi: uç değerlerle (yedi haneli miktar, sekiz ondalıklı fiyat)
-     tablo ~1040px istiyor; altında kart düzeni kalır. */
   @media (min-width: 1060px) {
     .wide { display: block; }
     .narrow { display: none; }
@@ -390,6 +198,10 @@
     <h1>Paper Trading <span>— 10 model, tek piyasa, izole hesaplar</span></h1>
     <p class="sub" id="stamp">yükleniyor…</p>
     <div class="chips" id="chips"></div>
+    <nav class="nav">
+      <a href="index.html" aria-current="page">Genel bakış</a>
+      <a href="positions.html">Pozisyonlar &amp; işlemler →</a>
+    </nav>
     <div id="banner"></div>
   </header>
 
@@ -566,53 +378,14 @@
 
 </div>
 
+<!-- Ortak yardımcılar: biçimlendirme, çıkış sebebi etiketleri, renk/kimlik ataması,
+     yük okuma. Tek kopya docs/shared.js'tedir — aynı sayının iki sayfada farklı
+     yuvarlanması okuyucuya iki ayrı ölçüm gibi gelirdi. Klasik script: buradaki
+     tanımlar aşağıdaki satır içi script'ten görünür, build adımı yok. -->
+<script src="shared.js"></script>
 <script>
 "use strict";
 
-/* ------------------------------------------------------------------ *
- * Biçimlendirme — tanımsız metrik "—" olur, 0 DEĞİL.
- * JSON'da nan null'dır (bkz. main.py::_jsonable): "ölçülemedi" ile
- * "ölçüldü, sıfır çıktı" aynı hücreye yazılmaz.
- * ------------------------------------------------------------------ */
-const DASH = "—";
-const num = (v) => (v === null || v === undefined || v === "" || Number.isNaN(v)) ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
-const fmt = (v, d = 2) => { const n = num(v); return n === null ? DASH : n.toFixed(d); };
-const fmtSigned = (v, d = 2) => { const n = num(v); return n === null ? DASH : (n > 0 ? "+" : "") + n.toFixed(d); };
-const pct = (v, d = 1) => { const n = num(v); return n === null ? DASH : (n * 100).toFixed(d) + "%"; };
-const pctSigned = (v, d = 2) => { const n = num(v); return n === null ? DASH : (n > 0 ? "+" : "") + (n * 100).toFixed(d) + "%"; };
-const pctRaw = (v, d = 2) => { const n = num(v); return n === null ? DASH : n.toFixed(d) + "%"; };
-const usd = (v, d = 2) => { const n = num(v); return n === null ? DASH : (n > 0 ? "+" : "") + n.toFixed(d); };
-const signClass = (v) => { const n = num(v); return n === null ? "" : (n > 0 ? "pos" : (n < 0 ? "neg" : "")); };
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-));
-/* Fiyat ve miktar ondalığı sembole göre değişir: BTC 77222.69, bir altcoin 0.7232.
-   Sabit iki hane küçük fiyatları "0.72" diye yuvarlayıp stop ile girişi aynı sayı
-   gösterirdi — stop mesafesi de o iki sayının farkından okunuyor. */
-const price = (v) => {
-  const n = num(v); if (n === null) return DASH;
-  const a = Math.abs(n);
-  return n.toFixed(a >= 1000 ? 2 : a >= 100 ? 3 : a >= 1 ? 4 : a >= 0.01 ? 6 : 8);
-};
-const qty = (v) => {
-  const n = num(v); if (n === null) return DASH;
-  const a = Math.abs(n);
-  return n.toFixed(a >= 1000 ? 2 : a >= 1 ? 3 : 6);
-};
-const shortTs = (s) => {
-  if (!s) return DASH;
-  const d = new Date(s);
-  if (Number.isNaN(+d)) return String(s).slice(0, 16).replace("T", " ");
-  return d.toISOString().slice(5, 16).replace("T", " ");
-};
-const el = (id) => document.getElementById(id);
-
-/* Çıkış sebebi deftere kod olarak yazılır; sayfa onu okunur hâle getirir ama
-   likidasyonu DİĞERLERİYLE AYNI renkte göstermez: likidasyon bir stop değil,
-   bakım marjının ihlalidir (kural 13) ve raporun görmesi gereken şey tam olarak o. */
-const EXIT_LABELS = { stop: "stop", tp: "hedef (TP)", liquidation: "likidasyon", signal: "sinyal" };
-const exitLabel = (code) => EXIT_LABELS[code] || (code || DASH);
-const exitClass = (code) => (code === "liquidation" ? "neg" : "");
 
 /* ------------------------------------------------------------------ *
  * Tez grupları (seviye 1). Modeli hangi SORUYU sorduğuna göre
@@ -636,39 +409,8 @@ const REFERENCE_GROUP = {
   models: ["buyhold", "random_ctrl"],
 };
 
-/* ------------------------------------------------------------------ *
- * Renk ataması: kimlik sabittir. Bir model filtrelendiğinde ya da
- * sıralama değiştiğinde hiçbir modelin rengi DEĞİŞMEZ — rengi sıraya
- * göre dağıtmak, "trend maviydi" diye öğrenen okuyucuyu yanıltır.
- * ------------------------------------------------------------------ */
-const SLOTS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
-const REF_COLOR = "#c3c2b7";      // referans çıpası: nötr, hue yok — bir fikir değil zemin
-const CTRL_COLOR = "#898781";     // kontrol grubu: nötr, daha sönük
-let STYLE = {};                   // model -> {color, dash, kind}
-
-function assignStyles(models, benchmarks, controlModel) {
-  const style = {};
-  let slot = 0;
-  for (const model of models) {
-    if (benchmarks.includes(model)) {
-      style[model] = { color: REF_COLOR, dash: "", width: 2.5, kind: "reference" };
-    } else if (model === controlModel) {
-      style[model] = { color: CTRL_COLOR, dash: "5 4", width: 2, kind: "control" };
-    } else {
-      // 8 slot dolduğunda yeni renk ÜRETİLMEZ: slot baştan alınır ama çizgi kesikli olur,
-      // yani kimliği renk + desen birlikte taşır (renk körlüğünde tek başına renk yetmez).
-      const cycle = Math.floor(slot / SLOTS.length);
-      style[model] = {
-        color: SLOTS[slot % SLOTS.length],
-        dash: cycle === 0 ? "" : "7 3",
-        width: 2,
-        kind: "competitor",
-      };
-      slot += 1;
-    }
-  }
-  return style;
-}
+/* Model -> {color, dash, kind}; atama docs/shared.js::assignStyles'ta. */
+let STYLE = {};
 
 /* ------------------------------------------------------------------ *
  * Durum: tek veri yükü + iki seviyenin görünüm durumu
@@ -687,8 +429,7 @@ let detailView = { model: null, filter: "all", page: 0, tip: null };
  * ------------------------------------------------------------------ */
 entryWasDetail = !!hashModel();
 
-fetch("data/metrics.json?t=" + Date.now(), { cache: "no-store" })
-  .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+fetchPayload("data/metrics.json")
   .then(render)
   .catch((err) => {
     el("stamp").textContent = "data/metrics.json okunamadı: " + err.message;
@@ -740,8 +481,7 @@ function render(d) {
  * doğrudan kıyası yanıltıcı yapar.
  * ------------------------------------------------------------------ */
 function loadScalp() {
-  fetch("data/metrics_scalp.json?t=" + Date.now(), { cache: "no-store" })
-    .then((r) => (r.ok ? r.json() : null))
+  fetchPayload("data/metrics_scalp.json")
     .then((d) => { if (d) renderScalp(d); })
     .catch(() => { /* katman henüz koşmadı: bölüm gizli kalır */ });
 }
@@ -1687,7 +1427,7 @@ function renderDetailTrades(model) {
       '<div class="row-top"><div>' +
         '<span class="row-sym">' + esc(t.symbol) + "</span> " +
         '<span class="dir ' + esc(t.direction) + '">' + esc((t.direction || "").toUpperCase()) + "</span>" +
-        '<div class="row-model ' + exitClass(t.exit_reason) + '">çıkış: ' + esc(exitLabel(t.exit_reason)) + "</div>" +
+        '<div class="row-model ' + exitClass(t.exit_reason) + '">çıkış: ' + esc(exitText(t)) + "</div>" +
       "</div>" +
       '<div style="text-align:right"><div class="row-val ' + signClass(t.r) + '">' + fmtSigned(t.r) + "R</div>" +
       '<div class="row-val-sub ' + signClass(t.pnl) + '">' + usd(t.pnl) + " USDT</div></div></div>" +

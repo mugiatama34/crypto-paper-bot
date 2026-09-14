@@ -114,9 +114,11 @@ hata fırlatılır.
 
 ## Dashboard (GitHub Pages)
 
-`docs/index.html` statik bir tek sayfadır: harici framework yok, CDN yok, build adımı yok.
+`docs/index.html` statik bir sayfadır: harici framework yok, CDN yok, build adımı yok.
 Tek veri kaynağı kardeş dosya `docs/data/metrics.json`'dır — her turda `main.py` üretir,
-koşu workflow'u defterlerle birlikte commit eder. Sayfayı yayına almak için depo
+koşu workflow'u defterlerle birlikte commit eder. Ortak tasarım dili ve biçimleyiciler iki
+sayfanın paylaştığı kardeş dosyalarda durur (`docs/shared.css`, `docs/shared.js`): aynı
+sayının iki sayfada farklı görünmesi okuyucuya iki ayrı ölçüm gibi gelirdi. Sayfayı yayına almak için depo
 ayarlarında **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`** seçmek
 yeterlidir; ayrı bir deploy workflow'u gerekmez.
 
@@ -130,6 +132,24 @@ sessizce gizli kalır.
 Sayfa **iki seviyelidir**: genel bakış tüm modelleri yan yana koyar, model kartına
 dokunulduğunda o modelin detayı açılır. Detayın adresi `#model=<ad>` hash'idir — geri tuşu,
 yer imi ve paylaşılan link çalışır.
+
+### İkinci sayfa: pozisyonlar & işlemler (`docs/positions.html`)
+
+Dashboard "hangi model önde" der; `docs/positions.html` **"tam olarak ne açık ve tam olarak
+ne kapandı"** der. **Tüm katmanlar ve tüm modeller tek sayfadadır** (iki yükü de okur) ve
+katman/model/yön/sonuç/tarih filtreleriyle daraltılır; filtrelenmiş görünümün adresi
+paylaşılabilir (durum adres çubuğunda durur).
+
+| Tablo | Kolonlar |
+|---|---|
+| Açık pozisyonlar | model, sembol, yön, giriş, anlık fiyat, anlık K/Z (USDT), anlık R, TP, SL, **durum rozetleri** (başabaş alındı mı / kısmi alındı mı / takip aktif mi), kaldıraç, margin, riske edilen tutar, birikmiş funding, açılış (UTC) ve kırpılmamış strateji gerekçesi. |
+| Kapanmış işlemler | model, sembol, yön, **sonuç** (KAZANÇ/KAYIP + çıkış sebebi: TP / stop / takip eden stop / likidasyon / zaman stop'u), giriş, çıkış, miktar, kaldıraç, K/Z, komisyon, funding, R, açılış ve kapanış (UTC), gerekçe. Sayfalı, 50'şer. |
+
+**Kısmi çıkışlar ayrı satır olarak görünür ama istatistiklere DAHİL EDİLMEZ** (tablo
+başlığında yazar): tamamlanmış işlem değil, hâlâ açık bir pozisyonun dilimidirler ve saymak
+aynı pozisyonu iki kez ölçüme sokardı. Katman etiketi her satırda durur, özet şeridi
+yalnızca aktif filtreye göre hesaplanır — katmanlar arası kıyas burada da yapılmaz. 480px
+altında tablolar kart düzenine döner; hiçbir sayı kırpılmaz.
 
 **Seviye 1 — genel bakış**
 
@@ -348,6 +368,9 @@ Projenin "tamamlandı" sayılması için:
       paneli ve tez gruplarına ayrılmış model kartları genel bakışta, modelin açık/kapanmış
       işlemleri `#model=<ad>` detayında; iki kabul kapısı ve band uyarısı her iki seviyede
       (`tests/test_report.py`).
+- [x] `docs/positions.html` açık pozisyonları ve kapanmış işlemleri satır satır, iki
+      katman ve tüm modeller için tek sayfada gösteriyor; kısmi çıkışlar görünür ama
+      istatistiğe girmiyor (`tests/test_report.py`).
 - [x] `scripts/telegram_report.py` günlük özeti yolluyor ve hatası turu düşürmüyor
       (`tests/test_telegram_report.py`).
 

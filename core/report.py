@@ -38,6 +38,7 @@ from core.metrics import (
     return_correlation,
     symbol_of,
 )
+from core.tags import find_tag
 from strategies.base import MarketData
 
 logger = logging.getLogger(__name__)
@@ -237,9 +238,15 @@ def _position_row(
     direction = str(payload.get("direction", ""))
     qty = _to_float(payload.get("qty")) or 0.0
     entry = _to_float(payload.get("entry_price")) or 0.0
+    stop = _to_float(payload.get("stop_price"))
     initial_stop = _to_float(payload.get("initial_stop_price"))
     funding = _to_float(payload.get("funding")) or 0.0
     entry_fee = _to_float(payload.get("entry_fee")) or 0.0
+    partial_tp = payload.get("partial_tp")
+    breakeven_at_r = _to_float(payload.get("breakeven_at_r"))
+    trail_giveback = _to_float(payload.get("trail_giveback_pct"))
+    trailing_atr = _to_float(payload.get("trailing_atr"))
+    partial_done = bool(payload.get("partial_done", False))
     # Fiyatı olmayan sembolde giriş fiyatı kullanılır: bilgi yokken pozisyonu kâr ya da
     # zararda göstermek uydurmak olurdu (core/portfolio.py::_mark ile aynı kural).
     mark = float(marks.get(symbol, entry))
@@ -257,11 +264,18 @@ def _position_row(
         "entry_price": entry,
         "mark_price": mark,
         "marked": symbol in marks,
-        "stop_price": _to_float(payload.get("stop_price")),
+        "stop_price": stop,
         "initial_stop_price": initial_stop,
         "liq_price": _to_float(payload.get("liq_price")),
         "leverage": _to_float(payload.get("leverage")),
         "notional": qty * entry,
+        # Marj ve riske edilen tutar deftere yazılan iki AYRI büyüklüktür ve biri
+        # diğerinden türetilemez: marj notional/kaldıraçtır, risk ise ilk stop'a olan
+        # mesafedir (kural 11'in paydası). Sayfa ikisini yan yana gösterebilsin diye
+        # ikisi de taşınır — "ne kadarı bağlı" ile "ne kadarı riskte" aynı soru değil.
+        "margin": _to_float(payload.get("margin")),
+        "risk_amount": risk,
+        "initial_qty": _to_float(payload.get("initial_qty")),
         # Hedefler KALAN hedeflerdir: kısmi TP dolduğunda portfolio onu pozisyondan
         # düşer (core/portfolio.py), dolayısıyla sayfa "bundan sonra ne bekleniyor"u
         # gösterir — dolmuş bir hedefi hâlâ beklenen gibi çizmek yanlış olurdu.
@@ -282,9 +296,52 @@ def _position_row(
         # zararda bir pozisyon) okuyucuya çelişki gibi gelirdi.
         "pnl_pct": (pnl / (qty * entry) * 100.0) if qty * entry > 0.0 else float("nan"),
         "r": (pnl / risk) if risk else float("nan"),
-        "trailing_atr": _to_float(payload.get("trailing_atr")),
+        "trailing_atr": trailing_atr,
+        # --- Üç aşamalı çıkış yönetiminin DURUMU (kural 13b) ---
+        # İstek ile OLAY ayrı taşınır: `breakeven_at_r` modelin açılışta bildirdiği
+        # isteği, `breakeven_done` stop'un gerçekten girişe çekilmiş olduğunu söyler.
+        # İkisini tek alana indirmek, mekanizmayı bildiren ama henüz tetiklenmemiş bir
+        # pozisyonu "yönetildi" gibi gösterirdi — oysa modeller 13/14/15'in ölçtüğü şey
+        # yönetimin UYGULANMASI.
+        "breakeven_at_r": breakeven_at_r,
+        "breakeven_done": _breakeven_done(
+            direction=direction, entry=entry, stop=stop, breakeven_at_r=breakeven_at_r
+        ),
+        "partial_tp": (
+            {
+                "r": _to_float(partial_tp.get("r")),
+                "fraction": _to_float(partial_tp.get("fraction")),
+            }
+            if isinstance(partial_tp, Mapping)
+            else None
+        ),
+        "partial_done": partial_done,
+        "trail_giveback_pct": trail_giveback,
+        # "Takip aktif" = stop'u HÂLÂ hareket ettirebilecek bir kural var. Geri verme
+        # takibi kısmi çıkıştan önce devreye girmez (core/engine.py::_giveback_stop), bu
+        # yüzden `partial_done` şartı burada da durur.
+        "trailing_active": trailing_atr is not None or (trail_giveback is not None and partial_done),
+        # Stop'u en son hangi kural taşıdı; boş = ilk stop yerinde duruyor.
+        "stop_rule": str(payload.get("stop_rule", "") or ""),
+        "stop_moved": stop is not None and initial_stop is not None and stop != initial_stop,
         "reason": str(payload.get("reason", "")),
     }
+
+
+def _breakeven_done(
+    *, direction: str, entry: float, stop: float | None, breakeven_at_r: float | None
+) -> bool:
+    """Stop GERÇEKTEN başabaşa (ya da ötesine) çekilmiş mi.
+
+    Ölçüt stop'un kendisidir, "pozisyon o R'a ulaştı mı" hesabının burada tekrarlanması
+    değil: bu modül salt okunurdur ve motorun kuralını ikinci kez yazmak, ikisinin bir
+    gün sessizce ayrışması demekti (core/engine.py::_breakeven_stop tek uygulayıcıdır).
+    Mekanizmayı hiç bildirmemiş bir model için False — stop'u girişe denk gelen bir
+    pozisyonu "başabaş alındı" diye göstermek, olmayan bir yönetimi raporlamak olurdu.
+    """
+    if breakeven_at_r is None or stop is None:
+        return False
+    return stop >= entry if direction == "long" else stop <= entry
 
 
 # --------------------------------------------------------------------------- #
@@ -324,6 +381,11 @@ def _trade_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "stop_price": _to_float(row.get("stop_price")),
         "qty": _to_float(row.get("qty")),
         "notional": _to_float(row.get("notional")),
+        # Kaldıraç ve marj deftere yazılır ama tabloda türetilemez: kural 11 kaldıracı bir
+        # sonuç olarak üretir (tavana takılan pozisyon küçülür), yani notional/sermaye
+        # oranından geri hesaplanamaz — sermaye o işlemin açıldığı andaki sermayedir.
+        "leverage": _to_float(row.get("leverage")),
+        "margin": _to_float(row.get("margin")),
         # Deftere yazılan GERÇEKLEŞEN 1R. R kolonunun paydası olduğu için taşınır:
         # onsuz sayfa "bu işlemin R'si neye göre" sorusunu cevaplayamaz ve okuyucu
         # paydayı `risk_per_trade × sermaye` sanar (kural 11'in tavanı boyutu
@@ -335,6 +397,15 @@ def _trade_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "funding": _to_float(row.get("funding")),
         "r": (pnl / risk) if (risk and pnl is not None) else float("nan"),
         "exit_reason": str(row.get("exit_reason", "")),
+        # Çıkışın ALT sebebi (core/portfolio.py::_exit_notes): takip eden stop mu, başabaş
+        # stop'u mu, zaman stop'u mu. `exit_reason` beş kaba koddur ve bu ayrımı taşımaz;
+        # eski satırlarda etiket yoktur ve boş kalır — uydurulmaz.
+        "exit_rule": find_tag(row.get("notes", ""), "exit_rule") or "",
+        # Kısmi çıkış TAMAMLANMIŞ bir işlem değildir: aynı pozisyonun bir dilimidir ve
+        # kalanı hâlâ açıktır. Sayfa onu ayrı satır olarak gösterir ama istatistiğe
+        # katmaz; ayrımı satırın kendisi taşısın diye bayrak yükte durur.
+        "is_partial": str(row.get("exit_reason", "")) == "partial",
+        "notes": str(row.get("notes", "")),
         "reason": str(row.get("signal_reason", "")),
     }
 

@@ -370,3 +370,25 @@ def test_old_ledgers_without_the_fields_load_as_management_off() -> None:
     assert position.breakeven_at_r is None
     assert position.partial_tp is None
     assert position.partial_done is False
+
+
+# --------------------------------------------------------------------------- #
+# Kısmi çıkışın ÇEKTİĞİ stop'un kimliği
+# --------------------------------------------------------------------------- #
+def test_stop_pulled_by_the_partial_is_labelled_on_the_closing_trade() -> None:
+    """Kısmi çıkış stop'u çeker; o stop'un aldığı işlem "ilk stop aldı" gibi okunmamalı.
+
+    Modeller 13/14/15'in ölçtüğü şey yönetimin katkısıdır: kısmi çıkıştan sonra
+    kapanan pozisyonun çıkış kuralı defterden okunabilmeli.
+    """
+    portfolio = Portfolio(_frictionless())
+    position = _open(portfolio, partial_tp=PartialTakeProfit(r=1.0, fraction=0.5))
+
+    partials = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 106.0, 99.0, 105.0)})
+    assert [trade.exit_reason for trade in partials] == ["partial"]
+    assert position.stop_rule == "partial"
+    assert position.stop_price == pytest.approx(105.0)
+
+    closes = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(105.0, 106.0, 104.0, 104.5)})
+    assert [trade.exit_reason for trade in closes] == ["stop"]
+    assert "exit_rule=partial" in closes[0].notes

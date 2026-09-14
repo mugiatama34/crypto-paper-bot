@@ -80,6 +80,7 @@ from core.ledger import Ledger
 # R'nin tek tanımı core/metrics.py'dedir (pnl / risk_amount). Motorun kendi bölmesi,
 # modelin öğrendiği R ile tabloda raporlanan R'nin sessizce ayrışması demekti.
 from core.metrics import r_multiple
+from core.tags import find_tag
 from core.portfolio import (
     SIZING_FAILURES,
     Bar,
@@ -571,6 +572,10 @@ class Engine:
                     ts=ts,
                     fraction=order.fraction,
                     exit_reason="signal",
+                    # Talimatın kendi etiketi (ör. `exit_rule=time_stop`) deftere taşınır:
+                    # `exit_reason` bu yolda her zaman "signal"dır ve zaman stop'u ile
+                    # başka bir strateji çıkışı ayırt edilemez kalırdı.
+                    exit_rule=find_tag(order.reason, "exit_rule") or "",
                 )
                 if trade is None:
                     logger.info(
@@ -647,6 +652,7 @@ class Engine:
                     symbol=position.symbol,
                     direction=position.direction,
                     stop_price=candidate,
+                    rule=rule,
                 ):
                     logger.debug(
                         "%s %s stop -> %.10g [%s] (ts=%s)",
