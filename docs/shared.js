@@ -133,3 +133,30 @@ function fetchPayload(path) {
 /* Yön rozeti — iki sayfada da aynı görünür. */
 const dirBadge = (direction) =>
   '<span class="dir ' + esc(direction) + '">' + esc(String(direction || "").toUpperCase()) + "</span>";
+
+/* ------------------------------------------------------------------ *
+ * Ölçüm okuma — TEK yol.
+ *
+ * Ortalama R, kazanma oranı ve işlem sayısı `core/metrics.py`nin
+ * ürettiği sayılardır; sayfa onları ÇİZER, yeniden HESAPLAMAZ (kural 7).
+ * İki hesap yolu bugün hizalansa bile yarın ayrışır: birinin kısmi
+ * çıkışı sayması, diğerinin saymaması yeter ve aynı model iki sayfada
+ * iki farklı kazanma oranı gösterir — okuyucuya iki ayrı ölçüm gibi
+ * gelir (bkz. docs/shared.css'in tek kopya olma gerekçesi).
+ *
+ * `model` null ise HAVUZ okunur (`pooled`): yalnızca yarışmacılar,
+ * çünkü çıpanın R'si yoktur (kural 15) ve kopyanınki başka birimdedir
+ * (kural 15b). Kapsam çağıranın söylemesi gereken bir şeydir; bu yüzden
+ * dönen nesne `scope` alanını da taşır.
+ * ------------------------------------------------------------------ */
+function statsSlice(payload, model, direction) {
+  const dir = direction && direction !== "all" ? direction : "total";
+  if (!payload) return null;
+  if (!model) {
+    const pooled = payload.pooled || {};
+    const stats = (pooled.directions || {})[dir];
+    return stats ? { ...stats, scope: "pooled", models: pooled.models || [] } : null;
+  }
+  const row = (payload.models || []).find((m) => (m.model || m.name) === model);
+  return row && row[dir] ? { ...row[dir], scope: "model", models: [model] } : null;
+}

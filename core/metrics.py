@@ -82,7 +82,7 @@ class DirectionStats:
     """Tek bir yönün (ya da toplamın) işlem-tabanlı metrikleri. Başta R gelir."""
 
     direction: str
-    trades: int
+    trades: int  # POZİSYON sayısı (dolum değil); bkz. merge_fills
     avg_r: float
     median_r: float
     total_r: float
@@ -99,7 +99,7 @@ class DirectionStats:
     slippage_cost: float
     funding: float
     liquidations: int
-    unmeasured: int  # risk_amount'ı olmayan, R'ye giremeyen satır sayısı
+    unmeasured: int  # risk_amount'ı olmayan, R'ye giremeyen POZİSYON sayısı
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -167,6 +167,11 @@ def stop_distance_pct(row: Mapping[str, Any]) -> float | None:
 def cost_per_r(row: Mapping[str, Any]) -> float | None:
     """İşlemin tüm dolumlarında ödenen komisyon + kaymanın `risk_amount`'a oranı.
 
+    "Tüm dolumlar" (giriş, kısmi TP'ler, çıkış) şartını sağlayan şey satırın kendisi
+    değil, `merge_fills`tir: defterde her dilim ayrı satırdır ve tek bir dilimin
+    maliyet/risk oranı pozisyonun maliyetini anlatmaz. Birleştirilmiş satırda hem pay
+    hem payda pozisyonun tamamını taşır.
+
     Payda her zaman İLK stop'tan gelen `risk_amount`'tır, trailing ile güncellenen stop
     değil: R giriş anında üstlenilen risktir, trailing yalnızca kârı korur. Yürüyen stop'u
     kullanmak iyi giden işlemlerin paydasını sonradan küçültüp cost_per_r'yi şişirirdi —
@@ -181,6 +186,87 @@ def cost_per_r(row: Mapping[str, Any]) -> float | None:
     return (fee + slippage) / risk
 
 
+# --------------------------------------------------------------------------- #
+# Pozisyon birleştirme: bir POZİSYON = bir ölçüm satırı
+# --------------------------------------------------------------------------- #
+# `trades.csv` bir DOLUM defteridir, işlem defteri değil: kısmi çıkış (`exit_reason`
+# "partial") ve `fraction < 1.0` olan her take-profit aynı pozisyon için AYRI satır
+# yazar (core/portfolio.py::_close, `fraction_of_initial`). Bugün `avwap` iki TP
+# seviyesi, `downtrend_rally` yarım TP, modeller 13/14/15 ise üç aşamalı çıkış
+# kullanıyor — hepsi pozisyon başına birden çok satır demektir.
+#
+# Ölçüm bu satırları TEK pozisyona indirger. İki alternatif de yanlıştı:
+#   - Satırları olduğu gibi saymak, aynı pozisyonu iki kez ölçüme sokar ve kazanma
+#     oranını yapay yükseltir (kısmi çıkış tanımı gereği kârda gerçekleşir).
+#   - Kısmi satırı ATMAK ise ters yönde bozar: pozisyonun kilitlenmiş kârı ölçümden
+#     düşer, kalan dilimin R'si tüm pozisyonun R'si sanılır ve yönetimli model
+#     (15) yönetimsiz ikizine (12) karşı haksızca kötü görünür.
+# Toplayarak ikisinden de kaçınılır: R = Σpnl / Σrisk, yani pozisyonun GERÇEK R'si.
+_SUMMED_COLUMNS: tuple[str, ...] = (
+    "qty", "notional", "risk_amount", "margin", "fee", "slippage_cost", "funding", "pnl",
+)
+
+
+def position_key(row: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    """Satırın ait olduğu pozisyonun kimliği.
+
+    `strategy` anahtara dâhildir çünkü havuz (`pooled_direction_stats`) birden çok
+    modelin satırlarını tek listede birleştirir; onsuz iki modelin aynı sembolde aynı
+    barda açtığı pozisyonlar tek pozisyon sanılırdı — kural 4'ün izolasyonu ölçümde
+    delinirdi.
+    """
+    return (
+        str(row.get("strategy", "")),
+        str(row.get("symbol", "")),
+        str(row.get("direction", "")),
+        str(row.get("opened_at", "")),
+    )
+
+
+def merge_fills(trades: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Dolum satırlarını pozisyon başına tek ölçüm satırına indirger.
+
+    Nakit kolonları (`pnl`, `fee`, `slippage_cost`, `funding`) TOPLANIR, atılmaz:
+    "Σpnl = bakiye değişimi" değişmezi bu toplamayla korunur. Açılış alanları
+    (`entry_price`, `stop_price`, `signal_reason`) pozisyonun tamamı için aynıdır;
+    kapanış alanları (`closed_at`, `exit_reason`, `notes`) pozisyonu KAPATAN son
+    dolumdan gelir — ara dilimin çıkış sebebini pozisyonun sebebi saymak, kısmi
+    çıkışla kapanmış gibi görünen bir işlem üretirdi.
+
+    `opened_at` taşımayan satır (elle düzeltilmiş ya da şema öncesi bir defter) kendi
+    başına bir pozisyon sayılır: bilinmeyen kimliği ortak kabul edip hepsini tek
+    pozisyonda toplamak, sessiz bir veri kaybı olurdu.
+    """
+    grouped: dict[Any, list[Mapping[str, Any]]] = {}
+    for index, row in enumerate(trades):
+        key = position_key(row)
+        grouped.setdefault(key if key[3] else (key, index), []).append(row)
+    merged = [_merge_position(rows) for rows in grouped.values()]
+    merged.sort(key=lambda row: str(row.get("closed_at", "")))
+    return merged
+
+
+def _merge_position(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    # Kararlı sıralama: aynı barda gerçekleşen kısmi ve TP dolumları eşit `closed_at`
+    # taşır; defterdeki (append) sırası korunur, yani pozisyonu kapatan satır sonda kalır.
+    ordered = sorted(rows, key=lambda row: str(row.get("closed_at", "")))
+    final = ordered[-1]
+    merged = dict(ordered[0])
+    merged.update(
+        {
+            "closed_at": final.get("closed_at", ""),
+            "exit_price": final.get("exit_price"),
+            "exit_reason": final.get("exit_reason", ""),
+            "notes": final.get("notes", ""),
+            "fills": len(ordered),
+        }
+    )
+    for column in _SUMMED_COLUMNS:
+        values = _collect(ordered, lambda row, col=column: _to_float(row.get(col)))
+        merged[column] = sum(values) if values else None
+    return merged
+
+
 def direction_stats(
     trades: Iterable[Mapping[str, Any]],
     *,
@@ -189,6 +275,13 @@ def direction_stats(
     is_replica: bool = False,
 ) -> DirectionStats:
     """`direction` ("long" | "short" | "total") için işlem metrikleri.
+
+    Birim POZİSYONDUR: `trades` defterdeki satır sayısı değil, `merge_fills`ten geçmiş
+    pozisyon sayısıdır. Kısmi çıkış ve fraksiyonel TP kullanan modeller aynı pozisyon
+    için birden çok satır yazar; onları ayrı işlem saymak kazanma oranını yapay
+    yükseltir ve `acceptance.min_trades` örneklem kapısını iki kat hızlı geçirirdi.
+    Nakit kolonları (`pnl`, `fees`, `slippage_cost`, `funding`) birleştirmede TOPLANIR,
+    yani "Σpnl = bakiye değişimi" değişmezi korunur.
 
     Maliyet ölçeği kolonları `is_benchmark` ya da `is_replica` iken KOŞULSUZ `nan` olur.
 
@@ -202,17 +295,15 @@ def direction_stats(
     %1'inden. İkisini aynı sütunda göstermek, farklı paydaya sahip iki oranı
     karşılaştırılabilirmiş gibi sunardı.
     """
-    # Kapanış sırası: yön bazlı R-Sharpe, o yöndeki işlemlerin kapanış sırasına göre dizilmiş
-    # R dizisinden hesaplanır (CLAUDE.md > Rapor Kolonları). Defter zaten bu sırada yazılır;
-    # sıralama, satırların başka bir yoldan gelmesi hâlinde de garantiyi gerçek kılar.
-    rows = sorted(
-        (
-            row
-            for row in trades
-            if direction == TOTAL or str(row.get("direction", "")) == direction
-        ),
-        key=lambda row: str(row.get("closed_at", "")),
-    )
+    # Ölçümün birimi POZİSYONDUR, dolum değil: `merge_fills` aynı pozisyonun kısmi çıkış
+    # ve fraksiyonel TP satırlarını tek satıra indirger (bkz. merge_fills). Kapanış sırası
+    # da oradan gelir — yön bazlı R-Sharpe, o yöndeki işlemlerin kapanış sırasına göre
+    # dizilmiş R dizisinden hesaplanır (CLAUDE.md > Rapor Kolonları).
+    rows = [
+        row
+        for row in merge_fills(trades)
+        if direction == TOTAL or str(row.get("direction", "")) == direction
+    ]
     r_values = [r for r in (r_multiple(row) for row in rows) if r is not None]
     wins = [r for r in r_values if r > 0.0]
     losses = [r for r in r_values if r < 0.0]
@@ -401,6 +492,12 @@ def breakdown(
 
     `key` bir satırda hata fırlatırsa hata YUTULMAZ (bkz. `arm_of`): eksik etiketi olan
     satırı gruptan düşürmek, kırılım toplamı ile model toplamını sessizce ayrıştırırdı.
+
+    Gruplama DOLUM satırları üzerinde yapılır, birleştirme grubun içinde olur
+    (`direction_stats` -> `merge_fills`). Sıra önemlidir ama sonucu değiştirmez: kol ve
+    sembol pozisyonun özellikleridir, yani bir pozisyonun tüm dilimleri zaten aynı
+    gruba düşer. Ters sırada kurmak (önce birleştir, sonra grupla) aynı sayıyı verirdi;
+    böylesi `key`in defterin ham satırını görmesini korur.
     """
     grouped: dict[str, list[Mapping[str, Any]]] = {}
     for row in trades:

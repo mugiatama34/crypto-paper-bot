@@ -14,12 +14,18 @@
   Neden iki katman aynı sayfada ama aynı İSTATİSTİKTE değil: bu sayfa bir sıralama
   tablosu değil, bir DEFTER GÖRÜNÜMÜDÜR — "şu anda ne açık, bugüne kadar ne kapandı"
   sorusunu cevaplar. Katmanlar arası kıyas yapılmaz (CLAUDE.md > Katmanlar), bu yüzden
-  katman her satırda etiketiyle durur ve özet şeridi yalnızca AKTİF FİLTREYE göre
-  hesaplanır; iki katmanın ortalama R'si asla tek bir sayıda toplanmaz.
+  katman her satırda etiketiyle durur ve ölçüm şeridi KATMAN BAŞINA AYRI bir kart
+  verir; iki katmanın ortalama R'si hiçbir görünümde tek bir sayıda toplanmaz.
 
-  Kısmi çıkışlar (exit_reason="partial") ayrı satır olarak GÖRÜNÜR ama istatistiğe
-  GİRMEZ: tamamlanmış bir işlem değil, hâlâ açık bir pozisyonun bir dilimidir. Saymak,
-  aynı pozisyonu iki kez (bir kısmi, bir de kapanışta) ölçüme sokardı.
+  Sayfa ORTALAMA R ve KAZANMA ORANINI HESAPLAMAZ: ikisini de yükten okur
+  (shared.js::statsSlice -> core/metrics.py). Aynı sayının iki yerde hesaplanması,
+  bugün hizalansa bile yarın ayrışır ve aynı model iki sayfada iki farklı kazanma
+  oranı gösterirdi — okuyucuya iki ayrı ölçüm gibi gelirdi (kural 7).
+
+  Tablo bir DOLUM defteridir: kısmi çıkışlar ve fraksiyonel hedefler ayrı satır olarak
+  GÖRÜNÜR ama istatistiğe GİRMEZ ve "DİLİM" etiketiyle durur. Tamamlanmış bir işlem
+  değil, aynı pozisyonun bir dilimidirler; ölçüm onları pozisyon başına birleştirir
+  (core/metrics.py::merge_fills), bu yüzden işlem sayısı satır sayısından az olabilir.
 
   Ortak tasarım dili ve yardımcılar kardeş dosyalarda: shared.css, shared.js. Harici
   framework yok, build adımı yok, CDN yok.
@@ -55,15 +61,18 @@
   .filters .field select { max-width: min(92vw, 320px); }
   .summary { margin-bottom: 10px; }
 
+  /* Ölçüm kartı KATMAN BAŞINADIR: `layer=all` iken iki kart yan yana değil ALT ALTA
+     durur ve her biri kendi başlığını taşır. Yan yana koymak, iki katmanın sayılarını
+     aynı satırda kıyaslanacak bir çift gibi gösterirdi (CLAUDE.md > Katmanlar). */
+  .measure { margin-bottom: 12px; }
+  .measure-h { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin-bottom: 6px; }
+  .measure-h b { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .measure-h span { color: var(--ink-muted); font-size: 11px; }
+  .measure-note { margin-top: -2px; }
+
   @media (min-width: 480px) {
     .wide { display: block; }
     .narrow { display: none; }
-  }
-  /* Özet şeridi beş kutudur (dördü istatistik, biri SAYILMAYAN kısmi çıkışlar).
-     Dört kolonluk ortak ızgarada beşinci tek başına alta düşüyordu — sayılmayanın
-     ayrı bir satırda durması onu bir istatistikmiş gibi gösterirdi. */
-  @media (min-width: 1000px) {
-    .summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   }
 </style>
 </head>
@@ -97,7 +106,7 @@
     <section id="sec-closed">
       <h2>Kapanmış işlemler</h2>
       <p class="note" id="closed-note"></p>
-      <div class="strip summary" id="closed-summary"></div>
+      <div id="closed-summary"></div>
       <div class="controls" id="closed-filters"></div>
       <div id="closed-host"></div>
       <div class="pager" id="closed-pager"></div>
@@ -227,6 +236,7 @@ function collect() {
     (a.model || "").localeCompare(b.model || "") ||
     String(b.opened_at || "").localeCompare(String(a.opened_at || "")));
   TRADES.sort((a, b) => String(b.closed_at || "").localeCompare(String(a.closed_at || "")));
+  indexFills();
   STYLE = assignStyles(styleModels, benchmarks, controls[0] || null);
 }
 
@@ -518,14 +528,49 @@ const CLOSED_COLUMNS = [
   "K/Z", "komisyon", "funding", "R", "açılış (UTC)", "kapanış (UTC)",
 ];
 
-const isPartial = (t) => (t.is_partial === true) || t.exit_reason === "partial";
+/* Satır tamamlanmış bir işlem mi, yoksa bir pozisyonun DİLİMİ mi.
+   İki kaynağı var ve ikisi de gerekli:
+   - `exit_reason == "partial"`: üç aşamalı çıkışın kısmi dolumu (modeller 13/14/15).
+   - Aynı pozisyonun birden çok satırı: `avwap` iki TP seviyesi, `downtrend_rally`
+     yarım TP kullanır; bunlar "tp" kodu taşır, "partial" değil. Yalnızca ilk ölçüte
+     bakmak o modellerin dilimlerini tamamlanmış işlem gibi gösterirdi.
+   Pozisyonu KAPATAN son dolum tamamlanmış işlemdir; ondan öncekiler dilimdir.
+   `PARTIAL_FILLS` yüklenen pencere üzerinden kurulur (bkz. collect). */
+let PARTIAL_FILLS = new Set();
+const fillKey = (t) =>
+  [t.layer, t.model, t.symbol, t.direction, t.opened_at].join(" ");
+const rowId = (t) => fillKey(t) + " " + t.closed_at + " " + t.exit_reason;
+
+function indexFills() {
+  const byPosition = new Map();
+  for (const t of TRADES) {
+    if (!t.opened_at) continue;   // kimliği olmayan satır kendi başına bir pozisyondur
+    const key = fillKey(t);
+    if (!byPosition.has(key)) byPosition.set(key, []);
+    byPosition.get(key).push(t);
+  }
+  PARTIAL_FILLS = new Set();
+  for (const fills of byPosition.values()) {
+    if (fills.length < 2) continue;
+    // TRADES yeniden eskiye sıralı: pozisyonu kapatan dolum listenin BAŞINDADIR.
+    for (const t of fills.slice(1)) PARTIAL_FILLS.add(rowId(t));
+  }
+}
+
+const isPartial = (t) =>
+  (t.is_partial === true) || t.exit_reason === "partial" || PARTIAL_FILLS.has(rowId(t));
 
 /* KAZANÇ/KAYIP ölçütü net K/Z'dir, R değil: R'si olmayan bir işlem de (stop'suz
    referans pozisyon) kazanmış ya da kaybetmiş olabilir. */
 function outcomeHtml(t) {
   const pnl = num(t.pnl);
   if (isPartial(t)) {
-    return '<span class="outcome"><b class="badge info">KISMİ</b><span>' + esc(exitText(t)) + "</span></span>";
+    // Dilim bir sonuç DEĞİLDİR: kalanı hâlâ açıktı ve pozisyonun sonucu son dolumda
+    // belli olur. KAZANÇ/KAYIP yazmak, kârda gerçekleşen bir kısmi çıkışı tamamlanmış
+    // bir kazanç gibi gösterirdi.
+    return '<span class="outcome" title="Pozisyonun bir dilimi — istatistiğe dahil değil">' +
+      '<b class="badge info">DİLİM</b><span>' + esc(exitText(t)) +
+      ' · istatistiğe dahil değil</span></span>';
   }
   const label = pnl === null ? DASH : (pnl > 0 ? "KAZANÇ" : pnl < 0 ? "KAYIP" : "BAŞABAŞ");
   return '<span class="outcome"><b class="' + signClass(pnl) + '">' + esc(label) + "</b>" +
@@ -545,27 +590,88 @@ function filteredTrades() {
   });
 }
 
-/* İstatistik YALNIZCA tamamlanmış işlemlerden hesaplanır. Kısmi çıkış hâlâ açık bir
-   pozisyonun dilimidir; saymak aynı pozisyonu iki kez ölçüme sokardı (bir kısmi, bir de
-   kapanışta) ve kazanma oranını yapay olarak yukarı çekerdi — kısmi çıkış tanımı gereği
-   kârda gerçekleşir. */
-function summarize(rows) {
-  const completed = rows.filter((t) => !isPartial(t));
-  const pnl = completed.reduce((sum, t) => sum + (num(t.pnl) || 0), 0);
-  const rValues = completed.map((t) => num(t.r)).filter((v) => v !== null);
-  const wins = completed.filter((t) => (num(t.pnl) || 0) > 0).length;
-  return {
-    completed: completed.length,
-    partials: rows.length - completed.length,
-    pnl,
-    avgR: rValues.length ? rValues.reduce((a, b) => a + b, 0) / rValues.length : null,
-    winRate: completed.length ? wins / completed.length : null,
-  };
+/* ------------------------------------------------------------------ *
+ * Ölçüm bu sayfada HESAPLANMAZ, yükten okunur (shared.js::statsSlice).
+ *
+ * Ortalama R ve kazanma oranı `core/metrics.py`nin tanımlarıdır: birim
+ * POZİSYONDUR, dolum değil — kısmi çıkış ve fraksiyonel TP satırları
+ * orada tek pozisyona indirgenir. Aynı hesabı burada ikinci kez kurmak,
+ * bugün hizalansa bile yarın ayrışırdı (birinin kısmi çıkışı sayması
+ * yeter) ve aynı model iki sayfada iki farklı kazanma oranı gösterirdi.
+ * Tablo defterin satırlarını çizer; şerit ölçümü söyler. İkisi farklı
+ * sorulardır ve sayfa ikisini ayrı ayrı yazar.
+ *
+ * KATMAN BAŞINA AYRI KART: `layer=all` iken iki katmanın R'sini tek
+ * ortalamada toplamak, dashboard'ın ayrı tablolarla engellediği
+ * katmanlar arası kıyası sayfanın ilk ekranında yapmak olurdu
+ * (CLAUDE.md > Katmanlar: "Katmanlar arası kıyas YAPILMAZ").
+ * ------------------------------------------------------------------ */
+function measurementCards() {
+  const cards = [];
+  for (const layer of LAYERS) {
+    const payload = PAYLOADS[layer.key];
+    if (!payload) continue;
+    if (view.layer !== "all" && view.layer !== layer.key) continue;
+    let model = null;
+    if (view.model !== "all") {
+      const parts = String(view.model).split("::");
+      if (parts[0] !== layer.key) continue;   // seçili model başka katmanda
+      model = parts[1];
+    }
+    const stats = statsSlice(payload, model, view.dir);
+    if (stats) cards.push({ layer, model, stats });
+  }
+  return cards;
+}
+
+/* Yükün cevaplayamadığı filtreler: ölçüm defterin TAMAMI üzerinden hesaplanır,
+   satır filtresini izlemez. Sessiz kalmak, okuyucuya "seçtiğim aralığın ortalaması"
+   dedirtirdi. */
+const rowOnlyFilterActive = () => view.outcome !== "all" || !!view.from || !!view.to;
+
+function renderMeasurement() {
+  const cards = measurementCards();
+  const host = el("closed-summary");
+  if (!cards.length) {
+    host.innerHTML = '<p class="empty">Bu kapsamda ölçüm yok.</p>';
+    return;
+  }
+  const dirText = view.dir === "all" ? "long + short" : view.dir;
+  host.innerHTML = cards.map(({ layer, model, stats }) => {
+    const measured = (num(stats.trades) || 0) > 0;
+    const scope = model
+      ? esc(model)
+      : "yarışmacı havuzu (" + (stats.models || []).length + " model)";
+    // Havuz çıpayı ve kopyayı DIŞARIDA bırakır (kural 15/15b): R'leri ya yoktur ya
+    // başka birimdedir. Tablo onların satırlarını yine gösterir; fark söylenmezse
+    // okuyucu şeridi tablonun özeti sanardı.
+    const caveat = model
+      ? ""
+      : " — çıpa ve dış sistem kopyası havuza girmez, tabloda görünür";
+    const tiles = [
+      ["işlem (pozisyon)", measured ? String(num(stats.trades)) : DASH, ""],
+      // İşlem yoksa net K/Z "0.00" DEĞİL "—"dir: sıfır, "işlem oldu ve tam başabaş
+      // bitti" demektir (core/metrics.py'nin nan kuralının aynısı).
+      ["net K/Z (USDT)", measured ? usd(stats.pnl) : DASH, measured ? signClass(stats.pnl) : ""],
+      ["ortalama R", fmtSigned(stats.avg_r), signClass(stats.avg_r)],
+      ["kazanma oranı", pct(stats.win_rate), ""],
+    ];
+    return '<div class="measure"><div class="measure-h"><b>' + esc(layer.label) +
+      '</b> <span>' + scope + " · " + esc(dirText) + esc(caveat) + "</span></div>" +
+      '<div class="strip summary">' + tiles.map(([k, v, cls]) =>
+        '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v ' + cls + '">' +
+        esc(v) + "</div></div>").join("") + "</div></div>";
+  }).join("") +
+  (rowOnlyFilterActive()
+    ? '<p class="note measure-note">Sonuç ve tarih filtreleri yalnızca <b>tabloyu</b> ' +
+      "daraltır: yukarıdaki ölçüm defterin tamamından gelir (<code>core/metrics.py</code>) " +
+      "ve bir alt kümenin ortalaması değildir.</p>"
+    : "");
 }
 
 function renderClosed() {
   const rows = filteredTrades();
-  const stats = summarize(rows);
+  const partials = rows.filter(isPartial).length;
   const scoped = TRADE_WINDOW.filter((w) =>
     (view.layer === "all" || w.layer === view.layer) &&
     (view.model === "all" || w.layer + "::" + w.model === view.model));
@@ -574,10 +680,14 @@ function renderClosed() {
   const windowPartial = TRADES.some((t) => t.partialWindow);
 
   el("closed-note").innerHTML =
-    "Yeniden eskiye, " + TRADE_PAGE_SIZE + "'şer. <b>Kısmi çıkışlar ayrı satır olarak " +
-    "listelenir ve istatistiklere DAHİL EDİLMEZ</b> — tamamlanmış işlem değil, hâlâ açık " +
-    "bir pozisyonun bir dilimidirler; saymak aynı pozisyonu iki kez ölçüme sokardı. " +
-    "<b>R</b> = net K/Z ÷ işlemin gerçekleşen 1R'si (giriş anındaki ilk stop'tan). " +
+    "Yeniden eskiye, " + TRADE_PAGE_SIZE + "'şer — bu tablo <b>dolum</b> defteridir. " +
+    "<b>Kısmi çıkış ve fraksiyonel hedef satırları ayrı satır olarak listelenir ve " +
+    "istatistiğe DAHİL EDİLMEZ</b>: tamamlanmış işlem değil, aynı pozisyonun dilimidirler. " +
+    "Yukarıdaki ölçüm onları pozisyon başına birleştirir (<code>core/metrics.py</code>), " +
+    "bu yüzden <b>işlem sayısı tablodaki satır sayısından az olabilir</b>. " +
+    "<b>R</b> = net K/Z ÷ dilimin gerçekleşen 1R'si (giriş anındaki ilk stop'tan); " +
+    "pozisyonun R'si dilimlerin ortalaması değil, Σpnl ÷ Σrisk'tir. " +
+    "Bu kapsamda <b>" + rows.length + "</b> satır var, <b>" + partials + "</b> tanesi kısmi. " +
     (total > shown
       ? "Defterde <b>" + total + "</b> satır var, yükte son <b>" + shown + "</b> tanesi; " +
         "tamamı <code>ledgers*/&lt;model&gt;/trades.csv</code>'de."
@@ -588,20 +698,7 @@ function renderClosed() {
       : "") +
     (hasLeverage() ? "" : " Kaldıraç kolonu bu yükte yok, bir sonraki turda gelir.");
 
-  // Tamamlanmış işlem yoksa net K/Z "0.00" DEĞİL "—"dir: sıfır, "işlem oldu ve tam
-  // başabaş bitti" demektir (core/metrics.py'nin nan kuralının aynısı).
-  const pnlText = stats.completed ? usd(stats.pnl) : DASH;
-  el("closed-summary").innerHTML = [
-    ["tamamlanmış işlem", String(stats.completed), ""],
-    ["net K/Z (USDT)", pnlText, stats.completed ? signClass(stats.pnl) : ""],
-    ["ortalama R", fmtSigned(stats.avgR), signClass(stats.avgR)],
-    ["kazanma oranı", pct(stats.winRate), ""],
-  ].map(([k, v, cls]) =>
-    '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v ' + cls + '">' + esc(v) + "</div></div>"
-  ).join("") +
-  '<div><div class="tile-k">kısmi çıkış (sayılmadı)</div><div class="tile-v">' +
-    stats.partials + "</div></div>";
-
+  renderMeasurement();
   renderClosedFilters(rows.length);
 
   const pages = Math.max(1, Math.ceil(rows.length / TRADE_PAGE_SIZE));

@@ -32,7 +32,7 @@ yapar.
 | `core/engine.py` | Orkestrasyon: her BARI **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. Doldurulamayan emirleri sebep koduna göre sayıp tur raporuna yazar (bkz. kural 15). Atlanan turları telafi eder: son işlenmiş bardan `as_of`'a kadarki TÜM barları sırayla ilerletir (yalnızca son bara atlamak, atlanan barlardaki stop/TP/likidasyon kontrolünü hiç yapmamak olurdu) ve `signals_per_bar` açıkken her telafi barı KENDİ sinyalini de üretir (bkz. "Telafi edilen barlarda sinyal"). Anlık görüntü son işlenmiş bara kadar geri gitmiyorsa telafi mümkün değildir; o barlar `missing_bars` olarak sayılır ve loglanır — atlama sessiz olamaz. |
 | `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. Kapanan işlemin `notes` kuyruğuna çıkışın ALT sebebini `| exit_rule=<kural>` etiketiyle yazar (bkz. kural 13c). |
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
-| `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. Salt okunur — ledger'ı değiştirmez. |
+| `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. **Ölçümün birimi POZİSYONDUR, defter satırı değil:** `merge_fills` aynı pozisyonun dolumlarını (kısmi çıkış ve `fraction < 1.0` olan take-profit'ler) tek ölçüm satırına indirger ve R'yi `Σpnl / Σrisk` olarak kurar — bkz. "Dolum ve pozisyon". Salt okunur — ledger'ı değiştirmez. |
 | `core/report.py` | Dashboard yükü: `docs/data/metrics.json`'un tablo dışında kalan bölümleri (özsermaye eğrileri, açık pozisyonlar, son işlemler, model başına son 100 kapanmış işlem, son 24 saatin hareketi, havuz ve kabul bayraklarının toplanması). Salt okunur; hiçbir şey hesaplamaz ki `core/portfolio.py` zaten hesaplamış olsun. Tek istisna açık pozisyonun güncel PnL'idir ve kapanış formülünün aynı parçalarından kurulur (brüt − giriş komisyonu + funding; çıkış maliyeti YOK). Açık pozisyon satırı ayrıca çıkış yönetiminin DURUMUNU taşır — `breakeven_at_r`/`breakeven_done`, `partial_tp`/`partial_done`, `trail_giveback_pct`/`trailing_active`, `stop_rule`/`stop_moved` — ve İSTEK ile OLAY ayrı alanlardadır: mekanizmayı bildiren ama henüz tetiklenmemiş bir pozisyonu "yönetildi" göstermek, modeller 13/14/15'in ölçtüğü katkıyı yanlış okuturdu. Sunum sabitleri (kaç işlem gösterilir, eğri kaç noktaya seyreltilir) burada durur, `config.yaml`'da değil. |
 | `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde katmanın defter kökü altına yazar. Sistemin denetim izi (audit trail) burasıdır. **Tek istisna `compact_equity`:** katmanın saklama penceresinden eski `equity.csv` satırlarını günlük özete indirir (bkz. "Katmanlar > Saklama penceresi"). `trades.csv` için istisna YOKTUR — bir işlem satırı hiçbir gerekçeyle değişmez veya silinmez. |
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni, çıkış yönetimi alanlarının tutarlılığı (`trailing_atr` ile `trail_giveback_pct` aynı anda kullanılamaz). Ayrıca `validate_model`: model bayrak/limit bildiriminin kapısı (`ModelLimits` yalnızca `is_replica`, kaldıraç tavanı `REPLICA_LEVERAGE_CAP`), `strategies/registry.py` kurulumda çağırır. Geçersizde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
@@ -53,9 +53,9 @@ yapar.
 | `ledgers/` | Her stratejinin işlem/bakiye kayıtlarının tutulduğu çıktı klasörü (strateji başına dosya/alt klasör). |
 | `docs/` | Tasarım kararları, metrik tanımları, kabul kriterleri. |
 | `docs/index.html` | GitHub Pages dashboard'u: harici framework/CDN yok, build adımı yok (ortak tasarım dili ve yardımcılar `docs/shared.css` + `docs/shared.js`'te). Tek veri kaynağı `docs/data/metrics.json`. **İki seviye:** (1) genel bakış — üç özet kartı, LONG vs SHORT paneli (ana soru), tez tipine göre gruplanmış model kartları (ort. R, getiri, işlem sayısı, mini eğri, kabul rozetleri, rütbe), özsermaye eğrileri (tıklayınca izole), modeller arası getiri korelasyonu; (2) model detayı — üst şerit metrikler + rozet gerekçeleri, modelin long/short kırılımı, açık pozisyonlar, sayfalı kapanmış işlem listesi (20'şer, yön filtresiyle), modelin kendi eğrisi. Detayın adresi `#model=<ad>` hash'idir: geri tuşu, yer imi ve paylaşılan link çalışır. Koyu tema, mobil öncelikli: yatay kaydırma yoktur, geniş tablolar dar ekranda kart düzenine döner, dokunma hedefleri en az 44px. Süs katmanıdır: ölçüm defterde ve JSON'dadır, sayfa yalnızca onu çizer. Satır satır defter görünümü bu sayfada DEĞİL, `docs/positions.html`'dedir. |
-| `docs/positions.html` | Yoğun defter görünümü: **tüm katmanlar ve tüm modeller tek sayfada**, model/katman/yön/sonuç/tarih filtreleriyle. İki tablo — açık pozisyonlar (anlık K/Z, anlık R, TP/SL, çıkış yönetimi rozetleri, kaldıraç, margin, riske edilen tutar, birikmiş funding, tam `reason`) ve kapanmış işlemler (sayfalı, 50'şer; sonuç = KAZANÇ/KAYIP + çıkış sebebi). Dashboard "hangi model önde" der, burası "tam olarak ne açık, tam olarak ne kapandı" der. **Kısmi çıkışlar ayrı satır olarak görünür ama istatistiğe GİRMEZ** — tamamlanmış işlem değil, hâlâ açık bir pozisyonun dilimidirler; saymak aynı pozisyonu iki kez ölçüme sokardı. Katman etiketi her satırda durur ve özet yalnızca aktif filtreye göre hesaplanır: katmanlar arası kıyas burada da yapılmaz. 480px altında tablolar kart düzenine döner. |
+| `docs/positions.html` | Yoğun defter görünümü: **tüm katmanlar ve tüm modeller tek sayfada**, model/katman/yön/sonuç/tarih filtreleriyle. İki tablo — açık pozisyonlar (anlık K/Z, anlık R, TP/SL, çıkış yönetimi rozetleri, kaldıraç, margin, riske edilen tutar, birikmiş funding, tam `reason`) ve kapanmış işlemler (sayfalı, 50'şer; sonuç = KAZANÇ/KAYIP + çıkış sebebi). Dashboard "hangi model önde" der, burası "tam olarak ne açık, tam olarak ne kapandı" der. **Kısmi çıkış ve fraksiyonel hedef satırları ayrı satır olarak görünür ama istatistiğe GİRMEZ** ve "DİLİM" etiketiyle durur — tamamlanmış işlem değil, aynı pozisyonun dilimidirler. **Sayfa ortalama R'yi ve kazanma oranını HESAPLAMAZ** (kural 7): ikisini de yükten okur (`docs/shared.js::statsSlice` -> `core/metrics.py`). İkinci bir hesap yolu bugün hizalansa bile yarın ayrışır ve aynı model iki sayfada iki farklı kazanma oranı gösterirdi. Katman etiketi her satırda durur ve ölçüm şeridi **katman başına AYRI bir kart** verir — `layer=all` dâhil hiçbir görünümde iki katmanın R'si tek sayıda toplanmaz: katmanlar arası kıyas burada da yapılmaz. Yükün cevaplayamadığı filtreler (sonuç, tarih) yalnızca tabloyu daraltır ve bu SÖYLENİR. 480px altında tablolar kart düzenine döner. |
 | `docs/shared.css` | İki sayfanın ORTAK tasarım dili: renk paleti, tipografi, kart/tablo düzeni, rozetler, filtre ve sayfalama kontrolleri, dokunma hedefi tabanı. Sayfaya özgü görseller (eğri grafiği, ısı haritası, model kartları) kendi dosyasında kalır. Tek kopya olmasının gerekçesi biçimlendirmenin ölçümün parçası olmasıdır: aynı sayının iki sayfada farklı görünmesi okuyucuya iki ayrı ölçüm gibi gelir. |
-| `docs/shared.js` | İki sayfanın ORTAK yardımcıları: biçimleyiciler (`num`, `price`, `qty`, `usd`, `pct`, `fullTs` — tanımsız metrik `—` olur, `0` DEĞİL), çıkış sebebi/alt sebep etiketleri, renk-kimlik ataması (`assignStyles`), yük okuma (`fetchPayload`). Klasik script; build adımı, bundler ve CDN yok. |
+| `docs/shared.js` | İki sayfanın ORTAK yardımcıları: biçimleyiciler (`num`, `price`, `qty`, `usd`, `pct`, `fullTs` — tanımsız metrik `—` olur, `0` DEĞİL), çıkış sebebi/alt sebep etiketleri, renk-kimlik ataması (`assignStyles`), yük okuma (`fetchPayload`) ve **ölçüm okuma (`statsSlice`)** — iki sayfanın da ortalama R / kazanma oranı / işlem sayısını aldığı TEK yol; `model` verilmezse havuz (yalnızca yarışmacılar) okunur. Klasik script; build adımı, bundler ve CDN yok. |
 | `scripts/telegram_report.py` | Günlük Telegram özeti. `as_of` saati 20:00 (UTC) olan turda yollanır; token'lar ortamdan (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) okunur. **Her yolda 0 döner** — eksik token, ağ hatası, Telegram 4xx'i, bozuk JSON: hepsi loglanıp geçilir. Özet bir bildirimdir, ölçümün parçası değil; Telegram kesintisi turu kırmızıya çeviremez. |
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
 | `ledgers_scalp/` | Scalp katmanının defteri. İki katman asla aynı defteri paylaşmaz: paylaşsalardı 15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı. |
@@ -427,6 +427,38 @@ Etiketi olmayan bir satır **sessizce atlanmaz**, `TagError` fırlatılır (kura
 yalnızca o modelin turu boş geçer) — atlamak, posterior'ı defterde görünmeyen bir geçmişe
 bağlardı.
 
+## Dolum ve Pozisyon (ölçümün birimi)
+
+`trades.csv` bir **DOLUM defteridir**, işlem defteri değil. `core/portfolio.py::_close`
+her dilim için ayrı satır yazar ve bir pozisyon birden çok satır üretebilir:
+
+- **kısmi çıkış** (`exit_reason="partial"`) — üç aşamalı çıkış yönetimi (modeller 13/14/15);
+- **fraksiyonel hedef** (`exit_reason="tp"`, `TakeProfit.fraction < 1.0`) — `avwap` iki TP
+  seviyesi, `downtrend_rally` yarım TP kullanır.
+
+Ölçümün birimi ise **POZİSYONDUR.** `core/metrics.py::merge_fills` aynı pozisyonun
+satırlarını tek ölçüm satırına indirger; kimlik `strategy + symbol + direction + opened_at`
+(havuz birden çok modelin satırını birleştirdiği için `strategy` şart — kural 4 ölçümde de
+geçerlidir). Nakit kolonları TOPLANIR, kapanış alanları pozisyonu KAPATAN son dolumdan gelir.
+
+**Neden saymak yanlış:** aynı pozisyon iki kez ölçüme girer, `acceptance.min_trades` (30)
+örneklem kapısı iki kat hızlı geçilir ve kazanma oranı yapay yükselir — kısmi çıkış tanımı
+gereği kârda gerçekleşir, yani daima "kazanç" satırıdır.
+
+**Neden kısmi satırı ATMAK da yanlış:** pozisyonun kilitlenmiş kârı ölçümden düşer ve
+kalan dilimin R'si tüm pozisyonun R'si sanılır. Yönetimli model (15) yönetimsiz ikizine
+(12) karşı bu kez haksızca KÖTÜ görünürdü — aynı hatanın ters yönü. Ayrıca `exit_reason`
+filtresi fraksiyonel hedefleri hiç yakalamaz: `avwap` ve `downtrend_rally` "partial" kodu
+taşımaz, "tp" taşır.
+
+**Toplama ikisinden de kaçınır:** `R = Σpnl / Σrisk`, yani pozisyonun gerçek R'si.
+`Σpnl = bakiye değişimi` değişmezi de korunur, çünkü nakit kolonları atılmaz toplanır
+(test: `tests/test_metrics.py`).
+
+`docs/positions.html` dolum satırlarını GÖRÜNMEYE devam ettirir ("DİLİM" etiketiyle) ama
+istatistik hesaplamaz — ölçümü yükten okur. Bu yüzden **işlem sayısı tablodaki satır
+sayısından az olabilir** ve sayfa bunu söyler.
+
 ## Rapor Kolonları
 
 `core/metrics.py` her modeli **aynı tabloda**, her metriği **long / short / toplam** olarak
@@ -436,7 +468,7 @@ yanında iki **maliyet ölçeği** kolonu zorunludur:
 | Kolon | Tanım |
 |---|---|
 | `avg_stop_distance_pct` | İşlem bazında `\|giriş − ilk stop\| / giriş` değerlerinin ortalaması (yüzde). Modelin hangi R ölçeğinde işlem yaptığını gösterir. |
-| `cost_per_r` | İşlemin **tüm** dolumlarında ödenen komisyon + kayma toplamının (giriş, kısmi TP'ler, çıkış) `risk_amount`'a bölümü; model/yön bazında ortalaması. |
+| `cost_per_r` | İşlemin **tüm** dolumlarında ödenen komisyon + kayma toplamının (giriş, kısmi TP'ler, çıkış) `risk_amount`'a bölümü; model/yön bazında ortalaması. "Tüm dolumlar" şartını sağlayan şey `merge_fills`tir: tek bir dilimin maliyet/risk oranı pozisyonun maliyetini anlatmaz. |
 
 `risk_amount` = `pozisyon boyutu × |giriş − ilk stop|` (yani **gerçekleşen** 1R). Formülün payı
 (`risk_per_trade × sermaye`) değil: kaldıraç tavanı boyutu küçülttüyse (kural 11) gerçek risk de
@@ -492,7 +524,7 @@ Tablo "hangi model önde" der; çıta "bu satır okunabilir mi" der. Hesap
 
 | Kapı | Soru | Geçme koşulu |
 |---|---|---|
-| **Ö** — örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` (30) |
+| **Ö** — örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış POZİSYON ≥ `acceptance.min_trades` (30); kısmi çıkış ve fraksiyonel hedef dilimleri ayrı sayılmaz (bkz. "Dolum ve Pozisyon") |
 | **E** — edge | Sonuç sinyalden mi geliyor, piyasadan ve şanstan mı? | ortalama R > 0 **ve** kontrol grubunun ortalama R'sini **en az `acceptance.edge_margin_r` (0.15R) marjla** aşıyor **ve** hesap getirisi referans çıpasını geçiyor |
 
 **Bir UYARI** — `passed`'ı **etkilemez**, yalnızca sonucun nasıl okunacağını söyler:
