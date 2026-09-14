@@ -27,6 +27,20 @@ maintenance_margin: 0.005   # likidasyon eşiği; kontrol stop/TP'den ÖNCE yap�
 # tavana çekmek modelin fikrini değiştirir, atlamak yalnızca ölçülemeyen işlemi eler.
 max_stop_atr_multiple: 3.0  # stop mesafesi ATR'nin bu katını aşarsa işlem açılmaz
 
+# Telafi edilen barlarda da sinyal üretilsin mi (core/engine.py > _trade_step).
+# Kapalıyken sinyal YALNIZCA `as_of` barında üretilir; atlanan turların barları yalnızca
+# pozisyon yönetimi (stop/TP/likidasyon/funding) için ilerletilir. Açıkken her telafi barı
+# kendi sinyalini de üretir ve tur, o barların her birinde ayrı ayrı koşulmuş gibi
+# sonuçlanır — barlar sırayla işlenir, her barın emri bir sonraki barın açılışından dolar
+# (kural 13) ve pozisyon limitleri her barda yeniden sorulur.
+#
+# Kökte KAPALI, çünkü 4 saatlik katmanın cron'u (run.yml, 6 saatte bir) güvenilir
+# tetikleniyor: telafi nadiren devreye girer, ama açık olsaydı devreye girdiği her turda
+# defterin kuralı sessizce değişirdi — aynı defterde biriken geçmişin bir kısmı "tur
+# başına tek sinyal", bir kısmı "bar başına tek sinyal" ile üretilmiş olurdu ve iki
+# dönemin işlem sıklığı kıyaslanamazdı. Scalp katmanında AÇIK (bkz. layers.scalp).
+signals_per_bar: false
+
 # --- Zaman ve sembol evreni ---
 timeframe: "4H"             # tek zaman dilimi; OKX bar kodu da bundan türetilir
 universe_size: 50           # 24s hacme göre ilk N USDT perpetual
@@ -144,6 +158,15 @@ layers:
   scalp:
     # 15 dakikalık scalp katmanı: iki model (model 11 adaptif, model 12 kontrol).
     timeframe: "15m"
+
+    # Telafi edilen HER bar kendi sinyalini üretir. Gerekçe ölçümün kendisidir: GitHub
+    # cron'u 15 dakikalık kadansta tetiklemelerin büyük kısmını düşürüyor (ölçüldü: 14
+    # saatte 57 slot, 5 tetikleme). Sinyal yalnızca `as_of` barında üretilseydi kaybolan
+    # tetiklemelerin sinyal FIRSATI da kaybolurdu ve tablo, modelin kadansını değil
+    # cron'un kadansını ölçerdi — üstelik kaybın büyüklüğü turdan tura değişeceği için
+    # iki model arasındaki fark bile gürültüye karışırdı. Açık olması, turun o barların
+    # her birinde ayrı ayrı koşulmuş olmasıyla AYNI sonucu vermesi demektir.
+    signals_per_bar: true
     # Katmanın BEŞ modeli, iki eksende:
     #   adaptasyonun katkısı   scalp_bandit (11) ↔ scalp_fixed (12)
     #   çıkış yönetiminin katkısı  scalp_fixed (12) ↔ scalp_managed (15)

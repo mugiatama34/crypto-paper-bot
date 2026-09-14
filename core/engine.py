@@ -9,11 +9,30 @@ Bir TUR şu akıştan ibarettir:
          3. mum içi kontrol: likidasyon -> stop -> kısmi çıkış -> TP (core/portfolio.py)
          4. stop güncellemeleri (kontrolden SONRA): breakeven, giveback takibi, ATR trailing
          5. bar kapanışında özsermaye kaydı
-    C. `as_of` barında sinyal üret: önce normal modeller, sonra meta modeller (kural 4),
-       ardından stop mesafesi bandını aşan sinyalleri ele (kural 14).
+         6. O BARIN sinyalleri (C) ve çıkış talimatları (D): `signals_per_bar` açıkken
+            HER barda, kapalıyken yalnızca `as_of` barında.
+    C. Sinyal üret: önce normal modeller, sonra meta modeller (kural 4), ardından stop
+       mesafesi bandını aşan sinyalleri ele (kural 14).
     D. manage_positions ile çıkış talimatlarını topla.
     E. C ve D'nin ürettikleri bekleyen emir olarak kuyruğa girer: bir SONRAKİ barın
        açılışında dolarlar. Defter atomik olarak yazılır.
+
+Neden `signals_per_bar` (katman ayarı, config.yaml): GitHub cron'u 15 dakikalık kadansta
+tetiklemelerin büyük kısmını düşürür (bkz. .github/workflows/run-scalp.yml). Sinyal
+yalnızca `as_of` barında üretilseydi atlanan her turun sinyal FIRSATI da kaybolurdu ve
+ölçüm modelin değil cron'un kadansını ölçerdi. Açıkken telafi edilen her bar kendi
+sinyalini üretir ve tur, o barların her birinde AYRI AYRI koşulmuş gibi sonuçlanır:
+
+  - barlar sırayla işlenir, toplu (barları birleştiren) bir değerlendirme yoktur;
+  - her barın emri BİR SONRAKİ barın açılışından dolar (kural 13), yani sinyalin
+    üretildiği bar ile dolduğu bar telafide de ayrıdır;
+  - pozisyon limitleri her barın dolumunda yeniden sorulur (core/portfolio.py), çünkü
+    kota barın kendi doluluğuna bakar — bir turun toplamına değil;
+  - model o barın anlık görüntüsünü görür: `_snapshot` her çerçeveyi bara kadar keser,
+    o barı taşımayan sembolü evrenden düşürür (kural 12, core/data.py'nin aynı kuralı).
+
+Kapalıyken davranış birebir eskisidir: telafi edilen barlar yalnızca pozisyon yönetimi
+(stop/TP/likidasyon/funding) için ilerletilir, sinyal yalnızca `as_of`ta üretilir.
 
 Neden bekleyen emir kuyruğu: kural 13 sinyalin üretildiği barda değil bir sonraki barın
 açılışında dolmasını şart koşar. Tur `as_of` barında biter, yani dolum bir sonraki turun
@@ -56,7 +75,7 @@ from core.data import bar_duration
 # ATR tanımı core/indicators.py'de tektir: trailing mesafesi (kural 9), stop bandı
 # (kural 14) ve stratejilerin stop'ları aynı sayıyı görmek zorundadır. Ad burada
 # yeniden dışa verilir — motorun ATR'yi "kendi" hesaplaması bu garantiyi bozardı.
-from core.indicators import average_true_range
+from core.indicators import average_true_range, bars_until
 from core.ledger import Ledger
 # R'nin tek tanımı core/metrics.py'dedir (pnl / risk_amount). Motorun kendi bölmesi,
 # modelin öğrendiği R ile tabloda raporlanan R'nin sessizce ayrışması demekti.
@@ -200,6 +219,7 @@ class _ModelRun:
     state: dict[str, Any]
     pending: list[PendingOrder]
     last_bar: pd.Timestamp | None
+    timeline: list[pd.Timestamp] = field(default_factory=list)
     trades: list[Trade] = field(default_factory=list)
     equity_rows: list[dict[str, Any]] = field(default_factory=list)
     reached_as_of: bool = False
@@ -210,6 +230,10 @@ class _ModelRun:
     skipped_signals: int = 0
     missing_bars: int = 0
     history_failed: bool = False
+    # Defterin kapanmış işlemleri tur boyunca DEĞİŞMEZ (yazma tur sonunda, `_persist`).
+    # Her barda yeniden okumak, `signals_per_bar` açıkken aynı dosyayı bar sayısı kadar
+    # okumak demekti; turda kapanan işlemler zaten `trades` üzerinden eklenir.
+    history_rows: list[dict[str, str]] | None = None
     rejections: dict[str, int] = field(default_factory=dict)
     skipped: str = ""
 
@@ -238,24 +262,40 @@ class Engine:
         self._atr_period = int(get_setting(self._config, "trailing.atr_period"))
         self._max_stop_atr_multiple = float(get_setting(self._config, "max_stop_atr_multiple"))
         self._funding_enabled, self._funding_interval = funding_module.settings(self._config)
+        # Katman ayarı (config.yaml): telafi edilen barlarda da sinyal üretilsin mi.
+        self._signals_per_bar = bool(get_setting(self._config, "signals_per_bar"))
+        self._snapshots: dict[pd.Timestamp, MarketData] = {}
 
     # ------------------------------------------------------------------ #
     # Tur
     # ------------------------------------------------------------------ #
     def run_round(self, market: MarketData) -> RoundReport:
-        universe = list(market.ohlcv)
         runs = [self._load_model(strategy) for strategy in self._strategies]
-
+        self._snapshots = {}
         for run in runs:
-            self._advance(run, market)
+            run.timeline = self._timeline(run, market)
 
-        # Sinyal üretimi yalnızca `as_of` barına BU turda ulaşan modeller için çalışır.
-        # Aynı `as_of` ile ikinci kez koşmak (elle tekrar, cron retry) aksi hâlde aynı
-        # sinyali ikinci kez kuyruğa alır ve model tek bir bar için çift pozisyon açardı.
-        fresh = [run for run in runs if run.reached_as_of]
-        for run in fresh:
-            self._observe_history(run)
-        signals = self._collect_signals(fresh, market, universe=universe)
+        # Barlar SIRAYLA, modeller LOCKSTEP: bir bar bütün modeller için ilerletilir, sonra
+        # o barın sinyalleri üretilir. Modelleri tek tek uçtan uca koşturmak aynı sayıları
+        # verirdi (hesaplar izole, kural 4), ama meta geçişi (kural 4) bir barın TÜM normal
+        # sinyallerini aynı anda ister ve "her model aynı anlık görüntüyü görür" (kural 5)
+        # ancak bu sırayla okunabilir kalır.
+        schedule: dict[pd.Timestamp, list[_ModelRun]] = {}
+        for run in runs:
+            for ts in run.timeline:
+                schedule.setdefault(ts, []).append(run)
+
+        for ts in sorted(schedule):
+            due = schedule[ts]
+            for run in due:
+                self._advance_bar(run, market, ts)
+            # Sinyal üretimi yalnızca BU turda işlenen barlarda çalışır. Aynı `as_of` ile
+            # ikinci kez koşmak (elle tekrar, cron retry) aksi hâlde aynı sinyali ikinci
+            # kez kuyruğa alır ve model tek bir bar için çift pozisyon açardı — `_timeline`
+            # o barı zaten döndürmediği için burada da hiç görünmez.
+            if self._signals_per_bar or ts == market.as_of:
+                self._trade_step(due, market, ts=ts)
+
         for run in runs:
             if not run.reached_as_of:
                 logger.info(
@@ -263,29 +303,6 @@ class Engine:
                     run.strategy.name,
                     market.as_of,
                 )
-                self._persist(run, market)
-                continue
-            model_signals = self._within_stop_band(run, signals.get(run.strategy.name, []), market)
-            run.signals = len(model_signals)
-            run.pending.extend(
-                PendingOrder(
-                    kind="open",
-                    symbol=signal.symbol,
-                    direction=signal.direction,
-                    created_at=market.as_of,
-                    stop_price=signal.stop_price,
-                    sizing=signal.sizing,
-                    notional_fraction=signal.notional_fraction,
-                    take_profits=signal.take_profits,
-                    trailing_atr=signal.trailing_atr,
-                    breakeven_at_r=signal.breakeven_at_r,
-                    partial_tp=signal.partial_tp,
-                    trail_giveback_pct=signal.trail_giveback_pct,
-                    reason=signal.reason,
-                )
-                for signal in model_signals
-            )
-            self._collect_exits(run, market)
             self._persist(run, market)
 
         return RoundReport(
@@ -326,35 +343,121 @@ class Engine:
     # ------------------------------------------------------------------ #
     # B) Barları ilerlet
     # ------------------------------------------------------------------ #
-    def _advance(self, run: _ModelRun, market: MarketData) -> None:
+    def _advance_bar(self, run: _ModelRun, market: MarketData, ts: pd.Timestamp) -> None:
+        """TEK barı ilerletir: funding -> dolum -> mum içi kontrol -> stop -> özsermaye.
+
+        Bar bazında olmasının nedeni sinyal adımıdır (`_trade_step`): `signals_per_bar`
+        açıkken her barın sinyali o barın KAPANIŞINDAN sonra, bir sonraki bar
+        ilerletilmeden önce üretilmelidir — yoksa emir kendi barında değil, turun son
+        barında doğmuş olurdu ve kural 13'ün "bir sonraki barın açılışı" tanımı telafide
+        anlamını yitirirdi.
+        """
         model = run.strategy.name
-        timeline = self._timeline(run, market)
+        bars = _bars_at(market, ts)
+        opens = {symbol: bar.open for symbol, bar in bars.items()}
 
-        for ts in timeline:
-            bars = _bars_at(market, ts)
-            opens = {symbol: bar.open for symbol, bar in bars.items()}
+        charges = funding_module.accrue(
+            self._portfolio.positions(model),
+            bar_open=ts,
+            bar_close=ts + self._bar_duration,
+            prices=opens,
+            funding=market.funding,
+            interval_hours=self._funding_interval,
+            enabled=self._funding_enabled,
+            model=model,
+        )
+        self._portfolio.apply_funding(model, charges)
 
-            charges = funding_module.accrue(
-                self._portfolio.positions(model),
-                bar_open=ts,
-                bar_close=ts + self._bar_duration,
-                prices=opens,
-                funding=market.funding,
-                interval_hours=self._funding_interval,
-                enabled=self._funding_enabled,
-                model=model,
+        run.filled += self._fill_pending(run, ts=ts, bars=bars, marks=opens)
+        run.trades.extend(self._portfolio.process_bar(model, ts=ts, bars=bars))
+        self._update_stops(run, market, ts=ts)
+
+        closes = {symbol: bar.close for symbol, bar in bars.items()}
+        run.equity_rows.append(self._equity_row(model, ts=ts, marks=closes))
+        run.bars_processed += 1
+        run.last_bar = ts
+        run.reached_as_of = run.reached_as_of or ts == market.as_of
+
+    def _trade_step(
+        self, runs: Sequence[_ModelRun], market: MarketData, *, ts: pd.Timestamp
+    ) -> None:
+        """C + D: `ts` barının sinyalleri ve çıkış talimatları, o barın anlık görüntüsüyle.
+
+        Emirler `created_at=ts` ile kuyruğa girer, yani bir SONRAKİ barın açılışından
+        dolarlar (kural 13) — telafi edilen bir barda da, `as_of` barında da.
+        """
+        if not runs:
+            return
+        snapshot = self._snapshot(market, ts)
+        universe = list(snapshot.ohlcv)
+
+        for run in runs:
+            # Bayrak BARA aittir: bir barda patlayan kanca o barın sinyalini düşürür,
+            # turun geri kalanını değil.
+            run.history_failed = False
+            self._observe_history(run)
+
+        signals = self._collect_signals(runs, snapshot, universe=universe)
+        for run in runs:
+            model_signals = self._within_stop_band(
+                run, signals.get(run.strategy.name, []), snapshot
             )
-            self._portfolio.apply_funding(model, charges)
+            run.signals += len(model_signals)
+            run.pending.extend(
+                PendingOrder(
+                    kind="open",
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    created_at=ts,
+                    stop_price=signal.stop_price,
+                    sizing=signal.sizing,
+                    notional_fraction=signal.notional_fraction,
+                    take_profits=signal.take_profits,
+                    trailing_atr=signal.trailing_atr,
+                    breakeven_at_r=signal.breakeven_at_r,
+                    partial_tp=signal.partial_tp,
+                    trail_giveback_pct=signal.trail_giveback_pct,
+                    reason=signal.reason,
+                )
+                for signal in model_signals
+            )
+            self._collect_exits(run, snapshot)
 
-            run.filled += self._fill_pending(run, ts=ts, bars=bars, marks=opens)
-            run.trades.extend(self._portfolio.process_bar(model, ts=ts, bars=bars))
-            self._update_stops(run, market, ts=ts)
+    def _snapshot(self, market: MarketData, ts: pd.Timestamp) -> MarketData:
+        """`ts` barında duran anlık görüntü: model o barın ötesini GÖREMEZ (kural 12).
 
-            closes = {symbol: bar.close for symbol, bar in bars.items()}
-            run.equity_rows.append(self._equity_row(model, ts=ts, marks=closes))
-            run.bars_processed += 1
-            run.last_bar = ts
-            run.reached_as_of = run.reached_as_of or ts == market.as_of
+        Telafi edilen bir barda modele turun `as_of`'unu taşıyan görüntüyü vermek,
+        look-ahead yasağının en doğrudan ihlali olurdu: model geleceği görerek geçmişte
+        sinyal üretirdi ve o sinyalin ölçtüğü şey strateji olmaktan çıkardı.
+
+        `ts` barını TAŞIMAYAN sembol evrenden düşer — core/data.py'nin `as_of` için
+        uyguladığı kuralın aynısı. Düşmeseydi sembol doğrulamada referans fiyat
+        bulunamadığı için o barın TÜM sinyallerini düşürürdü (kural 8).
+
+        `as_of` barında kesme hiç yapılmaz: o görüntüyü core/data.py zaten bu kurallarla
+        kurmuştur, yeniden kurmak katmanın kasıtlı olarak verdiği bir çerçeveyi ikinci kez
+        elemek olurdu.
+        """
+        if ts == market.as_of:
+            return market
+        cached = self._snapshots.get(ts)
+        if cached is not None:
+            return cached
+
+        ohlcv: dict[str, pd.DataFrame] = {}
+        for symbol, frame in market.ohlcv.items():
+            window = bars_until(frame, ts)
+            if window.empty or window.index[-1] != ts:
+                continue
+            ohlcv[symbol] = window
+        snapshot = MarketData(
+            ohlcv=ohlcv,
+            btc=bars_until(market.btc, ts),
+            funding={symbol: series.loc[:ts] for symbol, series in market.funding.items()},
+            as_of=ts,
+        )
+        self._snapshots[ts] = snapshot
+        return snapshot
 
     def _timeline(self, run: _ModelRun, market: MarketData) -> list[pd.Timestamp]:
         """İşlenecek barlar: BTC çıpasının zaman ızgarasında son işlenenden `as_of`'a kadar.
@@ -364,10 +467,15 @@ class Engine:
         ilerlemesi demek olurdu.
 
         Tur ATLANDIĞINDA (cron gecikmesi/atlaması) aradaki barlar burada geri gelir ve
-        `_advance` hepsini SIRAYLA işler: bekleyen emirler kendi barının açılışından dolar,
+        `run_round` hepsini SIRAYLA işler: bekleyen emirler kendi barının açılışından dolar,
         stop/TP/likidasyon her barın kendi high/low'uyla kontrol edilir. Yalnızca son bara
         atlamak, atlanan barlardaki stop'ları hiç tetiklemeyip pozisyonu ölçümde hayatta
         tutardı.
+
+        `signals_per_bar` açıkken bu liste aynı zamanda SİNYAL barlarının listesidir: her
+        telafi barı kendi sinyalini de üretir. Listenin "zaten işlenmiş barı içermemesi" o
+        yüzden iki işi birden yapar — barı ikinci kez ilerletmemek ve aynı barın sinyalini
+        ikinci kez kuyruğa almamak.
 
         Defteri yeni açılan model için yalnızca `as_of` işlenir: ortada ne pozisyon ne
         bekleyen emir varken geçmişi geriye dönük işlemek yalnızca boş özsermaye satırları
@@ -598,8 +706,10 @@ class Engine:
         strategy = run.strategy
         if type(strategy).observe_closed_trades is Strategy.observe_closed_trades:
             return
+        if run.history_rows is None:
+            run.history_rows = self._ledger.read_trades(strategy.name)
         rows = [
-            *self._ledger.read_trades(strategy.name),
+            *run.history_rows,
             *(trade.as_row() for trade in run.trades),
         ]
         try:
@@ -878,7 +988,17 @@ def _assert_unique_names(strategies: Sequence[Strategy]) -> None:
 
 
 def _join(*notes: str) -> str:
-    return "; ".join(note for note in notes if note)
+    """Gerekçeleri birleştirir; AYNI gerekçe iki kez yazılmaz.
+
+    `signals_per_bar` açıkken bir modelin aynı hatası turdaki her barda tekrarlanabilir;
+    `skipped` alanı o hatanın bar sayısı kadar kopyasıyla dolsaydı tur raporu okunmaz
+    hâle gelirdi. Sayı zaten `signals`/`bars_processed` kolonlarında durur.
+    """
+    seen: list[str] = []
+    for note in notes:
+        if note and note not in seen:
+            seen.append(note)
+    return "; ".join(seen)
 
 
 def _opt_float(value: Any) -> float | None:

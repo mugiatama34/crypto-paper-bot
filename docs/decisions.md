@@ -1388,3 +1388,82 @@ Scalp katmanı kol kırılımı üretir ve `core/metrics.py::arm_of` etiketsiz s
 fırlatır (kural: "her işlem bir kola aittir"). Model 13 ve 14'ün kolu yoktur ama etiketi
 vardır: ikisi de `arm=vwap_revert` yazar. Alternatif — kırılımı bu modeller için atlamak —
 kırılım toplamı ile model toplamını sessizce ayrıştırırdı.
+
+## 19. Telafi edilen barlarda sinyal (`signals_per_bar`) ve saatlik scalp cron'u
+
+Ölçülen sorun: `.github/workflows/run-scalp.yml`in 15 dakikalık cron'u (`3,18,33,48 * * * *`)
+14 saatlik bir pencerede 57 slot için **5** kez tetiklendi (~%9). Gerçekleşen turlar arası
+aralık 1sa 54dk ile 3sa 17dk arasındaydı; tetiklenenler bile slot'undan 7-14 dakika
+gecikmeliydi. GitHub'ın zamanlanmış tetiklemeleri en iyi çaba ilkesiyle çalışır ve kadans
+sıklaştıkça düşme oranı artar.
+
+Motor atlanan turları zaten telafi ediyordu (karar 17, `core/engine.py > _timeline`): son
+işlenmiş bardan `as_of`'a kadarki her bar sırayla ilerletilir, dolayısıyla stop/TP/
+likidasyon/funding hiçbir barda atlanmaz — `ledgers_scalp/*/equity.csv` bu yüzden
+delikşizdi. Kaybolan şey **sinyaldi**: `generate_signals` yalnızca `as_of` barında
+çağrılırdı, yani 96 sinyal fırsatının ~87'si hiç sorulmadan geçiyordu.
+
+### Neden bu bir ölçüm hatasıdır, bir verim kaybı değil
+
+Kayıp yalnızca "daha az işlem" demek olsaydı, çare beklemek olurdu. Ama:
+
+- **Tablo modelin değil cron'un kadansını ölçer.** `acceptance.min_trades` (30) kapısına
+  ulaşma hızı stratejinin işlem sıklığına değil, GitHub'ın o gün ne kadar tetiklediğine
+  bağlanır.
+- **Kayıp turdan tura değişir.** Hangi barların düştüğü rastgeledir; bir model şanslı
+  barlarda, diğeri şanssız barlarda ölçülmüş olabilir. Model 11 ↔ 12 farkının (adaptasyonun
+  katkısı) içine cron gürültüsü karışır — oysa katman tam olarak o farkı ölçmek için var.
+- **Bandit doğrudan zarar görür.** Posterior kapanmış işlemlerden beslenir; işlem sayısı
+  onda bire inince ısınma (kol başına 20 işlem) haftalarca tamamlanmaz ve model ömrünün
+  büyük kısmını taban tahsiste geçirir — yani ölçülen şey "adaptasyon" olmaktan çıkar.
+
+### Karar: her telafi barı kendi sinyalini üretir
+
+`core/engine.py` turu artık bar bazında yürütür (`_advance_bar` + `_trade_step`) ve
+`signals_per_bar` açıkken her bar için sinyal üretir. Doğruluk ölçütü bir **eşdeğerliktir**:
+bir turda telafi edilen N bar, N ayrı turda koşulan N bar ile **birebir aynı defteri**
+üretmelidir. `tests/test_engine_per_bar.py` bunu iki defteri karşılaştırarak ölçer —
+`trades.csv`, `equity.csv` ve durum dosyası dâhil.
+
+Eşdeğerliği taşıyan dört kural:
+
+1. **Toplu değerlendirme yok.** Her bar için: sinyal üret -> emri kuyruğa al -> BİR SONRAKİ
+   barın açılışından doldur (kural 13) -> o barın mum içi kontrolü. Barları birleştirip tek
+   değerlendirme yapmak, ara barlarda tetiklenecek çıkışları yok saymak olurdu.
+2. **Limitler bar bazında.** `max_positions` / `max_short_positions` her barın dolumunda
+   yeniden sorulur. Tur başına uygulansaydı ya altı sinyalin hepsi tek kotadan geçer ya da
+   hepsi birden düşerdi; ikisi de gerçek borsanın davranışı değil.
+3. **Anlık görüntü barda kesilir (kural 12).** `_snapshot` her çerçeveyi o barda keser,
+   funding serisini kırpar ve o barı TAŞIMAYAN sembolü o barın evreninden düşürür —
+   `core/data.py`'nin `as_of` için uyguladığı kuralın aynısı. Sembolü düşürmemek, doğrulamada
+   referans fiyat bulunamadığı için o barın tüm sinyallerini düşürürdü (kural 8): gecikmeli
+   tek bir sembol koca bir barı sessizce boşa çıkarırdı. `as_of` barında kesme hiç yapılmaz,
+   çünkü o görüntüyü `core/data.py` zaten bu kurallarla kurmuştur.
+4. **`as_of`'tan sonrası işlenmez.** Kapanmamış bar ne sinyal ne özsermaye satırı üretir.
+
+Modeller değişmedi: `ScalpModel` çekilişi zaten `random_seed` + `as_of` + model kimliği ile
+tohumlar, yani her barın çekilişi ayrı ve tekrarlanabilirdir; model 12 ↔ 15'in paylaşılan
+çekiliş kimliği (karar 18) bar bazında da aynı kolu seçmeye devam eder.
+
+### Neden yalnızca scalp katmanında
+
+Ayar kökte **kapalı**, `layers.scalp`'te açıktır. Base katmanının cron'u (`run.yml`, 6
+saatte bir) güvenilir tetikleniyor, yani telafi orada nadiren devreye girer — ama devreye
+girdiği turlarda defterin kuralı sessizce değişirdi: biriken geçmişin bir kısmı "tur başına
+tek sinyal", bir kısmı "bar başına tek sinyal" ile üretilmiş olur ve iki dönemin işlem
+sıklığı kıyaslanamazdı. Tek bir defterin tek bir kuralla yazılması, nadiren kazanılacak
+birkaç sinyalden önemlidir. Katmanlar arası kıyas zaten yapılmaz; katman içinde ise beş
+modelin hepsi aynı ayarı görür (kural 6).
+
+### Cron: 15 dakikalık değil saatlik
+
+`signals_per_bar` açıkken tetikleme sıklığı artık sinyal sayısını belirlemiyor — yalnızca
+sonucun ne kadar gecikmeyle deftere yazıldığını belirliyor. Bu yüzden cron `3 * * * *`
+oldu: saatlik tetiklemeler belirgin biçimde daha güvenilir ve her koşu aradaki dört barı
+işliyor. Bedel yalnızca zamanlamadır (bir sinyal en çok bir saat sonra yazılır) ve ölçümü
+değiştirmez, çünkü fiyatlar barın kendi fiyatlarıdır. Kazanç, hem düşen tetikleme sayısının
+azalması hem de günde 96 yerine 24 commit.
+
+Alternatif — 15 dakikalık cron'u bırakmak — reddedildi: telafi zaten aynı sonucu verdiği
+için sık tetikleme yalnızca dört kat commit ve dört kat runner dakikası demek olurdu,
+üstelik tetiklemelerin çoğu yine düşerdi.

@@ -30,6 +30,7 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "slippage_short_stop",
     "maintenance_margin",
     "max_stop_atr_multiple",
+    "signals_per_bar",
     "timeframe",
     "universe_size",
     "universe_refresh_days",

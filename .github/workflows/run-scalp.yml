@@ -4,19 +4,25 @@ name: run-scalp
 # `run.yml`e DOKUNULMAZ: iki katman ayrı workflow, ayrı cron, ayrı defter, ayrı rapor
 # dosyasıdır — ama AYNI çekirdeği koşar (main.py --layer scalp).
 #
-# Zamanlama: bar 15m, yani barlar :00/:15/:30/:45'te KAPANIR. Cron 3 dakika sonra
-# tetiklenir — core/data.py kapanmamış barı atar (kural 12), erken tetiklenen bir koşu bir
-# önceki barı işleyip turu boşa harcardı.
+# Zamanlama: bar 15m, yani barlar :00/:15/:30/:45'te KAPANIR. Cron SAATLİK tetiklenir ve
+# her koşu aradaki dört barı birden işler — tetikleme :03'tedir, çünkü core/data.py
+# kapanmamış barı atar (kural 12) ve :00'da tetiklenen bir koşu saatin son barını bir tur
+# geç görürdü.
 #
-# NOT: GitHub'ın cron'u garantili değildir; 15 dakikalık bir kadansta tetiklemeler
-# gecikebilir ya da tamamen atlanabilir. Bu ölçümü BOZMAZ: motor son işlenmiş bardan
-# `as_of`'a kadar aradaki tüm barları sırayla ilerletir (core/engine.py > _timeline), yani
-# atlanan tur bir sonraki koşuda telafi edilir. Kaybedilen tek şey, atlanan barlarda
-# ÜRETİLMEYEN sinyallerdir — sinyal yalnızca `as_of` barında üretilir. İki model de aynı
-# turları kaçırdığı için aralarındaki kıyas bundan etkilenmez.
+# NEDEN 15 dakikalık değil de SAATLİK cron. GitHub'ın zamanlanmış tetiklemeleri garantili
+# değildir ve kadans sıklaştıkça düşme oranı artar: bu depoda 15 dakikalık cron ölçüldü —
+# 14 saatte 57 slot, 5 tetikleme (~%9). Saatlik kadans belirgin biçimde güvenilir
+# tetikleniyor ve SİNYAL KAYBI üretmiyor, çünkü `layers.scalp.signals_per_bar` açıktır:
+# motor son işlenmiş bardan `as_of`'a kadarki HER barı sırayla işler ve her barın kendi
+# sinyalini üretir (core/engine.py > _trade_step). Tur, o dört barın her birinde ayrı
+# ayrı koşulmuş gibi sonuçlanır — emirler kendi barlarının ertesinde dolar (kural 13) ve
+# pozisyon limitleri her barda yeniden sorulur.
+#
+# Gecikmenin bedeli yalnızca ZAMANLAMADIR: bir sinyal, üretildiği bardan en çok bir saat
+# sonra deftere yazılır. Fiyatlar barın kendi fiyatlarıdır, yani ölçüm değişmez.
 on:
   schedule:
-    - cron: "3,18,33,48 * * * *"
+    - cron: "3 * * * *"
   workflow_dispatch:
 
 # Defter koşular arası taşınan DURUMDUR: iki tur aynı anda koşarsa ikisi de aynı
