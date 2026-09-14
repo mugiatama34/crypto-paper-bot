@@ -29,7 +29,7 @@ yapar.
 | `core/tags.py` | Defter `reason` alanındaki `\| anahtar=değer` etiketlerinin tek tanımı. Etiketi yazan taraf strateji, okuyan taraf `core/metrics.py`'dir; format tek yerde durur. `parse_tag` bulamadığı etikette `TagError` fırlatır — kol kırılımının anlamı "her işlem bir kola aittir" varsayımına dayanır ve etiketsiz satırı atlamak kırılımı sessizce eksiltirdi. |
 | `core/config.py` | `config.yaml`'ı okuyan tek kapı. Eksik anahtarda `ConfigError` fırlatır; hiçbir varsayılan değer taşımaz — sessiz varsayılan, modellerin farklı maliyet/risk varsayımlarıyla yarışması demektir. |
 | `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u BTC referansından belirlemek burasının işidir; `as_of` barına sahip olmayan semboller o tur dışlanır ve loglanır. Strateji mantığı barındırmaz. |
-| `core/engine.py` | Orkestrasyon: her turu **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. Doldurulamayan emirleri sebep koduna göre sayıp tur raporuna yazar (bkz. kural 15). Atlanan turları telafi eder: son işlenmiş bardan `as_of`'a kadarki TÜM barları sırayla ilerletir (yalnızca son bara atlamak, atlanan barlardaki stop/TP/likidasyon kontrolünü hiç yapmamak olurdu). Anlık görüntü son işlenmiş bara kadar geri gitmiyorsa telafi mümkün değildir; o barlar `missing_bars` olarak sayılır ve loglanır — atlama sessiz olamaz. |
+| `core/engine.py` | Orkestrasyon: her BARI **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. Doldurulamayan emirleri sebep koduna göre sayıp tur raporuna yazar (bkz. kural 15). Atlanan turları telafi eder: son işlenmiş bardan `as_of`'a kadarki TÜM barları sırayla ilerletir (yalnızca son bara atlamak, atlanan barlardaki stop/TP/likidasyon kontrolünü hiç yapmamak olurdu) ve `signals_per_bar` açıkken her telafi barı KENDİ sinyalini de üretir (bkz. "Telafi edilen barlarda sinyal"). Anlık görüntü son işlenmiş bara kadar geri gitmiyorsa telafi mümkün değildir; o barlar `missing_bars` olarak sayılır ve loglanır — atlama sessiz olamaz. |
 | `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. |
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
 | `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. Salt okunur — ledger'ı değiştirmez. |
@@ -44,7 +44,7 @@ yapar.
 | `strategies/exit_management.py` | Üç aşamalı çıkış yönetiminin TEK tanımı (modeller 13, 14, 15 aynı kopyayı okur): breakeven -> kısmi çıkış + stop kaydırma -> geri verme takibi. Yalnızca config'i okuyup `Signal` alanlarına çevirir; uygulama `core/engine.py` (stop hareketleri) ve `core/portfolio.py`dedir (kısmi dolum) — kural 9'un `trailing_atr` için koyduğu sınırın aynısı. Üç dosyaya kopyalansaydı model 15 ile `scalp_fixed` arasındaki fark "yönetimin katkısı" olmaktan çıkar, "iki ayrı yönetimin farkı" olurdu. |
 | `strategies/vwap/signal.py` | Model 13 ve 14'ün ORTAK sinyali: gün-çapalı VWAP'ten `band_mult × sapma` kadar uzaklaşıp DÖNMEYE BAŞLAYAN bar. Dönüş şartı zorunludur — yalnızca "bant dışında" olmak, güçlü bir trendde her barda aynı sinyali üretirdi. Modül kurulumun YERİNİ verir; stop ve hedefi her model kendi kuralıyla kurar (13 öğrenilen çarpanlar, 14 sabit çarpan + VWAP kırpması). |
 | `strategies/vwap_clone.py` | **Model 13 (KOPYA, `is_replica=True`):** dış bir sistemin kurallarını birebir yeniden üretir. Sabit teminat × 10x (`notional_fraction` + `ModelLimits.leverage`), üç aşamalı çıkış yönetimi, kendi limitleri (5 pozisyon, yönde 3, portföy riski %8), 13 sembollük kendi evreni, epsilon-greedy parametre öğrenimi (4×3 = 12 kombinasyon, sembol bazlı, 3 örnek altında genele düşer). Ev kapıları (%1 stop tabanı, 1.5R) UYGULANMAZ — kaynak sistemde yok. Yarışmacı değildir. |
-| `strategies/vwap_managed.py` | **Model 14:** model 13'ün sinyali, EV kurallarıyla — `sizing="risk"`, katmanın `leverage_cap`i, %1 stop tabanı ve 1.5R kapısı geçerli, parametre öğrenimi YOK (sabit çarpanlar config'te). Turda tek sinyal. Tam yarışmacı; kıyas hedefleri model 13 (ev kurallarının katkısı) ve `scalp_fixed`. |
+| `strategies/vwap_managed.py` | **Model 14:** model 13'ün sinyali, EV kurallarıyla — `sizing="risk"`, katmanın `leverage_cap`i, %1 stop tabanı ve 1.5R kapısı geçerli, parametre öğrenimi YOK (sabit çarpanlar config'te). Barda tek sinyal. Tam yarışmacı; kıyas hedefleri model 13 (ev kurallarının katkısı) ve `scalp_fixed`. |
 | `strategies/scalp_managed.py` | **Model 15:** `scalp_fixed`in BİREBİR ikizi (aynı beş kol, aynı eşit ağırlıklı çekiliş — `choose_arm` miras alınır, kopyalanmaz), tek farkı üç aşamalı çıkış yönetimi. Çekiliş kimliği (`rng_identity`) bilinçli olarak `scalp_fixed` ile PAYLAŞILIR: iki model her turda aynı kolu ve aynı sembolü seçer, aradaki ortalama R farkı yalnızca yönetimden gelir (eşleştirilmiş deney). |
 | `strategies/buyhold.py` | **Referans çıpası** (kural 15), yarışmacı değil: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınır ve hiç satılmaz. `is_benchmark = True`. |
 | `strategies/registry.py` | Model adı -> strateji sınıfı eşlemesi. `config.yaml`'ın `models` listesi buradan çözülür; tanınmayan ad sessizce atlanmaz. |
@@ -56,7 +56,7 @@ yapar.
 | `scripts/telegram_report.py` | Günlük Telegram özeti. `as_of` saati 20:00 (UTC) olan turda yollanır; token'lar ortamdan (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) okunur. **Her yolda 0 döner** — eksik token, ağ hatası, Telegram 4xx'i, bozuk JSON: hepsi loglanıp geçilir. Özet bir bildirimdir, ölçümün parçası değil; Telegram kesintisi turu kırmızıya çeviremez. |
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
 | `ledgers_scalp/` | Scalp katmanının defteri. İki katman asla aynı defteri paylaşmaz: paylaşsalardı 15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı. |
-| `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`, 15 dakikada bir). Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. |
+| `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`, SAATLİK: her koşu dört 15m barını işler). Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. 15 dakikalık cron ölçüldü ve tetiklemelerin ~%91'i düşüyordu; saatlik kadans `signals_per_bar` sayesinde sinyal kaybı üretmez (bkz. "Telafi edilen barlarda sinyal"). |
 | `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
 
 ### config.yaml Değerleri
@@ -74,6 +74,7 @@ yapar.
 | `maintenance_margin` | `0.005` | Likidasyon eşiği. Pozisyonun mum içi zararı bu seviyeyi geçerse likide edilir. |
 | `random_seed` | (sabit tam sayı) | Rastgelelik kullanan her yol bu tohumdan beslenir; koşular tekrarlanabilir olmalıdır. |
 | `initial_capital` | `10000` | Her stratejinin izole sanal hesabının başlangıç bakiyesi (USDT). |
+| `signals_per_bar` | `false` (scalp: `true`) | Telafi edilen barlarda da sinyal üretilsin mi. Kapalıyken sinyal yalnızca `as_of` barında üretilir; açıkken her bar kendi sinyalini üretir ve tur, o barların her birinde ayrı ayrı koşulmuş gibi sonuçlanır. Bkz. "Telafi edilen barlarda sinyal". |
 | `timeframe` | `"4H"` | Tek zaman dilimi; OKX bar kodu ve bar süresi bundan türetilir. |
 | `universe_size` | `50` | 24s hacme göre seçilen USDT perpetual sayısı. |
 | `universe_refresh_days` | `30` | Evren bu süre dolmadan yeniden hesaplanmaz (kıyas kümesi sabit kalsın). |
@@ -85,7 +86,7 @@ yapar.
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
 | `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
-| `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, …). Bkz. "Katmanlar". |
+| `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, `signals_per_bar`, …). Bkz. "Katmanlar". |
 | `scalp.*` | scalp kısıtları | Beş kollu modellerin (11, 12, 15) ve model 14'ün BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
 | `exit_management.*` | üç aşamalı çıkış | Modeller 13, 14 ve 15'in TEK kaynağı: `breakeven_at_r` (1.0), `partial_tp.r` (1.5), `partial_tp.fraction` (0.5), `trail_giveback_pct` (0.5). Model başına ayrı bloklar, bir gün birinin sessizce ayrışması ve model 15 ↔ `scalp_fixed` farkının "iki ayrı yönetimin farkı"na dönüşmesi demekti. |
 | `vwap.*` | modeller 13-14 | Ortak sinyal (`band_mult` 2.0, `min_vwap_bars` 8), model 14'ün sabit çarpanları (`managed.*`) ve kopyanın kendi kuralları (`clone.*`: sabit teminat oranı, kaldıraç, limitler, 12 kombinasyon, epsilon, 13 sembollük evren). |
@@ -286,7 +287,8 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (11, 12, 14, 15) + 1 dış sistem kopyası (13) |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
-| Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (15 dakikada bir) |
+| Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (saatlik; tur başına 4 bar) |
+| Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
 | Kırılımlar | yok | kol + sembol |
 | Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) |
@@ -307,6 +309,38 @@ tabloda gösterir. 15 dakikalık bir modelin ortalama R'si ile 4 saatlik bir mod
 sütuna konsaydı, aradaki fark strateji farkı gibi okunurdu — oysa işlem sıklığı, maliyetin R
 içindeki payı ve tutma süresi bambaşkadır. Katman **içi** kıyas (model 11 ↔ model 12) ise
 tam olarak tasarımın amacıdır.
+
+**Telafi edilen barlarda sinyal (`signals_per_bar`).** Motor atlanan turları zaten telafi
+ederdi — son işlenmiş bardan `as_of`'a kadarki her barı sırayla ilerletir — ama sinyal
+YALNIZCA `as_of` barında üretilirdi: atlanan barların pozisyon yönetimi (stop/TP/likidasyon/
+funding) yapılır, sinyal fırsatı ise kaybolurdu. 15 dakikalık katmanda bu kayıp ölçülebilir
+bir sorundur: GitHub cron'unun 15 dakikalık tetiklemelerinin ~%91'i düşüyordu, yani tablo
+modelin değil **cron'un kadansını** ölçüyordu. Üstelik kayıp turdan tura değiştiği için
+modeller arası farkın kendisi de gürültüye karışırdı.
+
+Ayar açıkken tur, o barların her birinde **ayrı ayrı koşulmuş gibi** sonuçlanır ve bunun
+testi bir eşdeğerliktir (`tests/test_engine_per_bar.py`): bir turda telafi edilen N bar ile
+N ayrı turda koşulan N bar **birebir aynı defteri** üretir. Bunu sağlayan dört kural:
+
+- **Barlar sırayla işlenir, toplu değerlendirme YOKTUR:** her bar için sinyal üretilir,
+  emir bir SONRAKİ barın açılışından dolar (kural 13), sonra o barın stop/TP/likidasyon
+  kontrolü yapılır. Barları birleştirip tek bir değerlendirme yapmak, ara barlarda
+  tetiklenecek çıkışları yok saymak olurdu.
+- **Pozisyon limitleri her barda yeniden sorulur** (`core/portfolio.py`): kota barın kendi
+  doluluğuna bakar, turun toplamına değil.
+- **Model her barda yalnızca o bara kadarki veriyi görür** (kural 12): `core/engine.py`
+  çerçeveleri o barda keser ve o barı taşımayan sembolü o barın evreninden düşürür —
+  `core/data.py`'nin `as_of` için uyguladığı kuralın aynısı. Aksi, telafi barında geleceği
+  görerek sinyal üretmek olurdu.
+- **`as_of`'tan sonrası işlenmez:** kapanmamış bar ne sinyal ne özsermaye satırı üretir.
+
+Ayar **kökte kapalıdır** (4 saatlik katman), scalp katmanında açıktır. Gerekçe kural 6'nın
+kendisi değil, defterin tek bir kuralla yazılmasıdır: `run.yml` güvenilir tetikleniyor,
+yani base katmanında telafi nadiren devreye girer — ama devreye girdiği turlarda defterin
+kuralı sessizce değişir ve biriken geçmişin bir kısmı "tur başına tek sinyal", bir kısmı
+"bar başına tek sinyal" ile üretilmiş olurdu. İki dönemin işlem sıklığı kıyaslanamazdı.
+Katmanlar arası kıyas zaten yapılmadığı için ayarın katmana göre farklı olması bir
+tutarsızlık değildir; katman **içi** kıyasta ise beş model de aynı ayarı görür.
 
 **Saklama penceresi (`retention`).** 15 dakikalık katman günde 96 tur koşar ve her turu commit
 eder: `equity.csv` yılda on binlerce satıra çıkar ve depo geçmişi ölçümle ilgisiz satırlarla
@@ -349,9 +383,11 @@ kapılardan geçirir; VWAP modelleri (13, 14) ise **ortak sinyali**
   bir sonraki barın açılışındadır (kural 13), yani gerçek ömür 17 bardır.
 - **Trailing yok** — yürüyen stop, gerçekleşen R ile kurulumun vaat ettiği R arasındaki bağı
   koparır ve bandit'in öğrendiği sinyali bulanıklaştırırdı.
-- **Turda tek sinyal** — beş kolu birden oynamak kol tahsisini anlamsız kılardı. Model 14
-  de tek sinyal oynar (kıyas hedefi `scalp_fixed` tur başına tek pozisyon açar); model 13
-  ise kaynak sistemin kuralı gereği kendi pozisyon kotasına (5) kadar sinyal üretir.
+- **BARDA tek sinyal** — beş kolu birden oynamak kol tahsisini anlamsız kılardı. Birim
+  `bar`dır, `tur` değil: `signals_per_bar` açık olduğu için bir tur kaç bar telafi ediyorsa
+  o kadar sinyal üretilir (saatlik cron'da 4). Model 14 de barda tek sinyal oynar (kıyas
+  hedefi `scalp_fixed` bar başına tek pozisyon açar); model 13 ise kaynak sistemin kuralı
+  gereği kendi pozisyon kotasına (5) kadar sinyal üretir.
 - **Ev kapıları (stop tabanı, 1.5R, zaman stop'u) model 13'e UYGULANMAZ** — kaynak sistemde
   yoktur; eklemek kopyayı model 14'e çevirirdi ve ikisinin farkı ölçülemez hâle gelirdi.
 - **Üç aşamalı çıkış yönetimi** (`exit_management` bloğu) modeller 13, 14 ve 15'te aynıdır
