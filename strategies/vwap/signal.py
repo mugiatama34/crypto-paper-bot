@@ -31,6 +31,13 @@ Soru "önceki bar ŞU ANKİ ortalama maliyetin ne kadar uzağındaydı"dır; her
 kendi VWAP'ini kullanmak iki farklı ölçeği karşılaştırmak olurdu. Ayrıca kural 12 ile de
 tutarlıdır: kullanılan tüm barlar `as_of` ve öncesindedir.
 
+**Aday BULUNAMAMASI da kaydedilir (`Survey`).** Kol, sinyal üretmediği barlarda hiçbir iz
+bırakmasaydı "bugün kurulum yoktu" ile "sinyal modülü sessizce bozuldu" aynı görünürdü —
+model 13 gibi hiç kapısı olmayan bir modelde defterdeki boşluk tek başına hangisinin doğru
+olduğunu söylemez. Bu yüzden her tarama eleme SEBEPLERİYLE sayılır ve loglanır; kural
+15'in "ret sebep koduyla kaydedilir" şartının bu koldaki karşılığıdır. Sayım yalnızca bir
+denetim izidir: hangi adayın üretileceğini ve sıralarını hiçbir biçimde etkilemez.
+
 Rollere dikkat: bu modül boyut/komisyon/bakiye hesaplamaz (kural 1/2/3/7), deftere yazmaz
 ve kendi gösterge matematiğini yazmaz — VWAP ve ATR `core/indicators.py`'dedir, sembol
 görünümleri `strategies/scalp/arms.py`'nin ortak yardımcısından gelir.
@@ -39,8 +46,9 @@ görünümleri `strategies/scalp/arms.py`'nin ortak yardımcısından gelir.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
-from typing import Collection, Sequence
+from typing import Collection, Mapping, Sequence
 
 from core.indicators import anchored_vwap
 from strategies.base import Direction, MarketData
@@ -81,6 +89,51 @@ class VwapCandidate:
         )
 
 
+# Bir sembolün o barda neden aday OLAMADIĞI. Sayım bir ölçüm değil, bir DENETİM İZİDİR:
+# "bu barda hiç sinyal yok" satırı, sinyal modülünün sessizce bozulduğu bir bardan ayırt
+# edilemezse kural 15'in "atlama sessiz olamaz" şartı bu kolda karşılanmamış olur. Model
+# 13'ün deftere hiç satır yazmadığı bir gün ile kolun hiç kurulum görmediği bir gün
+# birbirinin aynısı görünür ve hangisinin doğru olduğu ancak veriyi elle çekerek anlaşılır.
+NO_VWAP = "vwap_yok"             # çapa/sapma yokluğu: "kaç σ uzakta" sorusunun cevabı yok
+INSIDE_BAND = "bant_ici"         # önceki bar bandın İÇİNDE kapandı (sapma yetersiz)
+STILL_EXTENDING = "donus_yok"    # bant dışı ama dönüş başlamamış (uzaklaşma sürüyor)
+CROSSED = "vwap_gecildi"         # bant dışı, ama bu bar VWAP'i çoktan geçmiş
+SETUP = "kurulum"                # aday
+
+
+@dataclass(frozen=True, kw_only=True)
+class Survey:
+    """Bir BARDA kolun ne gördüğü: sebep -> sembol sayısı, ve VWAP'ten en uzak sembol.
+
+    `max_extension` bandın kendisiyle kıyaslanmak içindir: 0 aday üreten bir barda
+    "en uzak sembol 1.9σ'daydı" ile "en uzak sembol 0.4σ'daydı" bambaşka iki durumdur —
+    birincisi bandın dar kaldığını, ikincisi piyasanın gerçekten VWAP'e yapışık olduğunu
+    söyler. `nan` ise hiçbir sembolde z hesaplanamadı demektir (bkz. NO_VWAP).
+    """
+
+    examined: int
+    counts: Mapping[str, int]
+    furthest_symbol: str | None
+    max_extension: float   # görülen en büyük |z_prev|; nan = hiç ölçülemedi
+
+    @property
+    def candidates(self) -> int:
+        return self.counts.get(SETUP, 0)
+
+    def describe(self) -> str:
+        reasons = " ".join(
+            f"{reason}={self.counts[reason]}"
+            for reason in (SETUP, INSIDE_BAND, STILL_EXTENDING, CROSSED, NO_VWAP)
+            if self.counts.get(reason)
+        )
+        furthest = (
+            "en uzak sapma: yok"
+            if self.furthest_symbol is None or math.isnan(self.max_extension)
+            else f"en uzak sapma: {self.furthest_symbol} {self.max_extension:.2f}σ"
+        )
+        return f"{self.examined} sembol; {reasons or 'sayım yok'}; {furthest}"
+
+
 def propose(
     market: MarketData,
     *,
@@ -88,8 +141,9 @@ def propose(
     band_mult: float,
     min_vwap_bars: int,
     symbols: Collection[str] | None = None,
+    model: str | None = None,
 ) -> list[VwapCandidate]:
-    """O turun sapma-dönüş adayları; GÜÇ SIRASINA göre (eşitlikte sembol adına göre).
+    """O BARIN sapma-dönüş adayları; GÜÇ SIRASINA göre (eşitlikte sembol adına göre).
 
     Sıra sözlük sırasına bırakılmaz: iki model de aynı adaylardan tek bir kurulum seçer
     ve seçimin tekrarlanabilir olması sıranın belirli olmasına bağlıdır
@@ -98,33 +152,100 @@ def propose(
     `symbols` modelin KENDİ evrenidir (None = katmanın tamamı). Kopya model kaynak
     sistemin evrenini taşır; katmanın evreni ondan geniştir ve fazladan bir sembolde
     işlem açmak kopyayı kopya olmaktan çıkarırdı.
+
+    `model` yalnızca LOG ETİKETİDİR ve seçimi hiçbir biçimde etkilemez: aynı bar iki model
+    için ayrı ayrı taranır (evrenleri farklı) ve iki sayım satırı birbirinden ayırt
+    edilebilmelidir. Sonuç, `scan`in döndürdüğü listenin aynısıdır.
     """
-    allowed = None if symbols is None else set(symbols)
-    candidates: list[VwapCandidate] = []
-    for view in symbol_views(market, atr_period=atr_period):
-        if allowed is not None and view.symbol not in allowed:
-            continue
-        candidate = _candidate(view, band_mult=band_mult, min_vwap_bars=min_vwap_bars)
-        if candidate is not None:
-            candidates.append(candidate)
-    candidates.sort(key=lambda item: (-item.extension, item.symbol))
+    candidates, survey = scan(
+        market,
+        atr_period=atr_period,
+        band_mult=band_mult,
+        min_vwap_bars=min_vwap_bars,
+        symbols=symbols,
+    )
+    logger.info(
+        "%s%s %s bandı=%.2fσ -> %s",
+        f"{model} " if model else "",
+        ARM_NAME,
+        market.as_of.isoformat(),
+        band_mult,
+        survey.describe(),
+    )
     return candidates
 
 
-def _candidate(
+def scan(
+    market: MarketData,
+    *,
+    atr_period: int,
+    band_mult: float,
+    min_vwap_bars: int,
+    symbols: Collection[str] | None = None,
+) -> tuple[list[VwapCandidate], Survey]:
+    """`propose`un sessiz hâli: adaylar VE eleme sayımı.
+
+    Ayrı bir fonksiyon olmasının nedeni test edilebilirliktir: sayımın kendisi log
+    metninden değil bir değerden okunabilmelidir, yoksa "denetim izi doğru mu" sorusu
+    ancak log ayrıştırarak cevaplanabilirdi.
+    """
+    allowed = None if symbols is None else set(symbols)
+    candidates: list[VwapCandidate] = []
+    counts: dict[str, int] = {
+        SETUP: 0, INSIDE_BAND: 0, STILL_EXTENDING: 0, CROSSED: 0, NO_VWAP: 0
+    }
+    examined = 0
+    furthest_symbol: str | None = None
+    max_extension = float("nan")
+
+    for view in symbol_views(market, atr_period=atr_period):
+        if allowed is not None and view.symbol not in allowed:
+            continue
+        examined += 1
+        candidate, reason, extension = _evaluate(
+            view, band_mult=band_mult, min_vwap_bars=min_vwap_bars
+        )
+        counts[reason] += 1
+        if candidate is not None:
+            candidates.append(candidate)
+        if extension is not None and (
+            math.isnan(max_extension) or extension > max_extension
+        ):
+            furthest_symbol, max_extension = view.symbol, extension
+
+    candidates.sort(key=lambda item: (-item.extension, item.symbol))
+    survey = Survey(
+        examined=examined,
+        counts=counts,
+        furthest_symbol=furthest_symbol,
+        max_extension=max_extension,
+    )
+    return candidates, survey
+
+
+def _evaluate(
     view: SymbolView, *, band_mult: float, min_vwap_bars: int
-) -> VwapCandidate | None:
+) -> tuple[VwapCandidate | None, str, float | None]:
+    """Tek sembolün değerlendirmesi: aday, ELEME SEBEBİ ve ölçülen |z_prev|.
+
+    Sebep ile birlikte döner, çünkü `None` tek başına "neden olmadığını" söylemez ve tam
+    da ayırt edilmek istenen şey odur (bkz. sebep sabitlerinin üstündeki gerekçe).
+    """
     if len(view.frame) < 2:
-        return None
+        return None, NO_VWAP, None
     vwap = anchored_vwap(view.frame, anchor=view.as_of.normalize())
     if vwap is None or vwap.bars < min_vwap_bars or vwap.deviation <= 0.0:
         # Sapması sıfır olan (ya da gün başı henüz birkaç barlık) bir pencerede "kaç σ
         # uzakta" sorusunun cevabı yoktur; sıfıra bölmek yerine kurulum kurulmaz.
-        return None
+        return None, NO_VWAP, None
 
     previous = float(view.frame["close"].iloc[-2])
     z_prev = (previous - vwap.value) / vwap.deviation
     z_now = (view.close - vwap.value) / vwap.deviation
+    extension = abs(z_prev)
+
+    if -band_mult < z_prev < band_mult:
+        return None, INSIDE_BAND, extension
 
     direction: Direction | None = None
     if z_prev <= -band_mult and z_prev < z_now < 0.0:
@@ -132,18 +253,26 @@ def _candidate(
     elif z_prev >= band_mult and 0.0 < z_now < z_prev:
         direction = "short"
     if direction is None:
-        return None
+        # Bant dışında kalan bar ya hâlâ uzaklaşıyordur ya da VWAP'i geçmiştir; ikisi
+        # farklı şeyler söyler (birincisi trend, ikincisi kaçırılmış dönüş) ve tek bir
+        # "aday değil" sayısına indirgemek kolun neyi kaçırdığını gizlerdi.
+        crossed = z_now >= 0.0 if z_prev < 0.0 else z_now <= 0.0
+        return None, CROSSED if crossed else STILL_EXTENDING, extension
 
-    return VwapCandidate(
-        symbol=view.symbol,
-        direction=direction,
-        entry_price=view.close,
-        atr=view.atr,
-        vwap=vwap.value,
-        deviation=vwap.deviation,
-        z_prev=z_prev,
-        z_now=z_now,
-        vwap_bars=vwap.bars,
+    return (
+        VwapCandidate(
+            symbol=view.symbol,
+            direction=direction,
+            entry_price=view.close,
+            atr=view.atr,
+            vwap=vwap.value,
+            deviation=vwap.deviation,
+            z_prev=z_prev,
+            z_now=z_now,
+            vwap_bars=vwap.bars,
+        ),
+        SETUP,
+        extension,
     )
 
 
