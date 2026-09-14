@@ -1,4 +1,11 @@
-"""VWAP sapma-dönüş sinyalinin TEK tanımı — modeller 13 ve 14 aynı kopyayı görür.
+"""MODEL 14'ÜN VWAP sapma-dönüş sinyali. Bu modülü YALNIZCA model 14 okur.
+
+**Model 13 bu modülü OKUMAZ** (karar 23): kopyanın kuralları kaynak sistemin kurallarıdır
+ve `strategies/vwap/clone_signal.py`'dedir — ayrı VWAP çapası (kayan kümülatif pencere),
+ayrı σ tanımı (ağırlıksız örneklem sapması), ayrı dönüş şartı, ayrı stop/hedef geometrisi
+ve ayrı kol etiketi. Ortak olan yalnızca `core/indicators.py` yardımcılarıdır. Tek modülde
+birleştirilselerdi her kural bir dallanma olurdu ve "iki sistemin farkı" o dallanmaların
+durumuna bağlı bir şeye dönüşürdü.
 
 **Tez.** Gün-çapalı VWAP, günün o ana kadarki hacim ağırlıklı ortalama işlem maliyetidir.
 Fiyat ondan kendi hacim ağırlıklı standart sapmasının `band_mult` katı kadar uzaklaştığında
@@ -12,15 +19,12 @@ DIŞINDA kapanmış, bu bar VWAP'e doğru bir adım atmış ve HÂLÂ aynı tara
 "Hâlâ aynı tarafta" şartı, VWAP'i çoktan geçmiş bir barı bir dönüş başlangıcı saymayı
 engeller: o artık başka bir kurulumdur (VWAP kırılımı), bu kolun ölçtüğü şey değil.
 
-**Ortak olan sinyal, hedef DEĞİL.** Bu modül kurulumun YERİNİ verir (sembol, yön, giriş,
-ATR, VWAP, sapma); stop ve hedefi modeller kendi kurallarıyla kurar:
+**Kurulumun YERİ burada, stop ve hedef modelde.** Bu modül sembol, yön, giriş, ATR, VWAP
+ve sapmayı verir; model 14 stop'u sabit ATR katı, hedefi ise projeksiyon ile VWAP'in YAKIN
+olanı olarak kurar ve %1 stop tabanı ile 1.5R kapısını uygular
+(`strategies/vwap_managed.py`).
 
-    model 13 (`vwap_clone`)    stop = öğrenilen ATR katı, hedef = öğrenilen R katı
-                               (kaynak sistemin kuralı; ev kapıları uygulanmaz)
-    model 14 (`vwap_managed`)  stop = sabit ATR katı, hedef = projeksiyon ile VWAP'in
-                               YAKIN olanı; %1 stop tabanı ve 1.5R kapısı geçerli
-
-İkisinin hedefi aynı olsaydı model 14'ün 1.5R kapısı ölü koda dönerdi (bkz.
+Hedef sabit bir R katı olsaydı 1.5R kapısı ölü koda dönerdi (bkz.
 `strategies/scalp/arms.py`'deki aynı gerekçe): sabit bir R katı kapıyı hiçbir zaman
 tetiklemez. VWAP'i yapısal engel saymak kapıyı canlı tutar — VWAP 1.5R'den yakınsa
 kurulum atlanır, çünkü tezin hedefi zaten VWAP'tir ve oraya kadar olan mesafe maliyeti
@@ -33,8 +37,10 @@ tutarlıdır: kullanılan tüm barlar `as_of` ve öncesindedir.
 
 **Aday BULUNAMAMASI da kaydedilir (`Survey`).** Kol, sinyal üretmediği barlarda hiçbir iz
 bırakmasaydı "bugün kurulum yoktu" ile "sinyal modülü sessizce bozuldu" aynı görünürdü —
-model 13 gibi hiç kapısı olmayan bir modelde defterdeki boşluk tek başına hangisinin doğru
-olduğunu söylemez. Bu yüzden her tarama eleme SEBEPLERİYLE sayılır ve loglanır; kural
+hiç işlem açmamış bir modelde defterdeki boşluk tek başına hangisinin doğru olduğunu
+söylemez. Sayım iki parçalıdır: eleme SEBEPLERİ (ayrık) ve |z_prev| KOVALARI (kümülatif);
+ikincisi olmadan "13 sembol de bandın içindeydi" satırı bandın kıl payı mı yoksa fersah
+fersah mı kaçırdığını söylemez. Bu yüzden her tarama eleme SEBEPLERİYLE sayılır ve loglanır; kural
 15'in "ret sebep koduyla kaydedilir" şartının bu koldaki karşılığıdır. Sayım yalnızca bir
 denetim izidir: hangi adayın üretileceğini ve sıralarını hiçbir biçimde etkilemez.
 
@@ -56,8 +62,9 @@ from strategies.scalp.arms import SymbolView, symbol_views
 
 logger = logging.getLogger(__name__)
 
-# Kolun ADI. İki model de aynı etiketi yazar: kol kırılımı (core/metrics.py::arm_of)
-# "her işlem bir kola aittir" varsayımına dayanır ve etiketsiz satır TagError üretir.
+# Kolun ADI — YALNIZCA model 14'ün etiketi. Model 13 kendi etiketini yazar
+# (`vwap_revert_src`): tek bir ad, iki farklı kural kümesini aynı kolmuş gibi gösterir ve
+# kol kırılımını (core/metrics.py::arm_of) anlamsız kılardı.
 ARM_NAME = "vwap_revert"
 
 
@@ -100,6 +107,20 @@ STILL_EXTENDING = "donus_yok"    # bant dışı ama dönüş başlamamış (uzak
 CROSSED = "vwap_gecildi"         # bant dışı, ama bu bar VWAP'i çoktan geçmiş
 SETUP = "kurulum"                # aday
 
+# |z_prev| HİSTOGRAMI (kümülatif): "kaç sembol en az bu kadar uzaktaydı".
+#
+# Eleme sayımı `bant_ici=13` der ama "0.4σ'da mı, 1.9σ'da mı" demez — oysa iki durum
+# bambaşka şeyler söyler: birincisi piyasanın VWAP'e yapışık olduğunu, ikincisi bandın
+# kıl payı kaçırdığını. `max_extension` bu bilgiyi yalnızca TEK sembol için ve yalnızca
+# loga taşıyor; kovalar aynı bilgiyi tüm evren için ve TUR RAPORUNA taşır (sözleşme
+# `Mapping[str, int]` olduğu için kova bir SAYIMDIR, `max_extension` gibi bir ölçü değil).
+#
+# Kümülatif ("≥") olmaları bilinçlidir: bandın eşiği bir kesme noktasıdır ve sorulan soru
+# "eşik şu olsaydı kaç sembol geçerdi"dir. Ayrık kovalar bu soruyu her okumada toplama
+# yaptırırdı. Kümülatif oldukları için ÜST ÜSTE BİNERLER ve toplamları `examined` DEĞİLDİR
+# — bu yüzden eleme sayımıyla aynı sözlükte tutulmazlar (bkz. `Survey.counts`/`report`).
+EXTENSION_BUCKETS: tuple[float, ...] = (1.0, 1.5, 2.0, 2.5)
+
 
 @dataclass(frozen=True, kw_only=True)
 class Survey:
@@ -112,7 +133,8 @@ class Survey:
     """
 
     examined: int
-    counts: Mapping[str, int]
+    counts: Mapping[str, int]          # eleme sebebi -> sembol; Σ = examined (AYRIK)
+    extensions: Mapping[str, int]      # z_ge_* -> sembol; kümülatif, ÜST ÜSTE BİNER
     furthest_symbol: str | None
     max_extension: float   # görülen en büyük |z_prev|; nan = hiç ölçülemedi
 
@@ -120,18 +142,51 @@ class Survey:
     def candidates(self) -> int:
         return self.counts.get(SETUP, 0)
 
+    def report(self) -> dict[str, int]:
+        """Tur raporuna düşen sayım: eleme sebepleri + |z_prev| kovaları.
+
+        İkisi tek sözlükte BİRLEŞTİRİLİR ama ayrı alanlarda TUTULUR: `counts` ayrıktır ve
+        `Σ counts == examined` değişmezi denetlenebilir olmalıdır, kovalar ise kümülatiftir
+        ve üst üste biner. Aynı alanda saklamak o değişmezi sessizce yok ederdi; ayrı
+        raporlamak ise okuyanı iki sözlüğü elle birleştirmeye zorlardı.
+        """
+        return {**self.counts, **self.extensions}
+
     def describe(self) -> str:
         reasons = " ".join(
             f"{reason}={self.counts[reason]}"
             for reason in (SETUP, INSIDE_BAND, STILL_EXTENDING, CROSSED, NO_VWAP)
             if self.counts.get(reason)
         )
+        buckets = " ".join(
+            f"{key}={self.extensions[key]}"
+            for key in _bucket_keys()
+            if self.extensions.get(key)
+        )
         furthest = (
             "en uzak sapma: yok"
             if self.furthest_symbol is None or math.isnan(self.max_extension)
             else f"en uzak sapma: {self.furthest_symbol} {self.max_extension:.2f}σ"
         )
-        return f"{self.examined} sembol; {reasons or 'sayım yok'}; {furthest}"
+        return (
+            f"{self.examined} sembol; {reasons or 'sayım yok'}; "
+            f"|z| dağılımı: {buckets or 'yok'}; {furthest}"
+        )
+
+
+def bucket_key(threshold: float) -> str:
+    """`1.5` -> `z_ge_1_5`. Ondalık basamak SABİTTİR (`:g` değil `:.1f`).
+
+    `:g` biçimlendirmesi 1.0'ı `z_ge_1`, 1.5'i `z_ge_1_5` yapardı: aynı eksende iki farklı
+    ad şeması, tur raporunu okuyan tarafta sessizce kaçırılan bir anahtar demektir.
+    Nokta alt çizgiye çevrilir çünkü etiket/anahtar biçimi noktayı kabul etmez
+    (core/tags.py).
+    """
+    return f"z_ge_{threshold:.1f}".replace(".", "_")
+
+
+def _bucket_keys() -> tuple[str, ...]:
+    return tuple(bucket_key(threshold) for threshold in EXTENSION_BUCKETS)
 
 
 def propose(
@@ -194,6 +249,7 @@ def scan(
     counts: dict[str, int] = {
         SETUP: 0, INSIDE_BAND: 0, STILL_EXTENDING: 0, CROSSED: 0, NO_VWAP: 0
     }
+    extensions: dict[str, int] = {key: 0 for key in _bucket_keys()}
     examined = 0
     furthest_symbol: str | None = None
     max_extension = float("nan")
@@ -208,15 +264,18 @@ def scan(
         counts[reason] += 1
         if candidate is not None:
             candidates.append(candidate)
-        if extension is not None and (
-            math.isnan(max_extension) or extension > max_extension
-        ):
-            furthest_symbol, max_extension = view.symbol, extension
+        if extension is not None:
+            for threshold in EXTENSION_BUCKETS:
+                if extension >= threshold:
+                    extensions[bucket_key(threshold)] += 1
+            if math.isnan(max_extension) or extension > max_extension:
+                furthest_symbol, max_extension = view.symbol, extension
 
     candidates.sort(key=lambda item: (-item.extension, item.symbol))
     survey = Survey(
         examined=examined,
         counts=counts,
+        extensions=extensions,
         furthest_symbol=furthest_symbol,
         max_extension=max_extension,
     )

@@ -224,7 +224,10 @@ layers:
       # 30 gün bar bazında kalır. trades.csv'ye DOKUNULMAZ — denetim izi odur.
       equity_compaction_days: 30
       model_trade_limit: 50    # scalp çok işlem üretir; JSON'a model başına son 50 işlem
-    breakdowns: ["arm", "symbol"]
+    # exit_rule: üç aşamalı yönetimin hangi aşamasının gerçekten tetiklendiği. Birimi
+    # DİLİMDİR (bkz. core/metrics.py::exit_rule_of): kısmi çıkışlı pozisyon iki gruba
+    # düşer, yani grupların işlem sayısı toplamı model tablosuyla eşleşmez.
+    breakdowns: ["arm", "symbol", "exit_rule"]
 
 # --- Scalp katmanının model kısıtları (core/layers.py'nin değil, modellerin okuduğu blok) ---
 # İki scalp modeli de bu değerleri BİREBİR aynı okur: aralarındaki tek fark kol seçimidir.
@@ -269,12 +272,17 @@ exit_management:
   trail_giveback_pct: 0.5   # kısmi sonrası: en iyi kazancın en çok yarısı geri verilir
 
 # --- VWAP sapma-dönüş modelleri (13 ve 14) ---
-# Sinyal tek kopyadır (strategies/vwap/signal.py); blok da tek kaynaktır. band_mult ve
-# min_vwap_bars İKİ MODELDE de aynıdır — ayrışsalardı 13 ↔ 14 farkı "ev kurallarının
-# katkısı" olmaktan çıkıp iki ayrı sinyalin farkı olurdu.
+# İki modelin SİNYALİ AYRIDIR (karar 23): model 14 `strategies/vwap/signal.py`yi, model 13
+# `strategies/vwap/clone_signal.py`yi okur. Bu yüzden blok da ikiye ayrılır: aşağıdaki iki
+# kök değer (`band_mult`, `min_vwap_bars`) YALNIZCA model 14'ündür; kopyanın karşılıkları
+# `clone.*` altındadır ve paylaşılmaz — model 13 `band_mult`i ÖĞRENİR.
+#
+# 13 ↔ 14 farkı bu yüzden "ev kurallarının katkısı" DEĞİLDİR: iki model sinyal kuralları,
+# boyutlandırma, ev kapıları, seçim politikası, bar başına sinyal sayısı ve evren olmak
+# üzere altı eksende birden ayrışır (bkz. strategies/vwap_managed.py docstring'i).
 vwap:
-  band_mult: 2.0            # VWAP'ten kaç hacim ağırlıklı standart sapma uzaklık "bant dışı"
-  min_vwap_bars: 8          # gün çapasından bu kadar bar geçmeden sapma anlamlı değil (8 × 15m = 2 saat)
+  band_mult: 2.0            # MODEL 14: VWAP'ten kaç hacim ağırlıklı standart sapma "bant dışı"
+  min_vwap_bars: 8          # MODEL 14: gün çapasından bu kadar bar geçmeden sapma anlamlı değil
 
   # Model 14 — EV kurallarıyla koşan yarışmacı. Çarpanlar SABİT: öğrenme bu modelde yok,
   # çünkü model 14 ↔ scalp_fixed kıyasının tek değişkeni sinyal + çıkış yönetimi olmalı.

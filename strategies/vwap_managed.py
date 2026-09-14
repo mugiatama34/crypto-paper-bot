@@ -1,16 +1,24 @@
-"""MODEL 14 — model 13'ün sinyali, EV KURALLARIYLA. Tam yarışmacı.
+"""MODEL 14 — VWAP sapma-dönüş sinyali, EV KURALLARIYLA. Tam yarışmacı.
 
-Bu model iki soruyu aynı anda cevaplanabilir kılar:
+Bu model iki kıyasın ucudur:
 
-    model 13 ↔ model 14   Ev kurallarının (risk boyutlandırma, %1 stop tabanı, 1.5R
-                          kapısı, 5x kaldıraç tavanı) katkısı nedir? Sinyal birebir aynı
-                          olduğu için fark yalnızca kuralların farkıdır.
+    model 13 ↔ model 14   Ev kurallarının katkısı — AMA TEK DEĞİŞKENLİ DEĞİL. Karar 23'ten
+                          sonra iki model AYRI sinyal modülü okur (`vwap/clone_signal.py`
+                          ↔ `vwap/signal.py`), yani aradaki fark altı eksende birden
+                          ayrışır: (1) sinyal kuralları — VWAP çapası, σ tanımı, bant
+                          barı, dönüş şartı, minimum bar; (2) boyutlandırma (sabit
+                          teminat × 10x ↔ risk %1); (3) ev kapıları (yok ↔ %1 taban +
+                          1.5R + zaman stop'u); (4) seçim politikası (evren listesi sırası
+                          ↔ en güçlü tek aday); (5) bar başına sinyal (kotaya kadar 5 ↔ 1);
+                          (6) evren (12 ↔ katmanın tamamı). Fark "ev kurallarının katkısı"
+                          olarak OKUNAMAZ; okunabilen şey "iki sistemin toplam farkı"dır.
+                          Tek değişkenli bir eksen isteniyorsa yeni bir model gerekir.
     model 14 ↔ scalp_fixed  Sinyal + çıkış yönetimi birlikte, beş kollu eşit ağırlıklı
-                          çekilişe karşı ne yapıyor?
-
-İkinci kıyasın okunabilmesi için burada DEĞİŞEBİLECEK tek şey sinyal ve çıkış yönetimidir;
-geri kalan her şey (boyutlandırma, maliyet, limitler, stop tabanı, hedef/stop kapısı,
-katmanın 14 sembollük evreni) scalp_fixed ile birebir aynıdır.
+                          çekilişe karşı ne yapıyor? Bu kıyasın okunabilmesi için burada
+                          DEĞİŞEBİLECEK tek şey sinyal ve çıkış yönetimidir; geri kalan
+                          her şey (boyutlandırma, maliyet, limitler, stop tabanı,
+                          hedef/stop kapısı, zaman stop'u, katmanın evreni) scalp_fixed
+                          ile birebir aynıdır.
 
 **Parametre öğrenimi YOKTUR ve bilinçli olarak yoktur.** ATR ve hedef çarpanları
 config'ten okunan SABİT değerlerdir. Bandit eklemek, model 14 ile scalp_fixed arasındaki
@@ -27,15 +35,21 @@ anahtarları — iki model aynı çıtayı görmezse aralarındaki fark çıtan�
 - *Hedef/stop ≥ 1.5* (`scalp.min_reward_risk`): sağlamayan kurulum atlanır. Kapının canlı
   kalması için hedef, projeksiyon ile VWAP'in YAKIN olanıdır (bkz.
   `strategies/vwap/signal.py`): yalnızca projeksiyon kullanmak kapıyı ölü koda çevirirdi.
+- *Zaman stop'u 16 bar* (`scalp.time_stop_bars`, uygulama `strategies/time_stop.py`):
+  scalp modelleriyle TEK KOPYADAN okunur. Bu kapı olmadan model 14 takılan pozisyonu
+  süresiz taşırdı ve `scalp_fixed` kıyasına ölçülmeyen dördüncü bir değişken girerdi —
+  üstelik %1 stop tabanı ile kural 11 birlikte pratikte ~1 eşzamanlı pozisyon dayattığı
+  için tek bir takılı pozisyon sinyal akışını süresiz bloklardı.
 
-**Turda tek sinyal.** En uzağa sapmış aday oynanır. Gerekçe scalp modellerininkiyle aynı
-değildir (burada kol tahsisi yok) ama sonucu aynı olmalıdır: kıyas hedefi scalp_fixed tur
+**Barda tek sinyal.** En uzağa sapmış aday oynanır. Gerekçe scalp modellerininkiyle aynı
+değildir (burada kol tahsisi yok) ama sonucu aynı olmalıdır: kıyas hedefi scalp_fixed bar
 başına tek pozisyon açar ve model 14 beşini birden açsaydı aradaki ortalama R farkı
 kısmen "kaç işlem açıldığı"nın farkı olurdu.
 
 Rollere dikkat: bu modül boyut/komisyon/bakiye hesaplamaz (kural 1/2/3/7) ve deftere
-yazmaz (kural 1). Sinyal `strategies/vwap/signal.py`'de, çıkış yönetimi
-`strategies/exit_management.py`'de — ikisi de model 13 ile tek kopya.
+yazmaz (kural 1). Sinyali `strategies/vwap/signal.py`'dedir ve model 13 ile PAYLAŞILMAZ
+(karar 23); çıkış yönetimi `strategies/exit_management.py`'de, zaman stop'u
+`strategies/time_stop.py`'dedir — bu ikisi tek kopyadır.
 """
 
 from __future__ import annotations
@@ -45,8 +59,17 @@ from typing import Any, Mapping
 
 from core.config import get_setting, load_config
 from core.tags import format_tags
-from strategies.base import Direction, MarketData, Signal, Strategy, TakeProfit
+from strategies.base import (
+    Direction,
+    ExitInstruction,
+    MarketData,
+    Position,
+    Signal,
+    Strategy,
+    TakeProfit,
+)
 from strategies.exit_management import ExitManagement
+from strategies.time_stop import TimeStop
 from strategies.vwap import signal as vwap_signal
 
 logger = logging.getLogger(__name__)
@@ -69,6 +92,9 @@ class VwapManaged(Strategy):
         # iki ayrı çıta demekti ve model 14 ↔ scalp_fixed kıyası bozulurdu.
         self._min_stop_pct = float(get_setting(settings, "scalp.min_stop_pct"))
         self._min_reward_risk = float(get_setting(settings, "scalp.min_reward_risk"))
+        # Zaman stop'u scalp modelleriyle TEK KOPYADAN okunur: iki uygulama, iki
+        # ayrı kural demekti ve scalp_fixed kıyasına sessiz bir değişken girerdi.
+        self._time_stop = TimeStop.from_config(settings)
         self._exit = ExitManagement.from_config(settings)
         # Son taramanın eleme sayımı (kural 15). Ölçüme girmez, sinyalleri etkilemez.
         self._survey: vwap_signal.Survey | None = None
@@ -111,15 +137,32 @@ class VwapManaged(Strategy):
             return [self._signal(candidate, stop=stop, target=target)]
         return []
 
-    def take_survey(self) -> Mapping[str, int] | None:
-        """Son taramanın eleme sayımı (kural 15). Sinyalleri hiçbir biçimde etkilemez.
+    def manage_positions(
+        self, market: MarketData, positions: list[Position]
+    ) -> list[ExitInstruction]:
+        """Zaman stop'u: 16 bardır açık pozisyon piyasa fiyatından kapatılır.
 
-        Yalnızca SAYIM döner; `Survey.max_extension` ("en uzak sembol kaç σ'daydı") sayı
-        olmadığı için rapora değil loga kalır — sözleşme `Mapping[str, int]`tir ve tek bir
-        kayan noktayı sayaçların arasına sıkıştırmak, okuyanın onu da bir sayım sanmasına
-        açık kapı bırakırdı.
+        Kural `strategies/time_stop.py`de tek kopyadır ve scalp modelleriyle aynı
+        config anahtarını (`scalp.time_stop_bars`) okur. Kapanış `manage_positions`
+        üzerinden istenir (kural 10), dolum bir SONRAKİ barın açılışındadır
+        (kural 13), yani gerçek ömür 17 bardır.
         """
-        return None if self._survey is None else dict(self._survey.counts)
+        return self._time_stop.instructions(market, positions)
+
+    def take_survey(self) -> Mapping[str, int] | None:
+        """Son taramanın sayımı (kural 15). Sinyalleri hiçbir biçimde etkilemez.
+
+        İki sayım birlikte döner (`Survey.report`): eleme SEBEPLERİ ve |z_prev| KOVALARI.
+        Kovalar olmadan `bant_ici=13` satırı "band kıl payı mı kaçırdı, piyasa VWAP'e
+        yapışık mıydı" sorusunu cevaplayamaz — ve bu soru, bandın ölçeğinin doğru olup
+        olmadığının tek canlı kanıtıdır.
+
+        `Survey.max_extension` ("en uzak sembol kaç σ'daydı") rapora değil loga kalır:
+        sözleşme `Mapping[str, int]`tir ve tek bir kayan noktayı sayaçların arasına
+        sıkıştırmak, okuyanın onu da bir sayım sanmasına açık kapı bırakırdı. Kova bir
+        sayımdır, bu ayrımı bozmaz.
+        """
+        return None if self._survey is None else self._survey.report()
 
     def _passes_gates(
         self, candidate: vwap_signal.VwapCandidate, *, stop: float, target: float
@@ -158,7 +201,8 @@ class VwapManaged(Strategy):
             reason=format_tags(
                 f"{candidate.detail()}; stop {self._atr_multiple:g}×ATR = "
                 f"%{stop_pct * 100:.2f} ({stop:.6g}), hedef {target:.6g} "
-                f"({reward_risk:.2f}R); {self._exit.describe()}",
+                f"({reward_risk:.2f}R), {self._time_stop.describe()}; "
+                f"{self._exit.describe()}",
                 arm=vwap_signal.ARM_NAME,
                 rr=reward_risk,
             ),

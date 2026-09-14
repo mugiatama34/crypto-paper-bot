@@ -51,7 +51,7 @@ _IDENTITY_KEYS: tuple[str, ...] = ("ledger_dir", "metrics_file", "universe", "re
 
 _REQUIRED_RETENTION: tuple[str, ...] = ("equity_compaction_days", "model_trade_limit")
 
-VALID_BREAKDOWNS: tuple[str, ...] = ("arm", "symbol")
+VALID_BREAKDOWNS: tuple[str, ...] = ("arm", "symbol", "exit_rule")
 
 
 @dataclass(frozen=True, kw_only=True)

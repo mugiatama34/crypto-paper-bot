@@ -309,6 +309,17 @@
         yorumlanmadan önce bu bilinmelidir.
       </p>
       <div id="scalp-symbols"></div>
+      <h3 class="sub">Çıkış kuralı kırılımı</h3>
+      <p class="note">
+        Üç aşamalı çıkış yönetiminin katkısı (modeller 13/14/15), üç aşamanın kaç kez
+        tetiklendiği bilinmeden okunamaz. <code>stop</code> = ilk stop aldı (hiç hareket
+        etmedi), <code>stop:breakeven</code> / <code>stop:partial</code> /
+        <code>stop:giveback</code> = o kuralın çektiği stop aldı,
+        <code>signal:time_stop</code> = zaman stop'u, <code>tp</code> = hedef.
+        <b>Birimi DİLİMDİR, pozisyon değil:</b> kısmi çıkışlı bir pozisyon iki gruba birden
+        düşer, yani buradaki işlem sayıları model tablosundan büyük olabilir.
+      </p>
+      <div id="scalp-exit-rules"></div>
     </section>
 
   </main>
@@ -566,6 +577,7 @@ function renderScalp(d) {
 
   renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol");
   renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol");
+  renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı");
 }
 
 const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "kazanma", "toplam R", "cost/R"];

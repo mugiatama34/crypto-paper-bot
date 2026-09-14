@@ -34,6 +34,7 @@ from core.metrics import (
     acceptance_flags,
     arm_of,
     breakdown,
+    exit_rule_of,
     pooled_direction_stats,
     return_correlation,
     symbol_of,
@@ -127,7 +128,11 @@ def build_dashboard(
 # --------------------------------------------------------------------------- #
 # Kırılımlar (kol / sembol)
 # --------------------------------------------------------------------------- #
-_BREAKDOWN_KEYS: Mapping[str, Any] = {"arm": arm_of, "symbol": symbol_of}
+_BREAKDOWN_KEYS: Mapping[str, Any] = {
+    "arm": arm_of,
+    "symbol": symbol_of,
+    "exit_rule": exit_rule_of,
+}
 
 
 def model_breakdowns(
@@ -140,6 +145,10 @@ def model_breakdowns(
     semboller için tek bir sayıdır. İnce kitapta işlem gören bir sembolün `cost_per_r`
     kolonu diğerlerinden belirgin biçimde ayrışıyorsa, o varsayımın orada tutmadığı
     buradan okunur — sonuç yorumlanmadan önce bilinmesi gereken şey budur.
+
+    Çıkış kuralı kırılımı (`exit_rule`) aynı statüdedir: üç aşamalı çıkış yönetiminin
+    katkısı (modeller 13/14/15), üç aşamanın kaç kez tetiklendiği bilinmeden okunamaz.
+    Birimi DİLİMDİR, pozisyon değil — bkz. `core/metrics.py::exit_rule_of`.
     """
     result: dict[str, dict[str, dict[str, Any]]] = {}
     for kind in kinds:

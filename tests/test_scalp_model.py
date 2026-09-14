@@ -247,7 +247,7 @@ def test_both_models_read_the_same_gates(config: dict[str, Any]) -> None:
     """Model 12 ancak kapıları model 11 ile birebir aynıysa null hipotez olabilir."""
     bandit, fixed = ScalpBandit(config=config), ScalpFixed(config=config)
 
-    for field in ("_min_stop_pct", "_min_reward_risk", "_time_stop_bars", "_bar_duration"):
+    for field in ("_min_stop_pct", "_min_reward_risk", "_time_stop"):
         assert getattr(bandit, field) == getattr(fixed, field), field
     assert bandit._params == fixed._params
 
@@ -256,7 +256,7 @@ def test_layer_config_drives_the_bar_duration() -> None:
     """Kök config 4H'tir: katman verilmezse model zaman stop'unu 64 saat sanırdı."""
     scalp = ScalpFixed(config=resolve_layer(load_config(), "scalp").config)
 
-    assert scalp._bar_duration == pd.Timedelta(minutes=15)
+    assert scalp._time_stop.duration == pd.Timedelta(minutes=15)
 
 
 def test_arm_params_come_from_the_single_atr_definition(config: dict[str, Any]) -> None:

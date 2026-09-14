@@ -24,6 +24,7 @@ from core.metrics import (
     compare,
     cost_per_r,
     direction_stats,
+    exit_rule_of,
     format_report,
     merge_fills,
     model_metrics,
@@ -770,6 +771,73 @@ def test_breakdown_raises_when_the_arm_tag_is_missing() -> None:
 
     with pytest.raises(TagError):
         breakdown([orphan], key=arm_of)
+
+
+# --------------------------------------------------------------------------- #
+# Çıkış kuralı kırılımı (kural 13c)
+# --------------------------------------------------------------------------- #
+def test_the_missing_exit_rule_tag_means_the_initial_stop() -> None:
+    """Etiketin YOKLUĞU bir bilgidir: uydurma bir `initial` değeri üretilmez."""
+    assert exit_rule_of(_trade(pnl=-100.0, exit_reason="stop", notes="")) == "stop"
+
+
+def test_the_exit_rule_tag_is_appended_to_the_reason() -> None:
+    trade = _trade(pnl=150.0, exit_reason="stop", notes="x | exit_rule=giveback")
+
+    assert exit_rule_of(trade) == "stop:giveback"
+
+
+def test_a_partial_slice_never_collides_with_a_partial_stop_rule() -> None:
+    """Ad uzayları çakışır: `partial` hem bir exit_reason hem bir stop kuralıdır."""
+    slice_row = _trade(pnl=75.0, exit_reason="partial", notes="")
+    pulled = _trade(pnl=70.0, exit_reason="stop", notes="x | exit_rule=partial")
+
+    assert exit_rule_of(slice_row) != exit_rule_of(pulled)
+    assert (exit_rule_of(slice_row), exit_rule_of(pulled)) == ("partial", "stop:partial")
+
+
+def test_the_time_stop_is_separable_from_other_strategy_exits() -> None:
+    """`signal` hem zaman stop'unu hem başka bir strateji çıkışını anlatır (kural 13c)."""
+    timed = _trade(pnl=-20.0, exit_reason="signal", notes="x | exit_rule=time_stop")
+    other = _trade(pnl=-20.0, exit_reason="signal", notes="")
+
+    assert exit_rule_of(timed) == "signal:time_stop"
+    assert exit_rule_of(other) == "signal"
+
+
+def test_breakdown_groups_by_exit_rule() -> None:
+    rows = [
+        _trade(pnl=100.0, exit_reason="stop", notes="x | exit_rule=breakeven"),
+        _trade(pnl=-100.0, exit_reason="stop", notes=""),
+        _trade(pnl=-100.0, exit_reason="stop", notes=""),
+    ]
+
+    groups = breakdown(rows, key=exit_rule_of)
+
+    assert set(groups) == {"stop", "stop:breakeven"}
+    assert groups["stop"].trades == 2
+    assert groups["stop:breakeven"].trades == 1
+
+
+def test_the_exit_rule_breakdown_measures_slices_not_positions() -> None:
+    """Kol/sembolün aksine çıkış kuralı DİLİMİN özelliğidir: pozisyon iki gruba düşer.
+
+    Nakit toplamı korunur, işlem SAYISI korunmaz — kırılımın cevapladığı soru "hangi kural
+    kaç kez tetikledi", "model kaç pozisyon açtı" değildir.
+    """
+    rows = [
+        _fill(closed_at="2026-01-01T04:00:00+00:00", pnl=75.0, risk=100.0,
+              exit_reason="partial", notes=""),
+        _fill(closed_at="2026-01-01T08:00:00+00:00", pnl=25.0, risk=100.0,
+              exit_reason="stop", notes="x | exit_rule=giveback"),
+    ]
+
+    merged = direction_stats(rows, direction="total")
+    groups = breakdown(rows, key=exit_rule_of)
+
+    assert merged.trades == 1                                   # tek POZİSYON
+    assert sum(stats.trades for stats in groups.values()) == 2  # iki DİLİM
+    assert set(groups) == {"partial", "stop:giveback"}
 
 
 # --------------------------------------------------------------------------- #
