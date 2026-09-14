@@ -866,3 +866,42 @@ def test_trailing_stop_labels_the_rule_that_moved_it(tmp_path: Path) -> None:
     (trade,) = ledger.read_trades("m")
     assert trade["exit_reason"] == "stop"
     assert "exit_rule=trailing_atr" in trade["notes"]
+
+
+# --------------------------------------------------------------------------- #
+# Kuyruğa giren sinyalin denetim kaydı (EmittedSignal)
+# --------------------------------------------------------------------------- #
+def test_emitted_signal_records_the_bar_its_fill_and_the_geometry(tmp_path: Path) -> None:
+    """Anlık bildirim bu kaydı okur: sayıdan (signals) hangi sinyal olduğu okunamaz."""
+    signal = _long_signal(stop=95.0, take_profits=(TakeProfit(price=115.0, fraction=1.0),))
+    engine = Engine([_Scripted("m", signals={START: [signal]})], config=_config(), ledger=Ledger(tmp_path))
+
+    report = engine.run_round(_market(ROWS, bars=1))
+
+    (record,) = report.by_model("m").emitted  # type: ignore[union-attr]
+    assert (record.model, record.symbol, record.direction) == ("m", SYMBOL, "long")
+    assert record.bar == START
+    assert record.fills_at == START + pd.Timedelta("4h")  # kural 13: bir SONRAKİ bar
+    assert record.close == 100.0                          # modelin gördüğü son fiyat
+    assert (record.stop_price, record.target_price) == (95.0, 115.0)
+    assert record.reward_risk == pytest.approx(3.0)       # 15 birim hedef / 5 birim stop
+
+
+def test_emitted_signal_leaves_reward_risk_undefined_without_a_target(tmp_path: Path) -> None:
+    """Ölçülemeyen oran `None`dır, 0.0 değil (bkz. core/metrics.py'nin nan kuralı)."""
+    engine = Engine([_Scripted("m", signals={START: [_long_signal()]})], config=_config(), ledger=Ledger(tmp_path))
+
+    report = engine.run_round(_market(ROWS, bars=1))
+
+    (record,) = report.by_model("m").emitted  # type: ignore[union-attr]
+    assert record.reward_risk is None
+
+
+def test_band_skipped_signal_is_not_recorded_as_emitted(tmp_path: Path) -> None:
+    """Kayıt, `signals` sayısıyla AYNI kümedir: elenen sinyal kuyruğa hiç girmedi."""
+    as_of = _frame(FLAT).index[4]
+    strategy = _Scripted("m", signals={as_of: [_long_signal(stop=93.0)]})  # 3.5×ATR
+    report = _band_engine(strategy, Ledger(tmp_path)).run_round(_market(FLAT, bars=5))
+
+    assert report.by_model("m").skipped_signals == 1  # type: ignore[union-attr]
+    assert report.by_model("m").emitted == ()         # type: ignore[union-attr]

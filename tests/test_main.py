@@ -118,6 +118,25 @@ def test_metrics_json_is_valid_json_with_null_not_nan(sandbox: Sandbox) -> None:
     assert total["avg_stop_distance_pct"] is None
 
 
+def test_metrics_json_carries_the_emitted_signals(sandbox: Sandbox) -> None:
+    """Anlık bildirim (scripts/telegram_signals.py) sinyalleri YALNIZCA buradan okur.
+
+    Defterde cevabı yoktur: sinyal bir sonraki barın açılışında dolar (kural 13) ve ancak
+    kapandığında `trades.csv`'ye yazılır — yani haber değeri olduğu an hiçbir satırı yok.
+    """
+    main_module.main([])
+
+    payload = sandbox.metrics()
+    rows = {model["model"]: model for model in payload["round"]["models"]}
+    emitted = rows["buyhold"]["emitted"]
+    assert {item["symbol"] for item in emitted} == set(SYMBOLS)
+    assert all(item["bar"] == payload["as_of"] for item in emitted)
+    assert all(item["fills_at"] > item["bar"] for item in emitted)  # kural 13
+    # Stop'suz referans sinyali (kural 15): geometri ölçülemez, null olur — 0.0 DEĞİL.
+    assert all(item["stop_price"] is None for item in emitted)
+    assert all(item["reward_risk"] is None for item in emitted)
+
+
 def test_metrics_json_carries_the_dashboard_sections(sandbox: Sandbox) -> None:
     """Sayfa statiktir ve defteri okuyamaz: ihtiyacı olan her şey bu dosyada olmalı."""
     main_module.main([])

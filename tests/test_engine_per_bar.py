@@ -412,3 +412,24 @@ def test_rerunning_the_same_bar_does_not_signal_twice(tmp_path: Path) -> None:
     assert model.bars_processed == 0
     assert model.signals == 0
     assert strategy.signal_bars == [INDEX[3]]
+
+
+def test_each_recovered_bar_records_its_own_emitted_signal(tmp_path: Path) -> None:
+    """Kayıt BARA aittir, tura değil: bildirim "son bar" filtresini buradan kurar.
+
+    Telafi edilen barların sinyalleri deftere yazılır ve ölçüme girer; anlık bildirim ise
+    yalnızca `as_of` barındakini yollar (scripts/telegram_signals.py). Bar zamanı kayıtta
+    durmasaydı o filtre sonradan hiçbir yerden kurulamazdı.
+    """
+    ledger = Ledger(tmp_path)
+    strategy = _EveryBar()
+    config = _config()
+
+    _engine(strategy, ledger, config).run_round(_market(1))
+    report = _engine(strategy, Ledger(tmp_path), config).run_round(_market(4))
+
+    emitted = report.by_model("her_bar").emitted  # type: ignore[union-attr]
+    assert [record.bar for record in emitted] == list(INDEX[1:4])
+    assert [record.fills_at for record in emitted] == list(INDEX[2:5])
+    # Her kayıt KENDİ barının kapanışını taşır, turun `as_of` kapanışını değil.
+    assert [record.close for record in emitted] == [101.0, 102.0, 103.0]

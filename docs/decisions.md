@@ -1684,3 +1684,89 @@ geçmiş metrikler "eski kuralla yazılmış" olarak kalmaz — bir sonraki turd
 kuralla yeniden hesaplanır. Göç adımı, elle düzeltme ve `trades.csv`'ye dokunma yoktur
 (kural 1). `equity.csv` de etkilenmez: birleştirme nakit hareketini değiştirmez, yalnızca
 aynı nakdin kaç işlem olarak sayıldığını değiştirir.
+
+---
+
+## 22. Scalp katmanının anlık sinyal bildirimi
+
+`scripts/telegram_report.py` **günde bir kez** koşar ve bir PERFORMANS özetidir: hangi
+model önde, kabul çıtası geçildi mi, long/short farkı ne. Okunması zamana bağlı değildir —
+aynı özet üç saat sonra da aynı şeyi söyler.
+
+Scalp katmanının sorusu bambaşkadır: **"şu anda ne açılıyor"**. Cevabın raf ömrü bir
+bardır (15 dakika), yani günlük özetin kadansına sığmaz. Bu yüzden ayrı bir script, ayrı
+bir workflow adımı ve ayrı bir tetikleyici olay. `run.yml`in günlük özetine
+DOKUNULMAMIŞTIR: ikisi farklı soruları, farklı kadanslarda, farklı rapor dosyalarından
+cevaplar.
+
+### Tetikleyen tek olay: yeni sinyal
+
+Kapanış, funding tahakkuku ve bar ilerlemesi mesaj ÜRETMEZ. Hepsi zaten defterde ve
+dashboard'da durur ve hiçbiri "şimdi bak" demez. Kapanış bildirimi üstelik aktif bir zarar
+da verirdi: scalp katmanı günde onlarca pozisyon kapatır, akış okunamaz hâle gelir ve
+gerçekten zamana bağlı olan tek mesaj — açılan pozisyon — gürültünün içinde kaybolurdu.
+
+### Kaynak neden defter değil, tur raporu
+
+Sinyalin haber değeri olduğu an, defterde henüz **hiçbir satırı yoktur**: emir bir sonraki
+barın açılışında dolar (kural 13) ve ancak kapandığında `trades.csv`'ye yazılır.
+`state.json`'ın `pending_orders` alanı ise yalnızca turun son barından sonrasını taşır ve
+sinyalin hangi barın KAPANIŞINDA üretildiğini, o kapanışın fiyatını ya da band elemesinden
+(kural 14) geçip geçmediğini bilmez.
+
+Bu yüzden kayıt motorda tutulur (`core/engine.py::EmittedSignal`) ve tur raporuna düşer —
+`rejections` ile aynı statüde bir **denetim izi**. Ölçüme girmez: metrikler defterden
+hesaplanmaya devam eder, kayıt yalnızca `docs/data/metrics_*.json > round.models[].emitted`
+altında durur ve hangi sinyalin üretileceğini ya da sıralarını etkilemez.
+
+Kayıt `bar` ile `fills_at`i AYRI taşır. İkisi de turun `as_of`'undan farklı olabilir
+(`signals_per_bar`, bkz. 19) ve "bu sinyal hangi barın kapanışına ait" sorusunun cevabı
+sonradan geri hesaplanamaz — tam olarak aşağıdaki ilk filtrenin dayandığı bilgi budur.
+
+### Üç filtre
+
+**1. Yalnızca SON barın sinyalleri.** Saatlik cron her turda dört 15m barını işler ve
+telafi edilen barlar da kendi sinyallerini üretir (bkz. 19). O sinyaller deftere yazılır ve
+ölçüme tam olarak girer — ama BİLDİRİLMEZ. Gerekçe ölçüm değil, mesajın kendisidir: 45
+dakika önceki bir barın emri çoktan dolmuştur ve mesaj okuyucuyu artık girilemeyecek bir
+işleme yönlendirirdi. Bildirimin susması burada bir kayıp değil, doğru davranıştır.
+
+**2. Aynı (model, sembol, yön) için 4 bar susturma.** Aynı kurulumu üst üste barlarda
+öneren bir model (ya da elle tetiklenip `as_of`'u birkaç bar ilerleten bir koşu) aynı
+mesajı tekrar tekrar yollardı. Durum `state/telegram_scalp.json`'da tutulur ve koşular
+arası commit edilir; runner her koşuda sıfırdan kurulduğu için commit edilmezse pencere
+her turda kaybolurdu. Dosya defterden AYRI durur: defter denetim izidir (kural 1), bu ise
+silindiğinde ölçümün hiç değişmediği, en kötü ihtimalle bir mesajı tekrarlatan bir
+kolaylıktır. Bozuk ya da eksik bir durum dosyası bu yüzden bildirimi SUSTURMAZ — pencere o
+tur uygulanmaz ve mesaj gider.
+
+**3. Beşten fazla sinyalde tek toplu mesaj.** Volatil bir barda beş model birden sinyal
+üretebilir; tek tek yollamak bildirim akışını kullanılamaz hâle getirirdi. Toplu mesajda
+`reason` metni yer almaz: altı gerekçe tek başına Telegram'ın 4096 karakterlik sınırını
+aşabilir ve gerekçe zaten dashboard'da durur.
+
+### Zorunlu uyarı satırı
+
+Her mesaj şu satırla biter: *"Bot bu emri bir sonraki bar açılışından dolduracak
+(&lt;bar+15dk&gt; UTC). Senin girişin farklı bir fiyattan olacak."*
+
+Bu satır opsiyonel değildir. Bildirim, sinyalin üretildiği barın KAPANIŞINDA gider; emir
+ise bir SONRAKİ barın açılışından dolar (kural 13) ve o fiyat mesaj yazılırken henüz
+bilinmemektedir. Uyarı olmadan mesaj, defterde ölçülen sonucun okuyucu tarafından
+tekrarlanabileceği izlenimini verirdi — oysa proje bir ÖLÇÜM projesidir (CLAUDE.md >
+Amaç), bir sinyal servisi değil.
+
+### Bildirim ölçümü düşüremez
+
+`scripts/telegram_report.py` ile birebir aynı söz: eksik token, ağ hatası, Telegram 4xx'i,
+bozuk JSON ya da bozuk durum dosyası loglanır ve geçilir; her yol **0 ile biter**. Workflow
+tarafında da aynı iki emniyet kemeri var (`continue-on-error` + `if: always()`) ve adım
+defter commit'inden SONRA gelir — burada ne olursa olsun tur çoktan kaydedilmiştir.
+
+Durum dosyasının commit'i de bu yüzden AYRI bir adımdır. Onu defter commit'ine katmak,
+bildirim adımını (yani ağ erişimi olan tek adımı) turun kaydedilmesinin ÖNÜNE koymayı
+gerektirirdi. Ayrı ve `continue-on-error` bir adım, en kötü ihtimalde tekrar eden bir
+mesaja mal olur; ölçüme hiç dokunmaz.
+
+Bir mesaj yollanamadıysa durum dosyası da güncellenmez: yollanmamış bir mesajı "bildirildi"
+saymak, susturma penceresi boyunca o bildirimi sessizce kaybetmek olurdu.
