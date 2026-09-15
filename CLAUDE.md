@@ -319,7 +319,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (saatlik; tur başına 4 bar) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
-| Kırılımlar | yok | kol + sembol + çıkış kuralı |
+| Kırılımlar | yok | kol + sembol + çıkış kuralı + seans |
 | Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) |
 
 **Neden ayrı bir `scalp_config.yaml` değil.** `risk_per_trade`, `fee_rate`, `slippage_*`,
@@ -545,6 +545,19 @@ gruplama ölçütüne göre böler ve her grup için aynı metrikleri hesaplar; 
   korunur (Σpnl değişmez), işlem SAYISI korunmaz — grupların `trades` toplamı model
   tablosundan büyük olabilir. Kol ve sembol kırılımlarında bu sorun yoktur (ikisi de
   pozisyonun özelliğidir).
+- **seans** (`session`) — işlemin AÇILDIĞI seans; sınırlar UTC'de SABİTTİR
+  (`core/metrics.py::_SESSIONS`: 00-07 asya, 07-12 avrupa, 12-16 abd, 16-24 gece). Ölçüt
+  `opened_at`tır, `closed_at` değil: sorulan şey "bu kurulum hangi piyasa koşulunda
+  ALINDI". Yerel saat (ör. Europe/Berlin) kullanılmaz — yaz saati geçişi sınırları yılda
+  iki kez kaydırır ve aynı defter iki farklı kırılım üretirdi; tekrarlanabilirlik
+  `random_seed` ile aynı statüdedir. Birimi POZİSYONDUR (kol ve sembol gibi), yani
+  grupların `trades` toplamı model tablosuyla tutarlı kalır.
+  **Bu bir ÖLÇÜMDÜR, bir kural DEĞİL:** hiçbir model seansa bakmaz ve hiçbir sinyal bu
+  etikete göre elenmez. Gerekçe, "sabah iyi / öğleden sonra kötü" türü bir gözlemin tek
+  bir günün verisiyle test edildiğinde doğrulanır GİBİ görünmesi, daha uzun örneklemde ise
+  tersine dönmesidir (bkz. docs/decisions.md > 27). Kırılım kanıt biriktirir; bir saat
+  filtresi ancak kanıt örneklem kapısını geçtiğinde ve o zaman da YENİ BİR MODEL olarak
+  gelir — mevcut bir modele filtre eklemek, o modelin ölçtüğü ekseni değiştirirdi.
 
 Referans çıpaları (kural 15) ve dış sistem kopyaları (kural 15b) bu iki kolonu **`nan`** alır
 ve tablonun AYRI İKİ bölümünde durur. Çıpada gerekçe hesaplanamazlıktır: stop'u olmayanın 1R'si

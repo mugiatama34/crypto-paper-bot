@@ -25,6 +25,7 @@ from core.metrics import (
     cost_per_r,
     direction_stats,
     exit_rule_of,
+    session_of,
     format_report,
     merge_fills,
     model_metrics,
@@ -771,6 +772,64 @@ def test_breakdown_raises_when_the_arm_tag_is_missing() -> None:
 
     with pytest.raises(TagError):
         breakdown([orphan], key=arm_of)
+
+
+# --------------------------------------------------------------------------- #
+# Seans kırılımı (ölçüm, kural değil)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    ("opened_at", "expected"),
+    [
+        ("2026-09-15T00:00:00+00:00", "00-07_asya"),
+        ("2026-09-15T06:59:59+00:00", "00-07_asya"),
+        ("2026-09-15T07:00:00+00:00", "07-12_avrupa"),
+        ("2026-09-15T11:59:59+00:00", "07-12_avrupa"),
+        ("2026-09-15T12:00:00+00:00", "12-16_abd"),
+        ("2026-09-15T15:59:59+00:00", "12-16_abd"),
+        ("2026-09-15T16:00:00+00:00", "16-24_gece"),
+        ("2026-09-15T23:59:59+00:00", "16-24_gece"),
+    ],
+)
+def test_session_boundaries_are_fixed_in_utc(opened_at: str, expected: str) -> None:
+    """Sınırlar UTC'de SABİT: yerel saat kullanmak yaz saatinde kırılımı kaydırırdı."""
+    assert session_of(_trade(pnl=1.0, opened_at=opened_at)) == expected
+
+
+def test_a_naive_timestamp_is_read_as_utc() -> None:
+    """Zaman dilimsiz damga UTC sayılır; yerel saate çevirmek defteri okuyan makineye
+    bağlı bir kırılım üretirdi."""
+    assert session_of(_trade(pnl=1.0, opened_at="2026-09-15T14:00:00")) == "12-16_abd"
+
+
+def test_session_uses_the_open_not_the_close() -> None:
+    """Soru "bu kurulum hangi koşulda ALINDI"; kapanışa göre gruplamak gece açılıp sabah
+    stoplanan pozisyonu sabahın hanesine yazardı."""
+    overnight = _trade(
+        pnl=-100.0, opened_at="2026-09-14T22:00:00+00:00", closed_at="2026-09-15T08:00:00+00:00"
+    )
+    assert session_of(overnight) == "16-24_gece"
+
+
+def test_session_groups_keep_the_model_total() -> None:
+    """Seans POZİSYONUN özelliğidir: bir pozisyonun tüm dilimleri aynı gruba düşer, yani
+    grupların işlem sayısı toplamı model toplamından ayrılmaz (`exit_rule`in aksine)."""
+    trades = [
+        _trade(pnl=200.0, opened_at="2026-09-15T03:00:00+00:00"),
+        _trade(pnl=-100.0, opened_at="2026-09-15T14:00:00+00:00", direction="short"),
+        _trade(pnl=50.0, opened_at="2026-09-15T20:00:00+00:00"),
+    ]
+
+    groups = breakdown(trades, key=session_of)
+    total = direction_stats(trades, direction="total")
+
+    assert sum(group.trades for group in groups.values()) == total.trades
+    assert sum(group.total_r for group in groups.values()) == pytest.approx(total.total_r)
+
+
+def test_session_raises_when_the_open_time_is_unreadable() -> None:
+    """Satırı gruptan düşürmek kırılım toplamını sessizce eksiltirdi (`arm_of` gerekçesi)."""
+    with pytest.raises(ValueError):
+        breakdown([_trade(pnl=10.0, opened_at="")], key=session_of)
 
 
 # --------------------------------------------------------------------------- #

@@ -234,7 +234,13 @@ layers:
     # exit_rule: üç aşamalı yönetimin hangi aşamasının gerçekten tetiklendiği. Birimi
     # DİLİMDİR (bkz. core/metrics.py::exit_rule_of): kısmi çıkışlı pozisyon iki gruba
     # düşer, yani grupların işlem sayısı toplamı model tablosuyla eşleşmez.
-    breakdowns: ["arm", "symbol", "exit_rule"]
+    # session: işlemin AÇILDIĞI seans (UTC sabit sınırlar, core/metrics.py::_SESSIONS).
+    # Bir ÖLÇÜMDÜR, bir kural değil — hiçbir model seansa bakmaz, hiçbir sinyal bu etikete
+    # göre elenmez. Eklenme gerekçesi: "sabah iyi, öğleden sonra kötü" gözlemi tek bir günün
+    # verisiyle test edildiğinde doğrulanır gibi görünüyordu, kaynak sistemin 6 günlük
+    # defterinde ise ters çıktı ve permütasyon testinde p=0.575 (docs/decisions.md > 27).
+    # Kırılım, kararı veriye bağlamak için kanıt biriktirir; kararın kendisi burada değil.
+    breakdowns: ["arm", "symbol", "exit_rule", "session"]
 
 # --- Scalp katmanının model kısıtları (core/layers.py'nin değil, modellerin okuduğu blok) ---
 # İki scalp modeli de bu değerleri BİREBİR aynı okur: aralarındaki tek fark kol seçimidir.

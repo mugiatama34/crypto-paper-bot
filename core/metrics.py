@@ -522,6 +522,52 @@ def symbol_of(row: Mapping[str, Any]) -> str:
     return str(row.get("symbol", ""))
 
 
+# Seans sınırları UTC'dedir ve SABİTTİR: (başlangıç saati, ad). Son dilim gün sonuna sarar.
+# Yerel saat kullanmak (ör. Europe/Berlin) yaz saati geçişlerinde sınırları yılda iki kez
+# kaydırırdı ve aynı defter iki farklı kırılım üretirdi — tekrarlanabilirlik `random_seed`
+# ile aynı statüdedir. Karşılığı parantezde yazılıdır ve YAZ saati içindir (CEST, UTC+2);
+# kış saatinde yerel karşılık bir saat geriye kayar, UTC sınırları ise yerinde kalır.
+_SESSIONS: tuple[tuple[int, str], ...] = (
+    (0, "00-07_asya"),      # Berlin 02-09
+    (7, "07-12_avrupa"),    # Berlin 09-14
+    (12, "12-16_abd"),      # Berlin 14-18
+    (16, "16-24_gece"),     # Berlin 18-02
+)
+
+
+def session_of(row: Mapping[str, Any]) -> str:
+    """İşlemin AÇILDIĞI seans (UTC sabit sınırlar; bkz. `_SESSIONS`).
+
+    Ölçüt `opened_at`tır, `closed_at` değil: sorulan şey "bu kurulum hangi piyasa
+    koşulunda ALINDI", "hangi koşulda kapandı" değil. Kapanışa göre gruplamak, gece açılıp
+    sabah stoplanan bir pozisyonu sabahın hanesine yazardı.
+
+    Kol ve sembol gibi bu da POZİSYONUN özelliğidir: bir pozisyonun tüm dilimleri aynı
+    `opened_at`i taşır, yani aynı gruba düşer ve grupların `trades` toplamı model
+    tablosuyla tutarlı kalır (`exit_rule` kırılımının aksine — bkz. `exit_rule_of`).
+
+    **Bu kırılım bir ÖLÇÜMDÜR, bir kural değil.** Hiçbir model seansa bakmaz ve hiçbir
+    sinyal bu etikete göre elenmez; kırılım yalnızca "seansın ölçülebilir bir etkisi var
+    mı" sorusuna zamanla cevap biriktirir. Bugünkü cevap "ayırt edilemiyor"dur: kaynak
+    sistemin 6 günlük 256 pozisyonluk defterinde seanslar arası fark permütasyon testinde
+    p=0.575 çıktı (docs/decisions.md > 27). Karar için gereken şey daha çok GÜN, daha çok
+    işlem değil — bir seansın tek bir gününü ölçmek, o günü ölçmektir.
+
+    Okunamayan `opened_at` sessizce atlanmaz (`arm_of` ile aynı gerekçe): satırı gruptan
+    düşürmek kırılım toplamı ile model toplamını ayrıştırırdı.
+    """
+    raw = str(row.get("opened_at", ""))
+    stamp = pd.Timestamp(raw) if raw else None
+    if stamp is None or pd.isna(stamp):
+        raise ValueError(f"seans kırılımı: okunamayan opened_at {raw!r}")
+    hour = (stamp.tz_convert("UTC") if stamp.tzinfo is not None else stamp.tz_localize("UTC")).hour
+    name = _SESSIONS[0][1]
+    for start, label in _SESSIONS:
+        if hour >= start:
+            name = label
+    return name
+
+
 def exit_rule_of(row: Mapping[str, Any]) -> str:
     """Çıkışın TAM kimliği: `exit_reason` + varsa `notes` kuyruğundaki `exit_rule`.
 

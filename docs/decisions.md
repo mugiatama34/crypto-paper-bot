@@ -2171,3 +2171,90 @@ taşıyor. Ev kurallarının (%1 stop tabanı) ne işe yaradığı tam olarak bu
 model 14'ün sinyal tanımını olduğu gibi bırakıyor. `target_reward_risk` 2.0'da kaldı.
 Model 13'ün `vwap.clone.*` bloğu bu karardan hiç etkilenmiyor — kopya kendi kurallarını
 okur (karar 23) ve yarışmacı değildir.
+
+## 27. Seans kırılımı: bir ÖLÇÜM eklendi, bir kural eklenmedi
+
+Bir gözlem bildirildi: "Almanya saatiyle sabaha karşı ve öğleden önce (Asya piyasası
+açıkken) yapılan işlemlerin doğruluk oranı daha yüksek; öğleden sonra açılanların neredeyse
+hepsi başarısız oldu." İstenen şey, saate göre işlem sıklığını ya da kriterleri uyarlamaktı.
+
+**Kural eklenmedi. Eklenen şey, kuralın gerekeceğini gösterecek ÖLÇÜM.**
+
+### Gözlem kendi verisinde doğrulandı
+
+Kopyanın (model 13) o günkü defteri gözlemle uyumluydu — 80 pozisyon, Berlin saatiyle:
+
+| Seans | n | ort. R | kazanç% |
+|---|---|---|---|
+| 02–09 Asya | 24 | −0.60 | 29% |
+| 09–14 AB | 2 | −1.55 | 0% |
+| **14–18 ABD** | 26 | **−1.38** | **15%** |
+| 18–02 gece | 28 | −0.46 | 43% |
+
+Öğleden sonra açıkça en kötü blok; 16:00 saatinde 9 işlemin 9'u zarar.
+
+### Ama her seans kovasında tek bir GÜN vardı
+
+Kopya depoya 14 Eylül 12:46'da girmişti; defter 18,8 saatlikti. "ABD seansı kötü" cümlesinin
+gerçek içeriği *"14 Eylül öğleden sonrası kötüydü"*. Seans etkisi ile o günün piyasası aynı
+sayıya çöküyordu ve ayrıştırılamıyordu.
+
+Bir ipucu daha vardı: 14–18 penceresinde long (−1.37) ve short (−1.39) **birlikte**
+kaybetmişti. Trend olsaydı bir taraf kazanırdı; iki tarafın birden kaybetmesi testere
+piyasası imzasıdır — yani mesele muhtemelen saat değil, volatilite rejimi.
+
+### Kaynak sistemin 6 günlük defteri gözlemi TERSİNE çevirdi
+
+`klonnist/Hasanwavebot`ın kendi defterinde 6 gün ve 256 pozisyon var. Sıralama gözlemin
+tersi çıktı:
+
+| Seans (Berlin) | n | gün | ort $/işlem | kazanç% |
+|---|---|---|---|---|
+| 02–09 **Asya** | 53 | 6 | **+3.67** | 40% |
+| 09–14 AB | 64 | 7 | +4.97 | 34% |
+| 14–18 **ABD** | 60 | 6 | **+6.99** | 42% |
+| 18–02 gece | 79 | 7 | **+15.49** | 44% |
+
+Asya en kötü, ABD ikinci en iyi. Gözleme dayanıp "öğleden sonra azalt, sabah artır"
+denseydi, 6 günlük veriye göre sistem daha KÖTÜ hale getirilmiş olacaktı.
+
+### "Gece en iyi" de bir sonuç değil
+
+Permütasyon testi (seans etiketleri 20.000 kez karıştırıldı):
+
+```
+gözlenen en büyük–en küçük farkı : 11.81 USDT
+p (fark tesadüfen bu kadar büyük olur mu)      = 0.575
+p (gece seansı tesadüfen bu kadar iyi olur mu) = 0.075
+```
+
+p=0.575, yani dağılım "seansın hiçbir etkisi yok" varsayımıyla tamamen uyumlu. Bir
+overfit'i başka bir overfit'le değiştirmemek için bu da kural yapılmadı.
+
+### Bu yüzden eklenen şey kırılım
+
+`session` kırılımı (`core/metrics.py::session_of`, `layers.scalp.breakdowns`) her turda
+seans bazında n / ort.R / kazanç% / `cost_per_r` biriktirir. Hiçbir modelin davranışına
+dokunmaz, hiçbir sinyali elemez, adillik koşullarını (kural 6) değiştirmez — `rejections`,
+`survey` ve `emitted` ile aynı statüde bir denetim izidir.
+
+Sınırlar **UTC'de sabittir**, yerel saatte değil: yaz saati geçişi sınırları yılda iki kez
+kaydırır ve aynı defter iki farklı kırılım üretirdi. Tekrarlanabilirlik burada `random_seed`
+ile aynı statüdedir. Ölçüt `opened_at`tır — soru "hangi koşulda ALINDI", "hangi koşulda
+kapandı" değil.
+
+### Karar kapısı
+
+Bir saat/rejim filtresi ancak şu iki koşul birlikte sağlandığında gündeme gelir: seans
+başına **≥30 pozisyon** (`acceptance.min_trades`) VE **≥10 ayrı gün**. İkincisi birincisinden
+önemlidir: bir seansın tek bir gününü ölçmek, o seansı değil o günü ölçmektir.
+
+Koşullar sağlanır ve etki gerçek çıkarsa, uygulama yolu **yeni bir model açmaktır** —
+mevcut bir modele filtre eklemek değil. Gerekçe CLAUDE.md'nin kendi kuralıdır: tek
+değişkenli bir eksen isteniyorsa yeni model açılır; `vwap_managed` (filtresiz) ↔
+`vwap_session` (filtreli) çifti filtrenin katkısını ölçer, modele gömmek ise "iyileşti mi"
+sorusunu cevaplanamaz kılar.
+
+Filtrenin şekli de muhtemelen saat olmayacak: veri rejimi işaret ediyor (iki yönün birden
+kaybetmesi). Volatilite/yönsüzlük kapısı hem daha genel hem de zaman diliminden bağımsızdır;
+saat onun zayıf bir vekilidir.

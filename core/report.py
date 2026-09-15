@@ -37,6 +37,7 @@ from core.metrics import (
     exit_rule_of,
     pooled_direction_stats,
     return_correlation,
+    session_of,
     symbol_of,
 )
 from core.tags import find_tag
@@ -132,6 +133,7 @@ _BREAKDOWN_KEYS: Mapping[str, Any] = {
     "arm": arm_of,
     "symbol": symbol_of,
     "exit_rule": exit_rule_of,
+    "session": session_of,
 }
 
 
