@@ -51,7 +51,11 @@ _IDENTITY_KEYS: tuple[str, ...] = ("ledger_dir", "metrics_file", "universe", "re
 
 _REQUIRED_RETENTION: tuple[str, ...] = ("equity_compaction_days", "model_trade_limit")
 
-VALID_BREAKDOWNS: tuple[str, ...] = ("arm", "symbol", "exit_rule")
+# Tanınan kırılım adları. `core/report.py::_BREAKDOWN_KEYS` ile aynı kümedir; ikisi ayrı
+# yerlerde durur çünkü biri KATMAN ayarını doğrular (config okunurken, tur başlamadan),
+# diğeri kırılımı ÜRETİR (rapor yazılırken). Buradaki kapı olmadan yazım hatası bir tur
+# koştuktan sonra rapor aşamasında patlardı.
+VALID_BREAKDOWNS: tuple[str, ...] = ("arm", "symbol", "exit_rule", "session", "loss_streak")
 
 
 @dataclass(frozen=True, kw_only=True)

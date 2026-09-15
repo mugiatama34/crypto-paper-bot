@@ -29,7 +29,7 @@ yapar.
 | `core/tags.py` | Defter `reason` alanındaki `\| anahtar=değer` etiketlerinin tek tanımı. Etiketi yazan taraf strateji, okuyan taraf `core/metrics.py`'dir; format tek yerde durur. `parse_tag` bulamadığı etikette `TagError` fırlatır — kol kırılımının anlamı "her işlem bir kola aittir" varsayımına dayanır ve etiketsiz satırı atlamak kırılımı sessizce eksiltirdi. |
 | `core/config.py` | `config.yaml`'ı okuyan tek kapı. Eksik anahtarda `ConfigError` fırlatır; hiçbir varsayılan değer taşımaz — sessiz varsayılan, modellerin farklı maliyet/risk varsayımlarıyla yarışması demektir. |
 | `core/data.py` | Piyasa verisi çekme/önbellekleme. Borsadan OHLCV + funding geçmişini çeker, `MarketData` üretir. Kapanmamış barı atmak (kural 12) ve `as_of`'u BTC referansından belirlemek burasının işidir; `as_of` barına sahip olmayan semboller o tur dışlanır ve loglanır. Strateji mantığı barındırmaz. |
-| `core/engine.py` | Orkestrasyon: her BARI **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. Doldurulamayan emirleri sebep koduna göre sayıp tur raporuna yazar (bkz. kural 15); kuyruğa GİREN sinyalleri de aynı raporda döker (`EmittedSignal`: bar, dolum barı, o barın kapanışı, stop/hedef/R:R) — `signals` bir sayıdır ve hangi sinyalin üretildiğini söylemez, oysa anlık bildirim (`scripts/telegram_signals.py`) tam olarak onu sorar ve defterde cevabı yoktur (dolum bir sonraki barda, kural 13). Kayıt salt denetim izidir: ölçüme girmez, sinyalleri ve sıralarını etkilemez. Modellerin kendi TARAMA SAYIMINI da toplar (`Strategy.take_survey` -> `ModelReport.survey`): `rejections` "emir neden dolmadı"yı sayar, bu ise "sinyal neden hiç üretilmedi"yi — ikisi turun ayrı aşamalarıdır ve tek sayıya çökerse "kurulum yoktu" ile "sinyal modülü bozuldu" ayırt edilemez. Sayım bar bazında TOPLANIR (telafi edilen bar da kendi taramasını yapar); patlayan bir çağrının yarım sayımı kaydedilmez. Atlanan turları telafi eder: son işlenmiş bardan `as_of`'a kadarki TÜM barları sırayla ilerletir (yalnızca son bara atlamak, atlanan barlardaki stop/TP/likidasyon kontrolünü hiç yapmamak olurdu) ve `signals_per_bar` açıkken her telafi barı KENDİ sinyalini de üretir (bkz. "Telafi edilen barlarda sinyal"). Anlık görüntü son işlenmiş bara kadar geri gitmiyorsa telafi mümkün değildir; o barlar `missing_bars` olarak sayılır ve loglanır — atlama sessiz olamaz. |
+| `core/engine.py` | Orkestrasyon: her BARI **iki geçişli** yürütür — önce normal modeller, sonra meta modeller (kural 4) — ürettikleri `Signal` listelerini `portfolio`'ya iletir. Trailing stop mantığı da burada. Zamanlama/akış kontrolü burada, iş mantığı değil. Doldurulamayan emirleri sebep koduna göre sayıp tur raporuna yazar (bkz. kural 15); kuyruğa GİREN sinyalleri de aynı raporda döker (`EmittedSignal`: bar, dolum barı, o barın kapanışı, stop/hedef/R:R) — `signals` bir sayıdır ve hangi sinyalin üretildiğini söylemez, oysa anlık bildirim (`scripts/telegram_signals.py`) tam olarak onu sorar ve defterde cevabı yoktur (dolum bir sonraki barda, kural 13). Kayıt salt denetim izidir: ölçüme girmez, sinyalleri ve sıralarını etkilemez. Modellerin kendi TARAMA SAYIMINI da toplar (`Strategy.take_survey` -> `ModelReport.survey`): `rejections` "emir neden dolmadı"yı sayar, bu ise "sinyal neden hiç üretilmedi"yi — ikisi turun ayrı aşamalarıdır ve tek sayıya çökerse "kurulum yoktu" ile "sinyal modülü bozuldu" ayırt edilemez. Sayım bar bazında TOPLANIR (telafi edilen bar da kendi taramasını yapar); patlayan bir çağrının yarım sayımı kaydedilmez. Atlanan turları telafi eder: son işlenmiş bardan `as_of`'a kadarki TÜM barları sırayla ilerletir (yalnızca son bara atlamak, atlanan barlardaki stop/TP/likidasyon kontrolünü hiç yapmamak olurdu) ve `signals_per_bar` açıkken her telafi barı KENDİ sinyalini de üretir (bkz. "Telafi edilen barlarda sinyal"). Anlık görüntü son işlenmiş bara kadar geri gitmiyorsa telafi mümkün değildir; o barlar `missing_bars` olarak sayılır ve loglanır — atlama sessiz olamaz. Aynı gerekçeyle `unchecked_position_bars`: bar İŞLENDİĞİ hâlde o sembolün mumu anlık görüntüde yoksa açık pozisyon o barda stop/TP/likidasyon kontrolünden GEÇMEZ (elde olmayan mumla tetiklemek uydurma olurdu) ve `last_processed_bar` ilerlediği için bar bir daha gelmez — kayıp telafi edilemez, yalnızca sayılabilir. İki sayaç ayrı durur çünkü sebepleri ayrıdır: turun geç kalması ≠ tek bir sembolün veri boşluğu. |
 | `core/portfolio.py` | Pozisyon açma/kapama, boyutlandırma, **likidasyon kontrolü**, stop/TP tetikleme, bakiye güncelleme. Her strateji için izole hesap durumu tutar. Pozisyon boyutlandırmasının **tek yetkili kaynağı.** Her barda sıra: önce `maintenance_margin` ile likidasyon kontrolü (mum içi `high`/`low` kullanılarak), **sonra** stop/TP kontrolü. Likidasyon stop'tan önce gelir; likide olan pozisyon stop'a hiç ulaşmaz. Kapanan işlemin `notes` kuyruğuna çıkışın ALT sebebini `| exit_rule=<kural>` etiketiyle yazar (bkz. kural 13c). |
 | `core/funding.py` | Açık pozisyonlara funding/borrow maliyeti uygular. Borsa kurallarını simüle eder. |
 | `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. **Ölçümün birimi POZİSYONDUR, defter satırı değil:** `merge_fills` aynı pozisyonun dolumlarını (kısmi çıkış ve `fraction < 1.0` olan take-profit'ler) tek ölçüm satırına indirger ve R'yi `Σpnl / Σrisk` olarak kurar — bkz. "Dolum ve pozisyon". Salt okunur — ledger'ı değiştirmez. |
@@ -74,7 +74,7 @@ yapar.
 | `leverage_cap` | `5` | İzin verilen azami kaldıraç. Hiçbir koşulda aşılmaz. |
 | `max_positions` | `5` | Bir stratejinin aynı anda taşıyabileceği toplam pozisyon sayısı. |
 | `max_short_positions` | `3` | Bunların en fazla kaçının short olabileceği. |
-| `fee_rate` | `0.001` | Tek yön komisyon oranı; giriş ve çıkışta ayrı ayrı uygulanır. |
+| `fee_rate` | `0.00055` | Tek yön komisyon oranı; giriş ve çıkışta ayrı ayrı uygulanır. **İşlem yapılan borsanın** (Bybit) standart kademe **taker** oranıdır — veri çekilen borsanın (OKX) değil: maliyeti ödeyen taraf hesabın tutulduğu yerdir. Modeller `entry_type="market"` ile girip çıktığı için iki bacak da taker. |
 | `slippage_base` | `0.0005` | Yönden bağımsız olarak **her** dolumda (long/short giriş, çıkış, TP) uygulanan temel kayma. |
 | `slippage_short_stop` | `0.0015` | Short pozisyonların stop dolumunda `slippage_base` yerine geçen kayma (short stop'lar yukarı boşluklarda daha kötü dolar). |
 | `max_stop_atr_multiple` | `3.0` | Stop mesafesi tavanı: stop mesafesi ATR'nin 3 katını aşan sinyal açılmaz, işlem atlanır (kural 14). |
@@ -319,7 +319,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (saatlik; tur başına 4 bar) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
-| Kırılımlar | yok | kol + sembol + çıkış kuralı |
+| Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |
 | Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) |
 
 **Neden ayrı bir `scalp_config.yaml` değil.** `risk_per_trade`, `fee_rate`, `slippage_*`,
@@ -545,6 +545,38 @@ gruplama ölçütüne göre böler ve her grup için aynı metrikleri hesaplar; 
   korunur (Σpnl değişmez), işlem SAYISI korunmaz — grupların `trades` toplamı model
   tablosundan büyük olabilir. Kol ve sembol kırılımlarında bu sorun yoktur (ikisi de
   pozisyonun özelliğidir).
+- **seans** (`session`) — işlemin AÇILDIĞI seans; sınırlar UTC'de SABİTTİR
+  (`core/metrics.py::_SESSIONS`: 00-07 asya, 07-12 avrupa, 12-16 abd, 16-24 gece). Ölçüt
+  `opened_at`tır, `closed_at` değil: sorulan şey "bu kurulum hangi piyasa koşulunda
+  ALINDI". Yerel saat (ör. Europe/Berlin) kullanılmaz — yaz saati geçişi sınırları yılda
+  iki kez kaydırır ve aynı defter iki farklı kırılım üretirdi; tekrarlanabilirlik
+  `random_seed` ile aynı statüdedir. Birimi POZİSYONDUR (kol ve sembol gibi), yani
+  grupların `trades` toplamı model tablosuyla tutarlı kalır.
+  **Bu bir ÖLÇÜMDÜR, bir kural DEĞİL:** hiçbir model seansa bakmaz ve hiçbir sinyal bu
+  etikete göre elenmez. Gerekçe, "sabah iyi / öğleden sonra kötü" türü bir gözlemin tek
+  bir günün verisiyle test edildiğinde doğrulanır GİBİ görünmesi, daha uzun örneklemde ise
+  tersine dönmesidir (bkz. docs/decisions.md > 27). Kırılım kanıt biriktirir; bir saat
+  filtresi ancak kanıt örneklem kapısını geçtiğinde ve o zaman da YENİ BİR MODEL olarak
+  gelir — mevcut bir modele filtre eklemek, o modelin ölçtüğü ekseni değiştirirdi.
+- **kayıp serisi** (`loss_streak`) — pozisyon AÇILIRKEN geçerli olan ardışık kayıp sayısı;
+  kovalar `0 / 1 / 2 / 3 / 4 / 5+`. Diğer dördünden farklı olarak ölçüt tek bir satırdan
+  OKUNAMAZ: seri, satırın kendi alanlarında değil ondan önce kapanmış pozisyonların
+  SIRASINDA durur. Bu yüzden bir ön hazırlık adımı vardır
+  (`core/metrics.py::annotate_loss_streak`, `core/report.py::_BREAKDOWN_PREPARE`) ve
+  ölçüt türetilmiş bir alandan okunur — `breakdown`ın tek satırlık `key` sözleşmesi
+  bozulmaz.
+  **Kesim `opened_at`tır:** sayılan şey modelin KARAR ANINDA görebildiği seridir ve model
+  yalnızca kapanmış işlemleri görebilir (kural 16). Kesimi kapanışa taşımak, pozisyonun
+  kendi ömrü boyunca kapananları da sayardı — yani ölçüm, modelin o an sahip olmadığı bir
+  bilgiyle kurulur ve bir cooldown kuralının ölçüsü olmaktan çıkardı.
+  **Kayıp `pnl < 0` demektir; tam sıfır seriyi KIRAR** — başabaş kapanan bir işlem kayıp
+  değildir ve onu kayıp saymak serileri yapay uzatırdı, üstelik tam da breakeven stop
+  kullanan modellerde (13/14/15), yani kıyasın bir tarafında.
+  Birimi POZİSYONDUR, yani grupların `trades` toplamı model tablosuyla tutarlı kalır.
+  **Bu da bir ÖLÇÜMDÜR, bir kural DEĞİL:** hiçbir model kayıp serisine bakmaz. Gerekçe
+  "üst üste N kayıptan sonra bir süre bekle" fikrinin sınanmasıdır — kümelenme gerçek
+  çıktı ama sayaç yanlış tetikleyici olduğu için kural yazılmadı (bkz.
+  docs/decisions.md > 28).
 
 Referans çıpaları (kural 15) ve dış sistem kopyaları (kural 15b) bu iki kolonu **`nan`** alır
 ve tablonun AYRI İKİ bölümünde durur. Çıpada gerekçe hesaplanamazlıktır: stop'u olmayanın 1R'si

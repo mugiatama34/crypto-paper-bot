@@ -228,6 +228,14 @@ class ModelReport:
     # funding'in hiç tahakkuk etmediği anlamına gelir — raporda durur ki atlama sessiz
     # kalmasın (bkz. Engine._record_missing_bars).
     missing_bars: int = 0
+    # Barı olmadığı için KONTROL EDİLEMEYEN açık pozisyon-barı sayısı. `missing_bars` turun
+    # hiç işlenemeyen barlarını sayar; bu ise İŞLENEN bir barda, o SEMBOLÜN mumu anlık
+    # görüntüde bulunmadığı için stop/TP/likidasyon kontrolünden geçmeyen pozisyonları.
+    # İkisi ayrı tutulur çünkü sebepleri ayrıdır: biri turun geç kalması, diğeri tek bir
+    # sembolün veri boşluğu. Sıfırdan büyük olması, o pozisyonların o mumdaki fitilinin
+    # hiç görülmediği ve bu barın bir daha gelmeyeceği anlamına gelir
+    # (bkz. core/portfolio.Portfolio.process_bar).
+    unchecked_position_bars: int = 0
     # Doldurulamayan emirlerin SEBEP KODU -> adet dökümü (bkz. core/portfolio.RejectReason).
     # Bu alan olmadan "sinyal üretildi ama işlem açılmadı" tek bir görünüme çöker ve beklenen
     # bir tekrar (referansın zaten taşıdığı pozisyon) gerçek bir boyutlandırma arızasından
@@ -275,6 +283,7 @@ class _ModelRun:
     exits: int = 0
     skipped_signals: int = 0
     missing_bars: int = 0
+    unchecked_position_bars: int = 0
     history_failed: bool = False
     # Defterin kapanmış işlemleri tur boyunca DEĞİŞMEZ (yazma tur sonunda, `_persist`).
     # Her barda yeniden okumak, `signals_per_bar` açıkken aynı dosyayı bar sayısı kadar
@@ -290,6 +299,10 @@ class _ModelRun:
 
     def reject(self, code: str) -> None:
         self.rejections[code] = self.rejections.get(code, 0) + 1
+
+    def note_unchecked(self, symbol: str) -> None:
+        """Barı olmadığı için bu barda kontrol edilemeyen bir açık pozisyon."""
+        self.unchecked_position_bars += 1
 
     def record_survey(self, counts: Mapping[str, int]) -> None:
         for reason, count in counts.items():
@@ -372,6 +385,7 @@ class Engine:
                     exits=run.exits,
                     skipped_signals=run.skipped_signals,
                     missing_bars=run.missing_bars,
+                    unchecked_position_bars=run.unchecked_position_bars,
                     rejections=dict(sorted(run.rejections.items())),
                     emitted=tuple(run.emitted),
                     survey=dict(sorted(run.survey.items())),
@@ -426,7 +440,11 @@ class Engine:
         self._portfolio.apply_funding(model, charges)
 
         run.filled += self._fill_pending(run, ts=ts, bars=bars, marks=opens)
-        run.trades.extend(self._portfolio.process_bar(model, ts=ts, bars=bars))
+        run.trades.extend(
+            self._portfolio.process_bar(
+                model, ts=ts, bars=bars, on_unchecked=run.note_unchecked
+            )
+        )
         self._update_stops(run, market, ts=ts)
 
         closes = {symbol: bar.close for symbol, bar in bars.items()}

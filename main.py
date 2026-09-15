@@ -319,7 +319,7 @@ def _log_round(report: RoundReport) -> None:
     logger.info("tur tamamlandı: as_of=%s", report.as_of)
     for model in report.models:
         logger.info(
-            "  %-16s bar=%d dolum=%d kapanan=%d sinyal=%d çıkış=%d band-atlanan=%d%s%s%s",
+            "  %-16s bar=%d dolum=%d kapanan=%d sinyal=%d çıkış=%d band-atlanan=%d%s%s%s%s",
             model.model, model.bars_processed, model.filled, model.closed,
             model.signals, model.exits, model.skipped_signals,
             # Telafi edilemeyen bar: kaçırılan turların barları normalde bu turda sırayla
@@ -327,6 +327,12 @@ def _log_round(report: RoundReport) -> None:
             # son işlenmiş bara kadar geri gitmemiş, yani o barların stop/TP kontrolü hiç
             # yapılmamıştır — tur özetinde ret dökümü kadar birinci sınıf durması gerekir.
             f" telafi-edilemeyen-bar={model.missing_bars}" if model.missing_bars else "",
+            # Kontrol edilemeyen pozisyon-barı: bar İŞLENDİ ama o sembolün mumu anlık
+            # görüntüde yoktu, yani açık pozisyonun o mumdaki stop/TP/likidasyon kontrolü
+            # hiç yapılmadı ve bar bir daha gelmeyecek. Telafi edilemeyen bardan ayrı
+            # yazılır: sebepleri farklı (turun gecikmesi ≠ tek sembolün veri boşluğu).
+            f" kontrol-edilemeyen-pozisyon-barı={model.unchecked_position_bars}"
+            if model.unchecked_position_bars else "",
             f" ret={_format_rejections(model.rejections)}" if model.rejections else "",
             f" ATLANDI: {model.skipped}" if model.skipped else "",
         )

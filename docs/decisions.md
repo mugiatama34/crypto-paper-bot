@@ -2028,3 +2028,352 @@ yukarıdaki ilk iki paragraftır ve tek başına yeterlidir.
 
 Regresyon kapısı `tests/test_layers.py::test_scalp_universe_is_fixed_and_complete`
 içindedir: sembol listeye geri eklenirse test düşer.
+
+## 25. `fee_rate` Bybit taker oranına çekildi: 0.001 -> 0.00055
+
+Komisyon oranı `0.001` idi ve config yorumu onu "OKX taker oranı" diye tanımlıyordu. İki
+ayrı hata vardı.
+
+**1. Yanlış borsa.** Veri OKX'ten çekiliyor (`exchange.*`) çünkü evrenin tamamı orada tek
+kaynaktan ve aynı bar çapasıyla okunabiliyor. Ama defterin simüle ettiği hesap **Bybit'te**
+tutuluyor; komisyonu ödeyen taraf orası. Veri kaynağının oranını maliyet olarak yazmak, hiç
+ödenmeyen bir komisyonu ölçüme sokmak demekti. `fee_rate` bundan sonra **işlem yapılan**
+borsanın oranıdır, veri çekilenin değil — ikisi ayrışabilir ve ayrıştığında maliyet tarafı
+kazanır.
+
+**2. Yanlış değer.** Bybit USDT perpetual, standart (VIP0) kademe: maker %0.02, **taker
+%0.055**. Modeller `entry_type="market"` ile girip çıktığı için iki bacak da taker, yani
+doğru değer `0.00055`. Eski `0.001` bunun neredeyse iki katıydı.
+
+### Neden bu tek satır ölçümün işaretini belirliyor
+
+Kararı tetikleyen şey model 13'ün (`vwap_clone`) kaynak sistemle karşılaştırılmasıydı.
+Kaynak (`klonnist/Hasanwavebot`) komisyon ve kayma **hiç** uygulamıyor — yalnızca funding
+modelliyor — ve 6 günde 256 pozisyonda +2156 USDT (+%21.5) üretmiş. Ham edge'i işlem başına
+**+8.42 USDT**. Bizim o güne kadar tahsil ettiğimiz sürtünme ise işlem başına **15.00 USDT**
+(5000 notional, giriş+çıkış). Yani kaynağın edge'i, bizim maliyet varsayımımızdan küçüktü.
+
+Aynı 256 pozisyona farklı maliyet varsayımları uygulandığında:
+
+| Senaryo | $/işlem | Net PnL | Getiri |
+|---|---|---|---|
+| eski config (fee .001 + kayma .0005) | 15.00 | −1684 | −%16.8 |
+| **yeni (fee .00055 + kayma .0005)** | **10.50** | **−532** | **−%5.3** |
+| fee .00055 + kayma .0002 | 7.50 | +236 | +%2.4 |
+| maliyet yok (kaynağın varsayımı) | 0.00 | +2156 | +%21.6 |
+
+Sistem bu bandın içinde işaret değiştiriyor. "Bu strateji kârlı mı" sorusunun cevabı, büyük
+ölçüde maliyet sabitini doğru koymaya bağlı — ve yanlış bir sabitle ay boyu veri biriktirip
+sonra hepsini çöpe atmak, düzeltmeyi geciktirmenin bedeli olurdu.
+
+**Değişmeyen: `slippage_base` ve `slippage_short_stop`.** Kayma bir borsa tarifesi değil,
+kitap derinliği ve emir tipiyle ilgili ayrı bir varsayımdır; komisyon oranının yanlış olması
+onun hakkında hiçbir şey söylemiyor. Ayrı bir kanıtla ayrı bir kararda ele alınır.
+
+### Defterde iki maliyet rejimi oluşuyor — ve defter SİLİNMEDİ
+
+Bu değişiklik geriye dönük uygulanamaz: `trades.csv` append-only bir denetim izidir ve bir
+işlem satırı hiçbir gerekçeyle değişmez veya silinmez (CLAUDE.md > `core/ledger.py`). Yani
+scalp defterinin 14-15 Eylül arası kısmı `0.001` ile, sonrası `0.00055` ile yazılmış olacak
+ve iki dönemin `cost_per_r` değerleri doğrudan kıyaslanamaz.
+
+Defteri sıfırlamak da düşünüldü ve **yapılmadı**: silmek, kuralın tek istisnasını açmak ve
+gerçekten olmuş 80 pozisyonun kaydını yok etmek olurdu. Bunun yerine kırılma noktası burada
+yazılıdır. Kırılmanın kendisi zaten okunabilir — `cost_per_r` kolonu iki dönemde belirgin
+biçimde ayrışacak — ve ayrıştığında sebebi aranacak yer bu kayıttır.
+
+**Katman içi kıyasa etkisi yok:** oran tek sabittir ve her model için birebir aynı anda
+değişti (kural 6). Bozulan şey modeller ARASI kıyas değil, aynı modelin ESKİ ve YENİ dönemi
+arasındaki kıyastır.
+
+### Testler
+
+`tests/test_config.py::test_repository_config_matches_claude_md_values` yeni değeri bekliyor.
+`tests/test_portfolio.py::test_notional_fraction_pays_the_same_fees_as_everyone` oranı artık
+`portfolio.fee_rate`ten okuyor, sabit yazmıyor: testin iddiası "referans model de herkesle
+aynı ORANI öder", "oran şu sayıdır" değil — sabit yazmak, oran her değiştiğinde ilgisiz bir
+testi kırıp asıl iddiayı gizlerdi.
+
+## 26. Model 14'ün stop ölçeği kalibre edildi: `vwap.managed.atr_multiple` 5.0 -> 2.5
+
+Model 14 (`vwap_managed`) canlıya alındığından beri **hiç sinyal üretmemişti** — 15 Eylül
+itibarıyla arka arkaya 24 turun hepsinde `sinyal=0`, defteri boş, hesabı 10.000.00'da.
+Turun logu her seferinde aynı şeyi diyordu:
+
+```
+vwap_managed vwap_revert bandı=2.00σ -> 13 sembol; bant_ici=13;
+en uzak sapma: BTC-USDT-SWAP 1.39σ
+```
+
+Bu satır suçluyu **bandı** gösteriyor gibi duruyordu. Ölçüm (`scripts/measure_vwap_signal.py`,
+30 gün, 13 sembol) suçlunun band olmadığını gösterdi.
+
+### Ölçümün söylediği
+
+`band_mult=2.0` sabitken, `atr_multiple` süpürmesi:
+
+| atr_x | aday | stop tabanı eledi | 1.5R kapısı eledi | GEÇEN | sinyal/hafta | stop% ort | 30 işleme |
+|---|---|---|---|---|---|---|---|
+| 1.5 | 983 | 620 | 159 | 204 | 30.8 | 1.48 | 1.0 hafta |
+| 2.0 | 983 | 425 | 371 | 187 | 25.7 | 1.65 | 1.2 hafta |
+| **2.5** | 983 | 307 | 548 | **128** | **16.8** | **2.05** | **1.8 hafta** |
+| 3.0 | 983 | 225 | 672 | 86 | 11.2 | 2.52 | 2.7 hafta |
+| 4.0 | 983 | 138 | 825 | 20 | 3.0 | 3.44 | 9.9 hafta |
+| **5.0 (eski)** | 983 | 80 | 903 | **0** | **0.0** | — | ∞ |
+
+Band 30 günde 983 aday üretiyor — yani band çalışıyor, sadece seyrek. Adayları öldüren
+**1.5R kapısı**: 5×ATR'lik bir stopla hedef (VWAP mesafesi) stop'un 1.5 katına hiç
+ulaşamıyor, 983 adayın 903'ü orada eleniyor ve kalan 80'i de %1 stop tabanı alıyor.
+
+Band'ı düşürmek bunu çözmüyor: `atr_multiple=5` sabitken band 2.0'dan 0.5'e indirildiğinde
+aday sayısı 983'ten 12.864'e çıkıyor ama **GEÇEN yine 32'de takılıyor** — çünkü bağlayıcı
+kısıt band değil, stop ölçeği.
+
+### Neden 5.0 baştan yanlış gerekçelendirilmişti
+
+Config yorumu değeri "scalp kollarıyla AYNI stop ölçeği (`scalp.stop_atr_multiple`)" diye
+savunuyordu. Amaç doğruydu — model 14 ↔ `scalp_fixed` kıyasının tek değişkeni sinyal + çıkış
+yönetimi olmalı, maliyet ölçeği olmamalı (kural 14) — ama araç yanlıştı:
+
+**Kıyaslanabilirliği belirleyen şey ATR KATI değil, GERÇEKLEŞEN stop mesafesidir.** Kural
+14'ün bandı da, kabul çıtasının ⚠B uyarısı da `avg_stop_distance_pct`e bakar, config'teki
+çarpana değil. Beş kollu modeller `stop_atr_multiple=5.0` ile defterde ~**%1.95** stop
+mesafesi gerçekleştiriyor; model 14 ise `atr_multiple=2.5` ile ~**%2.05**. Yani aynı sayıyı
+kopyalamak ölçekleri eşitlemiyordu; 2.5 eşitliyor.
+
+İki modelin ATR tabanının neden farklı ölçekte oturduğu ayrı bir soru (kolların yapısal
+seviyeleri ve %1 tabanı stop'u ayrıca biçimlendiriyor) ve bu karar ona dayanmıyor: dayandığı
+şey defterde ÖLÇÜLEN mesafe.
+
+### Neden 2.5, 1.5 veya 2.0 değil
+
+Üçü de kural 14'ün bandında ve üçü de kabul çıtasının ⚠B penceresinde kalıyor (yarışmacı
+medyanı ~%1.95, band `medyan/√2.5 .. medyan×√2.5` = %1.23–%3.08). Ayrım kıyas hedefinden
+geliyor: **2.5, `scalp_fixed`in gerçekleşen stop mesafesine en yakın olanı** (%2.05 ↔ %1.95,
+oran 1.05). 1.5 ve 2.0 daha çok sinyal üretirdi (30.8 ve 25.7/hafta) ama stop ölçeğini kıyas
+hedefinden uzaklaştırırdı (%1.48 ve %1.65) — yani örneklem kapısını daha hızlı geçmek için
+tam da ölçmek istediğimiz farkı kirletmek olurdu.
+
+Bedeli örneklem hızıdır: 30 işlemlik kapıya 1.0 hafta yerine ~1.8 hafta. Kabul edilebilir,
+çünkü kapının amacı gürültüyü elemek ve daha hızlı doldurulmuş bir kapı daha iyi bir kapı
+değildir.
+
+### Sinyal + maliyet beklentisi
+
+2.5'te: haftada ~16.8 sinyal, stop% ort 2.05 / medyan 1.97, R:R medyan 1.89, ve maliyet/R
+≈ **0.11R** (karar 25'in yeni `fee_rate`i ile). Kıyas için: model 13'ün (`vwap_clone`)
+gerçekleşen maliyet/R'si **0.87R** — çünkü sabit 5.000 notional'ı ~%0.48'lik bir stopla
+taşıyor. Ev kurallarının (%1 stop tabanı) ne işe yaradığı tam olarak burada görünüyor.
+
+### Değişmeyen
+
+`band_mult` 2.0'da kaldı: ölçüm onun bağlayıcı kısıt olmadığını gösterdi, ve dokunmamak
+model 14'ün sinyal tanımını olduğu gibi bırakıyor. `target_reward_risk` 2.0'da kaldı.
+Model 13'ün `vwap.clone.*` bloğu bu karardan hiç etkilenmiyor — kopya kendi kurallarını
+okur (karar 23) ve yarışmacı değildir.
+
+## 27. Seans kırılımı: bir ÖLÇÜM eklendi, bir kural eklenmedi
+
+Bir gözlem bildirildi: "Almanya saatiyle sabaha karşı ve öğleden önce (Asya piyasası
+açıkken) yapılan işlemlerin doğruluk oranı daha yüksek; öğleden sonra açılanların neredeyse
+hepsi başarısız oldu." İstenen şey, saate göre işlem sıklığını ya da kriterleri uyarlamaktı.
+
+**Kural eklenmedi. Eklenen şey, kuralın gerekeceğini gösterecek ÖLÇÜM.**
+
+### Gözlem kendi verisinde doğrulandı
+
+Kopyanın (model 13) o günkü defteri gözlemle uyumluydu — 80 pozisyon, Berlin saatiyle:
+
+| Seans | n | ort. R | kazanç% |
+|---|---|---|---|
+| 02–09 Asya | 24 | −0.60 | 29% |
+| 09–14 AB | 2 | −1.55 | 0% |
+| **14–18 ABD** | 26 | **−1.38** | **15%** |
+| 18–02 gece | 28 | −0.46 | 43% |
+
+Öğleden sonra açıkça en kötü blok; 16:00 saatinde 9 işlemin 9'u zarar.
+
+### Ama her seans kovasında tek bir GÜN vardı
+
+Kopya depoya 14 Eylül 12:46'da girmişti; defter 18,8 saatlikti. "ABD seansı kötü" cümlesinin
+gerçek içeriği *"14 Eylül öğleden sonrası kötüydü"*. Seans etkisi ile o günün piyasası aynı
+sayıya çöküyordu ve ayrıştırılamıyordu.
+
+Bir ipucu daha vardı: 14–18 penceresinde long (−1.37) ve short (−1.39) **birlikte**
+kaybetmişti. Trend olsaydı bir taraf kazanırdı; iki tarafın birden kaybetmesi testere
+piyasası imzasıdır — yani mesele muhtemelen saat değil, volatilite rejimi.
+
+### Kaynak sistemin 6 günlük defteri gözlemi TERSİNE çevirdi
+
+`klonnist/Hasanwavebot`ın kendi defterinde 6 gün ve 256 pozisyon var. Sıralama gözlemin
+tersi çıktı:
+
+| Seans (Berlin) | n | gün | ort $/işlem | kazanç% |
+|---|---|---|---|---|
+| 02–09 **Asya** | 53 | 6 | **+3.67** | 40% |
+| 09–14 AB | 64 | 7 | +4.97 | 34% |
+| 14–18 **ABD** | 60 | 6 | **+6.99** | 42% |
+| 18–02 gece | 79 | 7 | **+15.49** | 44% |
+
+Asya en kötü, ABD ikinci en iyi. Gözleme dayanıp "öğleden sonra azalt, sabah artır"
+denseydi, 6 günlük veriye göre sistem daha KÖTÜ hale getirilmiş olacaktı.
+
+### "Gece en iyi" de bir sonuç değil
+
+Permütasyon testi (seans etiketleri 20.000 kez karıştırıldı):
+
+```
+gözlenen en büyük–en küçük farkı : 11.81 USDT
+p (fark tesadüfen bu kadar büyük olur mu)      = 0.575
+p (gece seansı tesadüfen bu kadar iyi olur mu) = 0.075
+```
+
+p=0.575, yani dağılım "seansın hiçbir etkisi yok" varsayımıyla tamamen uyumlu. Bir
+overfit'i başka bir overfit'le değiştirmemek için bu da kural yapılmadı.
+
+### Bu yüzden eklenen şey kırılım
+
+`session` kırılımı (`core/metrics.py::session_of`, `layers.scalp.breakdowns`) her turda
+seans bazında n / ort.R / kazanç% / `cost_per_r` biriktirir. Hiçbir modelin davranışına
+dokunmaz, hiçbir sinyali elemez, adillik koşullarını (kural 6) değiştirmez — `rejections`,
+`survey` ve `emitted` ile aynı statüde bir denetim izidir.
+
+Sınırlar **UTC'de sabittir**, yerel saatte değil: yaz saati geçişi sınırları yılda iki kez
+kaydırır ve aynı defter iki farklı kırılım üretirdi. Tekrarlanabilirlik burada `random_seed`
+ile aynı statüdedir. Ölçüt `opened_at`tır — soru "hangi koşulda ALINDI", "hangi koşulda
+kapandı" değil.
+
+### Karar kapısı
+
+Bir saat/rejim filtresi ancak şu iki koşul birlikte sağlandığında gündeme gelir: seans
+başına **≥30 pozisyon** (`acceptance.min_trades`) VE **≥10 ayrı gün**. İkincisi birincisinden
+önemlidir: bir seansın tek bir gününü ölçmek, o seansı değil o günü ölçmektir.
+
+Koşullar sağlanır ve etki gerçek çıkarsa, uygulama yolu **yeni bir model açmaktır** —
+mevcut bir modele filtre eklemek değil. Gerekçe CLAUDE.md'nin kendi kuralıdır: tek
+değişkenli bir eksen isteniyorsa yeni model açılır; `vwap_managed` (filtresiz) ↔
+`vwap_session` (filtreli) çifti filtrenin katkısını ölçer, modele gömmek ise "iyileşti mi"
+sorusunu cevaplanamaz kılar.
+
+Filtrenin şekli de muhtemelen saat olmayacak: veri rejimi işaret ediyor (iki yönün birden
+kaybetmesi). Volatilite/yönsüzlük kapısı hem daha genel hem de zaman diliminden bağımsızdır;
+saat onun zayıf bir vekilidir.
+
+## 28. Kayıp serisi kırılımı: kümelenme GERÇEK, ama sayaç yanlış tetikleyici
+
+Bir kural istendi: *"üst üste 5 kere işlem kayıpla kapanırsa bir süre bekle — belli ki
+işlem açmak için doğru zaman değil."* Karar 27'nin aynı yolu izlendi: önce test, sonra
+kural. Bu sefer sonuç ikiye bölündü — **öncül doğru çıktı, mekanizma yanlış.**
+
+### Kümelenme gerçek ve anlamlı
+
+Kaynak sistemin (`klonnist/Hasanwavebot`) 256 pozisyonluk 6 günlük defterinde, ardışık k
+kayıptan sonraki işlemin kayıpla kapanma olasılığı:
+
+| k | örneklem | P(kayıp) | taban | p (permütasyon, 20.000) |
+|---|---|---|---|---|
+| 1 | 153 | 0.673 | 0.598 | **0.0011** |
+| 2 | 103 | 0.709 | 0.598 | **0.0013** |
+| 3 | 73 | 0.753 | 0.598 | **0.0006** |
+| 5 | 41 | 0.732 | 0.598 | 0.052 |
+
+Sonuç dizisi rastgele karıştırıldığında bu yükselme binde bir çıkıyor. Kayıp serisi
+uzunluk dağılımı da destekliyor: **14 ardışık kayıp** var; bağımsızlık altında bu
+uzunlukta bir seri beklenenden ~12 kat fazla. Karar 27'nin saat hipotezinin aksine burada
+gerçek bir yapı var — ve piyasada volatilite kümelenmesi zaten en sağlam ampirik
+olgulardan biridir.
+
+### Ama sayaç, beklenen değerin toparlandığı yerde ateşliyor
+
+Aynı defterde ardışık k kayıptan sonraki işlemin **ortalama PnL'i**:
+
+| k | örneklem | ort. PnL | genel ortalama |
+|---|---|---|---|
+| 0 | 256 | 8.42 | 8.42 |
+| 1 | 153 | 1.96 | 8.42 |
+| 2 | 103 | 3.55 | 8.42 |
+| 3 | 73 | 2.42 | 8.42 |
+| **4** | 55 | **8.89** | 8.42 |
+| **5** | 41 | **9.08** | 8.42 |
+
+Kayıp OLASILIĞI k ile artıyor ama ortalama PnL k=4'te tabana DÖNÜYOR: seri uzadıkça
+kayıplar sıklaşıyor, buna karşılık gelen kazançlar da büyüyor ve dengeliyor. İstenen eşik
+(5) tam olarak beklenen değerin normale döndüğü noktada duruyor — yani kural, elemek
+istediği kötü işlemleri değil ortalama kaliteli işlemleri elerdi.
+
+### Kuralın birebir simülasyonu: parametre yüzeyi gürültü
+
+12 kombinasyon (tetik 3/4/5/6 × bekleme 1/2/4 saat), maliyetsiz taban 8.42/işlem:
+
+| | 1 saat | 2 saat | 4 saat |
+|---|---|---|---|
+| 3 kayıp | 9.18 | 8.01 | 4.80 |
+| 4 kayıp | 7.02 | 4.30 | 7.06 |
+| 5 kayıp | 7.90 | 6.32 | 10.42 |
+| 6 kayıp | 7.27 | 8.43 | 10.67 |
+
+3'ü tabanı geçiyor, 9'u geçmiyor ve komşu parametreler zıt sonuç veriyor — bir etkinin
+değil, gürültünün imzası. Kesin test: **en iyi** kombinasyonun taban üzeri kazancı
+(+2.24 USDT/işlem), kümelenmesi yok edilmiş (karıştırılmış) dizide de **p=0.48**
+olasılıkla çıkıyor; bizim maliyetimizle p=0.33. Yani 12 seçenek arasından en iyisini
+seçmek, hiçbir yapı olmasa bile bu kadar "iyi" bir sonuç üretiyor.
+
+**Bir tuzak daha:** bizim maliyetimizle (karar 25) sistem zaten −2.08/işlem. Daha az işlem
+yapan HER kural toplam PnL'i mekanik olarak iyileştirir. O yüzden karar ölçütü toplam değil
+**işlem başına ortalama** olmalıdır; toplam bakılsaydı `(6 kayıp, 4 saat)` "işe yarıyor"
+görünürdü.
+
+### Bu yüzden eklenen şey yine kırılım
+
+`loss_streak` kırılımı pozisyonun AÇILDIĞI andaki ardışık kayıp sayısını kova bazında
+(`0/1/2/3/4/5+`) biriktirir. Hiçbir modelin davranışına dokunmaz.
+
+**Mimari fark:** kol, sembol, seans ve çıkış kuralı satırın kendi alanlarından türer; kayıp
+serisi ise satırın kendisinde DEĞİL, ondan önce kapanmış pozisyonların sırasındadır. Bu
+yüzden `core/report.py`ye bir ÖN HAZIRLIK kancası eklendi (`_BREAKDOWN_PREPARE`) ve
+`core/metrics.py::annotate_loss_streak` ölçütü türetilmiş bir alana yazıyor. Alternatif,
+`breakdown`ın tek satırlık `key` sözleşmesini bozmaktı — o sözleşme diğer dört kırılımın
+sadeliğini taşıyor ve tek bir istisna için gevşetilmedi.
+
+**Kesim `opened_at`tır, `closed_at` değil.** Sayılan şey modelin KARAR ANINDA görebildiği
+seridir; model yalnızca kapanmış işlemleri görebilir (kural 16). Kesimi kapanışa taşımak,
+pozisyonun kendi ömrü boyunca kapanan işlemleri de sayıya katardı — ölçüm, modelin o an
+sahip olmadığı bir bilgiyle kurulmuş olurdu ve bir cooldown kuralının ölçüsü olmaktan
+çıkardı.
+
+**Kayıp `pnl < 0`dır; tam sıfır seriyi kırar.** Breakeven stop'la kapanan bir işlem kayıp
+değildir; kayıp saymak serileri yapay uzatırdı ve bunu tam da üç aşamalı çıkış yönetimi
+kullanan modellerde (13/14/15) yapardı — yani kıyasın bir tarafında.
+
+### İlk okuma (küçük örneklem, yorumlanmadan önce beklenmeli)
+
+Mevcut defterlerimizde kovalar şöyle dolmuş (scalp katmanı, ~1 günlük veri):
+
+| model | 0 | 1 | 2 | 3 | 4 | 5+ |
+|---|---|---|---|---|---|---|
+| `vwap_clone` (ort. R) | −0.29 | −0.52 | −0.86 | −0.79 | −1.07 | **−1.46** |
+| n | 17 | 18 | 12 | 6 | 6 | 21 |
+
+Kopyada bozulma **monoton** görünüyor ve kaynağın verisindeki "k=4'te toparlanma"
+görülmüyor. İki fark bunu açıklayabilir: (a) bizim maliyet varsayımımız her işleme sabit
+bir yük bindiriyor ve seri uzadıkça bileşikleniyor; (b) örneklem tek bir güne ait ve
+n kovalarda 6'ya kadar düşüyor. Üç beş kollu modelde ise eğilim ters yönde — ama n=15–19
+ile hiçbir şey söylenemez.
+
+### Karar kapısı
+
+Bir cooldown kuralı ancak şu üçü birlikte sağlandığında gündeme gelir: kova başına
+**≥30 pozisyon**, **≥10 ayrı gün**, ve **ortalama R'nin k ile monoton düşmesi** (yalnızca
+kazanma oranının düşmesi yetmez — kaynağın verisi tam olarak o ayrımda kuralı çürüttü).
+
+Sağlanırsa uygulama yolu yine **yeni bir model**: `vwap_managed` (filtresiz) ↔
+`vwap_cooldown` (filtreli), parametreler bu veriden TARANMADAN, önceden sabitlenmiş
+olarak. Mimari yüzey hazır — kural 16'nın `observe_closed_trades` kancası modelin kendi
+kapanmış işlemlerini okumasına zaten izin veriyor, yani bir kayıp serisi sayacı meşru bir
+yerde durur.
+
+**Yapılamayacak olan:** "işlem BÜYÜKLÜĞÜNÜ düşür" kısmı bu mimaride modele kapalıdır.
+Boyutlandırma `core/portfolio.py`nin tekelindedir (kural 3/11) ve `risk_per_trade` tüm
+modeller için tek sabittir (kural 6); bir model kendi riskini oynatırsa ortak 1R birimi
+kaybolur ve modeller aynı ölçekte yarışmaz. **İşlem açmamak** serbesttir — model yalnızca
+sinyal üretmez.

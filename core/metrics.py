@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import logging
 import math
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 
@@ -520,6 +521,164 @@ def arm_of(row: Mapping[str, Any]) -> str:
 
 def symbol_of(row: Mapping[str, Any]) -> str:
     return str(row.get("symbol", ""))
+
+
+# Seans sınırları UTC'dedir ve SABİTTİR: (başlangıç saati, ad). Son dilim gün sonuna sarar.
+# Yerel saat kullanmak (ör. Europe/Berlin) yaz saati geçişlerinde sınırları yılda iki kez
+# kaydırırdı ve aynı defter iki farklı kırılım üretirdi — tekrarlanabilirlik `random_seed`
+# ile aynı statüdedir. Karşılığı parantezde yazılıdır ve YAZ saati içindir (CEST, UTC+2);
+# kış saatinde yerel karşılık bir saat geriye kayar, UTC sınırları ise yerinde kalır.
+_SESSIONS: tuple[tuple[int, str], ...] = (
+    (0, "00-07_asya"),      # Berlin 02-09
+    (7, "07-12_avrupa"),    # Berlin 09-14
+    (12, "12-16_abd"),      # Berlin 14-18
+    (16, "16-24_gece"),     # Berlin 18-02
+)
+
+
+def _utc_stamp(value: Any) -> pd.Timestamp | None:
+    """Defter damgasını UTC'ye çevirir; okunamayan damga None (0 ya da "şimdi" DEĞİL).
+
+    Zaman dilimsiz damga UTC sayılır: yerel saate çevirmek kırılımı defteri okuyan
+    makinenin ayarına bağlardı.
+    """
+    raw = str(value or "")
+    if not raw:
+        return None
+    try:
+        stamp = pd.Timestamp(raw)
+    except (ValueError, TypeError):
+        return None
+    if pd.isna(stamp):
+        return None
+    return stamp.tz_convert("UTC") if stamp.tzinfo is not None else stamp.tz_localize("UTC")
+
+
+def session_of(row: Mapping[str, Any]) -> str:
+    """İşlemin AÇILDIĞI seans (UTC sabit sınırlar; bkz. `_SESSIONS`).
+
+    Ölçüt `opened_at`tır, `closed_at` değil: sorulan şey "bu kurulum hangi piyasa
+    koşulunda ALINDI", "hangi koşulda kapandı" değil. Kapanışa göre gruplamak, gece açılıp
+    sabah stoplanan bir pozisyonu sabahın hanesine yazardı.
+
+    Kol ve sembol gibi bu da POZİSYONUN özelliğidir: bir pozisyonun tüm dilimleri aynı
+    `opened_at`i taşır, yani aynı gruba düşer ve grupların `trades` toplamı model
+    tablosuyla tutarlı kalır (`exit_rule` kırılımının aksine — bkz. `exit_rule_of`).
+
+    **Bu kırılım bir ÖLÇÜMDÜR, bir kural değil.** Hiçbir model seansa bakmaz ve hiçbir
+    sinyal bu etikete göre elenmez; kırılım yalnızca "seansın ölçülebilir bir etkisi var
+    mı" sorusuna zamanla cevap biriktirir. Bugünkü cevap "ayırt edilemiyor"dur: kaynak
+    sistemin 6 günlük 256 pozisyonluk defterinde seanslar arası fark permütasyon testinde
+    p=0.575 çıktı (docs/decisions.md > 27). Karar için gereken şey daha çok GÜN, daha çok
+    işlem değil — bir seansın tek bir gününü ölçmek, o günü ölçmektir.
+
+    Okunamayan `opened_at` sessizce atlanmaz (`arm_of` ile aynı gerekçe): satırı gruptan
+    düşürmek kırılım toplamı ile model toplamını ayrıştırırdı.
+    """
+    stamp = _utc_stamp(row.get("opened_at"))
+    if stamp is None:
+        raise ValueError(f"seans kırılımı: okunamayan opened_at {row.get('opened_at')!r}")
+    hour = stamp.hour
+    name = _SESSIONS[0][1]
+    for start, label in _SESSIONS:
+        if hour >= start:
+            name = label
+    return name
+
+
+# Kayıp serisi kovaları: (asgari ardışık kayıp, ad). En üstteki eşleşen kazanır.
+# Kovalar 0..4'ü TEK TEK tutar, 5 ve üstünü birleştirir. Gerekçe ölçülen şeyin kendisi:
+# kaynak sistemin 256 pozisyonluk defterinde kayıp OLASILIĞI k arttıkça yükseliyor
+# (0.598 -> 0.753) ama ortalama PnL k=4'te tabana DÖNÜYOR (8.89 vs 8.42). Yani karar
+# açısından ilginç bölge 1-3 ile 4+ arasındaki sınırdır; kovaları daha kaba yapmak
+# (ör. "1-2", "3+") tam o sınırı görünmez kılardı. 5+ birleştirilir çünkü orada örneklem
+# hızla erir (41 -> 30 -> ...) ve ayrı kovalar birer gürültü satırına dönerdi.
+_LOSS_STREAK_BUCKETS: tuple[tuple[int, str], ...] = (
+    (0, "0"), (1, "1"), (2, "2"), (3, "3"), (4, "4"), (5, "5+"),
+)
+# Dolum satırına iliştirilen türetilmiş alan. Alt çizgi ile başlar: `trades.csv`in bir
+# kolonu DEĞİLDİR ve deftere hiç yazılmaz (kural 13c'nin "yeni kolon açılmaz" gerekçesi —
+# başlık değişirse eski satırlar okunamaz hâle gelir).
+LOSS_STREAK_FIELD = "_loss_streak"
+
+
+def annotate_loss_streak(trades: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Her dolum satırına, pozisyonun AÇILDIĞI andaki ardışık kayıp sayısını iliştirir.
+
+    Diğer kırılımlardan farklı olarak bu ölçüt tek bir satırdan okunamaz: kayıp serisi
+    satırın kendi alanlarında değil, ondan ÖNCE kapanmış pozisyonların SIRASINDA durur.
+    Bu yüzden kırılım anahtarı (`loss_streak_of`) bir ön hazırlık ister ve yapan da bu
+    fonksiyondur.
+
+    **Kesim noktası `opened_at`tır, `closed_at` değil.** Sayılan şey "bu pozisyon
+    açılırken modelin GÖREBİLDİĞİ kayıp serisi"dir; model yalnızca kapanmış işlemleri
+    görebilir (kural 16). Kesimi kapanışa taşımak, pozisyonun kendi ömrü boyunca kapanan
+    işlemleri de sayıya katardı — yani ölçüm, modelin karar anında sahip olmadığı bir
+    bilgiyle kurulurdu ve bir cooldown kuralının ölçüsü olmaktan çıkardı.
+
+    **Kayıp `pnl < 0` demektir; tam sıfır seriyi KIRAR.** Başabaş kapanan bir işlem
+    (breakeven stop) bir kayıp değildir ve onu kayıp saymak serileri yapay olarak
+    uzatırdı — üstelik tam da üç aşamalı çıkış yönetimini kullanan modellerde (13/14/15),
+    yani kıyasın bir tarafında.
+
+    Seri POZİSYON bazında sayılır ama alan DOLUM satırına yazılır: bir pozisyonun tüm
+    dilimleri aynı `opened_at`i taşır, dolayısıyla aynı kovaya düşer ve grupların işlem
+    sayısı toplamı model tablosuyla tutarlı kalır (`exit_rule`in aksine).
+    """
+    rows = [dict(row) for row in trades]
+    positions = merge_fills(rows)  # `closed_at`e göre sıralı döner
+
+    closes: list[pd.Timestamp] = []
+    # trailing[i] = ilk i pozisyon kapandıktan SONRA geçerli ardışık kayıp sayısı.
+    trailing: list[int] = [0]
+    for position in positions:
+        stamp = _utc_stamp(position.get("closed_at"))
+        if stamp is None:
+            # Kapanış zamanı okunamayan satır sıraya giremez; sessizce atmak yerine
+            # seriyi kırar, çünkü "bu işlemin kayıp olup olmadığını bilmiyoruz" ile
+            # "kayıp değildi" aynı şey değildir ve ikincisi daha temkinlidir.
+            closes.append(pd.Timestamp.max.tz_localize("UTC"))
+            trailing.append(0)
+            continue
+        closes.append(stamp)
+        lost = _to_float(position.get("pnl"))
+        trailing.append(trailing[-1] + 1 if lost is not None and lost < 0.0 else 0)
+
+    buckets: dict[Any, str] = {}
+    for position in positions:
+        opened = _utc_stamp(position.get("opened_at"))
+        # `closed_at <= opened_at` olan pozisyonlar bu pozisyon açılırken BİLİNİYORDU.
+        # Pozisyonun kendisi doğal olarak dışarıda kalır: dolum bir sonraki bardadır
+        # (kural 13), yani kapanışı açılışından kesin olarak sonradır.
+        seen = 0 if opened is None else bisect_right(closes, opened)
+        buckets[position_key(position)] = _loss_streak_label(trailing[seen])
+
+    for row in rows:
+        row[LOSS_STREAK_FIELD] = buckets.get(position_key(row), _LOSS_STREAK_BUCKETS[0][1])
+    return rows
+
+
+def _loss_streak_label(count: int) -> str:
+    label = _LOSS_STREAK_BUCKETS[0][1]
+    for threshold, name in _LOSS_STREAK_BUCKETS:
+        if count >= threshold:
+            label = name
+    return label
+
+
+def loss_streak_of(row: Mapping[str, Any]) -> str:
+    """Pozisyon açılırken geçerli olan ardışık kayıp kovası (`annotate_loss_streak`).
+
+    Alan yoksa hata fırlatılır, uydurma bir "0" üretilmez: alanın yokluğu "seri sıfırdı"
+    değil "ön hazırlık hiç koşmadı" demektir ve ikisini aynı kovaya yazmak, bozuk bir
+    kırılımı sağlam gibi gösterirdi.
+    """
+    if LOSS_STREAK_FIELD not in row:
+        raise ValueError(
+            f"kayıp serisi kırılımı: {LOSS_STREAK_FIELD} alanı yok "
+            "(annotate_loss_streak çağrılmamış)"
+        )
+    return str(row[LOSS_STREAK_FIELD])
 
 
 def exit_rule_of(row: Mapping[str, Any]) -> str:

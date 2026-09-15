@@ -10,9 +10,16 @@ max_positions: 5            # bir stratejinin eşzamanlı toplam pozisyon sayıs
 max_short_positions: 3      # bunların en fazla kaçı short olabilir
 
 # --- Maliyetler ---
-# fee_rate OKX taker oranıdır: modeller piyasa emriyle (entry_type="market") giriyor,
-# maker oranı kullanmak hiç gerçekleşmeyen bir dolumu varsayıp sonuçları optimist gösterir.
-fee_rate: 0.001             # tek yön komisyon; giriş ve çıkışta ayrı ayrı uygulanır
+# fee_rate, ölçümün İŞLEM YAPILAN borsasının taker oranıdır — veri çekilen borsanın değil.
+# Veri OKX'ten gelir (bkz. exchange.*) çünkü orada evrenin tamamı tek kaynaktan ve aynı bar
+# çapasıyla okunabiliyor; ama defterin simüle ettiği hesap Bybit'te tutuluyor ve maliyeti
+# ödeyen taraf orası. İkisini karıştırmak, hiç ödenmeyen bir komisyonu ölçüme sokardı.
+#
+# Bybit USDT perpetual, standart (VIP0) kademe: maker %0.02, taker %0.055. Buradaki değer
+# TAKER'dır: modeller piyasa emriyle (entry_type="market") giriyor ve çıkıyor, yani her iki
+# bacak da taker. Maker oranı kullanmak hiç gerçekleşmeyen bir dolumu varsayıp sonuçları
+# optimist gösterirdi.
+fee_rate: 0.00055           # tek yön komisyon; giriş ve çıkışta ayrı ayrı uygulanır
 # slippage_base adı "slippage_long" değildir: bu oran yöne bakmaksızın HER dolumda
 # (long/short giriş, çıkış, TP) uygulanan temel kaymadır. Tek istisna short stop
 # dolumudur; orada slippage_short_stop devreye girer. Eski ad, short girişlerin
@@ -227,7 +234,20 @@ layers:
     # exit_rule: üç aşamalı yönetimin hangi aşamasının gerçekten tetiklendiği. Birimi
     # DİLİMDİR (bkz. core/metrics.py::exit_rule_of): kısmi çıkışlı pozisyon iki gruba
     # düşer, yani grupların işlem sayısı toplamı model tablosuyla eşleşmez.
-    breakdowns: ["arm", "symbol", "exit_rule"]
+    # session: işlemin AÇILDIĞI seans (UTC sabit sınırlar, core/metrics.py::_SESSIONS).
+    # Bir ÖLÇÜMDÜR, bir kural değil — hiçbir model seansa bakmaz, hiçbir sinyal bu etikete
+    # göre elenmez. Eklenme gerekçesi: "sabah iyi, öğleden sonra kötü" gözlemi tek bir günün
+    # verisiyle test edildiğinde doğrulanır gibi görünüyordu, kaynak sistemin 6 günlük
+    # defterinde ise ters çıktı ve permütasyon testinde p=0.575 (docs/decisions.md > 27).
+    # Kırılım, kararı veriye bağlamak için kanıt biriktirir; kararın kendisi burada değil.
+    # loss_streak: pozisyon AÇILIRKEN geçerli olan ardışık kayıp sayısı (kova: 0/1/2/3/4/5+).
+    # session ile aynı statüde: ÖLÇÜM, kural değil — hiçbir model kayıp serisine bakmaz.
+    # Gerekçe, "üst üste N kayıptan sonra bir süre bekle" fikrinin test edilmesi: kaynak
+    # sistemin 256 pozisyonluk defterinde kayıp kümelenmesi GERÇEK (p<0.002) ama kuralın
+    # tetiklendiği yerde ortalama PnL tabana dönüyor, yani sayaç yanlış tetikleyici
+    # (docs/decisions.md > 28). Kırılım, bunun bizim modellerimizde de böyle olup
+    # olmadığını kendi defterimizden okumak için var.
+    breakdowns: ["arm", "symbol", "exit_rule", "session", "loss_streak"]
 
 # --- Scalp katmanının model kısıtları (core/layers.py'nin değil, modellerin okuduğu blok) ---
 # İki scalp modeli de bu değerleri BİREBİR aynı okur: aralarındaki tek fark kol seçimidir.
@@ -287,9 +307,26 @@ vwap:
   # Model 14 — EV kurallarıyla koşan yarışmacı. Çarpanlar SABİT: öğrenme bu modelde yok,
   # çünkü model 14 ↔ scalp_fixed kıyasının tek değişkeni sinyal + çıkış yönetimi olmalı.
   managed:
-    atr_multiple: 5.0       # scalp kollarıyla AYNI stop ölçeği (scalp.stop_atr_multiple):
-                            # farklı olsaydı model 14 ↔ scalp_fixed farkı kısmen maliyet
-                            # ölçeği farkı olurdu (kural 14 / Rapor Kolonları).
+    # Amaç değişmedi: model 14 ↔ scalp_fixed kıyasının tek değişkeni sinyal + çıkış
+    # yönetimi olmalı, MALİYET ÖLÇEĞİ olmamalı (kural 14 / Rapor Kolonları). Değişen,
+    # o amaca hangi sayının ulaştığı.
+    #
+    # Değer 5.0 idi ve gerekçesi "scalp kollarıyla aynı ATR katı" (scalp.stop_atr_multiple)
+    # olarak yazılmıştı. Ölçüm bunun İKİ AYRI sebeple yanlış olduğunu gösterdi
+    # (scripts/measure_vwap_signal.py, 30 gün, 13 sembol — docs/decisions.md > 26):
+    #
+    #   1. 5.0'da model HİÇ sinyal üretmiyordu: 983 adayın 80'i %1 stop tabanında, 903'ü
+    #      1.5R kapısında eleniyor, geçen SIFIR. 5×ATR'lik bir stopla hedef (VWAP mesafesi)
+    #      stop'un 1.5 katına hiç ulaşamıyor. Ölçüme hiç girmeyen bir model, kıyas
+    #      hedefiyle aynı maliyet ölçeğinde de olamaz.
+    #   2. Kıyaslanabilirliği belirleyen şey ATR KATI değil, GERÇEKLEŞEN stop mesafesidir
+    #      (`avg_stop_distance_pct` — kural 14'ün bandı ve kabul çıtasının ⚠B uyarısı ona
+    #      bakar). Beş kollu modeller 5.0 ile ~%1.95 gerçekleştiriyor; model 14 ise 2.5 ile
+    #      ~%2.05. Yani aynı SAYIYI kopyalamak ölçekleri eşitlemiyordu, 2.5 eşitliyor.
+    #
+    # 2.5'te beklenen: haftada ~16.8 sinyal (30 işlemlik örneklem kapısına ~1.8 hafta),
+    # stop% ort 2.05 / medyan 1.97, R:R medyan 1.89, maliyet/R ~0.11.
+    atr_multiple: 2.5
     target_reward_risk: 2.0 # hedef PROJEKSİYONU; gerçek hedef bununla VWAP'in yakın olanı
 
   # Model 13 — dış sistem KOPYASI (is_replica). Buradaki her sayı kaynak sistemin kendi
