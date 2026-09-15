@@ -60,7 +60,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Literal, Mapping, Sequence
+from typing import Any, Callable, Iterable, Literal, Mapping, Sequence
 
 import pandas as pd
 
@@ -838,9 +838,18 @@ class Portfolio:
     # Bar işleme: likidasyon -> stop -> TP
     # ------------------------------------------------------------------ #
     def process_bar(
-        self, model: str, *, ts: pd.Timestamp, bars: Mapping[str, Bar]
+        self,
+        model: str,
+        *,
+        ts: pd.Timestamp,
+        bars: Mapping[str, Bar],
+        on_unchecked: Callable[[str], None] | None = None,
     ) -> list[Trade]:
-        """Açık pozisyonları tek bir mum boyunca ilerletir ve kapananların kaydını döndürür."""
+        """Açık pozisyonları tek bir mum boyunca ilerletir ve kapananların kaydını döndürür.
+
+        `on_unchecked`, barı olmayan her AÇIK POZİSYON için bir kez çağrılır (sembol adıyla).
+        Çağıran bunu tur raporuna sayar; bkz. aşağıdaki dal.
+        """
         account = self.account(model)
         trades: list[Trade] = []
 
@@ -849,9 +858,19 @@ class Portfolio:
             if bar is None:
                 # Sembol o tur evrende görünmüyorsa (gecikmiş/durdurulmuş) pozisyona
                 # dokunulmaz: elimizde olmayan mumla stop tetiklemek uydurma olurdu.
+                #
+                # Ama bu bar bir daha GERİ GELMEZ: `core/engine.py` `last_processed_bar`ı
+                # yine de ilerletir, yani o mumdaki stop/TP/likidasyon kontrolü kalıcı
+                # olarak yapılmamış olur. Kayıp veriden doğuyor (mum elimizde yok) ve
+                # telafi edilemez — telafi edilebilecek tek şey SESSİZLİĞİDİR. Uyarı logda
+                # kalırsa yalnızca o koşunun logunu açan görür; sayı tur raporuna düşerse
+                # `missing_bars` gibi denetlenebilir olur ve "hiç olmuyor" ile "sürekli
+                # oluyor" ayırt edilebilir (kural 15'in sebep kodu mantığı).
                 logger.warning(
                     "%s %s: %s barı yok, pozisyon bu barda kontrol edilmedi", model, position.symbol, ts
                 )
+                if on_unchecked is not None:
+                    on_unchecked(position.symbol)
                 continue
             trades.extend(self._process_position(account, position, bar=bar, ts=ts))
 

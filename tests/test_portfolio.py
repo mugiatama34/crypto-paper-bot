@@ -167,6 +167,55 @@ def test_sizing_rejects_zero_stop_distance() -> None:
         )
 
 
+def test_stop_triggers_on_the_wick_even_when_the_bar_closes_beyond_it() -> None:
+    """Stop mum içi `low`/`high` ile tetiklenir, KAPANIŞLA değil.
+
+    Kapanışa bakan bir sistem, stop'u delip geri dönen bir iğneyi görmez ve pozisyonu açık
+    tutardı — gerçek borsada ise emir çoktan dolmuştur. Senaryo bilerek "kapanış stop'un
+    güvenli tarafında" kurulur ki testin tek ayırt ettiği şey fitil olsun.
+    """
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+    )
+    # low=94 stop'u deliyor, close=99 stop'un ÜSTÜNDE.
+    trades = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 101.0, 94.0, 99.0)})
+    assert [trade.exit_reason for trade in trades] == ["stop"]
+    assert portfolio.positions("m") == ()
+
+
+def test_a_wick_that_stops_short_of_the_stop_leaves_the_position_open() -> None:
+    """Yukarıdaki testin kontrolü: fitil değmiyorsa pozisyon açık kalmalı."""
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+    )
+    trades = portfolio.process_bar("m", ts=TS, bars={SYMBOL: _bar(100.0, 101.0, 95.5, 99.0)})
+    assert trades == []
+    assert len(portfolio.positions("m")) == 1
+
+
+def test_a_position_without_a_bar_is_reported_as_unchecked() -> None:
+    """Barı olmayan pozisyon kontrol EDİLMEZ ve bu sessiz kalmaz.
+
+    Mum elimizde olmadığı için stop/TP/likidasyon kontrolü yapılamaz (uydurma olurdu) ve
+    `core/engine.py` `last_processed_bar`ı yine de ilerlettiği için o bar bir daha gelmez.
+    Telafi edilebilecek tek şey sessizliğidir: çağıran sayıyı tur raporuna yazar.
+    """
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+    )
+    seen: list[str] = []
+    trades = portfolio.process_bar("m", ts=TS, bars={}, on_unchecked=seen.append)
+    assert trades == []
+    assert seen == [SYMBOL]
+    assert len(portfolio.positions("m")) == 1, "pozisyona dokunulmamalı"
+
+
 # --------------------------------------------------------------------------- #
 # Likidasyon: stop'tan ÖNCE
 # --------------------------------------------------------------------------- #
