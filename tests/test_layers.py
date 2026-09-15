@@ -51,7 +51,7 @@ def test_scalp_layer_overrides_only_the_conditions() -> None:
     assert scalp.models == ["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"]
     assert scalp.ledger_root.name == "ledgers_scalp"
     assert scalp.metrics_path.name == "metrics_scalp.json"
-    assert scalp.breakdowns == ("arm", "symbol", "exit_rule", "session")
+    assert scalp.breakdowns == ("arm", "symbol", "exit_rule", "session", "loss_streak")
 
 
 def test_cost_and_risk_constants_are_identical_in_both_layers() -> None:

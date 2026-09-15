@@ -319,7 +319,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (saatlik; tur başına 4 bar) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
-| Kırılımlar | yok | kol + sembol + çıkış kuralı + seans |
+| Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |
 | Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) |
 
 **Neden ayrı bir `scalp_config.yaml` değil.** `risk_per_trade`, `fee_rate`, `slippage_*`,
@@ -558,6 +558,25 @@ gruplama ölçütüne göre böler ve her grup için aynı metrikleri hesaplar; 
   tersine dönmesidir (bkz. docs/decisions.md > 27). Kırılım kanıt biriktirir; bir saat
   filtresi ancak kanıt örneklem kapısını geçtiğinde ve o zaman da YENİ BİR MODEL olarak
   gelir — mevcut bir modele filtre eklemek, o modelin ölçtüğü ekseni değiştirirdi.
+- **kayıp serisi** (`loss_streak`) — pozisyon AÇILIRKEN geçerli olan ardışık kayıp sayısı;
+  kovalar `0 / 1 / 2 / 3 / 4 / 5+`. Diğer dördünden farklı olarak ölçüt tek bir satırdan
+  OKUNAMAZ: seri, satırın kendi alanlarında değil ondan önce kapanmış pozisyonların
+  SIRASINDA durur. Bu yüzden bir ön hazırlık adımı vardır
+  (`core/metrics.py::annotate_loss_streak`, `core/report.py::_BREAKDOWN_PREPARE`) ve
+  ölçüt türetilmiş bir alandan okunur — `breakdown`ın tek satırlık `key` sözleşmesi
+  bozulmaz.
+  **Kesim `opened_at`tır:** sayılan şey modelin KARAR ANINDA görebildiği seridir ve model
+  yalnızca kapanmış işlemleri görebilir (kural 16). Kesimi kapanışa taşımak, pozisyonun
+  kendi ömrü boyunca kapananları da sayardı — yani ölçüm, modelin o an sahip olmadığı bir
+  bilgiyle kurulur ve bir cooldown kuralının ölçüsü olmaktan çıkardı.
+  **Kayıp `pnl < 0` demektir; tam sıfır seriyi KIRAR** — başabaş kapanan bir işlem kayıp
+  değildir ve onu kayıp saymak serileri yapay uzatırdı, üstelik tam da breakeven stop
+  kullanan modellerde (13/14/15), yani kıyasın bir tarafında.
+  Birimi POZİSYONDUR, yani grupların `trades` toplamı model tablosuyla tutarlı kalır.
+  **Bu da bir ÖLÇÜMDÜR, bir kural DEĞİL:** hiçbir model kayıp serisine bakmaz. Gerekçe
+  "üst üste N kayıptan sonra bir süre bekle" fikrinin sınanmasıdır — kümelenme gerçek
+  çıktı ama sayaç yanlış tetikleyici olduğu için kural yazılmadı (bkz.
+  docs/decisions.md > 28).
 
 Referans çıpaları (kural 15) ve dış sistem kopyaları (kural 15b) bu iki kolonu **`nan`** alır
 ve tablonun AYRI İKİ bölümünde durur. Çıpada gerekçe hesaplanamazlıktır: stop'u olmayanın 1R'si

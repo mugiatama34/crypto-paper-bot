@@ -240,7 +240,14 @@ layers:
     # verisiyle test edildiğinde doğrulanır gibi görünüyordu, kaynak sistemin 6 günlük
     # defterinde ise ters çıktı ve permütasyon testinde p=0.575 (docs/decisions.md > 27).
     # Kırılım, kararı veriye bağlamak için kanıt biriktirir; kararın kendisi burada değil.
-    breakdowns: ["arm", "symbol", "exit_rule", "session"]
+    # loss_streak: pozisyon AÇILIRKEN geçerli olan ardışık kayıp sayısı (kova: 0/1/2/3/4/5+).
+    # session ile aynı statüde: ÖLÇÜM, kural değil — hiçbir model kayıp serisine bakmaz.
+    # Gerekçe, "üst üste N kayıptan sonra bir süre bekle" fikrinin test edilmesi: kaynak
+    # sistemin 256 pozisyonluk defterinde kayıp kümelenmesi GERÇEK (p<0.002) ama kuralın
+    # tetiklendiği yerde ortalama PnL tabana dönüyor, yani sayaç yanlış tetikleyici
+    # (docs/decisions.md > 28). Kırılım, bunun bizim modellerimizde de böyle olup
+    # olmadığını kendi defterimizden okumak için var.
+    breakdowns: ["arm", "symbol", "exit_rule", "session", "loss_streak"]
 
 # --- Scalp katmanının model kısıtları (core/layers.py'nin değil, modellerin okuduğu blok) ---
 # İki scalp modeli de bu değerleri BİREBİR aynı okur: aralarındaki tek fark kol seçimidir.

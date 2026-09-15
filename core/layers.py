@@ -55,7 +55,7 @@ _REQUIRED_RETENTION: tuple[str, ...] = ("equity_compaction_days", "model_trade_l
 # yerlerde durur çünkü biri KATMAN ayarını doğrular (config okunurken, tur başlamadan),
 # diğeri kırılımı ÜRETİR (rapor yazılırken). Buradaki kapı olmadan yazım hatası bir tur
 # koştuktan sonra rapor aşamasında patlardı.
-VALID_BREAKDOWNS: tuple[str, ...] = ("arm", "symbol", "exit_rule", "session")
+VALID_BREAKDOWNS: tuple[str, ...] = ("arm", "symbol", "exit_rule", "session", "loss_streak")
 
 
 @dataclass(frozen=True, kw_only=True)

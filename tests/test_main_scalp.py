@@ -135,7 +135,7 @@ def test_scalp_payload_carries_the_layer_breakdowns(sandbox: Sandbox) -> None:
 
     breakdowns = sandbox.metrics()["breakdowns"]
 
-    assert set(breakdowns) == {"arm", "symbol", "exit_rule", "session"}
+    assert set(breakdowns) == {"arm", "symbol", "exit_rule", "session", "loss_streak"}
     assert set(breakdowns["arm"]) == set(["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"])
 
 

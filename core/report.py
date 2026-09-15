@@ -32,9 +32,11 @@ from core.ledger import Ledger
 from core.metrics import (
     ModelMetrics,
     acceptance_flags,
+    annotate_loss_streak,
     arm_of,
     breakdown,
     exit_rule_of,
+    loss_streak_of,
     pooled_direction_stats,
     return_correlation,
     session_of,
@@ -134,6 +136,16 @@ _BREAKDOWN_KEYS: Mapping[str, Any] = {
     "symbol": symbol_of,
     "exit_rule": exit_rule_of,
     "session": session_of,
+    "loss_streak": loss_streak_of,
+}
+
+# Anahtarı tek satırdan okunamayan kırılımlar için ÖN HAZIRLIK. Kol, sembol, seans ve
+# çıkış kuralı satırın kendi alanlarından türer; kayıp serisi ise satırın kendisinde
+# DEĞİL, ondan önce kapanmış pozisyonların sırasında durur. Hazırlık adımı bu ölçütü
+# türetilmiş bir alana yazar, anahtar da onu okur — `breakdown`ın tek satırlık `key`
+# sözleşmesi bozulmadan kalır.
+_BREAKDOWN_PREPARE: Mapping[str, Any] = {
+    "loss_streak": annotate_loss_streak,
 }
 
 
@@ -157,10 +169,13 @@ def model_breakdowns(
         key = _BREAKDOWN_KEYS.get(kind)
         if key is None:
             raise ValueError(f"bilinmeyen kırılım: {kind!r} (geçerli: {sorted(_BREAKDOWN_KEYS)})")
+        prepare = _BREAKDOWN_PREPARE.get(kind)
         result[kind] = {
             model: {
                 group: asdict(stats)
-                for group, stats in breakdown(rows, key=key).items()
+                for group, stats in breakdown(
+                    prepare(rows) if prepare is not None else rows, key=key
+                ).items()
             }
             for model, rows in trades.items()
         }

@@ -2258,3 +2258,122 @@ sorusunu cevaplanamaz kılar.
 Filtrenin şekli de muhtemelen saat olmayacak: veri rejimi işaret ediyor (iki yönün birden
 kaybetmesi). Volatilite/yönsüzlük kapısı hem daha genel hem de zaman diliminden bağımsızdır;
 saat onun zayıf bir vekilidir.
+
+## 28. Kayıp serisi kırılımı: kümelenme GERÇEK, ama sayaç yanlış tetikleyici
+
+Bir kural istendi: *"üst üste 5 kere işlem kayıpla kapanırsa bir süre bekle — belli ki
+işlem açmak için doğru zaman değil."* Karar 27'nin aynı yolu izlendi: önce test, sonra
+kural. Bu sefer sonuç ikiye bölündü — **öncül doğru çıktı, mekanizma yanlış.**
+
+### Kümelenme gerçek ve anlamlı
+
+Kaynak sistemin (`klonnist/Hasanwavebot`) 256 pozisyonluk 6 günlük defterinde, ardışık k
+kayıptan sonraki işlemin kayıpla kapanma olasılığı:
+
+| k | örneklem | P(kayıp) | taban | p (permütasyon, 20.000) |
+|---|---|---|---|---|
+| 1 | 153 | 0.673 | 0.598 | **0.0011** |
+| 2 | 103 | 0.709 | 0.598 | **0.0013** |
+| 3 | 73 | 0.753 | 0.598 | **0.0006** |
+| 5 | 41 | 0.732 | 0.598 | 0.052 |
+
+Sonuç dizisi rastgele karıştırıldığında bu yükselme binde bir çıkıyor. Kayıp serisi
+uzunluk dağılımı da destekliyor: **14 ardışık kayıp** var; bağımsızlık altında bu
+uzunlukta bir seri beklenenden ~12 kat fazla. Karar 27'nin saat hipotezinin aksine burada
+gerçek bir yapı var — ve piyasada volatilite kümelenmesi zaten en sağlam ampirik
+olgulardan biridir.
+
+### Ama sayaç, beklenen değerin toparlandığı yerde ateşliyor
+
+Aynı defterde ardışık k kayıptan sonraki işlemin **ortalama PnL'i**:
+
+| k | örneklem | ort. PnL | genel ortalama |
+|---|---|---|---|
+| 0 | 256 | 8.42 | 8.42 |
+| 1 | 153 | 1.96 | 8.42 |
+| 2 | 103 | 3.55 | 8.42 |
+| 3 | 73 | 2.42 | 8.42 |
+| **4** | 55 | **8.89** | 8.42 |
+| **5** | 41 | **9.08** | 8.42 |
+
+Kayıp OLASILIĞI k ile artıyor ama ortalama PnL k=4'te tabana DÖNÜYOR: seri uzadıkça
+kayıplar sıklaşıyor, buna karşılık gelen kazançlar da büyüyor ve dengeliyor. İstenen eşik
+(5) tam olarak beklenen değerin normale döndüğü noktada duruyor — yani kural, elemek
+istediği kötü işlemleri değil ortalama kaliteli işlemleri elerdi.
+
+### Kuralın birebir simülasyonu: parametre yüzeyi gürültü
+
+12 kombinasyon (tetik 3/4/5/6 × bekleme 1/2/4 saat), maliyetsiz taban 8.42/işlem:
+
+| | 1 saat | 2 saat | 4 saat |
+|---|---|---|---|
+| 3 kayıp | 9.18 | 8.01 | 4.80 |
+| 4 kayıp | 7.02 | 4.30 | 7.06 |
+| 5 kayıp | 7.90 | 6.32 | 10.42 |
+| 6 kayıp | 7.27 | 8.43 | 10.67 |
+
+3'ü tabanı geçiyor, 9'u geçmiyor ve komşu parametreler zıt sonuç veriyor — bir etkinin
+değil, gürültünün imzası. Kesin test: **en iyi** kombinasyonun taban üzeri kazancı
+(+2.24 USDT/işlem), kümelenmesi yok edilmiş (karıştırılmış) dizide de **p=0.48**
+olasılıkla çıkıyor; bizim maliyetimizle p=0.33. Yani 12 seçenek arasından en iyisini
+seçmek, hiçbir yapı olmasa bile bu kadar "iyi" bir sonuç üretiyor.
+
+**Bir tuzak daha:** bizim maliyetimizle (karar 25) sistem zaten −2.08/işlem. Daha az işlem
+yapan HER kural toplam PnL'i mekanik olarak iyileştirir. O yüzden karar ölçütü toplam değil
+**işlem başına ortalama** olmalıdır; toplam bakılsaydı `(6 kayıp, 4 saat)` "işe yarıyor"
+görünürdü.
+
+### Bu yüzden eklenen şey yine kırılım
+
+`loss_streak` kırılımı pozisyonun AÇILDIĞI andaki ardışık kayıp sayısını kova bazında
+(`0/1/2/3/4/5+`) biriktirir. Hiçbir modelin davranışına dokunmaz.
+
+**Mimari fark:** kol, sembol, seans ve çıkış kuralı satırın kendi alanlarından türer; kayıp
+serisi ise satırın kendisinde DEĞİL, ondan önce kapanmış pozisyonların sırasındadır. Bu
+yüzden `core/report.py`ye bir ÖN HAZIRLIK kancası eklendi (`_BREAKDOWN_PREPARE`) ve
+`core/metrics.py::annotate_loss_streak` ölçütü türetilmiş bir alana yazıyor. Alternatif,
+`breakdown`ın tek satırlık `key` sözleşmesini bozmaktı — o sözleşme diğer dört kırılımın
+sadeliğini taşıyor ve tek bir istisna için gevşetilmedi.
+
+**Kesim `opened_at`tır, `closed_at` değil.** Sayılan şey modelin KARAR ANINDA görebildiği
+seridir; model yalnızca kapanmış işlemleri görebilir (kural 16). Kesimi kapanışa taşımak,
+pozisyonun kendi ömrü boyunca kapanan işlemleri de sayıya katardı — ölçüm, modelin o an
+sahip olmadığı bir bilgiyle kurulmuş olurdu ve bir cooldown kuralının ölçüsü olmaktan
+çıkardı.
+
+**Kayıp `pnl < 0`dır; tam sıfır seriyi kırar.** Breakeven stop'la kapanan bir işlem kayıp
+değildir; kayıp saymak serileri yapay uzatırdı ve bunu tam da üç aşamalı çıkış yönetimi
+kullanan modellerde (13/14/15) yapardı — yani kıyasın bir tarafında.
+
+### İlk okuma (küçük örneklem, yorumlanmadan önce beklenmeli)
+
+Mevcut defterlerimizde kovalar şöyle dolmuş (scalp katmanı, ~1 günlük veri):
+
+| model | 0 | 1 | 2 | 3 | 4 | 5+ |
+|---|---|---|---|---|---|---|
+| `vwap_clone` (ort. R) | −0.29 | −0.52 | −0.86 | −0.79 | −1.07 | **−1.46** |
+| n | 17 | 18 | 12 | 6 | 6 | 21 |
+
+Kopyada bozulma **monoton** görünüyor ve kaynağın verisindeki "k=4'te toparlanma"
+görülmüyor. İki fark bunu açıklayabilir: (a) bizim maliyet varsayımımız her işleme sabit
+bir yük bindiriyor ve seri uzadıkça bileşikleniyor; (b) örneklem tek bir güne ait ve
+n kovalarda 6'ya kadar düşüyor. Üç beş kollu modelde ise eğilim ters yönde — ama n=15–19
+ile hiçbir şey söylenemez.
+
+### Karar kapısı
+
+Bir cooldown kuralı ancak şu üçü birlikte sağlandığında gündeme gelir: kova başına
+**≥30 pozisyon**, **≥10 ayrı gün**, ve **ortalama R'nin k ile monoton düşmesi** (yalnızca
+kazanma oranının düşmesi yetmez — kaynağın verisi tam olarak o ayrımda kuralı çürüttü).
+
+Sağlanırsa uygulama yolu yine **yeni bir model**: `vwap_managed` (filtresiz) ↔
+`vwap_cooldown` (filtreli), parametreler bu veriden TARANMADAN, önceden sabitlenmiş
+olarak. Mimari yüzey hazır — kural 16'nın `observe_closed_trades` kancası modelin kendi
+kapanmış işlemlerini okumasına zaten izin veriyor, yani bir kayıp serisi sayacı meşru bir
+yerde durur.
+
+**Yapılamayacak olan:** "işlem BÜYÜKLÜĞÜNÜ düşür" kısmı bu mimaride modele kapalıdır.
+Boyutlandırma `core/portfolio.py`nin tekelindedir (kural 3/11) ve `risk_per_trade` tüm
+modeller için tek sabittir (kural 6); bir model kendi riskini oynatırsa ortak 1R birimi
+kaybolur ve modeller aynı ölçekte yarışmaz. **İşlem açmamak** serbesttir — model yalnızca
+sinyal üretmez.
