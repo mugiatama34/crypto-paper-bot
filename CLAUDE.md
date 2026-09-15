@@ -74,7 +74,7 @@ yapar.
 | `leverage_cap` | `5` | İzin verilen azami kaldıraç. Hiçbir koşulda aşılmaz. |
 | `max_positions` | `5` | Bir stratejinin aynı anda taşıyabileceği toplam pozisyon sayısı. |
 | `max_short_positions` | `3` | Bunların en fazla kaçının short olabileceği. |
-| `fee_rate` | `0.001` | Tek yön komisyon oranı; giriş ve çıkışta ayrı ayrı uygulanır. |
+| `fee_rate` | `0.00055` | Tek yön komisyon oranı; giriş ve çıkışta ayrı ayrı uygulanır. **İşlem yapılan borsanın** (Bybit) standart kademe **taker** oranıdır — veri çekilen borsanın (OKX) değil: maliyeti ödeyen taraf hesabın tutulduğu yerdir. Modeller `entry_type="market"` ile girip çıktığı için iki bacak da taker. |
 | `slippage_base` | `0.0005` | Yönden bağımsız olarak **her** dolumda (long/short giriş, çıkış, TP) uygulanan temel kayma. |
 | `slippage_short_stop` | `0.0015` | Short pozisyonların stop dolumunda `slippage_base` yerine geçen kayma (short stop'lar yukarı boşluklarda daha kötü dolar). |
 | `max_stop_atr_multiple` | `3.0` | Stop mesafesi tavanı: stop mesafesi ATR'nin 3 katını aşan sinyal açılmaz, işlem atlanır (kural 14). |

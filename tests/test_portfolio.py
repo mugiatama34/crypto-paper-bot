@@ -613,7 +613,12 @@ def test_notional_fraction_pays_the_same_fees_as_everyone() -> None:
     position = _open_benchmark(portfolio).position
     assert position is not None
     assert position.entry_price == pytest.approx(100.0 * 1.0005)  # kayma aleyhte
-    assert position.entry_fee == pytest.approx(0.001 * position.qty * position.entry_price)
+    # Oran config'ten okunur, buraya sabit YAZILMAZ: testin iddiası "referans model de
+    # herkesle aynı oranı öder", "oran şu sayıdır" değil. Sabit yazmak, komisyon oranı
+    # her değiştiğinde ilgisiz bir testi kırar ve asıl iddiayı gizlerdi.
+    assert position.entry_fee == pytest.approx(
+        portfolio.fee_rate * position.qty * position.entry_price
+    )
 
 
 # --------------------------------------------------------------------------- #

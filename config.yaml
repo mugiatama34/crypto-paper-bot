@@ -10,9 +10,16 @@ max_positions: 5            # bir stratejinin eşzamanlı toplam pozisyon sayıs
 max_short_positions: 3      # bunların en fazla kaçı short olabilir
 
 # --- Maliyetler ---
-# fee_rate OKX taker oranıdır: modeller piyasa emriyle (entry_type="market") giriyor,
-# maker oranı kullanmak hiç gerçekleşmeyen bir dolumu varsayıp sonuçları optimist gösterir.
-fee_rate: 0.001             # tek yön komisyon; giriş ve çıkışta ayrı ayrı uygulanır
+# fee_rate, ölçümün İŞLEM YAPILAN borsasının taker oranıdır — veri çekilen borsanın değil.
+# Veri OKX'ten gelir (bkz. exchange.*) çünkü orada evrenin tamamı tek kaynaktan ve aynı bar
+# çapasıyla okunabiliyor; ama defterin simüle ettiği hesap Bybit'te tutuluyor ve maliyeti
+# ödeyen taraf orası. İkisini karıştırmak, hiç ödenmeyen bir komisyonu ölçüme sokardı.
+#
+# Bybit USDT perpetual, standart (VIP0) kademe: maker %0.02, taker %0.055. Buradaki değer
+# TAKER'dır: modeller piyasa emriyle (entry_type="market") giriyor ve çıkıyor, yani her iki
+# bacak da taker. Maker oranı kullanmak hiç gerçekleşmeyen bir dolumu varsayıp sonuçları
+# optimist gösterirdi.
+fee_rate: 0.00055           # tek yön komisyon; giriş ve çıkışta ayrı ayrı uygulanır
 # slippage_base adı "slippage_long" değildir: bu oran yöne bakmaksızın HER dolumda
 # (long/short giriş, çıkış, TP) uygulanan temel kaymadır. Tek istisna short stop
 # dolumudur; orada slippage_short_stop devreye girer. Eski ad, short girişlerin

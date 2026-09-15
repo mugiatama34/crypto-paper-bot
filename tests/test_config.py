@@ -26,7 +26,7 @@ def test_repository_config_matches_claude_md_values() -> None:
     assert config["leverage_cap"] == 5
     assert config["max_positions"] == 5
     assert config["max_short_positions"] == 3
-    assert config["fee_rate"] == 0.001
+    assert config["fee_rate"] == 0.00055
     assert config["slippage_base"] == 0.0005
     assert config["slippage_short_stop"] == 0.0015
     assert config["maintenance_margin"] == 0.005

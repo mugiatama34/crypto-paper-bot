@@ -2028,3 +2028,68 @@ yukarıdaki ilk iki paragraftır ve tek başına yeterlidir.
 
 Regresyon kapısı `tests/test_layers.py::test_scalp_universe_is_fixed_and_complete`
 içindedir: sembol listeye geri eklenirse test düşer.
+
+## 25. `fee_rate` Bybit taker oranına çekildi: 0.001 -> 0.00055
+
+Komisyon oranı `0.001` idi ve config yorumu onu "OKX taker oranı" diye tanımlıyordu. İki
+ayrı hata vardı.
+
+**1. Yanlış borsa.** Veri OKX'ten çekiliyor (`exchange.*`) çünkü evrenin tamamı orada tek
+kaynaktan ve aynı bar çapasıyla okunabiliyor. Ama defterin simüle ettiği hesap **Bybit'te**
+tutuluyor; komisyonu ödeyen taraf orası. Veri kaynağının oranını maliyet olarak yazmak, hiç
+ödenmeyen bir komisyonu ölçüme sokmak demekti. `fee_rate` bundan sonra **işlem yapılan**
+borsanın oranıdır, veri çekilenin değil — ikisi ayrışabilir ve ayrıştığında maliyet tarafı
+kazanır.
+
+**2. Yanlış değer.** Bybit USDT perpetual, standart (VIP0) kademe: maker %0.02, **taker
+%0.055**. Modeller `entry_type="market"` ile girip çıktığı için iki bacak da taker, yani
+doğru değer `0.00055`. Eski `0.001` bunun neredeyse iki katıydı.
+
+### Neden bu tek satır ölçümün işaretini belirliyor
+
+Kararı tetikleyen şey model 13'ün (`vwap_clone`) kaynak sistemle karşılaştırılmasıydı.
+Kaynak (`klonnist/Hasanwavebot`) komisyon ve kayma **hiç** uygulamıyor — yalnızca funding
+modelliyor — ve 6 günde 256 pozisyonda +2156 USDT (+%21.5) üretmiş. Ham edge'i işlem başına
+**+8.42 USDT**. Bizim o güne kadar tahsil ettiğimiz sürtünme ise işlem başına **15.00 USDT**
+(5000 notional, giriş+çıkış). Yani kaynağın edge'i, bizim maliyet varsayımımızdan küçüktü.
+
+Aynı 256 pozisyona farklı maliyet varsayımları uygulandığında:
+
+| Senaryo | $/işlem | Net PnL | Getiri |
+|---|---|---|---|
+| eski config (fee .001 + kayma .0005) | 15.00 | −1684 | −%16.8 |
+| **yeni (fee .00055 + kayma .0005)** | **10.50** | **−532** | **−%5.3** |
+| fee .00055 + kayma .0002 | 7.50 | +236 | +%2.4 |
+| maliyet yok (kaynağın varsayımı) | 0.00 | +2156 | +%21.6 |
+
+Sistem bu bandın içinde işaret değiştiriyor. "Bu strateji kârlı mı" sorusunun cevabı, büyük
+ölçüde maliyet sabitini doğru koymaya bağlı — ve yanlış bir sabitle ay boyu veri biriktirip
+sonra hepsini çöpe atmak, düzeltmeyi geciktirmenin bedeli olurdu.
+
+**Değişmeyen: `slippage_base` ve `slippage_short_stop`.** Kayma bir borsa tarifesi değil,
+kitap derinliği ve emir tipiyle ilgili ayrı bir varsayımdır; komisyon oranının yanlış olması
+onun hakkında hiçbir şey söylemiyor. Ayrı bir kanıtla ayrı bir kararda ele alınır.
+
+### Defterde iki maliyet rejimi oluşuyor — ve defter SİLİNMEDİ
+
+Bu değişiklik geriye dönük uygulanamaz: `trades.csv` append-only bir denetim izidir ve bir
+işlem satırı hiçbir gerekçeyle değişmez veya silinmez (CLAUDE.md > `core/ledger.py`). Yani
+scalp defterinin 14-15 Eylül arası kısmı `0.001` ile, sonrası `0.00055` ile yazılmış olacak
+ve iki dönemin `cost_per_r` değerleri doğrudan kıyaslanamaz.
+
+Defteri sıfırlamak da düşünüldü ve **yapılmadı**: silmek, kuralın tek istisnasını açmak ve
+gerçekten olmuş 80 pozisyonun kaydını yok etmek olurdu. Bunun yerine kırılma noktası burada
+yazılıdır. Kırılmanın kendisi zaten okunabilir — `cost_per_r` kolonu iki dönemde belirgin
+biçimde ayrışacak — ve ayrıştığında sebebi aranacak yer bu kayıttır.
+
+**Katman içi kıyasa etkisi yok:** oran tek sabittir ve her model için birebir aynı anda
+değişti (kural 6). Bozulan şey modeller ARASI kıyas değil, aynı modelin ESKİ ve YENİ dönemi
+arasındaki kıyastır.
+
+### Testler
+
+`tests/test_config.py::test_repository_config_matches_claude_md_values` yeni değeri bekliyor.
+`tests/test_portfolio.py::test_notional_fraction_pays_the_same_fees_as_everyone` oranı artık
+`portfolio.fee_rate`ten okuyor, sabit yazmıyor: testin iddiası "referans model de herkesle
+aynı ORANI öder", "oran şu sayıdır" değil — sabit yazmak, oran her değiştiğinde ilgisiz bir
+testi kırıp asıl iddiayı gizlerdi.
