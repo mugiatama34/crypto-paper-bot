@@ -2093,3 +2093,81 @@ arasındaki kıyastır.
 `portfolio.fee_rate`ten okuyor, sabit yazmıyor: testin iddiası "referans model de herkesle
 aynı ORANI öder", "oran şu sayıdır" değil — sabit yazmak, oran her değiştiğinde ilgisiz bir
 testi kırıp asıl iddiayı gizlerdi.
+
+## 26. Model 14'ün stop ölçeği kalibre edildi: `vwap.managed.atr_multiple` 5.0 -> 2.5
+
+Model 14 (`vwap_managed`) canlıya alındığından beri **hiç sinyal üretmemişti** — 15 Eylül
+itibarıyla arka arkaya 24 turun hepsinde `sinyal=0`, defteri boş, hesabı 10.000.00'da.
+Turun logu her seferinde aynı şeyi diyordu:
+
+```
+vwap_managed vwap_revert bandı=2.00σ -> 13 sembol; bant_ici=13;
+en uzak sapma: BTC-USDT-SWAP 1.39σ
+```
+
+Bu satır suçluyu **bandı** gösteriyor gibi duruyordu. Ölçüm (`scripts/measure_vwap_signal.py`,
+30 gün, 13 sembol) suçlunun band olmadığını gösterdi.
+
+### Ölçümün söylediği
+
+`band_mult=2.0` sabitken, `atr_multiple` süpürmesi:
+
+| atr_x | aday | stop tabanı eledi | 1.5R kapısı eledi | GEÇEN | sinyal/hafta | stop% ort | 30 işleme |
+|---|---|---|---|---|---|---|---|
+| 1.5 | 983 | 620 | 159 | 204 | 30.8 | 1.48 | 1.0 hafta |
+| 2.0 | 983 | 425 | 371 | 187 | 25.7 | 1.65 | 1.2 hafta |
+| **2.5** | 983 | 307 | 548 | **128** | **16.8** | **2.05** | **1.8 hafta** |
+| 3.0 | 983 | 225 | 672 | 86 | 11.2 | 2.52 | 2.7 hafta |
+| 4.0 | 983 | 138 | 825 | 20 | 3.0 | 3.44 | 9.9 hafta |
+| **5.0 (eski)** | 983 | 80 | 903 | **0** | **0.0** | — | ∞ |
+
+Band 30 günde 983 aday üretiyor — yani band çalışıyor, sadece seyrek. Adayları öldüren
+**1.5R kapısı**: 5×ATR'lik bir stopla hedef (VWAP mesafesi) stop'un 1.5 katına hiç
+ulaşamıyor, 983 adayın 903'ü orada eleniyor ve kalan 80'i de %1 stop tabanı alıyor.
+
+Band'ı düşürmek bunu çözmüyor: `atr_multiple=5` sabitken band 2.0'dan 0.5'e indirildiğinde
+aday sayısı 983'ten 12.864'e çıkıyor ama **GEÇEN yine 32'de takılıyor** — çünkü bağlayıcı
+kısıt band değil, stop ölçeği.
+
+### Neden 5.0 baştan yanlış gerekçelendirilmişti
+
+Config yorumu değeri "scalp kollarıyla AYNI stop ölçeği (`scalp.stop_atr_multiple`)" diye
+savunuyordu. Amaç doğruydu — model 14 ↔ `scalp_fixed` kıyasının tek değişkeni sinyal + çıkış
+yönetimi olmalı, maliyet ölçeği olmamalı (kural 14) — ama araç yanlıştı:
+
+**Kıyaslanabilirliği belirleyen şey ATR KATI değil, GERÇEKLEŞEN stop mesafesidir.** Kural
+14'ün bandı da, kabul çıtasının ⚠B uyarısı da `avg_stop_distance_pct`e bakar, config'teki
+çarpana değil. Beş kollu modeller `stop_atr_multiple=5.0` ile defterde ~**%1.95** stop
+mesafesi gerçekleştiriyor; model 14 ise `atr_multiple=2.5` ile ~**%2.05**. Yani aynı sayıyı
+kopyalamak ölçekleri eşitlemiyordu; 2.5 eşitliyor.
+
+İki modelin ATR tabanının neden farklı ölçekte oturduğu ayrı bir soru (kolların yapısal
+seviyeleri ve %1 tabanı stop'u ayrıca biçimlendiriyor) ve bu karar ona dayanmıyor: dayandığı
+şey defterde ÖLÇÜLEN mesafe.
+
+### Neden 2.5, 1.5 veya 2.0 değil
+
+Üçü de kural 14'ün bandında ve üçü de kabul çıtasının ⚠B penceresinde kalıyor (yarışmacı
+medyanı ~%1.95, band `medyan/√2.5 .. medyan×√2.5` = %1.23–%3.08). Ayrım kıyas hedefinden
+geliyor: **2.5, `scalp_fixed`in gerçekleşen stop mesafesine en yakın olanı** (%2.05 ↔ %1.95,
+oran 1.05). 1.5 ve 2.0 daha çok sinyal üretirdi (30.8 ve 25.7/hafta) ama stop ölçeğini kıyas
+hedefinden uzaklaştırırdı (%1.48 ve %1.65) — yani örneklem kapısını daha hızlı geçmek için
+tam da ölçmek istediğimiz farkı kirletmek olurdu.
+
+Bedeli örneklem hızıdır: 30 işlemlik kapıya 1.0 hafta yerine ~1.8 hafta. Kabul edilebilir,
+çünkü kapının amacı gürültüyü elemek ve daha hızlı doldurulmuş bir kapı daha iyi bir kapı
+değildir.
+
+### Sinyal + maliyet beklentisi
+
+2.5'te: haftada ~16.8 sinyal, stop% ort 2.05 / medyan 1.97, R:R medyan 1.89, ve maliyet/R
+≈ **0.11R** (karar 25'in yeni `fee_rate`i ile). Kıyas için: model 13'ün (`vwap_clone`)
+gerçekleşen maliyet/R'si **0.87R** — çünkü sabit 5.000 notional'ı ~%0.48'lik bir stopla
+taşıyor. Ev kurallarının (%1 stop tabanı) ne işe yaradığı tam olarak burada görünüyor.
+
+### Değişmeyen
+
+`band_mult` 2.0'da kaldı: ölçüm onun bağlayıcı kısıt olmadığını gösterdi, ve dokunmamak
+model 14'ün sinyal tanımını olduğu gibi bırakıyor. `target_reward_risk` 2.0'da kaldı.
+Model 13'ün `vwap.clone.*` bloğu bu karardan hiç etkilenmiyor — kopya kendi kurallarını
+okur (karar 23) ve yarışmacı değildir.

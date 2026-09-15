@@ -574,9 +574,26 @@ def test_managed_tags_the_arm(config: dict[str, Any]) -> None:
     assert parse_tag(signal.reason, "arm") == vwap_signal.ARM_NAME
 
 
-def test_managed_uses_the_same_stop_scale_as_the_scalp_arms(config: dict[str, Any]) -> None:
-    """Maliyet ölçeği eşit olmazsa 14 ↔ scalp_fixed farkı kısmen maliyet farkı olurdu."""
-    assert config["vwap"]["managed"]["atr_multiple"] == config["scalp"]["stop_atr_multiple"]
+def test_managed_stop_scale_stays_in_the_comparability_band(config: dict[str, Any]) -> None:
+    """Model 14'ün stop ölçeği kural 14'ün kıyaslanabilirlik bandında (1×–2.5× ATR) kalmalı.
+
+    Bu test bir zamanlar `atr_multiple == scalp.stop_atr_multiple` diye yazılıydı: amaç
+    doğruydu (maliyet ölçeği eşit olmazsa 14 ↔ scalp_fixed farkı kısmen maliyet farkı olur)
+    ama araç yanlıştı ve iddiayı TERSİNE çeviriyordu — 5.0'ı, yani modelin hiç sinyal
+    üretemediği değeri, "doğru" sayıp koruyordu (docs/decisions.md > 26).
+
+    İki sebeple: (a) kıyaslanabilirliği belirleyen şey config'teki ATR KATI değil defterde
+    GERÇEKLEŞEN stop mesafesidir (`avg_stop_distance_pct`; kural 14'ün bandı ve kabul
+    çıtasının ⚠B uyarısı ona bakar) ve iki modelin ATR tabanı aynı katta aynı mesafeyi
+    vermiyor; (b) iki sayının eşitliği, ikisi de ölçüme hiç girmese bile sağlanır — oysa
+    hiç işlem açmayan bir model kıyas hedefiyle aynı ölçekte de olamaz.
+
+    Bir birim testi gerçekleşen mesafeyi ölçemez (piyasa verisi ister); ölçebileceği şey
+    değerin kural 14'ün yazılı bandında durduğudur. Bu band 5.0'ı reddeder.
+    """
+    atr_multiple = config["vwap"]["managed"]["atr_multiple"]
+    assert 1.0 <= atr_multiple <= 2.5, "kural 14: stop mesafeleri 1×–2.5× ATR bandında tutulur"
+    assert atr_multiple < config["max_stop_atr_multiple"], "katmanın stop tavanının altında"
 
 
 def test_no_setup_means_no_signal(config: dict[str, Any]) -> None:
