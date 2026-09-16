@@ -58,7 +58,7 @@ import logging
 import subprocess
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -74,6 +74,7 @@ from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 from core.metrics import ModelMetrics, compare, format_report  # noqa: E402
 from core.portfolio import Portfolio  # noqa: E402
+from core.report import model_breakdowns  # noqa: E402
 from main import build_strategies  # noqa: E402
 from strategies.base import Strategy  # noqa: E402
 
@@ -110,6 +111,11 @@ class BacktestResult:
     report: RoundReport
     metrics: tuple[ModelMetrics, ...]
     build_failures: Mapping[str, str]
+    # Katmanın kendi kırılımları (`layers.<ad>.breakdowns`). Tablo "hangi model önde" der;
+    # kırılım "neden" der — ve bir backtest'in cevaplaması istenen soru tam olarak odur.
+    # Tabloyu görüp kırılımı görmemek, ortalama R'nin ARDINDAKİ mekanizmayı (hangi çıkış
+    # kuralı kaç kez tetikledi, hangi kol/sembol taşıdı) çıkarıma bırakırdı.
+    breakdowns: Mapping[str, Any] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -198,9 +204,16 @@ def run_backtest(
         build_failures=build_failures,
         signals_per_bar_was=signals_per_bar_was,
     )
+    # Kırılımlar `core/report.py`den OKUNUR, burada yeniden yazılmaz: kırılımın tanımı
+    # (kol etiketi, çıkış kuralı birleşimi, seans sınırları, kayıp serisi kesimi) ölçümün
+    # parçasıdır ve ikinci bir kopya, backtest ile dashboard'un sessizce ayrışması demekti.
+    trades = {s.name: ledger.read_trades(s.name) for s in strategies}
+    breakdowns = model_breakdowns(trades, kinds=layer.breakdowns)
+
     return BacktestResult(
         layer=layer.name, start=start, end=market.as_of, out_dir=out_dir,
         report=report, metrics=tuple(metrics), build_failures=build_failures,
+        breakdowns=breakdowns,
     )
 
 
@@ -409,6 +422,57 @@ def compare_signals(
     return result
 
 
+def format_breakdowns(breakdowns: Mapping[str, Any]) -> str:
+    """Katmanın kırılımlarını okunur bir tabloya çevirir.
+
+    Sayıları `core/metrics.py` üretir; buradaki iş yalnızca BİÇİMLENDİRMEDİR. Kırılımın
+    kendi tanımına (grup ölçütü, birim) dokunulmaz — ona dokunmak, aynı defterin backtest
+    ile dashboard'da iki farklı kırılım göstermesi demekti.
+
+    `exit_rule` kırılımının birimi DİLİMDİR (kural 13c), diğerlerininki pozisyon; bu yüzden
+    o bölümün `n` toplamı model tablosundan büyük olabilir ve satır bunu SÖYLER.
+    """
+    if not breakdowns:
+        return ""
+    out: list[str] = []
+    for kind, per_model in breakdowns.items():
+        unit = "dilim" if kind == "exit_rule" else "pozisyon"
+        out.append(f"\nKIRILIM: {kind}  (birim: {unit})")
+        out.append("-" * 104)
+        out.append(
+            f"{'model':16s}{'grup':26s}{'n':>6}{'ort.R':>9}{'kazanç%':>10}"
+            f"{'ortKaz.R':>10}{'ortKay.R':>10}{'PF':>8}{'topl.R':>10}"
+        )
+        for model, groups in per_model.items():
+            if not groups:
+                continue
+            for group, stats in sorted(
+                groups.items(), key=lambda kv: -(kv[1].get("trades") or 0)
+            ):
+                out.append(
+                    f"{model:16s}{str(group):26s}"
+                    f"{stats.get('trades') or 0:6d}"
+                    f"{_cell(stats.get('avg_r')):>9}"
+                    f"{_cell(stats.get('win_rate')):>10}"
+                    f"{_cell(stats.get('avg_win_r')):>10}"
+                    f"{_cell(stats.get('avg_loss_r')):>10}"
+                    f"{_cell(stats.get('profit_factor')):>8}"
+                    f"{_cell(stats.get('total_r')):>10}"
+                )
+    return "\n".join(out) + "\n"
+
+
+def _cell(value: Any) -> str:
+    """Tanımsız metrik `—` olur, `0` DEĞİL (docs/shared.js ile aynı söz)."""
+    if value is None:
+        return "—"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return "—" if number != number else f"{number:.2f}"
+
+
 def _git_log_shas(path: str) -> list[str]:
     result = subprocess.run(
         ["git", "log", "--format=%H", "--", path], capture_output=True, text=True
@@ -462,6 +526,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     print(format_report(list(result.metrics)))
+    print(format_breakdowns(result.breakdowns))
 
     violations = check_validity(result.report)
     if violations:
