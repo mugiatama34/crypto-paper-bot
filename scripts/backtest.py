@@ -302,11 +302,27 @@ class SignalKey:
     direction: str
 
 
+def bar_key(value: Any) -> str:
+    """Barın karşılaştırmada kullanılan TEK metin biçimi: UTC ISO-8601.
+
+    İki taraf aynı anı iki farklı biçimde yazdığı an kapı anlamını yitirir — ve sessizce
+    yitirir: `str(pd.Timestamp)` `"... 15:15:00+00:00"`, `isoformat()` ise
+    `"...T15:15:00+00:00"` üretir, yani birebir aynı sinyal kümesi sıfır kesişimle
+    "AYRIŞTI" görünür. Kapı 0'ın işi harness'ı denetlemek; kendi biçimlendirme farkını
+    bir sadakat hatası diye raporlaması, denetimin kendisini bozar.
+
+    Ayrıştırılamayan bir değer ATILMAZ, ham metniyle durur: düşürmek o sinyali
+    karşılaştırmadan sessizce çıkarır ve eksik bir küme eşleşme gibi görünebilirdi.
+    """
+    stamp = _stamp(value)
+    return stamp.isoformat() if stamp is not None else str(value)
+
+
 def emitted_keys(report: RoundReport) -> set[SignalKey]:
     return {
         SignalKey(
             model=model.model,
-            bar=str(signal.bar),
+            bar=bar_key(signal.bar),
             symbol=str(signal.symbol),
             direction=str(signal.direction),
         )
@@ -325,8 +341,7 @@ def live_emitted_keys(
     ve orası zaten değiştirilemez bir kayıttır, tam da bir yer gerçeğinden istenen şey.
     """
     keys: set[SignalKey] = set()
-    shas = _git_log_shas(metrics_path)
-    for sha in shas:
+    for sha in _git_log_shas(metrics_path):
         blob = _git_show(f"{sha}:{metrics_path}")
         if not blob:
             continue
@@ -334,19 +349,33 @@ def live_emitted_keys(
             payload = json.loads(blob)
         except json.JSONDecodeError:
             continue
-        for model in (payload.get("round") or {}).get("models") or ():
-            for signal in model.get("emitted") or ():
-                bar = _stamp(signal.get("bar"))
-                if bar is None or not (start < bar <= end):
-                    continue
-                keys.add(
-                    SignalKey(
-                        model=str(signal.get("model") or model.get("model")),
-                        bar=bar.isoformat(),
-                        symbol=str(signal.get("symbol")),
-                        direction=str(signal.get("direction")),
-                    )
+        keys |= payload_keys(payload, start=start, end=end)
+    return keys
+
+
+def payload_keys(
+    payload: Mapping[str, Any], *, start: pd.Timestamp, end: pd.Timestamp
+) -> set[SignalKey]:
+    """Tek bir `metrics_*.json` yükünün `emitted` kayıtları -> anahtar kümesi.
+
+    Git yürüyüşünden AYRI durur ki anahtarın kurulumu depo geçmişi olmadan test
+    edilebilsin: kapıyı düşüren ilk hata tam olarak buradaydı ve iki tarafı elle aynı
+    biçimde yazan bir test onu göremezdi.
+    """
+    keys: set[SignalKey] = set()
+    for model in (payload.get("round") or {}).get("models") or ():
+        for signal in model.get("emitted") or ():
+            bar = _stamp(signal.get("bar"))
+            if bar is None or not (start < bar <= end):
+                continue
+            keys.add(
+                SignalKey(
+                    model=str(signal.get("model") or model.get("model")),
+                    bar=bar_key(bar),
+                    symbol=str(signal.get("symbol")),
+                    direction=str(signal.get("direction")),
                 )
+            )
     return keys
 
 

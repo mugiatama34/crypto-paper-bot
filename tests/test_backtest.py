@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 
 from core.config import load_config
-from core.engine import Engine, ModelReport, RoundReport
+from core.engine import Engine, EmittedSignal, ModelReport, RoundReport
 from core.ledger import Ledger
 from core.portfolio import Portfolio
 from scripts.backtest import (
@@ -28,6 +28,7 @@ from scripts.backtest import (
     compare_signals,
     emitted_keys,
     is_adaptive,
+    payload_keys,
 )
 from strategies.base import (
     ClosedTrade,
@@ -239,6 +240,65 @@ def test_adaptive_models_are_reported_but_do_not_gate() -> None:
 
     assert row["gate"] is False
     assert row["match"] is False  # ayrışma gizlenmez, yalnızca kapı sayılmaz
+
+
+def test_the_two_sides_of_gate_zero_render_the_same_bar_identically() -> None:
+    """Rapor tarafı `pd.Timestamp`, canlı taraf JSON metni taşır; anahtar AYNI olmalı.
+
+    Kapı 0'ı ilk koşusunda düşüren hata tam olarak buydu: rapor tarafı `str(Timestamp)`
+    ile `"... 15:15:00+00:00"`, canlı taraf `isoformat()` ile `"...T15:15:00+00:00"`
+    üretiyordu. Birebir aynı sinyal kümesi sıfır kesişimle "AYRIŞTI" göründü — yani kapı,
+    ölçmesi gereken sadakat yerine kendi biçimlendirme farkını raporladı.
+
+    Test İKİ şeyi birden çivilemek zorunda, çünkü tek başına hiçbiri yetmiyor:
+    (a) iki tarafın anahtarı EŞİT — biri `pd.Timestamp`ten, diğeri JSON metninden kurulur;
+    (b) ortak biçim ISO-8601 ('T') — (a) tek başına, iki taraf aynı bozuk biçimi
+    paylaştığında da geçerdi, çünkü ikisi artık aynı fonksiyondan geçiyor.
+    """
+    bar = pd.Timestamp("2026-09-15 15:15:00", tz="UTC")
+    window = {"start": bar - pd.Timedelta("1min"), "end": bar + pd.Timedelta("1min")}
+
+    report = RoundReport(
+        as_of=bar,
+        models=(
+            ModelReport(
+                model="scalp_fixed",
+                emitted=(
+                    EmittedSignal(
+                        model="scalp_fixed",
+                        symbol="BNB-USDT-SWAP",
+                        direction="short",
+                        bar=bar,
+                        fills_at=bar + pd.Timedelta("15min"),
+                        close=100.0,
+                    ),
+                ),
+            ),
+        ),
+    )
+    payload = {
+        "round": {
+            "models": [
+                {
+                    "model": "scalp_fixed",
+                    "emitted": [
+                        {
+                            "model": "scalp_fixed",
+                            "symbol": "BNB-USDT-SWAP",
+                            "direction": "short",
+                            "bar": bar.isoformat(),
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+
+    mine = emitted_keys(report)
+    theirs = payload_keys(payload, **window)
+    assert mine == theirs, "aynı an, iki farklı biçim -> kapı kendi hatasını ölçer"
+    assert compare_signals(mine, theirs, adaptive=())["scalp_fixed"]["match"] is True
+    assert next(iter(mine)).bar == "2026-09-15T15:15:00+00:00", "ortak biçim ISO-8601"
 
 
 def test_emitted_keys_ignore_price_fields() -> None:
