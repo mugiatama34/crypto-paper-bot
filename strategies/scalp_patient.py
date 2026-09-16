@@ -37,10 +37,11 @@ kolu ve aynı sembolü seçer, aradaki ortalama R farkı yalnızca süreden geli
 deney). Defterlerinin birebir aynı olacağı anlamına gelmez: uzun tutuş `max_positions`
 doluluğunu ayrıştırır — ve bu ayrışmanın kendisi sürenin bir SONUCUDUR.
 
-**Yarışmacı değildir — HENÜZ.** Katmanın `models` listesinde YOKTUR ve canlıda koşmaz;
-`docs/backtest.md > 4` C-5 gereği önce taze bir OOS penceresinde doğrulanmalıdır. Backtest
-`--models` ile açıkça çağırır. Doğrulanmadan canlıya alınması, tam da bu altyapının
-engellemek için kurulduğu şeydir.
+**Kâğıt katmanında ölçülür, ama canlıya alma eşiğini GEÇMEDİ.** Taze OOS penceresinde
+(karar 32) hedefe ulaşma oranını 14.5 kat artırdı ve ortalama R'yi −0.15'ten −0.01'e
+taşıdı — ama C-1 (ortalama R > 0) sağlanmadı. Karar 33 ile katmanın `models` listesine
+GİRDİ: `scalp` bir KÂĞIT ölçüm katmanıdır ve ileriye dönük kanıt ancak orada birikir.
+Gerçek parayla işlem açmak ayrı bir karardır ve eşik henüz geçilmemiştir.
 
 Rollere dikkat: bu modül boyut/komisyon/bakiye hesaplamaz (kural 1/2/3/7) ve deftere
 yazmaz (kural 1). Kol seçimi `ScalpFixed`ten MİRAS ALINIR, kopyalanmaz.

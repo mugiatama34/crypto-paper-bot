@@ -90,17 +90,30 @@ def test_no_exit_management_is_inherited(config: dict[str, Any]) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Canlıya sızmaz
+# Kâğıt katmanında ölçülür — bu "canlıya alma eşiği geçildi" DEMEK DEĞİLDİR
 # --------------------------------------------------------------------------- #
-def test_the_candidate_is_not_in_the_live_layer() -> None:
-    """Doğrulanmamış bir aday canlıda koşamaz (docs/backtest.md > 4, C-5).
+def test_the_candidate_is_measured_in_the_paper_layer() -> None:
+    """Karar 33'ten sonra aday katmanın `models` listesindedir.
 
-    Kayıt defterinde DURUR (backtest `--models` ile çağırabilsin) ama katmanın `models`
-    listesinde YOKTUR. Bu testin düşmesi, bir adayın OOS doğrulaması geçmeden gerçek
-    deftere yazmaya başladığı anlamına gelir — bu altyapının tam olarak engellemek için
-    kurulduğu şey.
+    Ayrım önemli: `scalp` katmanı KÂĞIT ölçümdür, gerçek para değil.
+    `docs/backtest.md > 4`ün canlıya alma eşiği gerçek parayla işlem açmayı düzenler ve
+    `scalp_patient` onu GEÇMEDİ (C-1: OOS ortalama R −0.01, > 0 değil — karar 32). Kâğıt
+    katmanında koşması, ileriye dönük kanıt biriktirmesinin tek yoludur; eşiği geçmiş
+    sayılması değil.
+
+    Test listede DURDUĞUNU çiviler ki ileride kazara düşürülmesi sessiz kalmasın —
+    düşerse `scalp_fixed ↔ scalp_patient` ekseni (hareket eden TEK eksen) ölçülmez olur.
     """
-    from strategies.registry import REGISTRY
+    layer = resolve_layer(load_config(), "scalp")
+    assert ScalpPatient.name in layer.models
+    assert ScalpFixed.name in layer.models, "eksenin diğer ucu da durmalı"
 
-    assert ScalpPatient.name in REGISTRY, "backtest çağırabilmeli"
-    assert ScalpPatient.name not in resolve_layer(load_config(), "scalp").models
+
+def test_the_retired_axes_are_gone_from_the_layer() -> None:
+    """Karar 33: iki kez "fark yok" demiş eksenler kapatıldı.
+
+    Kodları ve defterleri duruyor (kural 1); ölçülmeyi bırakan şey yalnızca canlı turdur.
+    """
+    models = resolve_layer(load_config(), "scalp").models
+    assert "scalp_bandit" not in models
+    assert "scalp_managed" not in models

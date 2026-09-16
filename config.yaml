@@ -72,8 +72,17 @@ random_seed: 20240217
 # normal modellerin ürettiği sinyalleri salt okunur okur ve üst üste binenleri oynar. Listedeki
 # yeri sırayı DEĞİŞTİRMEZ — engine her turu iki geçişte yürütür ve metalar her hâlükârda ikinci
 # geçiştedir; metalar birbirini de göremez.
-models: ["buyhold", "trend", "meanrev", "momentum", "squeeze", "confluence",
-         "failed_breakout", "downtrend_rally", "avwap", "random_ctrl", "ensemble"]
+# SADELEŞTİRİLDİ (karar 33). Ölçüt performans DEĞİL, ÖLÇÜLEBİLİRLİKTİR: 29 barlık
+# geçmişte `momentum`, `squeeze`, `failed_breakout` ve `downtrend_rally` HİÇ sinyal
+# üretmedi; `confluence` (72 gün), `ensemble` (125 gün) ve `avwap` (42 gün) örneklem
+# kapısına (n=30) pratikte hiç ulaşamazdı. Ne kadar iyi olduklarını asla öğrenemeyeceğimiz
+# satırlar tabloda yalnızca gürültü üretir. Emekli edilen modellerin KODU ve DEFTERİ durur
+# (kural 1: append-only); listeye geri eklemek bir commit'tir.
+#
+# `random_ctrl` kalır: kabul çıtasının kontrol grubudur (`acceptance.control_model`).
+# `buyhold` kalır: çıpadır (kural 15) ve 0 işlem görünmesi bir arıza DEĞİL — hiç kapatmaz,
+# bilgisi hesap getirisindedir.
+models: ["buyhold", "trend", "meanrev", "random_ctrl"]
 
 # --- Kabul çıtası (dashboard rozetleri ve Telegram özeti) ---
 # Bir modelin sonucunun nasıl okunacağını belirleyen eşikler. Burada dururlar, çünkü rozet
@@ -180,7 +189,14 @@ layers:
     #   ev kurallarının katkısı    vwap_clone (13) ↔ vwap_managed (14)
     # vwap_clone bir YARIŞMACI DEĞİLDİR (is_replica): dış bir sistemin kopyasıdır, kendi
     # boyutlandırmasıyla (sabit teminat × 10x) koşar ve tabloda ayrı bir bölümde durur.
-    models: ["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"]
+    # SADELEŞTİRİLDİ (karar 33). İki eksen İKİ bağımsız pencerede de SIFIR fark verdi:
+    #   adaptasyon      scalp_bandit  ↔ scalp_fixed : −0.21↔−0.21 (IS), −0.15↔−0.15 (OOS)
+    #   çıkış yönetimi  scalp_managed ↔ scalp_fixed : −0.21↔−0.21 (IS), −0.14↔−0.15 (OOS)
+    # Adaptasyon ekseninin sebebi kol kırılımında görünür: rsi2_reversal %87, iki kol HİÇ
+    # tetiklemedi, yani bandit'in tahsis edecek bir şeyi yok ("1 uygun kol"). Eksenleri
+    # kapatmak bilgi kaybı değil, iki kez alınan "fark yok" cevabını kabul etmektir.
+    # Hareket eden TEK eksen süredir (scalp_patient ↔ scalp_fixed: −0.01 ↔ −0.15).
+    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle

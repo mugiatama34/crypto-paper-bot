@@ -2659,3 +2659,72 @@ tahsis edecek bir şeyi yok** — eksen bozuk değil, ölçtüğü değişken hi
 Seans: tüm seanslar negatif (−0.08 … −0.18), saat etkisi yok. Kayıp serisi: scalp
 modellerinde tek yönlü değil. `vwap_clone`da yine güçlü ve tek yönlü (0:−0.47, n=657 →
 3:−0.90, n=329) — kayda geçiyor, **kural yazılmıyor.**
+
+---
+
+## 33. Sadeleştirme: ölçüt performans DEĞİL, ÖLÇÜLEBİLİRLİK
+
+16 model → 8. Emeklilik gerekçesi hiçbir modelde "kaybediyor" değildir; iki ayrı gerekçe var
+ve ikisi de sonuçtan bağımsız olarak savunulabilir.
+
+### Scalp: iki eksen İKİ kez "fark yok" dedi
+
+| Eksen | Çift | IS (karar 30) | OOS (karar 32) |
+|---|---|---|---|
+| adaptasyon | `scalp_bandit` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.15 ↔ −0.15 |
+| çıkış yönetimi | `scalp_managed` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.14 ↔ −0.15 |
+| **süre** | `scalp_patient` ↔ `scalp_fixed` | — | **−0.01 ↔ −0.15** |
+
+Adaptasyon ekseninin sıfır çıkmasının sebebi kol kırılımındadır: `rsi2_reversal` %87,
+`momentum_burst` ve `funding_spike_fade` HİÇ tetiklemedi. Log her turda "1 uygun kol" diyor —
+**bandit'in tahsis edecek bir şeyi yok.** Eksen bozuk değil; ölçtüğü değişken hiç değişmiyor.
+İki kez alınan "fark yok" cevabını kabul etmek bilgi kaybı değildir.
+
+Emekli: `scalp_bandit`, `scalp_managed`. Kalan: `scalp_fixed` (kontrol), `scalp_patient`
+(hareket eden tek eksenin diğer ucu), `vwap_managed`, `vwap_clone` (kopya).
+
+### Base: 4 GÜNLÜK katmanda performans yorumlanamaz, ölçülebilirlik yorumlanır
+
+Base 2026-09-12'de başladı: **29 bar.** Performansa bakıp kesmek, karar 27 ve 28'de iki kez
+düşülen tuzağın aynısı olurdu. Ama "bu model n=30'a ne zaman ulaşır" sorusu ŞİMDİ
+cevaplanabilir:
+
+| model | n | poz/bar | n=30 için | karar |
+|---|---:|---:|---:|---|
+| `trend` | 14 | 0.48 | 10 gün | kalır |
+| `meanrev` | 8 | 0.28 | 18 gün | kalır |
+| `random_ctrl` | 4 | 0.16 | 31 gün | **kalır** (kontrol grubu, `acceptance.control_model`) |
+| `buyhold` | — | — | — | **kalır** (çıpa; 0 işlem bir arıza DEĞİL, hiç kapatmaz) |
+| `avwap` | 3 | 0.12 | 42 gün | emekli |
+| `confluence` | 2 | 0.07 | 72 gün | emekli |
+| `ensemble` | 1 | 0.04 | 125 gün | emekli |
+| `momentum` | 0 | 0 | **asla** | emekli |
+| `squeeze` | 0 | 0 | **asla** | emekli |
+| `failed_breakout` | 0 | 0 | **asla** | emekli |
+| `downtrend_rally` | 0 | 0 | **asla** | emekli |
+
+Ne kadar iyi olduklarını ASLA öğrenemeyeceğimiz satırlar tabloda yalnızca gürültü üretir.
+`ensemble` ayrıca meta bir modeldir: emekli edilenler azaldıkça okuyacağı sinyal kümesi
+daralır, yani ölçtüğü şey kadro değişikliğine bağlı hâle gelirdi.
+
+### "Emekli" ile "silinmiş" aynı şey değildir
+
+Kod ve defter DURUYOR (kural 1: append-only denetim izi). Değişen tek şey katmanın `models`
+listesidir; geri eklemek bir commit. Her emekli modelin testi bunu çiviler: canlı listede
+YOK, ama `REGISTRY`de VAR.
+
+### `scalp_patient` kâğıt katmanına girdi — eşiği geçtiği anlamına GELMEZ
+
+`scalp` bir KÂĞIT ölçüm katmanıdır. `docs/backtest.md > 4`ün canlıya alma eşiği gerçek
+parayla işlem açmayı düzenler ve model onu geçmedi (C-1: OOS ortalama R −0.01). Kâğıtta
+koşması, ileriye dönük kanıtın biriktiği tek yerdir.
+
+### Dashboard: ana sayı artık "10.000 $ nerede"
+
+Her kartın hero'su hesap özsermayesi + yüzde oldu; ort. R, işlem sayısı, MDD, kıvrım ve
+rozetler katlanır `detaylar` bölümüne indi. Gerekçe: **özsermaye her model için AYNI
+birimdir**, ort. R değildir — çıpanın ve kopyanın 1R'si yarışmacılarınkiyle aynı şeyi
+ölçmez (kural 15/15b), yani tek bakışta kıyaslanabilen tek satır özsermayedir. Ort. R
+birincil METRİK olmayı sürdürür ve SIRALAMAYI o belirler (kartın rütbesi); yalnızca kartın
+ilk bakışta gösterdiği sayı değişti. Kart artık `<a>` değil: içinde katlanır bölüm var ve
+tıklamak onu açmalı, sayfayı değiştirmemeli — detay bağlantısı katlanan bölümün içinde.

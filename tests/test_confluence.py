@@ -82,10 +82,21 @@ def test_registry_resolves_the_model_name() -> None:
     assert isinstance(build("confluence"), Confluence)
 
 
-def test_model_is_listed_in_config() -> None:
-    from core.config import get_setting, load_config
+def test_model_is_retired_but_still_buildable() -> None:
+    """Karar 33: canlı listeden ÇIKARILDI, koddan çıkarılmadı.
 
-    assert "confluence" in get_setting(load_config(), "models")
+    Emeklilik ölçütü performans değil ÖLÇÜLEBİLİRLİKTİR: mevcut hızda n=30'a ~72 günde ulaşırdı,
+    yani ne kadar iyi olduğu asla öğrenilemezdi ve tabloda yalnızca gürültü üretiyordu.
+
+    Test iki şeyi birden çiviler: modelin canlı listede OLMADIĞINI (kazara geri dönmesi
+    sessiz kalmasın) ve hâlâ KURULABİLDİĞİNİ — defteri ve kodu duruyor (kural 1), listeye
+    geri eklemek bir commit. "Emekli" ile "silinmiş" aynı şey değildir.
+    """
+    from core.config import get_setting, load_config
+    from strategies.registry import REGISTRY
+
+    assert "confluence" not in get_setting(load_config(), "models")
+    assert "confluence" in REGISTRY
 
 
 def test_the_source_confidence_tiers_never_become_position_size() -> None:
