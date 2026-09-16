@@ -80,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         layer.ledger_root.name, layer.metrics_path,
     )
 
-    strategies, build_failures = _build_strategies(names, config)
+    strategies, build_failures = build_strategies(names, config)
     if not strategies:
         logger.error("hiçbir model kurulamadı, tur çalıştırılmadı")
         return 1
@@ -143,13 +143,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 # --------------------------------------------------------------------------- #
 # Model kurulumu
 # --------------------------------------------------------------------------- #
-def _build_strategies(
+def build_strategies(
     names: Sequence[str], config: Mapping[str, Any]
 ) -> tuple[list[Strategy], dict[str, str]]:
     """Modelleri sırayla kurar; biri patlarsa yalnızca o atlanır (gerekçesiyle).
 
     `config` KATMANIN çözülmüş ayarıdır: ayarı okuyan model kök değerleri değil katmanın
     değerlerini görmelidir (15 dakikalık katmanda bar süresi, stop tavanı, sembol evreni).
+
+    Alt çizgisiz (herkese açık) çünkü ikinci bir meşru çağıran var: `scripts/backtest.py`.
+    Backtest'in kendi model kurulumunu yazması, tam da `main.py`'nin tek giriş noktası
+    olma gerekçesini delerdi — kurulum iki yerde ayrışırsa backtest, canlıda koşandan
+    başka bir model kümesini ölçmeye başlar ve bunu hiçbir test yakalamaz.
     """
     strategies: list[Strategy] = []
     failures: dict[str, str] = {}
