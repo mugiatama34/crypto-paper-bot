@@ -166,6 +166,31 @@ düşer** — sessiz bir kısalma olmaz, sayı raporda görünür.
 
 ---
 
+### 5b. Derinlik override'ı (`--history-bars`)
+
+`data.history_bars` bir ÖLÇÜM kuralı DEĞİLDİR: maliyet, risk, dolum, likidasyon ve metrik
+tanımlarına dokunmaz; yalnızca anlık görüntünün ne kadar geriye gittiğini söyler. Backtest
+onu DERİNLEŞTİREBİLİR.
+
+**Neden config'te global olarak yükseltilmiyor:** canlı bundan faydalanmaz. Modellerin
+lookback'leri sınırlıdır (`tail(300)`, `rolling(20)`, EMA50, gün-çapalı VWAP), yani daha
+derin geçmiş canlı sinyalini değiştirmez — ama `data/` depoya girmediği için her saatlik
+tur veriyi baştan indirir ve global bir artış, faydasız yere her turda kat kat indirme
+demekti.
+
+**"Değiştirmez" bir varsayım değil, SINANAN bir iddiadır:** aynı override ile koşulan
+Kapı 0, canlı kayıtla birebir eşleşmeye devam etmelidir. Eşleşmezse override bir ölçüm
+sapması üretiyor demektir ve kullanılamaz.
+
+**Yalnızca derinleştirir, sığlaştırmaz** (`ValueError`): `tail(300)` okuyan bir model 200
+barlık görüntüde BAŞKA bir sinyal üretir ve backtest artık canlıyı değil, kendi uydurduğu
+bir modeli ölçerdi.
+
+Kullanılan değer her koşuda `manifest.json > history_bars` altında (`config` ve `used`)
+yazılı durur.
+
+---
+
 ## 6. Kontaminasyon ve OOS
 
 Bir modelin parametresi hangi veride seçildiyse o veri onun için **in-sample**'dır ve

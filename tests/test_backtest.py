@@ -341,3 +341,25 @@ def test_backtest_writes_only_under_its_own_root(tmp_path: Path) -> None:
     written = {path.relative_to(tmp_path).parts[0] for path in tmp_path.rglob("*") if path.is_file()}
     assert written == {"backtests"}
     assert (root / "ledger" / strategy.name / "trades.csv").exists()
+
+
+# --------------------------------------------------------------------------- #
+# Derinlik override'ı: yalnızca DERİNLEŞTİRİR
+# --------------------------------------------------------------------------- #
+def test_history_bars_override_refuses_to_shallow_the_window(tmp_path: Path) -> None:
+    """Sığlaştırmak, modelin canlıda gördüğünden AZ veri görmesi demekti.
+
+    Derinleştirmek zararsızdır (lookback'ler sınırlı), sığlaştırmak değildir: `tail(300)`
+    okuyan bir model 200 barlık bir görüntüde BAŞKA bir sinyal üretir ve backtest artık
+    canlıyı değil, kendi uydurduğu bir modeli ölçer. Sessiz kırpma yerine hata.
+    """
+    from scripts.backtest import run_backtest
+
+    with pytest.raises(ValueError, match="DERİNLEŞTİRİR"):
+        run_backtest(
+            layer_name="scalp",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=tmp_path / "out",
+            history_bars=1,
+        )

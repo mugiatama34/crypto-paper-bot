@@ -67,7 +67,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd  # noqa: E402
 
-from core.config import load_config  # noqa: E402
+from core.config import get_setting, load_config  # noqa: E402
 from core.data import load_market_data  # noqa: E402
 from core.engine import Engine, RoundReport  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
@@ -129,6 +129,7 @@ def run_backtest(
     out_dir: Path,
     models: Sequence[str] | None = None,
     config_path: str | None = None,
+    history_bars: int | None = None,
 ) -> BacktestResult:
     """Katmanı `start`..`end` penceresinde koşturur ve ayrı bir deftere yazar.
 
@@ -143,6 +144,27 @@ def run_backtest(
     # Bilinçli sapma (docs/backtest.md > 5a): kapalıyken tüm pencere TEK sinyal üretirdi.
     signals_per_bar_was = bool(config.get("signals_per_bar"))
     config["signals_per_bar"] = True
+
+    # Derinlik override'ı (docs/backtest.md > 5b): `data.history_bars` bir ÖLÇÜM kuralı
+    # değil, anlık görüntünün ne kadar geriye gittiğidir — maliyet, risk, dolum ve metrik
+    # tanımlarına dokunmaz. Backtest'e özel olmasının sebebi canlının ondan FAYDALANMAMASI:
+    # modellerin lookback'leri sınırlıdır (`tail(300)`, `rolling(20)`, EMA50, gün-çapalı
+    # VWAP), yani daha derin geçmiş canlı sinyalini değiştirmez — ama `data/` depoya
+    # girmediği için her saatlik tur veriyi baştan indirir ve global bir artış, faydasız
+    # yere her turda 4× indirme demekti.
+    #
+    # "Değiştirmez" bir varsayım değil, SINANAN bir iddiadır: aynı override ile koşulan
+    # Kapı 0 canlı kayıtla birebir eşleşmeye devam etmelidir. Eşleşmezse override bir
+    # ölçüm sapması üretiyor demektir ve kullanılamaz.
+    history_bars_was = int(get_setting(config, "data.history_bars"))
+    if history_bars is not None:
+        if history_bars < history_bars_was:
+            raise ValueError(
+                f"--history-bars yalnızca DERİNLEŞTİRİR: {history_bars} < {history_bars_was}. "
+                "Sığlaştırmak modelin canlıda gördüğünden AZ veri görmesi demekti."
+            )
+        config = {**config, "data": {**config["data"], "history_bars": history_bars}}
+        logger.info("derinlik override: history_bars %d -> %d", history_bars_was, history_bars)
 
     names = list(models) if models is not None else layer.models
     if not names:
@@ -203,6 +225,7 @@ def run_backtest(
         strategies=strategies,
         build_failures=build_failures,
         signals_per_bar_was=signals_per_bar_was,
+        history_bars=(history_bars_was, int(get_setting(config, "data.history_bars"))),
     )
     # Kırılımlar `core/report.py`den OKUNUR, burada yeniden yazılmaz: kırılımın tanımı
     # (kol etiketi, çıkış kuralı birleşimi, seans sınırları, kayıp serisi kesimi) ölçümün
@@ -246,12 +269,16 @@ def _write_manifest(
     strategies: Sequence[Strategy],
     build_failures: Mapping[str, str],
     signals_per_bar_was: bool,
+    history_bars: tuple[int, int],
 ) -> None:
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "harness_sha": _git_sha(),
         "layer": layer.name,
         "window": {"start": start.isoformat(), "end": end.isoformat()},
+        # Sapmalar koşunun kendi kaydında durur: sonradan "hangi ayarla koşmuştu" diye
+        # sorulduğunda cevap log'da değil, manifest'te olmalı (docs/backtest.md > 9).
+        "history_bars": {"config": history_bars[0], "used": history_bars[1]},
         "models": [s.name for s in strategies],
         "adaptive_models": [s.name for s in strategies if is_adaptive(s)],
         "build_failures": dict(build_failures),
@@ -520,6 +547,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             layer_name=args.layer, start=start, end=end, out_dir=out_dir,
             models=args.models.split(",") if args.models else None,
             config_path=args.config,
+            history_bars=args.history_bars,
         )
     except Exception as exc:  # noqa: BLE001 — CLI sınırı; gerekçe kullanıcıya gider
         logger.error("backtest koşulamadı: %s", exc)
@@ -593,6 +621,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--out", default=None, help="çıktı dizini")
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--config", default=None)
+    parser.add_argument(
+        "--history-bars", type=int, default=None, metavar="N",
+        help="anlık görüntü derinliği; yalnızca DERİNLEŞTİRİR (config'teki değerin altına inemez)",
+    )
     parser.add_argument(
         "--verify-live", default=None, metavar="METRICS_PATH",
         help="KAPI 0: sinyalleri bu rapor dosyasının git geçmişiyle karşılaştır",

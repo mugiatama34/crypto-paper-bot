@@ -29,6 +29,10 @@ on:
         description: "Virgülle model listesi (boş = katmanın tamamı)"
         required: false
         default: ""
+      history_bars:
+        description: "Anlık görüntü derinliği (boş = config); yalnızca derinleştirir"
+        required: false
+        default: ""
       verify_live:
         description: "KAPI 0: karşılaştırılacak rapor dosyası (boş = atla)"
         required: false
@@ -73,6 +77,7 @@ jobs:
             --start "${{ inputs.start }}" \
             --end "${{ inputs.end }}" \
             ${{ inputs.models != '' && format('--models "{0}"', inputs.models) || '' }} \
+            ${{ inputs.history_bars != '' && format('--history-bars {0}', inputs.history_bars) || '' }} \
             ${{ inputs.verify_live != '' && format('--verify-live "{0}"', inputs.verify_live) || '' }} \
             --out "backtests/run" \
             --log-level INFO
