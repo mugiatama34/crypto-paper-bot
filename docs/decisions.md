@@ -2728,3 +2728,135 @@ birimdir**, ort. R değildir — çıpanın ve kopyanın 1R'si yarışmacıları
 birincil METRİK olmayı sürdürür ve SIRALAMAYI o belirler (kartın rütbesi); yalnızca kartın
 ilk bakışta gösterdiği sayı değişti. Kart artık `<a>` değil: içinde katlanır bölüm var ve
 tıklamak onu açmalı, sayfayı değiştirmemeli — detay bağlantısı katlanan bölümün içinde.
+
+### 33-DÜZELTME (2026-09-16, aynı gün): tablo KAPANMIŞ işlemleri saydı, AÇILIŞLARI değil
+
+Karar 33'ün base tablosu `trades.csv` satırlarından türetildi; o dosya yalnızca **kapanmış**
+pozisyonları taşır. Açık pozisyonlar `positions.json`dadır ve sayıma girmedi. Sonuç iki
+yerde yanlış kayıtlandı. **Emeklilik kararlarının HİÇBİRİ değişmiyor** — hepsi 0.3 eşiğinin
+çok altında kalmaya devam ediyor — ama gerekçe denetim izinin parçasıdır ve yanlış duramaz.
+
+Pozisyon-farkındalıklı yeniden sayım (kimlik `symbol+direction+opened_at`, yani
+`merge_fills` ile aynı birim; kapanmış + açık):
+
+| model | kapanmış | açık | AÇILIŞ | bar | açılış/bar | not |
+|---|---:|---:|---:|---:|---:|---|
+| `trend` | 13 | 3 | 16 | 27 | 0.593 | |
+| `meanrev` | 7 | 5 | 12 | 27 | 0.444 | **5/5 SLOT DOLU** |
+| `random_ctrl` | 2 | 5 | 7 | 23 | 0.304 | **5/5 SLOT DOLU** |
+| `avwap` | 3 | 3 | 6 | 23 | 0.261 | 4 dolum = 3 pozisyon |
+| `confluence` | 2 | 2 | 4 | 27 | 0.148 | |
+| **`squeeze`** | 0 | **2** | **2** | 27 | **0.074** | sıfır DEĞİL |
+| `buyhold` | 0 | 2 | 2 | 29 | 0.069 | çıpa: hiç kapatmaz |
+| `ensemble` | 1 | 0 | 1 | 23 | 0.043 | |
+| `momentum` | 0 | 0 | 0 | 27 | 0.000 | |
+| `failed_breakout` | 0 | 0 | 0 | 23 | 0.000 | |
+| `downtrend_rally` | 0 | 0 | 0 | 23 | 0.000 | |
+
+**Düzeltme 1 — sıfır üreten model DÖRT değil ÜÇ.** `squeeze` 2 pozisyon açtı
+(`ledgers/squeeze/positions.json`); hiçbiri kapanmadı çünkü hedefi yok ve stop'u uzakta.
+Yani `squeeze` **ölü kod değil, yavaş kod**. Emekliliği geçerli (0.074 ≪ 0.3) ama sebebi
+"hiç sinyal üretmiyor" değil, "ürettiği sinyal ölçülebilir sıklığın çok altında".
+
+**Düzeltme 2 — "poz/bar" iki ayrı değişkeni tek sayıya çökertiyordu.** Gerçekleşen oran
+şunun minimumudur:
+
+```
+poz/bar = min( sinyal/bar ,  max_positions / tutma_barı )
+```
+
+`meanrev` ve `random_ctrl` şu anda **5/5 slotta doymuş**. Onların ölçülen hızı bir sinyal
+ölçüsü DEĞİL, bir **devir** ölçüsüdür ve slotlar dolu kaldıkça daha da yavaşlar. Bu, karar
+33'ün "meanrev n=30'a ~18 günde ulaşır" tahminini iyimser yapar ve çareyi değiştirir:
+`meanrev`in darboğazı sinyal arzı değil, **süre sınırının olmamasıdır** (aynı teşhis
+`scalp_fixed ↔ scalp_patient` ekseninde ölçüldü, karar 31/32).
+
+**Yöntem notu:** bundan sonra sıklık her zaman `positions.json` + `trades.csv` BİRLİKTE
+sayılır ve slot doluluğu ayrıca raporlanır. Yalnızca deftere bakmak, hedefi olmayan bir
+modeli "sinyal üretmiyor" diye gösterir.
+
+### 33-DÜZELTME (2): belge ile cron ayrışmış
+
+`.github/workflows/run.yml` cron'u `5 0,4,8,12,16,20` — yani **4 saatte bir, 4 saatlik bar
+başına tam bir tur.** `config.yaml` (iki yerde) ve CLAUDE.md katman tablosu "6 saatte bir"
+diyordu. Fark önemsiz değil: "6 saatte bir" doğru olsaydı base'de telafi RUTİN olurdu ve
+`signals_per_bar: false` her turda sinyal fırsatı kaybettirirdi. Gerçekte telafi
+İSTİSNADIR (yalnızca kaçan cron'da), ki `signals_per_bar`ın kökte kapalı olmasının gerekçesi
+tam olarak budur. Üç yerde de düzeltildi.
+
+---
+
+## 34. `momentum_burst` doğduğunda ölüydü: kapı aritmetiği kolu imkânsız kılıyor
+
+Karar 32, `momentum_burst` ve `funding_spike_fade` kollarının 47 günde HİÇ tetiklemediğini
+ölçtü ama sebebini yazmadı. Sebep piyasa değil, **geometri**.
+
+`strategies/scalp/arms.py::momentum_burst` engeli `closes[-1] ± burst` olarak veriyor, yani
+**tanımı gereği her zaman girişin ÖNÜNDE.** `_maybe_setup` önde olan engeli hedef yapar
+(`min(projeksiyon, engel)`), dolayısıyla:
+
+```
+hedef mesafesi = min(10×ATR, burst) = burst        (burst < 10×ATR olduğu sürece)
+stop mesafesi  = 5×ATR
+kapı: hedef/stop ≥ 1.5   ⟹   burst ≥ 7.5 × ATR
+```
+
+`burst` 3 barlık kapanış-kapanış hareketidir; tipik büyüklüğü ~1×ATR mertebesindedir.
+**Koşu log'larından gözlenen gerçek oranlar: 0.20, 0.26, 0.29, 0.31, 0.32, 0.36, 0.37,
+0.39, 0.43, 0.45** — yani `burst ≈ 1.0–2.25 × ATR`. Kapının istediği 7.5×ATR, gözlenenin
+**3-7 katı.** Kol hiçbir piyasa koşulunda tetiklenemez.
+
+**Genel kural (diğer kollara da uygulanır):** stop `k×ATR` iken yapısal engel en az
+`1.5k×ATR` ötede olmalı. `k=5` için bu **7.5×ATR**tır ve 15 dakikalık barda hiçbir gün-içi
+yapısal seviye (Bollinger orta bandı, gün zirvesi, VWAP) tipik olarak o kadar uzakta
+değildir. Sonuç: kapıyı geçen kurulumlar ağırlıklı olarak **engeli GERİDE kalmış**
+olanlardır; onlarda hedef projeksiyona düşer ve R:R tam 2.00 olur. Yani **hayatta kalan
+işlemlerde kolun kendi tez seviyesi hedefe hiç girmez** — beş kol geometrik olarak aynı
+projeksiyon modelini oynuyor.
+
+Bu, karar 30 ve 32'nin iki ayrı gözlemini tek sebeple açıklıyor: hedefe varma oranının
+rastgele yürüyüş nullüyle örtüşmesi, ve bandit'in tahsis edecek bir şeyinin olmaması.
+
+**Yöntem sonucu:** `ScalpModel` `take_survey` UYGULAMIYOR (`metrics_scalp.json`de beş kollu
+modellerin `survey` alanı `{}`). Bu yüzden "bir kol hiç kurulum üretmiyor" bilgisi iki
+backtest sonra öğrenildi, oysa ilk turun yük dosyasında görünebilirdi. **Yeni bir kol ya da
+tez eklenecekse `take_survey` o modelin ilk gereksinimidir.**
+
+---
+
+## 35. Çıta bir R değeri değil, bir YÜZDE sürüklenmesidir
+
+Üç özdeşlik (ölçülen sayılarla doğrulandı):
+
+```
+cost_per_r      = maliyet% / stop%
+net R           = (brüt sürüklenme% − maliyet%) / stop%
+brüt sürüklenme% = (ort.R + cost_per_r) × avg_stop_distance_pct
+```
+
+**Sonuç: stop genişliği net R'nin İŞARETİNİ değiştiremez.** Stop'u genişletmek maliyet/R'yi
+düşürür ama R cinsinden brüt edge'i aynı oranda düşürür. Karar 31'de stop'u daraltmamayı
+seçmiştik ve gerekçe doğruydu; bu özdeşlik onun tersinin de kurtarmayacağını gösteriyor —
+"stop ölçeği" tartışması birinci mertebede boştur.
+
+`scalp_patient`e uygulanınca:
+
+| | |
+|---|---|
+| brüt sürüklenme% | `0.114 × %2.29` = **%0.261** |
+| tur maliyeti% | `0.124 × %2.29` = **%0.284** |
+
+**Ortalama R'nin −0.01 çıkması tesadüf değil, bu iki sayının neredeyse eşit olmasıdır.**
+
+Yeni bir giriş tezinin geçmesi gereken çıta bu yüzden R cinsinden değil **% cinsinden**
+yazılmalıdır: **pozisyon başına > %0.30 brüt sürüklenme.** R ölçeği seçilebilir bir
+birimdir, yüzde değildir; ayrıca bu birim katman ve stop bağımsızdır.
+
+**Sürüklenme çıtasının kaldıraçları:**
+
+| kaldıraç | etki | durum |
+|---|---|---|
+| maliyet% ↓ | doğrudan | ayrı çalışma (maker/kademe) |
+| stop% (R ölçeği) | **nötr** | tartışmaya değmez |
+| tutuş süresi ↑ | sürüklenme ↑ (√N), maliyet sabit | karar 31/32'de ölçüldü: −0.15 → −0.01 |
+| **volatilite rejimi (ATR%) ↑** | edge σ ile ölçekleniyorsa sürüklenme ↑, maliyet SABİT | **hiç denenmedi** |

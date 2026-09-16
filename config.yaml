@@ -41,7 +41,8 @@ max_stop_atr_multiple: 3.0  # stop mesafesi ATR'nin bu katını aşarsa işlem a
 # sonuçlanır — barlar sırayla işlenir, her barın emri bir sonraki barın açılışından dolar
 # (kural 13) ve pozisyon limitleri her barda yeniden sorulur.
 #
-# Kökte KAPALI, çünkü 4 saatlik katmanın cron'u (run.yml, 6 saatte bir) güvenilir
+# Kökte KAPALI, çünkü 4 saatlik katmanın cron'u (run.yml, 4 saatte bir = bar başına
+# tam bir tur) güvenilir
 # tetikleniyor: telafi nadiren devreye girer, ama açık olsaydı devreye girdiği her turda
 # defterin kuralı sessizce değişirdi — aynı defterde biriken geçmişin bir kısmı "tur
 # başına tek sinyal", bir kısmı "bar başına tek sinyal" ile üretilmiş olurdu ve iki
@@ -167,7 +168,7 @@ layers:
     metrics_file: "docs/data/metrics.json"
     universe: null            # hacimden otomatik seçim (universe_size / universe_refresh_days)
     retention:
-      equity_compaction_days: null   # 6 saatte bir tur: equity.csv yavaş büyür, sıkıştırma gereksiz
+      equity_compaction_days: null   # bar başına bir tur: equity.csv yavaş büyür, sıkıştırma gereksiz
       model_trade_limit: 100
     breakdowns: []            # 4 saatlik modellerde kol/sembol kırılımı yok
 
