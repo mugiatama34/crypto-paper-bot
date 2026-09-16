@@ -2860,3 +2860,123 @@ birimdir, yüzde değildir; ayrıca bu birim katman ve stop bağımsızdır.
 | stop% (R ölçeği) | **nötr** | tartışmaya değmez |
 | tutuş süresi ↑ | sürüklenme ↑ (√N), maliyet sabit | karar 31/32'de ölçüldü: −0.15 → −0.01 |
 | **volatilite rejimi (ATR%) ↑** | edge σ ile ölçekleniyorsa sürüklenme ↑, maliyet SABİT | **hiç denenmedi** |
+
+---
+
+## 36. `scalp_vol` (model 17): ön-kayıtlı P1 DÜŞTÜ — "edge σ ile ölçeklenir" yanlış
+
+**Koşu.** `backtest.yml` #10 (`35099002276`), pencere 2026-07-19 → 2026-09-04,
+`--history-bars 6000`, modeller `scalp_patient,scalp_vol`. Ön-kayıt:
+`docs/backtest.md > 6b`, commit `a7c08ae` — koşudan ÖNCE.
+
+| model | n | ort.R | kaz% | PF | stopMes% | maliyet/R | getiri | maxDD | topl.R | PnL |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `scalp_patient` | 230 | −0.01 | 47.4 | 0.98 | 2.29 | 0.124 | −4.04% | −19.98% | −2.07 | −348.38 |
+| `scalp_vol` | 223 | −0.01 | 43.0 | 0.98 | 2.70 | 0.103 | +6.06% | −15.41% | −2.17 | +575.27 |
+
+### Tahminlerin karnesi
+
+| # | Ölçüm | Tahmin | Gerçekleşen | Sonuç |
+|---|---|---|---|---|
+| **P1** | brüt sürüklenme% | `vol` > `patient` | **0.253 < 0.263** | **DÜŞTÜ** |
+| P2 | maliyet/R | `vol` < 0.124 | 0.103 (stop 2.29 → 2.70) | tuttu |
+| P3 | örneklem | n ≥ 30 | n = 223 | tuttu |
+| P4 | stop bandı | ⚠B yanmasın | band 1.58–3.94, ikisi de içeride | tuttu |
+
+P2 bir sağlamaydı ve tuttu: kapı gerçekten daha yüksek ATR'li sembolleri seçti (stop mesafesi
+%2.29 → %2.70, maliyet/R 0.124 → 0.103). Yani P1'in sonucu **yorumlanabilir** — kapı çalıştı,
+tez tutmadı.
+
+### Ne öğrenildi
+
+Ön-kayıt bu durumun anlamını önceden yazmıştı: *"P1 tutmazsa 'edge σ ile ölçeklenir'
+varsayımı YANLIŞTIR."* Ölçüm bunu söylüyor. Volatilite %18 arttığında (stop mesafesi
+vekiliyle) brüt sürüklenme artmadı, **hafifçe azaldı.** Yani bu geometride sinyalin
+sürüklenmesi σ ile değil, kabaca SABİT bir yüzdedir — tıpkı maliyet gibi. Karar 35'in
+kaldıraç tablosundaki tek denenmemiş satır böylece kapandı:
+
+| kaldıraç | beklenen | ölçülen |
+|---|---|---|
+| stop% (R ölçeği) | nötr | nötr (karar 35, özdeşlik) |
+| tutuş süresi ↑ | sürüklenme ↑ | doğrulandı (−0.15 → −0.01, karar 31/32) |
+| **volatilite rejimi ↑** | sürüklenme ↑ | **YANLIŞ (0.263 → 0.253)** |
+| maliyet% ↓ | doğrudan | henüz denenmedi |
+
+Geriye tek kaldıraç kalıyor: **maliyeti düşürmek** ya da **sürüklenmesi gerçekten daha büyük
+bir SİNYAL bulmak.** Rejim seçerek mevcut sinyalden daha fazlasını çıkarmak mümkün değil.
+
+### +%6.06 getiri bir BAŞARI DEĞİLDİR — ve nedeni ölçülebilir
+
+En çarpıcı gözlem: iki modelin toplam R'si neredeyse aynı (−2.07 ↔ −2.17) ama hesap getirisi
+ters işaretli (−%4.04 ↔ +%6.06). Bunu "scalp_vol kazandırdı" diye okumak **§7.4'ün
+yasakladığı metrik değiştirmedir**: birincil metrik ortalama R'dir, ön-kayıtta öyle yazılıdır
+ve ikisi de −0.01'dir.
+
+Mekanizma da zaten edge değil, **ölçekleme yolu**: boyut `risk_per_trade × GÜNCEL sermaye`
+ile kurulur, yani her işlemin R'si o anki bakiyeyle ağırlıklanır. 223 işlemde |R| akışı
+~200R iken NET R ~2R'dir. Yani hangi R'lerin yüksek bakiyede gerçekleştiği, net edge'den
+**iki mertebe büyük** bir etkidir; brüt akışın %10'luk bir ağırlık kayması tek başına 10
+puanlık getiri farkı üretir. Bu bir sıralama/bileşiklenme etkisidir, sinyal farkı değil.
+
+**Yöntem sonucu (yeni):** `|net R| ≈ 0` iken **hesap getirisi bir edge ölçüsü değildir.**
+Karar 33 dashboard'un ana sayısını özsermaye yapmıştı ve bu doğru kalır — özsermaye her model
+için AYNI birimdir — ama sıralamayı ortalama R'nin belirlemesi de aynı kararda yazılıydı ve
+bu ölçüm onun neden zorunlu olduğunu gösteriyor.
+
+Kurtarma denemesi yapılmadı: bu gözlem **yeni ve sınanmamış bir hipotezdir** (R'nin işareti
+ile bakiye seviyesi arasında korelasyon), düşen bir hipotezin kurtarıcısı değil. Sınanacaksa
+kendi ön-kaydıyla gelir.
+
+### Sonuç
+
+- `scalp_vol` canlıya (kâğıt katmanına bile) **ALINMAZ.** C-1 (ort. R > 0) sağlanmıyor
+  (−0.01) ve tezi zaten düştü. `REGISTRY`de kalır, `layers.scalp.models`te yoktur.
+- Destekleyici kırılımlar tezin lehine bir şey söylemiyor: çıkış kuralı dağılımı neredeyse
+  aynı (`tp` 41 ↔ 39, `stop` 90 ↔ 85, `signal:time_stop` 99 ↔ 99). Kol kırılımında `vol`un
+  `rsi2_reversal`ı +0.02 (patient −0.02) ama `vwap_pullback`ı −1.01 (n=6) — ikisi de
+  örneklem kapısının altında, yorumlanmaz.
+- **Çoklu karşılaştırma (§7.5): araştırmadan çıkan 10 önerinin 1.'si test edildi.**
+
+---
+
+## 37. `vwap_managed` temiz pencere (C-5): örneklem kapısı GEÇİLMEDİ, brüt sürüklenme NEGATİF
+
+Bu koşu karar 31-32 döneminde kuyruğa alınmıştı ve **sonucu hiç okunmamıştı.** Kayda
+geçiriliyor: okunmamış bir ölçüm, yapılmamış bir ölçümden daha kötüdür — yapılmış gibi
+görünür.
+
+**Koşu.** `backtest.yml` #9 (`35086158249`), pencere 2026-07-19 → 2026-08-17 (2783 bar),
+yalnızca `vwap_managed`.
+
+| yön | n | ort.R | medyan R | topl.R | kaz% | PF | stopMes% | maliyet/R | PnL |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| long | 15 | −0.36 | −0.70 | −5.42 | 33.3 | 0.40 | 1.45 | 0.151 | −507.22 |
+| short | 10 | −0.21 | −0.05 | −2.12 | 40.0 | 0.48 | 1.43 | 0.177 | −232.54 |
+| **TOPLAM** | **25** | **−0.30** | −0.33 | −7.54 | 36.0 | 0.42 | 1.44 | 0.161 | −739.77 |
+
+hesap: getiri −%7.40 | maxDD −%10.78
+
+### Kapılar
+
+- **B-1 (örneklem) DÜŞTÜ: n = 25 < 30.** Bu yüzden aşağıdaki hiçbir sayı bir SONUÇ değildir;
+  yön kırılımları (n=15 / n=10) hiç yorumlanmaz.
+- **C-1 (ort. R > 0) düştü** ve kıl payı değil: −0.30.
+
+### Yorumlanmayan ama kaydedilen gözlem
+
+Karar 35'in birimiyle: brüt sürüklenme = `(−0.30 + 0.161) × %1.44` = **−%0.20**, tur maliyeti
+`0.161 × %1.44` = %0.23. Yani `scalp_patient`ten farklı olarak burada **maliyet sıfırlansa
+bile** model kaybediyor — sinyalin kendisi yanlış yöne sürükleniyor. Bu, maliyet çalışmasının
+`vwap_managed`i kurtaramayacağı anlamına gelir. n=25 olduğu için bir sonuç değil, sınanacak
+bir hipotezdir; kapıyı geçtiğinde ilk bakılacak sayı budur.
+
+### Katman kadrosuna etkisi: YOK (şimdilik)
+
+`vwap_managed` scalp KÂĞIT katmanında kalır. Karar 33'ün ölçütü performans değil
+ÖLÇÜLEBİLİRLİKTİR ve bu model 29 günde 25 pozisyon açıyor (~0.86/gün, n=30'a ~35 gün) —
+yani ölçülebilir. Kâğıtta koşması onun eşiği geçtiği anlamına gelmez; `scalp_patient` için
+karar 33'te yazılan cümlenin aynısı geçerlidir.
+
+**Bu koşu sonucuna göre HİÇBİR parametre değiştirilmedi** (§7.1): `vwap.managed.*` olduğu
+gibi duruyor.
+
