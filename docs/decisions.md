@@ -2591,3 +2591,71 @@ farkı" hâline getirirdi.
 `layers.scalp.models` listesinde yoktur ve bu bir testle çivilidir
 (`tests/test_scalp_patient.py::test_the_candidate_is_not_in_the_live_layer`). Doğrulanmamış
 bir adayın gerçek deftere yazması, bu altyapının engellemek için kurulduğu şeydir.
+
+---
+
+## 32. OOS sonucu: teşhis doğru, düzeltme yetersiz — ve maliyet artık tek kaldıraç
+
+**Pencere:** `scalp`, 2026-07-19 → 2026-09-04, 4545 bar (47.4 gün), `--history-bars 6000`.
+IS penceresiyle (karar 30) örtüşme YOK. Geçerlilik kapıları temiz.
+
+| model | n | ort. R | kazanç% | PF | getiri | maxDD | maliyet/R |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `scalp_patient` | 230 | **−0.01** | 47.4 | 0.98 | −4.04% | −19.98% | 0.124 |
+| `scalp_managed` | 624 | −0.14 | 35.9 | 0.48 | −53.16% | −54.96% | 0.121 |
+| `scalp_fixed` | 650 | −0.15 | 34.3 | 0.47 | −55.41% | −56.94% | 0.121 |
+| `scalp_bandit` | 650 | −0.15 | 34.8 | 0.46 | −58.14% | −59.73% | 0.120 |
+| `vwap_managed` | 57 | −0.21 | 43.9 | 0.56 | −11.95% | −14.79% | 0.139 |
+| `vwap_clone` (kopya) | 2842 | −0.76 | 30.2 | 0.27 | −97.02% | −97.02% | — |
+
+### Karar 30'un teşhisi DOĞRULANDI
+
+| | `scalp_fixed` | `scalp_patient` |
+|---|---:|---:|
+| hedefe ulaşan dilim | 8/650 = **%1.23** | 41/230 = **%17.83** |
+| zaman stop'u diliminin ort. R'si | −0.07 (kaz %37) | **+0.24** (kaz %69) |
+| ortKazanç/ortKayıp | 0.90 | 1.09 |
+| kazanma oranı | %34.3 | %47.4 |
+
+Hedefe ulaşma oranı **14.5 kat** arttı, ortalama R −0.15 → −0.01, maxDD −%57 → −%20.
+Kıyas geçerli: maliyet/R 0.121 ↔ 0.124, stop mesafesi %2.17 ↔ %2.29, ikisi de bandın
+içinde (kural 14) — iyileşme bir maliyet farkından GELMİYOR.
+
+### Ama C-1 DÜŞTÜ: canlıya alınmaz
+
+Eşik ortalama R **> 0**; −0.01 bunu sağlamıyor. `scalp_patient` örneklem kapısını (n=230)
+ve stop bandını geçiyor ama başabaşın hemen altında. **Canlıya alma eşiği geçilmedi.**
+`time_stop_bars`ı sıfırın üstüne çıkana kadar oynatmak `docs/backtest.md > 7.1`in
+yasakladığı şeydir ve OOS penceresi artık harcanmıştır.
+
+### Asıl bulgu: brüt edge var, friksiyon yiyor
+
+| model | net R | maliyet/R | **brüt R** |
+|---|---:|---:|---:|
+| `scalp_patient` | −0.01 | 0.124 | **+0.114** |
+| `scalp_fixed` | −0.15 | 0.121 | −0.029 |
+| `scalp_bandit` | −0.15 | 0.120 | −0.030 |
+| `vwap_managed` | −0.21 | 0.139 | −0.071 |
+
+Diğer üçünde brüt de negatif — orada maliyet suçlu değil, kurulumun kendisi.
+`scalp_patient` ilk kez pozitif brüt edge gösteriyor (+0.11R) ve friksiyon onu tam olarak
+siliyor. **Kaldıraç artık sinyalde değil, maliyette.**
+
+### İki eksen OOS'ta da SIFIR fark verdi
+
+| Eksen | Çift | IS | OOS |
+|---|---|---|---|
+| Adaptasyonun katkısı | `scalp_bandit` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.15 ↔ −0.15 |
+| Çıkış yönetiminin katkısı | `scalp_managed` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.14 ↔ −0.15 |
+| **Sürenin katkısı** | `scalp_patient` ↔ `scalp_fixed` | — | **−0.01 ↔ −0.15** |
+
+Adaptasyon ekseninin sıfır çıkmasının sebebi kol kırılımında görünür: `rsi2_reversal`
+568/650 (%87), `opening_range_breakout` 56, `vwap_pullback` 26, `momentum_burst` **0**,
+`funding_spike_fade` **0**. Log'da her iki model de "1 uygun kol" görüyor. **Bandit'in
+tahsis edecek bir şeyi yok** — eksen bozuk değil, ölçtüğü değişken hiç değişmiyor.
+
+### Karar 27 ve 28 üçüncü kez doğrulandı
+
+Seans: tüm seanslar negatif (−0.08 … −0.18), saat etkisi yok. Kayıp serisi: scalp
+modellerinde tek yönlü değil. `vwap_clone`da yine güçlü ve tek yönlü (0:−0.47, n=657 →
+3:−0.90, n=329) — kayda geçiyor, **kural yazılmıyor.**
