@@ -2980,3 +2980,74 @@ karar 33'te yazılan cümlenin aynısı geçerlidir.
 **Bu koşu sonucuna göre HİÇBİR parametre değiştirilmedi** (§7.1): `vwap.managed.*` olduğu
 gibi duruyor.
 
+---
+
+## 38. Model 14 tripwire'ı ateşledi — ama çıtası, projenin kendi sonraki ölçümüyle çürümüştü
+
+**Gözlem.** 2026-09-15T11:45 → 2026-09-16T17:15 arası 119 canlı bar (`origin/main`
+geçmişinden, `round.models[].survey` toplanarak): `vwap_managed` **32 kurulum** buldu,
+**0 sinyal** üretti. `skipped_signals=0`, yani kural 14'ün stop tavanı hiç tetiklemedi —
+eleme tamamen ev kapılarında.
+
+Tarama sayımı (aynı pencere): `bant_ici` 1414, `z_ge_1_0` 690, `z_ge_1_5` 276,
+`z_ge_2_0` 42, `z_ge_2_5` 5, `donus_yok` 10, `vwap_yok` 91.
+
+### Elemenin YERİ: tek bir turun TAM dökümü
+
+`as_of=2026-09-16T08:30`, kurulum=5, beşi de elendi (Actions log'u, run 196):
+
+| sembol | kapı | değer |
+|---|---|---|
+| BTC | %1 stop tabanı | stop %0.539 |
+| BNB | %1 stop tabanı | stop %0.696 |
+| DOGE | %1 stop tabanı | stop %0.826 |
+| PENGU | 1.5R | hedef/stop 0.91 |
+| LINK | 1.5R | hedef/stop 0.99 |
+
+Stop `2.5 × ATR` olduğu için bu satırlar doğrudan bir **volatilite ölçümüdür**:
+ATR% = %0.22 / %0.28 / %0.33. Ağustos penceresinden (C-5 backtest, karar 37) örneklenen
+11 eleme de aynı deseni veriyor: 7 stop tabanı (%0.305–0.829), 4 R:R (0.67–1.08).
+
+**Bir tuzak: bu R:R değerleri KAPIYA TAKILANLARIN değerleridir.** Hepsi tanım gereği
+1.5'in altında; medyanlarını kalibrasyonun KOŞULSUZ medyanıyla (1.89) kıyaslamak seçim
+yanlılığıdır ve yapılmadı. Geçerli olan kıyas dağılımın kendisidir: medyan gerçekten 1.89
+olsaydı 32 kurulumun 0'ının 1.5'i geçmesi imkânsıza yakındı.
+
+### Asıl bulgu: üç ayrı taban, üç ayrı cevap
+
+| taban | kaynak | beklenen sinyal (119 bar) | P(0 gözlem) |
+|---|---|---:|---:|
+| "kurulumların %13'ü geçer" | kalibrasyon (karar 26) | 4.16 | **%1.2** |
+| "haftada 16.8 sinyal" | kalibrasyon (karar 26) | 2.97 | %5.1 |
+| **0.86 dolum/gün** | **C-5 backtest, 29 gün, AYNI motor (karar 37)** | **1.07** | **%34** |
+
+Tripwire birinci satıra göre kurulmuştu. Üçüncü satır — canlı motorun taze bir 29 günlük
+pencerede gerçekten ne ürettiği — bugün ilk kez okundu (karar 37) ve kalibrasyonun
+oranını **2.8 kat** aşağı düzeltiyor. O tabana göre 29 saatte 0 sinyal görmek **hiç
+şaşırtıcı değildir.**
+
+**Yani ateşlenen şey modelin arızası değil, tripwire'ın eski tabanıdır.** Kalibrasyon
+`scripts/measure_vwap_signal.py`'nin bir süpürmesiydi; backtest ise maliyet, dolum,
+likidasyon ve kota dâhil tam motordur. İkisi çeliştiğinde motor kazanır.
+
+### Hiçbir parametre DEĞİŞTİRİLMEDİ
+
+- **§7.1:** sonucu görüp `atr_multiple` ya da `min_stop_pct` oynatmak tam olarak yasak olan
+  şeydir. `atr_multiple` zaten bir kez süpürülüp 2.5'e sabitlendi (karar 26).
+- **`band_mult` bir frekans düğmesi DEĞİLDİR** ve bu ölçülmüştür
+  (`scripts/measure_vwap_signal.py` modül başlığı): aday olmanın şartı `|z_now| < |z_prev|`
+  olduğu için bandı düşürmek `|z_now|`ı da düşürür, R:R küçülür, yeni adaylar aynı kapıda
+  ölür.
+- **Kapıları gevşetmek bu modelde ZARARLI olurdu:** karar 37 `vwap_managed`in brüt
+  sürüklenmesini **−%0.20** ölçtü. Maliyet sıfırlansa bile kaybeden bir sinyalde frekansı
+  artırmak, yalnızca kaybı hızlandırır.
+
+### Karar
+
+Tripwire'ın tabanı C-5 backtest'in oranına çekildi (0.86 dolum/gün): yeni eşik **7 gün
+üst üste 0 dolum** (P ≈ e^−6 ≈ %0.25). Kontrol devam ediyor, model kadroda kalıyor
+(karar 37: ölçüt ölçülebilirlik).
+
+Yan gözlem: `origin/main`in canlı kadrosu hâlâ 5 model (`scalp_bandit`, `scalp_managed`
+dâhil) — karar 33'ün sadeleştirmesi dalda, henüz merge edilmedi.
+
