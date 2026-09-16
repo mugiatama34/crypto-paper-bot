@@ -2465,3 +2465,81 @@ listesi, **config parmak izi** (maliyet/risk sabitlerinin özeti), harness git S
 model başına geçerlilik sayaçları. Aynı girdilerle tekrar koşulduğunda aynı sonucu
 vermelidir (`random_seed` sabit). Çıktılar `backtests/` altındadır ve depoya girmez: bir
 backtest ölçümün kendisi değil, ölçüm hakkında bir denemedir.
+
+---
+
+## 30. İlk uzun pencere backtest'i: kurulum geometrisi kendi içinde tutarsız
+
+**Koşu:** `scalp`, 2026-09-04T08:30Z → 2026-09-16T08:00Z, 1149 bar (≈12 gün),
+`missing_bars=0`, `unchecked_position_bars=0` (kapı B-2 ✅). Kapı 0 ayrı bir pencerede
+geçmişti (kapıya tabi iki modelde de 9/9).
+
+**Sonuç: dört yarışmacının HİÇBİRİ canlıya alma eşiğini geçmedi** (`docs/backtest.md > 4`).
+
+| model | n | ort. R | kazanç% | PF | getiri |
+|---|---:|---:|---:|---:|---:|
+| `vwap_managed` | 15 | +0.07 | 46.7 | 1.21 | +0.92% |
+| `scalp_bandit` | 154 | −0.21 | 29.2 | 0.35 | −25.05% |
+| `scalp_fixed` | 151 | −0.21 | 28.5 | 0.37 | −26.99% |
+| `scalp_managed` | 158 | −0.21 | 28.5 | 0.36 | −27.70% |
+| `vwap_clone` (kopya) | 707 | −0.56 | 34.5 | 0.39 | −46.68% |
+
+`vwap_managed` C-1'i geçen tek satır ama **B-1 örneklem kapısında düşüyor** (n=15 < 30) ve
+pencere onun için IN-SAMPLE (`atr_multiple` tam bu veriyle kalibre edildi, karar 26). İki
+bağımsız sebeple kanıt sayılmaz. Çoklu karşılaştırma (§7.5): 4 model test edildi, 0 geçti.
+
+### Teşhis: hedef, verilen sürede ulaşılamaz
+
+`exit_rule` kırılımı (`scalp_fixed`, 151 pozisyon; birim DİLİM):
+
+| çıkış | n | pay | ort. R | ortKaz.R | ortKay.R | topl. R |
+|---|---:|---:|---:|---:|---:|---:|
+| `signal:time_stop` | 127 | %84 | −0.09 | +0.37 | −0.30 | −10.97 |
+| `stop` | 22 | %15 | −1.12 | — | −1.12 | −24.72 |
+| `tp` | **2** | **%1.3** | +1.85 | +1.85 | — | +3.69 |
+
+**151 pozisyondan 2'si hedefe vardı.** Kapı `hedef/stop ≥ 1.5` dayatıyor ama gerçekleşen
+yapı bu değil; ortalama KAZANAN (+0.37R) ortalama KAYBEDENDEN (−0.30R) büyük olsa bile
+%15'lik tam stop dilimi (−1.12R) toplamı gömüyor.
+
+Sebep aritmetik ve modelden bağımsız:
+
+```
+stop   = 5×ATR      (scalp.stop_atr_multiple)
+hedef  = 10×ATR     (target_reward_risk 2.0 × stop)
+16 barlık tipik yayılım = √16 = 4×ATR
+hedefin gerektirdiği süre = 10² = 100 bar ≈ 25 saat
+mevcut zaman stop'u = 16 bar = 4 saat           -> 6.2× KISA
+```
+
+Sürüklenmesiz rastgele yürüyüşün hedefe varma olasılığı (yansıma ilkesi) **%1.24**;
+gözlenen **%1.32**. Yani hedefe varma oranı, sinyalin hiçbir katkısı olmadığı varsayımının
+öngördüğü sayıyla örtüşüyor. **Sinyal iyi ya da kötü değil — hedefe ulaşmak için verilen
+süre yetmiyor, bu yüzden sinyalin ne söylediği sonuca yansımıyor.** (ATR bir aralık
+ölçüsüdür, kapanış-kapanış σ'sı değil; bu bir mertebe kontrolüdür, virgül sonrası bir
+iddia değil.)
+
+### Yan bulgu: "beş kollu" modeller pratikte TEK kollu
+
+Kol kırılımı: `rsi2_reversal` 141/158 (%89), `opening_range_breakout` 12, `vwap_pullback`
+5, `momentum_burst` **0**, `funding_spike_fade` **0**. Bandit'in tahsis edecek bir şeyi
+yok — `scalp_bandit ↔ scalp_fixed` ekseninin neden ölçülemediği burada. Eksen bozuk
+değil; ölçtüğü değişken bu pencerede hiç değişmemiş.
+
+### Karar 27 ve 28 daha büyük örneklemde doğrulandı
+
+- **Seans:** tüm seanslar negatif, `scalp_fixed` için −0.16 (asya) … −0.28 (avrupa). Saat
+  etkisi yine YOK; karar 27'nin "bir ölçüm ekle, kural ekleme" sonucu korunuyor.
+- **Kayıp serisi:** scalp modellerinde tek yönlü DEĞİL (0:−0.17, 1:−0.24, 2:−0.30,
+  3:−0.39, sonra 4:−0.24, 5+:−0.15) — kötüleşip toparlıyor, yani sayaç yanlış
+  tetikleyici. Karar 28 korunuyor.
+- **Ama `vwap_clone`da tablo farklı ve güçlü:** 0:−0.15 (n=210) → 3:−0.92 (n=82) →
+  5+:−0.84 (n=111). Kayda geçiyor, KURAL YAZILMIYOR: permütasyon testi yapılmadan ve
+  seçim etkisi elenmeden hareket etmek karar 28'de düşülen tuzağın ta kendisi.
+
+### Bundan SONRA ne yapılabilir, ne yapılamaz
+
+Teşhis net bir düzeltme öneriyor (stop'u daraltmak ya da zaman stop'unu uzatmak; ikisi de
+hedefi ulaşılabilir kılar). **`docs/backtest.md > 7.1` bunu BU pencerede test etmeyi
+yasaklar:** parametre değiştirip aynı veride yeniden koşmak ölçüm değil, eğri uydurmadır.
+Düzeltme YENİ bir hipotezdir ve TAZE bir OOS penceresi gerektirir — bkz. karar 31.
