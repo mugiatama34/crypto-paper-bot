@@ -16,7 +16,14 @@ import pandas as pd
 import pytest
 
 import main as main_module
+from core.config import load_config
+from core.layers import resolve_layer
 from core.ledger import Ledger
+
+# Sıkıştırma modele bakmaz (her model için birebir aynı uygulanır); testin bir ADA
+# ihtiyacı var, hangi ad olduğuna değil. Katmandan okumak, kadro değiştiğinde testin
+# sessizce yanlış modeli aramasını engeller.
+COMPACTION_MODEL = "scalp_fixed"
 
 SYMBOLS = ("BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP")
 START = pd.Timestamp("2026-03-02 00:00:00", tz="UTC")
@@ -75,8 +82,11 @@ def test_scalp_layer_runs_every_model(sandbox: Sandbox) -> None:
     payload = sandbox.metrics()
     assert payload["layer"] == "scalp"
     assert payload["settings"]["timeframe"] == "15m"
-    assert [model["name"] for model in payload["models"]] == ["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"]
-    assert (sandbox.ledgers / "scalp_bandit" / "positions.json").is_file()
+    assert [model["name"] for model in payload["models"]] == resolve_layer(
+        load_config(), "scalp"
+    ).models, "katmandaki her model koşmalı; sessizce düşen model ölçümü eksiltir"
+    for name in resolve_layer(load_config(), "scalp").models:
+        assert (sandbox.ledgers / name / "positions.json").is_file(), name
 
 
 def test_scalp_payload_separates_the_replica(sandbox: Sandbox) -> None:
@@ -136,7 +146,7 @@ def test_scalp_payload_carries_the_layer_breakdowns(sandbox: Sandbox) -> None:
     breakdowns = sandbox.metrics()["breakdowns"]
 
     assert set(breakdowns) == {"arm", "symbol", "exit_rule", "session", "loss_streak"}
-    assert set(breakdowns["arm"]) == set(["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"])
+    assert set(breakdowns["arm"]) == set(resolve_layer(load_config(), "scalp").models)
 
 
 def test_scalp_settings_report_the_layer_ceiling(sandbox: Sandbox) -> None:
@@ -149,7 +159,7 @@ def test_scalp_settings_report_the_layer_ceiling(sandbox: Sandbox) -> None:
 def test_equity_compaction_runs_for_the_scalp_layer(sandbox: Sandbox) -> None:
     """30 günden eski özsermaye satırları günlük özete iner: depo geçmişi şişmesin."""
     ledger = Ledger(sandbox.ledgers)
-    ledger.reset_model("scalp_bandit", initial_capital=10_000.0)
+    ledger.reset_model(COMPACTION_MODEL, initial_capital=10_000.0)
     old = [
         {
             "ts": (START - pd.Timedelta(days=60) + pd.Timedelta(minutes=15 * i)).isoformat(),
@@ -161,13 +171,13 @@ def test_equity_compaction_runs_for_the_scalp_layer(sandbox: Sandbox) -> None:
         }
         for i in range(96)  # tek bir günün tüm barları
     ]
-    ledger.append_equity("scalp_bandit", old)
+    ledger.append_equity(COMPACTION_MODEL, old)
 
     main_module.main(["--layer", "scalp"])
 
     stale = [
         row
-        for row in ledger.read_equity("scalp_bandit")
+        for row in ledger.read_equity(COMPACTION_MODEL)
         if row["ts"] < (START - pd.Timedelta(days=30)).isoformat()
     ]
     assert len(stale) == 1  # 96 bar -> 1 günlük özet

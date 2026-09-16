@@ -65,6 +65,19 @@ Config'in değiştiği pencereler bu teste uygun değildir: `fee_rate` (karar 25
 `vwap.managed.atr_multiple` (karar 26) 15 Eylül'de değişti, o tarihten öncesi ile sonrası
 aynı kurallarla koşmadı.
 
+**Kapı 0 HARNESS düzeyindedir, pencere düzeyinde DEĞİL.** Kapı "bu harness canlı motoru
+yeniden üretiyor mu" diye sorar; cevap harness'ın bir özelliğidir ve her yeni pencerede
+yeniden kazanılması gerekmez. Bu ayrım pratik bir zorunluluktur: canlı scalp katmanı
+2026-09-13'te başladı, yani ondan ÖNCEYE uzanan her pencerede canlı kayıt yoktur ve
+karşılaştırma zorunlu olarak "yalnız backtest" dolu bir liste üretir. O liste bir sadakat
+hatası DEĞİLDİR — ölçtüğü şey "canlı o tarihte henüz koşmuyordu"dur, ve onu kapı saymak
+kapıyı veri kapsamının ölçüsüne çevirirdi.
+
+Kural şu: Kapı 0, canlının TAMAMEN kapsadığı bir pencerede koşulur ve geçmelidir; geçtikten
+sonra aynı config ile koşulan daha uzun pencereler o doğrulamaya dayanır. Config değişirse
+(yukarıdaki iki karar gibi) kapı yeniden koşulur — çünkü o zaman ölçülen harness değil,
+harness'ın okuduğu kurallar değişmiştir.
+
 ---
 
 ## 2. Ölçülen şey
@@ -153,6 +166,31 @@ düşer** — sessiz bir kısalma olmaz, sayı raporda görünür.
 
 ---
 
+### 5b. Derinlik override'ı (`--history-bars`)
+
+`data.history_bars` bir ÖLÇÜM kuralı DEĞİLDİR: maliyet, risk, dolum, likidasyon ve metrik
+tanımlarına dokunmaz; yalnızca anlık görüntünün ne kadar geriye gittiğini söyler. Backtest
+onu DERİNLEŞTİREBİLİR.
+
+**Neden config'te global olarak yükseltilmiyor:** canlı bundan faydalanmaz. Modellerin
+lookback'leri sınırlıdır (`tail(300)`, `rolling(20)`, EMA50, gün-çapalı VWAP), yani daha
+derin geçmiş canlı sinyalini değiştirmez — ama `data/` depoya girmediği için her saatlik
+tur veriyi baştan indirir ve global bir artış, faydasız yere her turda kat kat indirme
+demekti.
+
+**"Değiştirmez" bir varsayım değil, SINANAN bir iddiadır:** aynı override ile koşulan
+Kapı 0, canlı kayıtla birebir eşleşmeye devam etmelidir. Eşleşmezse override bir ölçüm
+sapması üretiyor demektir ve kullanılamaz.
+
+**Yalnızca derinleştirir, sığlaştırmaz** (`ValueError`): `tail(300)` okuyan bir model 200
+barlık görüntüde BAŞKA bir sinyal üretir ve backtest artık canlıyı değil, kendi uydurduğu
+bir modeli ölçerdi.
+
+Kullanılan değer her koşuda `manifest.json > history_bars` altında (`config` ve `used`)
+yazılı durur.
+
+---
+
 ## 6. Kontaminasyon ve OOS
 
 Bir modelin parametresi hangi veride seçildiyse o veri onun için **in-sample**'dır ve
@@ -169,6 +207,48 @@ Bir modelin parametresi hangi veride seçildiyse o veri onun için **in-sample**
 **Kural:** `vwap_managed` ve `vwap_fast` için C-1..C-3, **17 Ağu 2026'dan ÖNCEKİ** bir
 pencerede de sağlanmalıdır (C-5). O pencerede sağlanmıyorsa kalibrasyon o 30 güne
 uydurulmuş demektir.
+
+---
+
+## 6b. ÖN-KAYIT — `scalp_vol` (model 17)
+
+**Bu bölüm koşudan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.** Sonuç
+görüldükten sonra hiçbir satırı değiştirilmeyecek (§7).
+
+**Hipotez.** Friksiyon notional'ın sabit bir yüzdesidir; sinyalin sürüklenmesi volatiliteyle
+ölçeklenir. `scalp_patient`in başabaş noktası evrenin MEDYAN volatilitesindedir (karar 35:
+brüt %0.261 ↔ maliyet %0.284). O hâlde medyanın ÜSTÜNDEKİ kurulumlarla sınırlanmış aynı
+model, daha yüksek brüt sürüklenme üretmelidir.
+
+**Eksen.** `scalp_patient` ↔ `scalp_vol`; ayrışan TEK şey kesitsel ATR% medyan kapısı.
+Kol seçimi, kapılar, geometri, 100 barlık zaman stop'u ve çekiliş kimliği miras.
+
+**Pencere.** 2026-07-19 → 2026-09-04, `--history-bars 6000`. Bu pencere `scalp_vol` için
+TAZEDİR (model o koşudan sonra yazıldı). Sonuca göre kaydırılmayacak (§7.3).
+
+**ÖN-KAYITLI TAHMİNLER** (sonucu görmeden):
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | brüt sürüklenme% | `scalp_vol` > `scalp_patient` (%0.261) | ≤ %0.261 |
+| **P2** | maliyet/R | `scalp_vol` < `scalp_patient` (0.124) — stop ATR ile büyür | ≥ 0.124 |
+| **P3** | örneklem | n ≥ 30 | n < 30 → satır okunmaz (B-1) |
+| **P4** | stop bandı | ⚠B yanmaz (C-4) | yanarsa kıyas geçersiz |
+
+**P1 birincildir.** P1 tutmazsa "edge σ ile ölçeklenir" varsayımı YANLIŞTIR — o zaman edge
+mutlak, maliyet oranlıdır ve bu geometride hiçbir 15m tezi kurtarılamaz. Bu, **olumsuz
+çıktığında da değerli** bir ölçümdür ve o durumda doğru hamle katmanı kapatmak ya da maliyet
+çalışmasına geçmektir.
+
+**P2 bir SAĞLAMADIR, bir başarı ölçütü değil.** Kapı ATR'yi seçiyorsa stop mesafesi
+büyümek zorundadır. P2 tutmazsa kapı ATR'yi değil başka bir şeyi seçmiştir ve P1'in sonucu
+yorumlanamaz.
+
+**Canlıya alma eşiği (§4) AYRICA geçilmelidir.** P1'in tutması `scalp_vol`u canlıya almaz;
+C-1 (ort. R > 0) ayrı bir çıtadır ve `scalp_patient` onu −0.01 ile geçememişti.
+
+**Çoklu karşılaştırma (§7.5).** Araştırmadan 10 öneri çıktı; bu, test edilen **1.**sidir.
+Sonuç raporlanırken bu sayı yazılacak.
 
 ---
 

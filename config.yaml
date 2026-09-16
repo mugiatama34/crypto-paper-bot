@@ -41,7 +41,8 @@ max_stop_atr_multiple: 3.0  # stop mesafesi ATR'nin bu katını aşarsa işlem a
 # sonuçlanır — barlar sırayla işlenir, her barın emri bir sonraki barın açılışından dolar
 # (kural 13) ve pozisyon limitleri her barda yeniden sorulur.
 #
-# Kökte KAPALI, çünkü 4 saatlik katmanın cron'u (run.yml, 6 saatte bir) güvenilir
+# Kökte KAPALI, çünkü 4 saatlik katmanın cron'u (run.yml, 4 saatte bir = bar başına
+# tam bir tur) güvenilir
 # tetikleniyor: telafi nadiren devreye girer, ama açık olsaydı devreye girdiği her turda
 # defterin kuralı sessizce değişirdi — aynı defterde biriken geçmişin bir kısmı "tur
 # başına tek sinyal", bir kısmı "bar başına tek sinyal" ile üretilmiş olurdu ve iki
@@ -72,8 +73,17 @@ random_seed: 20240217
 # normal modellerin ürettiği sinyalleri salt okunur okur ve üst üste binenleri oynar. Listedeki
 # yeri sırayı DEĞİŞTİRMEZ — engine her turu iki geçişte yürütür ve metalar her hâlükârda ikinci
 # geçiştedir; metalar birbirini de göremez.
-models: ["buyhold", "trend", "meanrev", "momentum", "squeeze", "confluence",
-         "failed_breakout", "downtrend_rally", "avwap", "random_ctrl", "ensemble"]
+# SADELEŞTİRİLDİ (karar 33). Ölçüt performans DEĞİL, ÖLÇÜLEBİLİRLİKTİR: 29 barlık
+# geçmişte `momentum`, `squeeze`, `failed_breakout` ve `downtrend_rally` HİÇ sinyal
+# üretmedi; `confluence` (72 gün), `ensemble` (125 gün) ve `avwap` (42 gün) örneklem
+# kapısına (n=30) pratikte hiç ulaşamazdı. Ne kadar iyi olduklarını asla öğrenemeyeceğimiz
+# satırlar tabloda yalnızca gürültü üretir. Emekli edilen modellerin KODU ve DEFTERİ durur
+# (kural 1: append-only); listeye geri eklemek bir commit'tir.
+#
+# `random_ctrl` kalır: kabul çıtasının kontrol grubudur (`acceptance.control_model`).
+# `buyhold` kalır: çıpadır (kural 15) ve 0 işlem görünmesi bir arıza DEĞİL — hiç kapatmaz,
+# bilgisi hesap getirisindedir.
+models: ["buyhold", "trend", "meanrev", "random_ctrl"]
 
 # --- Kabul çıtası (dashboard rozetleri ve Telegram özeti) ---
 # Bir modelin sonucunun nasıl okunacağını belirleyen eşikler. Burada dururlar, çünkü rozet
@@ -158,7 +168,7 @@ layers:
     metrics_file: "docs/data/metrics.json"
     universe: null            # hacimden otomatik seçim (universe_size / universe_refresh_days)
     retention:
-      equity_compaction_days: null   # 6 saatte bir tur: equity.csv yavaş büyür, sıkıştırma gereksiz
+      equity_compaction_days: null   # bar başına bir tur: equity.csv yavaş büyür, sıkıştırma gereksiz
       model_trade_limit: 100
     breakdowns: []            # 4 saatlik modellerde kol/sembol kırılımı yok
 
@@ -180,7 +190,14 @@ layers:
     #   ev kurallarının katkısı    vwap_clone (13) ↔ vwap_managed (14)
     # vwap_clone bir YARIŞMACI DEĞİLDİR (is_replica): dış bir sistemin kopyasıdır, kendi
     # boyutlandırmasıyla (sabit teminat × 10x) koşar ve tabloda ayrı bir bölümde durur.
-    models: ["scalp_bandit", "scalp_fixed", "scalp_managed", "vwap_clone", "vwap_managed"]
+    # SADELEŞTİRİLDİ (karar 33). İki eksen İKİ bağımsız pencerede de SIFIR fark verdi:
+    #   adaptasyon      scalp_bandit  ↔ scalp_fixed : −0.21↔−0.21 (IS), −0.15↔−0.15 (OOS)
+    #   çıkış yönetimi  scalp_managed ↔ scalp_fixed : −0.21↔−0.21 (IS), −0.14↔−0.15 (OOS)
+    # Adaptasyon ekseninin sebebi kol kırılımında görünür: rsi2_reversal %87, iki kol HİÇ
+    # tetiklemedi, yani bandit'in tahsis edecek bir şeyi yok ("1 uygun kol"). Eksenleri
+    # kapatmak bilgi kaybı değil, iki kez alınan "fark yok" cevabını kabul etmektir.
+    # Hareket eden TEK eksen süredir (scalp_patient ↔ scalp_fixed: −0.01 ↔ −0.15).
+    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle
@@ -257,6 +274,14 @@ scalp:
   min_stop_pct: 0.01        # stop mesafesi girişin %1'inden DARSA işlem alınmaz (atlanır)
   min_reward_risk: 1.5      # hedef/stop oranı bunun altındaysa kurulum atlanır
   time_stop_bars: 16        # 16 × 15m = 4 saat; sonra pozisyon piyasa fiyatından kapanır
+  # `scalp_patient` (model 16) İÇİN AYRI sınır — kural aynı, yalnızca SÜRE ayrışır.
+  # Karar 30 şunu ölçtü: 5×ATR stop ile 10×ATR hedef, 16 barlık tipik yayılım (√16 = 4×ATR)
+  # içinde ulaşılamaz; `scalp_fixed`in 151 pozisyonundan 2'si hedefe vardı (%1.3), ki bu
+  # sürüklenmesiz rastgele yürüyüşün öngördüğü %1.24 ile örtüşür. 100 = (hedef/ATR)² =
+  # 10², yani sayı TEORİDEN gelir, veriden değil — birkaç değer deneyip en iyisini seçmek
+  # docs/backtest.md > 7.1'in yasakladığı şeydir.
+  patient:
+    time_stop_bars: 100     # 100 × 15m ≈ 25 saat
   # Kolların ORTAK stop mesafesi: 5×ATR(14). Neden bu kadar geniş: 15 dakikalık barda
   # ATR tipik olarak fiyatın %0.15-0.25'idir; 1.5×ATR gibi bir çarpan stop'u %0.3'te
   # bırakır ve stop TABANI (%1) yüzünden kurulumların neredeyse tamamı atlanırdı — iki

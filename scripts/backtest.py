@@ -58,7 +58,7 @@ import logging
 import subprocess
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -67,13 +67,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd  # noqa: E402
 
-from core.config import load_config  # noqa: E402
+from core.config import get_setting, load_config  # noqa: E402
 from core.data import load_market_data  # noqa: E402
 from core.engine import Engine, RoundReport  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 from core.metrics import ModelMetrics, compare, format_report  # noqa: E402
 from core.portfolio import Portfolio  # noqa: E402
+from core.report import model_breakdowns  # noqa: E402
 from main import build_strategies  # noqa: E402
 from strategies.base import Strategy  # noqa: E402
 
@@ -110,6 +111,11 @@ class BacktestResult:
     report: RoundReport
     metrics: tuple[ModelMetrics, ...]
     build_failures: Mapping[str, str]
+    # Katmanın kendi kırılımları (`layers.<ad>.breakdowns`). Tablo "hangi model önde" der;
+    # kırılım "neden" der — ve bir backtest'in cevaplaması istenen soru tam olarak odur.
+    # Tabloyu görüp kırılımı görmemek, ortalama R'nin ARDINDAKİ mekanizmayı (hangi çıkış
+    # kuralı kaç kez tetikledi, hangi kol/sembol taşıdı) çıkarıma bırakırdı.
+    breakdowns: Mapping[str, Any] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -123,6 +129,7 @@ def run_backtest(
     out_dir: Path,
     models: Sequence[str] | None = None,
     config_path: str | None = None,
+    history_bars: int | None = None,
 ) -> BacktestResult:
     """Katmanı `start`..`end` penceresinde koşturur ve ayrı bir deftere yazar.
 
@@ -137,6 +144,27 @@ def run_backtest(
     # Bilinçli sapma (docs/backtest.md > 5a): kapalıyken tüm pencere TEK sinyal üretirdi.
     signals_per_bar_was = bool(config.get("signals_per_bar"))
     config["signals_per_bar"] = True
+
+    # Derinlik override'ı (docs/backtest.md > 5b): `data.history_bars` bir ÖLÇÜM kuralı
+    # değil, anlık görüntünün ne kadar geriye gittiğidir — maliyet, risk, dolum ve metrik
+    # tanımlarına dokunmaz. Backtest'e özel olmasının sebebi canlının ondan FAYDALANMAMASI:
+    # modellerin lookback'leri sınırlıdır (`tail(300)`, `rolling(20)`, EMA50, gün-çapalı
+    # VWAP), yani daha derin geçmiş canlı sinyalini değiştirmez — ama `data/` depoya
+    # girmediği için her saatlik tur veriyi baştan indirir ve global bir artış, faydasız
+    # yere her turda 4× indirme demekti.
+    #
+    # "Değiştirmez" bir varsayım değil, SINANAN bir iddiadır: aynı override ile koşulan
+    # Kapı 0 canlı kayıtla birebir eşleşmeye devam etmelidir. Eşleşmezse override bir
+    # ölçüm sapması üretiyor demektir ve kullanılamaz.
+    history_bars_was = int(get_setting(config, "data.history_bars"))
+    if history_bars is not None:
+        if history_bars < history_bars_was:
+            raise ValueError(
+                f"--history-bars yalnızca DERİNLEŞTİRİR: {history_bars} < {history_bars_was}. "
+                "Sığlaştırmak modelin canlıda gördüğünden AZ veri görmesi demekti."
+            )
+        config = {**config, "data": {**config["data"], "history_bars": history_bars}}
+        logger.info("derinlik override: history_bars %d -> %d", history_bars_was, history_bars)
 
     names = list(models) if models is not None else layer.models
     if not names:
@@ -156,7 +184,15 @@ def run_backtest(
     # Anlık görüntü `end`e kadar kesilir: `now` verildiğinde core/data.py hem çıpayı hem
     # tüm serileri oraya kadar budar, yani model geleceği GÖREMEZ (kural 12). Backtest'in
     # look-ahead güvencesi burada başlar ve motorun bar bazlı dilimlemesiyle sürer.
-    market = load_market_data(config, symbols=layer.symbols, now=end)
+    # `now` GELECEKTE olamaz. `load_market_data` bunu "şimdi" sayar ve çıpanın tazeliğini
+    # ona göre ölçer (`data.max_staleness_bars`); gelecek bir `end` ile BTC'nin son kapanmış
+    # barı zorunlu olarak "bayat" çıkar ve anlık görüntü hiç üretilmez. Oysa istenen şey
+    # "eldeki en taze bara kadar koş"tur ve onun karşılığı zaten aşağıdaki uyarıdır.
+    # Kısaltma SESSİZ değildir: burada da, `market.as_of < end` dalında da söylenir.
+    now = pd.Timestamp.now(tz="UTC")
+    if end > now:
+        logger.warning("istenen bitiş (%s) gelecekte; anlık görüntü şimdiye (%s) kadar kurulur", end, now)
+    market = load_market_data(config, symbols=layer.symbols, now=min(end, now))
     logger.info(
         "katman=%s pencere=(%s, %s] as_of=%s sembol=%d model=%d",
         layer.name, start, end, market.as_of, len(market.ohlcv), len(strategies),
@@ -189,10 +225,18 @@ def run_backtest(
         strategies=strategies,
         build_failures=build_failures,
         signals_per_bar_was=signals_per_bar_was,
+        history_bars=(history_bars_was, int(get_setting(config, "data.history_bars"))),
     )
+    # Kırılımlar `core/report.py`den OKUNUR, burada yeniden yazılmaz: kırılımın tanımı
+    # (kol etiketi, çıkış kuralı birleşimi, seans sınırları, kayıp serisi kesimi) ölçümün
+    # parçasıdır ve ikinci bir kopya, backtest ile dashboard'un sessizce ayrışması demekti.
+    trades = {s.name: ledger.read_trades(s.name) for s in strategies}
+    breakdowns = model_breakdowns(trades, kinds=layer.breakdowns)
+
     return BacktestResult(
         layer=layer.name, start=start, end=market.as_of, out_dir=out_dir,
         report=report, metrics=tuple(metrics), build_failures=build_failures,
+        breakdowns=breakdowns,
     )
 
 
@@ -225,12 +269,16 @@ def _write_manifest(
     strategies: Sequence[Strategy],
     build_failures: Mapping[str, str],
     signals_per_bar_was: bool,
+    history_bars: tuple[int, int],
 ) -> None:
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "harness_sha": _git_sha(),
         "layer": layer.name,
         "window": {"start": start.isoformat(), "end": end.isoformat()},
+        # Sapmalar koşunun kendi kaydında durur: sonradan "hangi ayarla koşmuştu" diye
+        # sorulduğunda cevap log'da değil, manifest'te olmalı (docs/backtest.md > 9).
+        "history_bars": {"config": history_bars[0], "used": history_bars[1]},
         "models": [s.name for s in strategies],
         "adaptive_models": [s.name for s in strategies if is_adaptive(s)],
         "build_failures": dict(build_failures),
@@ -302,11 +350,27 @@ class SignalKey:
     direction: str
 
 
+def bar_key(value: Any) -> str:
+    """Barın karşılaştırmada kullanılan TEK metin biçimi: UTC ISO-8601.
+
+    İki taraf aynı anı iki farklı biçimde yazdığı an kapı anlamını yitirir — ve sessizce
+    yitirir: `str(pd.Timestamp)` `"... 15:15:00+00:00"`, `isoformat()` ise
+    `"...T15:15:00+00:00"` üretir, yani birebir aynı sinyal kümesi sıfır kesişimle
+    "AYRIŞTI" görünür. Kapı 0'ın işi harness'ı denetlemek; kendi biçimlendirme farkını
+    bir sadakat hatası diye raporlaması, denetimin kendisini bozar.
+
+    Ayrıştırılamayan bir değer ATILMAZ, ham metniyle durur: düşürmek o sinyali
+    karşılaştırmadan sessizce çıkarır ve eksik bir küme eşleşme gibi görünebilirdi.
+    """
+    stamp = _stamp(value)
+    return stamp.isoformat() if stamp is not None else str(value)
+
+
 def emitted_keys(report: RoundReport) -> set[SignalKey]:
     return {
         SignalKey(
             model=model.model,
-            bar=str(signal.bar),
+            bar=bar_key(signal.bar),
             symbol=str(signal.symbol),
             direction=str(signal.direction),
         )
@@ -325,8 +389,7 @@ def live_emitted_keys(
     ve orası zaten değiştirilemez bir kayıttır, tam da bir yer gerçeğinden istenen şey.
     """
     keys: set[SignalKey] = set()
-    shas = _git_log_shas(metrics_path)
-    for sha in shas:
+    for sha in _git_log_shas(metrics_path):
         blob = _git_show(f"{sha}:{metrics_path}")
         if not blob:
             continue
@@ -334,19 +397,33 @@ def live_emitted_keys(
             payload = json.loads(blob)
         except json.JSONDecodeError:
             continue
-        for model in (payload.get("round") or {}).get("models") or ():
-            for signal in model.get("emitted") or ():
-                bar = _stamp(signal.get("bar"))
-                if bar is None or not (start < bar <= end):
-                    continue
-                keys.add(
-                    SignalKey(
-                        model=str(signal.get("model") or model.get("model")),
-                        bar=bar.isoformat(),
-                        symbol=str(signal.get("symbol")),
-                        direction=str(signal.get("direction")),
-                    )
+        keys |= payload_keys(payload, start=start, end=end)
+    return keys
+
+
+def payload_keys(
+    payload: Mapping[str, Any], *, start: pd.Timestamp, end: pd.Timestamp
+) -> set[SignalKey]:
+    """Tek bir `metrics_*.json` yükünün `emitted` kayıtları -> anahtar kümesi.
+
+    Git yürüyüşünden AYRI durur ki anahtarın kurulumu depo geçmişi olmadan test
+    edilebilsin: kapıyı düşüren ilk hata tam olarak buradaydı ve iki tarafı elle aynı
+    biçimde yazan bir test onu göremezdi.
+    """
+    keys: set[SignalKey] = set()
+    for model in (payload.get("round") or {}).get("models") or ():
+        for signal in model.get("emitted") or ():
+            bar = _stamp(signal.get("bar"))
+            if bar is None or not (start < bar <= end):
+                continue
+            keys.add(
+                SignalKey(
+                    model=str(signal.get("model") or model.get("model")),
+                    bar=bar_key(bar),
+                    symbol=str(signal.get("symbol")),
+                    direction=str(signal.get("direction")),
                 )
+            )
     return keys
 
 
@@ -370,6 +447,101 @@ def compare_signals(
             "match": mine == theirs,
         }
     return result
+
+
+def format_drift(metrics: Sequence[ModelMetrics]) -> str:
+    """Brüt sürüklenme% — R ölçeğinden BAĞIMSIZ tek karşılaştırma birimi (karar 35).
+
+        brüt sürüklenme% = (ort.R + cost_per_r) × avg_stop_distance_pct
+
+    Neden gerekli: `cost_per_r = maliyet% / stop%` özdeşliği yüzünden stop'u genişletmek
+    maliyet/R'yi düşürür AMA R cinsinden brüt edge'i aynı oranda düşürür — yani **stop
+    genişliği net R'nin İŞARETİNİ değiştiremez** ve iki modelin ort. R'sini kıyaslamak,
+    farklı stop ölçeklerinde farklı şeyleri kıyaslamak olur. Yüzde cinsinden sürüklenme
+    o ölçekten bağımsızdır ve maliyet duvarıyla (~%0.26/tur) doğrudan kıyaslanabilir.
+
+    Burada TÜRETİLİR, `core/metrics.py`ye eklenmez: ölçümün kendisi değil, ölçümün
+    okunma birimidir ve yalnızca backtest kararlarında kullanılır. Çıpa ve kopya
+    satırları `nan` taşır (kural 15/15b), o yüzden `—` görünür.
+    """
+    if not metrics:
+        return ""
+    out = ["\nBRÜT SÜRÜKLENME (karar 35) — R ölçeğinden bağımsız birim",
+           "-" * 78,
+           f"{'model':18s}{'ort.R':>8}{'maliyet/R':>11}{'stopMes.%':>11}"
+           f"{'brüt%':>9}{'maliyet%':>10}"]
+    for item in metrics:
+        t = item.total
+        r, cost, stop = _num(t.avg_r), _num(t.cost_per_r), _num(t.avg_stop_distance_pct)
+        if r is None or cost is None or stop is None:
+            out.append(f"{item.model:18s}{_cell(t.avg_r):>8}{_cell(t.cost_per_r):>11}"
+                       f"{_cell(t.avg_stop_distance_pct):>11}{'—':>9}{'—':>10}")
+            continue
+        out.append(f"{item.model:18s}{r:8.2f}{cost:11.3f}{stop:11.2f}"
+                   f"{(r + cost) * stop:9.3f}{cost * stop:10.3f}")
+    return "\n".join(out) + "\n"
+
+
+def _num(value: Any) -> float | None:
+    """`nan` ve None aynı şeyi söyler burada: bu satır için sayı YOK."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if number != number else number
+
+
+def format_breakdowns(breakdowns: Mapping[str, Any]) -> str:
+    """Katmanın kırılımlarını okunur bir tabloya çevirir.
+
+    Sayıları `core/metrics.py` üretir; buradaki iş yalnızca BİÇİMLENDİRMEDİR. Kırılımın
+    kendi tanımına (grup ölçütü, birim) dokunulmaz — ona dokunmak, aynı defterin backtest
+    ile dashboard'da iki farklı kırılım göstermesi demekti.
+
+    `exit_rule` kırılımının birimi DİLİMDİR (kural 13c), diğerlerininki pozisyon; bu yüzden
+    o bölümün `n` toplamı model tablosundan büyük olabilir ve satır bunu SÖYLER.
+    """
+    if not breakdowns:
+        return ""
+    out: list[str] = []
+    for kind, per_model in breakdowns.items():
+        unit = "dilim" if kind == "exit_rule" else "pozisyon"
+        out.append(f"\nKIRILIM: {kind}  (birim: {unit})")
+        out.append("-" * 104)
+        out.append(
+            f"{'model':16s}{'grup':26s}{'n':>6}{'ort.R':>9}{'kazanç%':>10}"
+            f"{'ortKaz.R':>10}{'ortKay.R':>10}{'PF':>8}{'topl.R':>10}"
+        )
+        for model, groups in per_model.items():
+            if not groups:
+                continue
+            for group, stats in sorted(
+                groups.items(), key=lambda kv: -(kv[1].get("trades") or 0)
+            ):
+                out.append(
+                    f"{model:16s}{str(group):26s}"
+                    f"{stats.get('trades') or 0:6d}"
+                    f"{_cell(stats.get('avg_r')):>9}"
+                    f"{_cell(stats.get('win_rate')):>10}"
+                    f"{_cell(stats.get('avg_win_r')):>10}"
+                    f"{_cell(stats.get('avg_loss_r')):>10}"
+                    f"{_cell(stats.get('profit_factor')):>8}"
+                    f"{_cell(stats.get('total_r')):>10}"
+                )
+    return "\n".join(out) + "\n"
+
+
+def _cell(value: Any) -> str:
+    """Tanımsız metrik `—` olur, `0` DEĞİL (docs/shared.js ile aynı söz)."""
+    if value is None:
+        return "—"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return "—" if number != number else f"{number:.2f}"
 
 
 def _git_log_shas(path: str) -> list[str]:
@@ -419,12 +591,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             layer_name=args.layer, start=start, end=end, out_dir=out_dir,
             models=args.models.split(",") if args.models else None,
             config_path=args.config,
+            history_bars=args.history_bars,
         )
     except Exception as exc:  # noqa: BLE001 — CLI sınırı; gerekçe kullanıcıya gider
         logger.error("backtest koşulamadı: %s", exc)
         return 1
 
     print(format_report(list(result.metrics)))
+    print(format_drift(result.metrics))
+    print(format_breakdowns(result.breakdowns))
 
     violations = check_validity(result.report)
     if violations:
@@ -491,6 +666,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--out", default=None, help="çıktı dizini")
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--config", default=None)
+    parser.add_argument(
+        "--history-bars", type=int, default=None, metavar="N",
+        help="anlık görüntü derinliği; yalnızca DERİNLEŞTİRİR (config'teki değerin altına inemez)",
+    )
     parser.add_argument(
         "--verify-live", default=None, metavar="METRICS_PATH",
         help="KAPI 0: sinyalleri bu rapor dosyasının git geçmişiyle karşılaştır",

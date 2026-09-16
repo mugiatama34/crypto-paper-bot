@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 
 from core.config import load_config
-from core.engine import Engine, ModelReport, RoundReport
+from core.engine import Engine, EmittedSignal, ModelReport, RoundReport
 from core.ledger import Ledger
 from core.portfolio import Portfolio
 from scripts.backtest import (
@@ -28,6 +28,7 @@ from scripts.backtest import (
     compare_signals,
     emitted_keys,
     is_adaptive,
+    payload_keys,
 )
 from strategies.base import (
     ClosedTrade,
@@ -241,6 +242,65 @@ def test_adaptive_models_are_reported_but_do_not_gate() -> None:
     assert row["match"] is False  # ayrışma gizlenmez, yalnızca kapı sayılmaz
 
 
+def test_the_two_sides_of_gate_zero_render_the_same_bar_identically() -> None:
+    """Rapor tarafı `pd.Timestamp`, canlı taraf JSON metni taşır; anahtar AYNI olmalı.
+
+    Kapı 0'ı ilk koşusunda düşüren hata tam olarak buydu: rapor tarafı `str(Timestamp)`
+    ile `"... 15:15:00+00:00"`, canlı taraf `isoformat()` ile `"...T15:15:00+00:00"`
+    üretiyordu. Birebir aynı sinyal kümesi sıfır kesişimle "AYRIŞTI" göründü — yani kapı,
+    ölçmesi gereken sadakat yerine kendi biçimlendirme farkını raporladı.
+
+    Test İKİ şeyi birden çivilemek zorunda, çünkü tek başına hiçbiri yetmiyor:
+    (a) iki tarafın anahtarı EŞİT — biri `pd.Timestamp`ten, diğeri JSON metninden kurulur;
+    (b) ortak biçim ISO-8601 ('T') — (a) tek başına, iki taraf aynı bozuk biçimi
+    paylaştığında da geçerdi, çünkü ikisi artık aynı fonksiyondan geçiyor.
+    """
+    bar = pd.Timestamp("2026-09-15 15:15:00", tz="UTC")
+    window = {"start": bar - pd.Timedelta("1min"), "end": bar + pd.Timedelta("1min")}
+
+    report = RoundReport(
+        as_of=bar,
+        models=(
+            ModelReport(
+                model="scalp_fixed",
+                emitted=(
+                    EmittedSignal(
+                        model="scalp_fixed",
+                        symbol="BNB-USDT-SWAP",
+                        direction="short",
+                        bar=bar,
+                        fills_at=bar + pd.Timedelta("15min"),
+                        close=100.0,
+                    ),
+                ),
+            ),
+        ),
+    )
+    payload = {
+        "round": {
+            "models": [
+                {
+                    "model": "scalp_fixed",
+                    "emitted": [
+                        {
+                            "model": "scalp_fixed",
+                            "symbol": "BNB-USDT-SWAP",
+                            "direction": "short",
+                            "bar": bar.isoformat(),
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+
+    mine = emitted_keys(report)
+    theirs = payload_keys(payload, **window)
+    assert mine == theirs, "aynı an, iki farklı biçim -> kapı kendi hatasını ölçer"
+    assert compare_signals(mine, theirs, adaptive=())["scalp_fixed"]["match"] is True
+    assert next(iter(mine)).bar == "2026-09-15T15:15:00+00:00", "ortak biçim ISO-8601"
+
+
 def test_emitted_keys_ignore_price_fields() -> None:
     """Karşılaştırmanın birimi (model, bar, sembol, yön); fiyat DEĞİL.
 
@@ -281,3 +341,54 @@ def test_backtest_writes_only_under_its_own_root(tmp_path: Path) -> None:
     written = {path.relative_to(tmp_path).parts[0] for path in tmp_path.rglob("*") if path.is_file()}
     assert written == {"backtests"}
     assert (root / "ledger" / strategy.name / "trades.csv").exists()
+
+
+# --------------------------------------------------------------------------- #
+# Derinlik override'ı: yalnızca DERİNLEŞTİRİR
+# --------------------------------------------------------------------------- #
+def test_history_bars_override_refuses_to_shallow_the_window(tmp_path: Path) -> None:
+    """Sığlaştırmak, modelin canlıda gördüğünden AZ veri görmesi demekti.
+
+    Derinleştirmek zararsızdır (lookback'ler sınırlı), sığlaştırmak değildir: `tail(300)`
+    okuyan bir model 200 barlık bir görüntüde BAŞKA bir sinyal üretir ve backtest artık
+    canlıyı değil, kendi uydurduğu bir modeli ölçer. Sessiz kırpma yerine hata.
+    """
+    from scripts.backtest import run_backtest
+
+    with pytest.raises(ValueError, match="DERİNLEŞTİRİR"):
+        run_backtest(
+            layer_name="scalp",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=tmp_path / "out",
+            history_bars=1,
+        )
+
+
+def test_history_bars_override_reaches_the_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Override'ın config'e GERÇEKTEN işlediğini sabitler.
+
+    Koşu süresinin uzaması ya da manifest'e bir sayı yazılması "daha derin veri çekildi"nin
+    KANITI değildir; kanıt, `core/data.py`ye giden config'in o değeri taşımasıdır. Bayrak
+    sessizce düşerse backtest sığ veriyle koşar ve bunu kimse fark etmez.
+    """
+    seen: dict[str, Any] = {}
+
+    def _capture(config: Any, **kwargs: Any) -> Any:
+        seen["history_bars"] = config["data"]["history_bars"]
+        raise RuntimeError("dur")  # anlık görüntüden sonrasına gerek yok
+
+    monkeypatch.setattr("scripts.backtest.load_market_data", _capture)
+
+    from scripts.backtest import run_backtest
+
+    with pytest.raises(RuntimeError, match="dur"):
+        run_backtest(
+            layer_name="scalp",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=Path("/tmp/does-not-matter"),
+            history_bars=6000,
+        )
+    assert seen["history_bars"] == 6000
+

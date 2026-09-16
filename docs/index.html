@@ -71,24 +71,46 @@
   .group-name { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
   .group-note { font-size: 11.5px; color: var(--ink-muted); }
   .mcards { display: grid; gap: 10px; grid-template-columns: 1fr; }
-  a.mcard {
-    display: flex; flex-direction: column; gap: 8px; min-height: 150px;
+  /* Kart artık bir <a> DEĞİL: içinde katlanır bir bölüm var ve tıklamak onu açmalı,
+     sayfayı değiştirmemeli. Detay sayfasına giden bağlantı katlanan bölümün içindedir. */
+  .mcard {
+    display: flex; flex-direction: column; gap: 8px;
     background: var(--surface); border: 1px solid var(--hair); border-top: 3px solid var(--ink-muted);
-    border-radius: var(--radius); padding: 12px; text-decoration: none; color: inherit;
-    min-width: 0;
+    border-radius: var(--radius); padding: 12px; color: inherit; min-width: 0;
   }
-  a.mcard:hover, a.mcard:focus-visible { border-color: var(--axis); background: var(--surface-2); outline: none; }
-  a.mcard:focus-visible { box-shadow: 0 0 0 2px var(--ink-muted); }
-  a.mcard:active { background: var(--surface-2); }
   /* Referans ve kontrol satırları grafikte nötr; kartta da öyle görünürler. Çıpa
      ayrıca KESİKLİ kenarlıkla ayrışır: aynı sütunda yarışmıyor (kural 15). */
-  a.mcard.reference { border-style: dashed; background: rgba(255,255,255,0.028); }
+  .mcard.reference { border-style: dashed; background: rgba(255,255,255,0.028); }
+
+  /* Ana sayı: 10.000 $ ile başlayan hesap NEREDE. Yüzde onun yanında durur — ikisi
+     ayrı satırlara konsaydı "ne kadar" ile "ne kadarı" ayrı iki soru gibi okunurdu. */
+  .mcard-eq { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .mcard-eq b {
+    font-size: clamp(26px, 8vw, 32px); font-weight: 650; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; line-height: 1.1;
+  }
+  .mcard-eq .eq-pct { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .mcard-eq .eq-base { color: var(--ink-muted); font-size: 11px; width: 100%; }
+  /* Dokunma hedefi en az 44px (mobil öncelikli tasarım sözü). */
+  .mcard details > summary {
+    list-style: none; cursor: pointer; color: var(--ink-muted); font-size: 12px;
+    display: flex; align-items: center; gap: 6px; min-height: 44px; user-select: none;
+  }
+  .mcard details > summary::-webkit-details-marker { display: none; }
+  .mcard details > summary::before { content: "▸"; font-size: 10px; transition: transform .12s ease; }
+  .mcard details[open] > summary::before { transform: rotate(90deg); }
+  .mcard details > summary:hover, .mcard details > summary:focus-visible { color: var(--ink); outline: none; }
+  .mcard details > summary:focus-visible { box-shadow: 0 0 0 2px var(--ink-muted); border-radius: 6px; }
+  .mcard-fold { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
+  .mcard-more {
+    display: inline-block; font-size: 12px; color: var(--ink-2); text-decoration: none;
+    border: 1px solid var(--hair); border-radius: 8px; padding: 9px 10px; min-height: 44px;
+    box-sizing: border-box; line-height: 24px;
+  }
+  .mcard-more:hover, .mcard-more:focus-visible { border-color: var(--axis); color: var(--ink); outline: none; }
   .mcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   .mcard-name { font-weight: 650; font-size: 14px; overflow-wrap: anywhere; }
   .mcard-rank { color: var(--ink-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .mcard-hero { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-  .mcard-hero b { font-size: clamp(24px, 7vw, 28px); font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
-  .mcard-hero span { color: var(--ink-muted); font-size: 11px; }
   .mcard-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .mcard-row span { color: var(--ink-muted); }
   .mcard-spark { margin-top: auto; }
@@ -228,14 +250,17 @@
     <section id="sec-models">
       <h2>Modeller</h2>
       <p class="note">
-        Tez tipine göre gruplanmış; grup içinde ortalama R'ye göre sıralı. Kartta <b>ort. R</b>
-        (birinci sınıf metrik), hesap getirisi, işlem sayısı, özsermaye kıvrımı ve kabul
-        rozetleri vardır: <b>Ö</b> örneklem, <b>E</b> edge — model ancak ikisi de yeşilken
-        doğrulanmış sayılır. <b>⚠ B</b> kapı değildir, yalnızca bu satırı başkasıyla
-        kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate alınması gerektiğini
-        söyler. <b>REFERANS</b> çıpası (kural 15) sıralamaya hiç girmez; ölçtüğü şey R değil,
-        "piyasa ne yaptı" olduğu için kartında hesap getirisi öne çıkar.
-        Karta dokununca o modelin detayı açılır.
+        Her kartın ana sayısı aynı sorunun cevabı: <b>10.000 $ ile başlayan hesap şimdi
+        nerede</b>, ve yüzde olarak ne kadar. Bu sayı her model için AYNI birimdir — ort. R
+        öyle değildir, çünkü çıpanın ve dış sistem kopyasının 1R'si yarışmacılarınkiyle aynı
+        şeyi ölçmez (kural 15/15b). Tek bakışta kıyaslanabilen satır bu yüzden budur.
+        <b>Ort. R birincil metrik olmayı sürdürür</b> ve sıralamayı (kartın sağ üstündeki
+        rütbe) o belirler; işlem sayısı, MDD, özsermaye kıvrımı ve kabul rozetleriyle birlikte
+        <b>detaylar</b> altında durur. Rozetler: <b>Ö</b> örneklem, <b>E</b> edge — model
+        ancak ikisi de yeşilken doğrulanmış sayılır; <b>⚠ B</b> kapı değildir, yalnızca bu
+        satırı başkasıyla kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate
+        alınması gerektiğini söyler. <b>REFERANS</b> çıpası (kural 15) sıralamaya hiç girmez
+        ve ort. R hücresinde <code>—</code> gösterir: stop'u olmayanın 1R'si yoktur.
       </p>
       <div id="groups"></div>
     </section>
@@ -928,29 +953,53 @@ function renderGroups(d) {
     const tag = isBenchmark
       ? '<span class="tag">REFERANS</span>'
       : (model === controlModel ? '<span class="tag">KONTROL</span>' : "");
-    // Çıpanın hero sayısı ort. R DEĞİL hesap getirisidir: stop'u olmayanın 1R'si
-    // yoktur (kural 15) ve taşıdığı bilgi tam olarak hesap düzeyi getiridir.
-    const hero = isBenchmark
-      ? '<b class="' + signClass(account.total_return) + '">' + pctSigned(account.total_return) + "</b><span>hesap getirisi</span>"
-      : '<b class="' + signClass(total.avg_r) + '">' + fmtSigned(total.avg_r) + "R</b><span>işlem başına ort. R</span>";
-    const secondary = isBenchmark
-      ? [["işlem", String(num(total.trades) ?? 0)], ["MDD", pct(account.max_drawdown, 2)]]
-      : [["getiri", pctSigned(account.total_return)], ["işlem", String(num(total.trades) ?? 0)]];
+
+    // ANA SAYI: hesap 10.000 $ ile başladı, şimdi nerede — ve yüzde olarak ne kadar.
+    // Bu her model için AYNI birimdir (ort. R'nin aksine: çıpanın ve kopyanın 1R'si
+    // yarışmacılarınkiyle aynı şey değildir, kural 15/15b), yani tek bakışta
+    // kıyaslanabilen tek satır budur. Ort. R birincil METRİK olmayı sürdürür ve
+    // sıralamayı o belirler — katlanan bölümde, rütbe ise başlıkta durur.
+    const capital = num(account.initial_capital);
+    const equity = num(account.final_equity);
+    const hero =
+      '<b class="' + signClass(account.total_return) + '">' +
+        (equity === null ? DASH : "$" + equity.toLocaleString("tr-TR", {
+          minimumFractionDigits: 0, maximumFractionDigits: 0,
+        })) + "</b>" +
+      '<span class="eq-pct ' + signClass(account.total_return) + '">' +
+        pctSigned(account.total_return) + "</span>" +
+      '<span class="eq-base">' +
+        (capital === null ? "başlangıç —" : "başlangıç $" + capital.toLocaleString("tr-TR")) +
+      "</span>";
+
     const open = openCount[model] || 0;
-    return '<a class="mcard' + (isReferenceGroup || isBenchmark ? " reference" : "") + '" href="' + modelHref(model) +
-      '" style="border-top-color:' + (st.color || "var(--ink-muted)") + '">' +
+    // Çıpanın ort. R'si YOKTUR (stop'suz sinyalin 1R'si yok, kural 15); `—` yazmak
+    // "ölçtük, sıfır çıktı" demekten farklıdır.
+    const folded = [
+      isBenchmark ? ["ort. R", DASH] : ["ort. R", fmtSigned(total.avg_r) + "R"],
+      ["işlem", String(num(total.trades) ?? 0)],
+      ["MDD", pct(account.max_drawdown, 2)],
+    ];
+    if (open) folded.push(["açık", String(open)]);
+
+    return '<div class="mcard' + (isReferenceGroup || isBenchmark ? " reference" : "") + '"' +
+      ' style="border-top-color:' + (st.color || "var(--ink-muted)") + '">' +
       '<div class="mcard-top"><div class="mcard-name"><span class="swatch' + (st.dash ? " dashed" : "") +
         '" style="background:' + (st.color || "var(--ink-muted)") + ";color:" + (st.color || "var(--ink-muted)") +
         '"></span>' + esc(model) + tag + "</div>" +
       '<div class="mcard-rank">' + (rank[model] ? "#" + rank[model] : DASH) + "</div></div>" +
-      '<div class="mcard-hero">' + hero + "</div>" +
-      '<div class="mcard-row">' +
-        secondary.map(([k, v]) => "<div><span>" + esc(k) + "</span> " + esc(v) + "</div>").join("") +
-        (open ? '<div><span>açık</span> ' + open + "</div>" : "") +
-      "</div>" +
-      '<div>' + badges(FLAGS[model], false) + "</div>" +
-      '<div class="mcard-spark">' + sparkline((DATA.equity || {})[model], st.color || "#888", !!st.dash) + "</div>" +
-      "</a>";
+      '<div class="mcard-eq">' + hero + "</div>" +
+      "<details><summary>detaylar</summary>" +
+        '<div class="mcard-fold">' +
+          '<div class="mcard-row">' +
+            folded.map(([k, v]) => "<div><span>" + esc(k) + "</span> " + esc(v) + "</div>").join("") +
+          "</div>" +
+          "<div>" + badges(FLAGS[model], false) + "</div>" +
+          '<div class="mcard-spark">' + sparkline((DATA.equity || {})[model], st.color || "#888", !!st.dash) + "</div>" +
+          '<a class="mcard-more" href="' + modelHref(model) + '">model detayı →</a>' +
+        "</div>" +
+      "</details>" +
+      "</div>";
   }
 }
 

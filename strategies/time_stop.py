@@ -52,10 +52,20 @@ class TimeStop:
     duration: pd.Timedelta
 
     @classmethod
-    def from_config(cls, settings: Mapping[str, Any]) -> "TimeStop":
+    def from_config(
+        cls, settings: Mapping[str, Any], *, key: str = CONFIG_KEY
+    ) -> "TimeStop":
+        """`key` DEĞERİN nereden okunacağını söyler; KURAL yine tek kopyadır.
+
+        Bir modelin başka bir sınır kullanması (bkz. `strategies/scalp_patient.py`) bu
+        modülü ikiye bölmeyi gerektirmez: zaman stop'unun ne YAPTIĞI ortak kalır, yalnızca
+        kaç bar olduğu ayrışır — ve ayrışan tek şey zaten ölçülmek istenen eksendir. Kuralı
+        kopyalamak, `scalp_fixed ↔ scalp_patient` farkını "iki ayrı zaman stop'u
+        uygulamasının farkı" hâline getirirdi.
+        """
         config = dict(settings)
         return cls(
-            bars=int(get_setting(config, CONFIG_KEY)),
+            bars=int(get_setting(config, key)),
             # Bar süresi katmanın `timeframe`inden gelir: aynı "16 bar" scalp katmanında
             # 4 saat, base katmanında 64 saat demektir ve kural sayı olarak değil BAR
             # olarak tanımlıdır.

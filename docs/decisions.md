@@ -2465,3 +2465,700 @@ listesi, **config parmak izi** (maliyet/risk sabitlerinin özeti), harness git S
 model başına geçerlilik sayaçları. Aynı girdilerle tekrar koşulduğunda aynı sonucu
 vermelidir (`random_seed` sabit). Çıktılar `backtests/` altındadır ve depoya girmez: bir
 backtest ölçümün kendisi değil, ölçüm hakkında bir denemedir.
+
+---
+
+## 30. İlk uzun pencere backtest'i: kurulum geometrisi kendi içinde tutarsız
+
+**Koşu:** `scalp`, 2026-09-04T08:30Z → 2026-09-16T08:00Z, 1149 bar (≈12 gün),
+`missing_bars=0`, `unchecked_position_bars=0` (kapı B-2 ✅). Kapı 0 ayrı bir pencerede
+geçmişti (kapıya tabi iki modelde de 9/9).
+
+**Sonuç: dört yarışmacının HİÇBİRİ canlıya alma eşiğini geçmedi** (`docs/backtest.md > 4`).
+
+| model | n | ort. R | kazanç% | PF | getiri |
+|---|---:|---:|---:|---:|---:|
+| `vwap_managed` | 15 | +0.07 | 46.7 | 1.21 | +0.92% |
+| `scalp_bandit` | 154 | −0.21 | 29.2 | 0.35 | −25.05% |
+| `scalp_fixed` | 151 | −0.21 | 28.5 | 0.37 | −26.99% |
+| `scalp_managed` | 158 | −0.21 | 28.5 | 0.36 | −27.70% |
+| `vwap_clone` (kopya) | 707 | −0.56 | 34.5 | 0.39 | −46.68% |
+
+`vwap_managed` C-1'i geçen tek satır ama **B-1 örneklem kapısında düşüyor** (n=15 < 30) ve
+pencere onun için IN-SAMPLE (`atr_multiple` tam bu veriyle kalibre edildi, karar 26). İki
+bağımsız sebeple kanıt sayılmaz. Çoklu karşılaştırma (§7.5): 4 model test edildi, 0 geçti.
+
+### Teşhis: hedef, verilen sürede ulaşılamaz
+
+`exit_rule` kırılımı (`scalp_fixed`, 151 pozisyon; birim DİLİM):
+
+| çıkış | n | pay | ort. R | ortKaz.R | ortKay.R | topl. R |
+|---|---:|---:|---:|---:|---:|---:|
+| `signal:time_stop` | 127 | %84 | −0.09 | +0.37 | −0.30 | −10.97 |
+| `stop` | 22 | %15 | −1.12 | — | −1.12 | −24.72 |
+| `tp` | **2** | **%1.3** | +1.85 | +1.85 | — | +3.69 |
+
+**151 pozisyondan 2'si hedefe vardı.** Kapı `hedef/stop ≥ 1.5` dayatıyor ama gerçekleşen
+yapı bu değil; ortalama KAZANAN (+0.37R) ortalama KAYBEDENDEN (−0.30R) büyük olsa bile
+%15'lik tam stop dilimi (−1.12R) toplamı gömüyor.
+
+Sebep aritmetik ve modelden bağımsız:
+
+```
+stop   = 5×ATR      (scalp.stop_atr_multiple)
+hedef  = 10×ATR     (target_reward_risk 2.0 × stop)
+16 barlık tipik yayılım = √16 = 4×ATR
+hedefin gerektirdiği süre = 10² = 100 bar ≈ 25 saat
+mevcut zaman stop'u = 16 bar = 4 saat           -> 6.2× KISA
+```
+
+Sürüklenmesiz rastgele yürüyüşün hedefe varma olasılığı (yansıma ilkesi) **%1.24**;
+gözlenen **%1.32**. Yani hedefe varma oranı, sinyalin hiçbir katkısı olmadığı varsayımının
+öngördüğü sayıyla örtüşüyor. **Sinyal iyi ya da kötü değil — hedefe ulaşmak için verilen
+süre yetmiyor, bu yüzden sinyalin ne söylediği sonuca yansımıyor.** (ATR bir aralık
+ölçüsüdür, kapanış-kapanış σ'sı değil; bu bir mertebe kontrolüdür, virgül sonrası bir
+iddia değil.)
+
+### Yan bulgu: "beş kollu" modeller pratikte TEK kollu
+
+Kol kırılımı: `rsi2_reversal` 141/158 (%89), `opening_range_breakout` 12, `vwap_pullback`
+5, `momentum_burst` **0**, `funding_spike_fade` **0**. Bandit'in tahsis edecek bir şeyi
+yok — `scalp_bandit ↔ scalp_fixed` ekseninin neden ölçülemediği burada. Eksen bozuk
+değil; ölçtüğü değişken bu pencerede hiç değişmemiş.
+
+### Karar 27 ve 28 daha büyük örneklemde doğrulandı
+
+- **Seans:** tüm seanslar negatif, `scalp_fixed` için −0.16 (asya) … −0.28 (avrupa). Saat
+  etkisi yine YOK; karar 27'nin "bir ölçüm ekle, kural ekleme" sonucu korunuyor.
+- **Kayıp serisi:** scalp modellerinde tek yönlü DEĞİL (0:−0.17, 1:−0.24, 2:−0.30,
+  3:−0.39, sonra 4:−0.24, 5+:−0.15) — kötüleşip toparlıyor, yani sayaç yanlış
+  tetikleyici. Karar 28 korunuyor.
+- **Ama `vwap_clone`da tablo farklı ve güçlü:** 0:−0.15 (n=210) → 3:−0.92 (n=82) →
+  5+:−0.84 (n=111). Kayda geçiyor, KURAL YAZILMIYOR: permütasyon testi yapılmadan ve
+  seçim etkisi elenmeden hareket etmek karar 28'de düşülen tuzağın ta kendisi.
+
+### Bundan SONRA ne yapılabilir, ne yapılamaz
+
+Teşhis net bir düzeltme öneriyor (stop'u daraltmak ya da zaman stop'unu uzatmak; ikisi de
+hedefi ulaşılabilir kılar). **`docs/backtest.md > 7.1` bunu BU pencerede test etmeyi
+yasaklar:** parametre değiştirip aynı veride yeniden koşmak ölçüm değil, eğri uydurmadır.
+Düzeltme YENİ bir hipotezdir ve TAZE bir OOS penceresi gerektirir — bkz. karar 31.
+
+---
+
+## 31. `scalp_patient` (model 16): karar 30'un teşhisine tek değişkenli cevap
+
+Karar 30 şunu ölçtü: `scalp_fixed`in 151 pozisyonundan 2'si hedefe vardı (%1.3) ve bu
+oran, sürüklenmesiz rastgele yürüyüşün öngördüğü %1.24 ile örtüşüyor. Sinyalin iyi ya da
+kötü olmasıyla ilgili değil — **hedefe ulaşmak için verilen süre yetmiyor.**
+
+```
+stop  = 5×ATR,  hedef = 2.0 × stop = 10×ATR
+16 barlık tipik yayılım = √16 = 4×ATR
+hedefin gerektirdiği süre = (10)² = 100 bar ≈ 25 saat
+```
+
+**Düzeltme: süreyi hedefe uydur.** `scalp_patient`, `scalp_fixed`in ikizidir; ayrışan tek
+şey `time_stop_bars` (16 → 100). Kol seçimi, kapılar, stop/hedef geometrisi ve çekiliş
+kimliği miras alınır — `scalp_managed` ile aynı desen (eşleştirilmiş deney).
+
+**100 TEORİDEN gelir, veriden değil.** `N = (hedef/ATR)² = 10² = 100`. Birkaç değer
+süpürüp en iyisini seçmek `docs/backtest.md > 7.1`in yasakladığı şeydir; tek değer
+ön-kayıtla sabitlendi ve taze bir OOS penceresinde sınanır.
+
+**Neden stop'u daraltmak DEĞİL.** Hedefi yaklaştırmanın diğer yolu stop'u küçültmekti:
+
+| | stop'u daralt | süreyi uzat (seçilen) |
+|---|---|---|
+| hedef ulaşılabilir olur mu | evet | evet |
+| %1 `min_stop_pct` tabanı | ATR≈%0.48 iken 2×ATR≈%0.96 → **taban altı, kurulumlar elenir** | dokunulmaz |
+| maliyet/R | 0.11 → **~0.25** (kural 14'ün ölçüm kolonu bozulur) | 0.11'de kalır |
+| tutuş süresi | 4 saat | ~25 saat, `max_positions` daha uzun dolu |
+
+Taban keyfi değil: tur maliyeti ~%0.25 ve daha dar stop'ta maliyet 0.25R'yi aşar. Yani
+stop'u daraltmak bir sorunu çözerken ölçümün kendisini bozardı.
+
+**Neden YENİ bir model.** `scalp_fixed` model 11'in null hipotezidir; zaman stop'unu
+değiştirmek onun ölçtüğü ekseni (adaptasyonun katkısı) sessizce başka bir şeye çevirirdi.
+CLAUDE.md'nin kuralı: tek değişkenli bir eksen isteniyorsa yolu yeni bir model açmaktır.
+
+**Kural TEK KOPYA kalır.** `TimeStop.from_config(settings, key=...)` yalnızca DEĞERİN
+nereden okunacağını söyler; zaman stop'unun ne yaptığı `strategies/time_stop.py`de tek
+yerdedir. Kuralı kopyalamak, `scalp_fixed ↔ scalp_patient` farkını "iki ayrı uygulamanın
+farkı" hâline getirirdi.
+
+**Canlıda KOŞMAZ.** Kayıt defterinde durur (backtest `--models` ile çağırır) ama
+`layers.scalp.models` listesinde yoktur ve bu bir testle çivilidir
+(`tests/test_scalp_patient.py::test_the_candidate_is_not_in_the_live_layer`). Doğrulanmamış
+bir adayın gerçek deftere yazması, bu altyapının engellemek için kurulduğu şeydir.
+
+---
+
+## 32. OOS sonucu: teşhis doğru, düzeltme yetersiz — ve maliyet artık tek kaldıraç
+
+**Pencere:** `scalp`, 2026-07-19 → 2026-09-04, 4545 bar (47.4 gün), `--history-bars 6000`.
+IS penceresiyle (karar 30) örtüşme YOK. Geçerlilik kapıları temiz.
+
+| model | n | ort. R | kazanç% | PF | getiri | maxDD | maliyet/R |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `scalp_patient` | 230 | **−0.01** | 47.4 | 0.98 | −4.04% | −19.98% | 0.124 |
+| `scalp_managed` | 624 | −0.14 | 35.9 | 0.48 | −53.16% | −54.96% | 0.121 |
+| `scalp_fixed` | 650 | −0.15 | 34.3 | 0.47 | −55.41% | −56.94% | 0.121 |
+| `scalp_bandit` | 650 | −0.15 | 34.8 | 0.46 | −58.14% | −59.73% | 0.120 |
+| `vwap_managed` | 57 | −0.21 | 43.9 | 0.56 | −11.95% | −14.79% | 0.139 |
+| `vwap_clone` (kopya) | 2842 | −0.76 | 30.2 | 0.27 | −97.02% | −97.02% | — |
+
+### Karar 30'un teşhisi DOĞRULANDI
+
+| | `scalp_fixed` | `scalp_patient` |
+|---|---:|---:|
+| hedefe ulaşan dilim | 8/650 = **%1.23** | 41/230 = **%17.83** |
+| zaman stop'u diliminin ort. R'si | −0.07 (kaz %37) | **+0.24** (kaz %69) |
+| ortKazanç/ortKayıp | 0.90 | 1.09 |
+| kazanma oranı | %34.3 | %47.4 |
+
+Hedefe ulaşma oranı **14.5 kat** arttı, ortalama R −0.15 → −0.01, maxDD −%57 → −%20.
+Kıyas geçerli: maliyet/R 0.121 ↔ 0.124, stop mesafesi %2.17 ↔ %2.29, ikisi de bandın
+içinde (kural 14) — iyileşme bir maliyet farkından GELMİYOR.
+
+### Ama C-1 DÜŞTÜ: canlıya alınmaz
+
+Eşik ortalama R **> 0**; −0.01 bunu sağlamıyor. `scalp_patient` örneklem kapısını (n=230)
+ve stop bandını geçiyor ama başabaşın hemen altında. **Canlıya alma eşiği geçilmedi.**
+`time_stop_bars`ı sıfırın üstüne çıkana kadar oynatmak `docs/backtest.md > 7.1`in
+yasakladığı şeydir ve OOS penceresi artık harcanmıştır.
+
+### Asıl bulgu: brüt edge var, friksiyon yiyor
+
+| model | net R | maliyet/R | **brüt R** |
+|---|---:|---:|---:|
+| `scalp_patient` | −0.01 | 0.124 | **+0.114** |
+| `scalp_fixed` | −0.15 | 0.121 | −0.029 |
+| `scalp_bandit` | −0.15 | 0.120 | −0.030 |
+| `vwap_managed` | −0.21 | 0.139 | −0.071 |
+
+Diğer üçünde brüt de negatif — orada maliyet suçlu değil, kurulumun kendisi.
+`scalp_patient` ilk kez pozitif brüt edge gösteriyor (+0.11R) ve friksiyon onu tam olarak
+siliyor. **Kaldıraç artık sinyalde değil, maliyette.**
+
+### İki eksen OOS'ta da SIFIR fark verdi
+
+| Eksen | Çift | IS | OOS |
+|---|---|---|---|
+| Adaptasyonun katkısı | `scalp_bandit` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.15 ↔ −0.15 |
+| Çıkış yönetiminin katkısı | `scalp_managed` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.14 ↔ −0.15 |
+| **Sürenin katkısı** | `scalp_patient` ↔ `scalp_fixed` | — | **−0.01 ↔ −0.15** |
+
+Adaptasyon ekseninin sıfır çıkmasının sebebi kol kırılımında görünür: `rsi2_reversal`
+568/650 (%87), `opening_range_breakout` 56, `vwap_pullback` 26, `momentum_burst` **0**,
+`funding_spike_fade` **0**. Log'da her iki model de "1 uygun kol" görüyor. **Bandit'in
+tahsis edecek bir şeyi yok** — eksen bozuk değil, ölçtüğü değişken hiç değişmiyor.
+
+### Karar 27 ve 28 üçüncü kez doğrulandı
+
+Seans: tüm seanslar negatif (−0.08 … −0.18), saat etkisi yok. Kayıp serisi: scalp
+modellerinde tek yönlü değil. `vwap_clone`da yine güçlü ve tek yönlü (0:−0.47, n=657 →
+3:−0.90, n=329) — kayda geçiyor, **kural yazılmıyor.**
+
+---
+
+## 33. Sadeleştirme: ölçüt performans DEĞİL, ÖLÇÜLEBİLİRLİK
+
+16 model → 8. Emeklilik gerekçesi hiçbir modelde "kaybediyor" değildir; iki ayrı gerekçe var
+ve ikisi de sonuçtan bağımsız olarak savunulabilir.
+
+### Scalp: iki eksen İKİ kez "fark yok" dedi
+
+| Eksen | Çift | IS (karar 30) | OOS (karar 32) |
+|---|---|---|---|
+| adaptasyon | `scalp_bandit` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.15 ↔ −0.15 |
+| çıkış yönetimi | `scalp_managed` ↔ `scalp_fixed` | −0.21 ↔ −0.21 | −0.14 ↔ −0.15 |
+| **süre** | `scalp_patient` ↔ `scalp_fixed` | — | **−0.01 ↔ −0.15** |
+
+Adaptasyon ekseninin sıfır çıkmasının sebebi kol kırılımındadır: `rsi2_reversal` %87,
+`momentum_burst` ve `funding_spike_fade` HİÇ tetiklemedi. Log her turda "1 uygun kol" diyor —
+**bandit'in tahsis edecek bir şeyi yok.** Eksen bozuk değil; ölçtüğü değişken hiç değişmiyor.
+İki kez alınan "fark yok" cevabını kabul etmek bilgi kaybı değildir.
+
+Emekli: `scalp_bandit`, `scalp_managed`. Kalan: `scalp_fixed` (kontrol), `scalp_patient`
+(hareket eden tek eksenin diğer ucu), `vwap_managed`, `vwap_clone` (kopya).
+
+### Base: 4 GÜNLÜK katmanda performans yorumlanamaz, ölçülebilirlik yorumlanır
+
+Base 2026-09-12'de başladı: **29 bar.** Performansa bakıp kesmek, karar 27 ve 28'de iki kez
+düşülen tuzağın aynısı olurdu. Ama "bu model n=30'a ne zaman ulaşır" sorusu ŞİMDİ
+cevaplanabilir:
+
+| model | n | poz/bar | n=30 için | karar |
+|---|---:|---:|---:|---|
+| `trend` | 14 | 0.48 | 10 gün | kalır |
+| `meanrev` | 8 | 0.28 | 18 gün | kalır |
+| `random_ctrl` | 4 | 0.16 | 31 gün | **kalır** (kontrol grubu, `acceptance.control_model`) |
+| `buyhold` | — | — | — | **kalır** (çıpa; 0 işlem bir arıza DEĞİL, hiç kapatmaz) |
+| `avwap` | 3 | 0.12 | 42 gün | emekli |
+| `confluence` | 2 | 0.07 | 72 gün | emekli |
+| `ensemble` | 1 | 0.04 | 125 gün | emekli |
+| `momentum` | 0 | 0 | **asla** | emekli |
+| `squeeze` | 0 | 0 | **asla** | emekli |
+| `failed_breakout` | 0 | 0 | **asla** | emekli |
+| `downtrend_rally` | 0 | 0 | **asla** | emekli |
+
+Ne kadar iyi olduklarını ASLA öğrenemeyeceğimiz satırlar tabloda yalnızca gürültü üretir.
+`ensemble` ayrıca meta bir modeldir: emekli edilenler azaldıkça okuyacağı sinyal kümesi
+daralır, yani ölçtüğü şey kadro değişikliğine bağlı hâle gelirdi.
+
+### "Emekli" ile "silinmiş" aynı şey değildir
+
+Kod ve defter DURUYOR (kural 1: append-only denetim izi). Değişen tek şey katmanın `models`
+listesidir; geri eklemek bir commit. Her emekli modelin testi bunu çiviler: canlı listede
+YOK, ama `REGISTRY`de VAR.
+
+### `scalp_patient` kâğıt katmanına girdi — eşiği geçtiği anlamına GELMEZ
+
+`scalp` bir KÂĞIT ölçüm katmanıdır. `docs/backtest.md > 4`ün canlıya alma eşiği gerçek
+parayla işlem açmayı düzenler ve model onu geçmedi (C-1: OOS ortalama R −0.01). Kâğıtta
+koşması, ileriye dönük kanıtın biriktiği tek yerdir.
+
+### Dashboard: ana sayı artık "10.000 $ nerede"
+
+Her kartın hero'su hesap özsermayesi + yüzde oldu; ort. R, işlem sayısı, MDD, kıvrım ve
+rozetler katlanır `detaylar` bölümüne indi. Gerekçe: **özsermaye her model için AYNI
+birimdir**, ort. R değildir — çıpanın ve kopyanın 1R'si yarışmacılarınkiyle aynı şeyi
+ölçmez (kural 15/15b), yani tek bakışta kıyaslanabilen tek satır özsermayedir. Ort. R
+birincil METRİK olmayı sürdürür ve SIRALAMAYI o belirler (kartın rütbesi); yalnızca kartın
+ilk bakışta gösterdiği sayı değişti. Kart artık `<a>` değil: içinde katlanır bölüm var ve
+tıklamak onu açmalı, sayfayı değiştirmemeli — detay bağlantısı katlanan bölümün içinde.
+
+### 33-DÜZELTME (2026-09-16, aynı gün): tablo KAPANMIŞ işlemleri saydı, AÇILIŞLARI değil
+
+Karar 33'ün base tablosu `trades.csv` satırlarından türetildi; o dosya yalnızca **kapanmış**
+pozisyonları taşır. Açık pozisyonlar `positions.json`dadır ve sayıma girmedi. Sonuç iki
+yerde yanlış kayıtlandı. **Emeklilik kararlarının HİÇBİRİ değişmiyor** — hepsi 0.3 eşiğinin
+çok altında kalmaya devam ediyor — ama gerekçe denetim izinin parçasıdır ve yanlış duramaz.
+
+Pozisyon-farkındalıklı yeniden sayım (kimlik `symbol+direction+opened_at`, yani
+`merge_fills` ile aynı birim; kapanmış + açık):
+
+| model | kapanmış | açık | AÇILIŞ | bar | açılış/bar | not |
+|---|---:|---:|---:|---:|---:|---|
+| `trend` | 13 | 3 | 16 | 27 | 0.593 | |
+| `meanrev` | 7 | 5 | 12 | 27 | 0.444 | **5/5 SLOT DOLU** |
+| `random_ctrl` | 2 | 5 | 7 | 23 | 0.304 | **5/5 SLOT DOLU** |
+| `avwap` | 3 | 3 | 6 | 23 | 0.261 | 4 dolum = 3 pozisyon |
+| `confluence` | 2 | 2 | 4 | 27 | 0.148 | |
+| **`squeeze`** | 0 | **2** | **2** | 27 | **0.074** | sıfır DEĞİL |
+| `buyhold` | 0 | 2 | 2 | 29 | 0.069 | çıpa: hiç kapatmaz |
+| `ensemble` | 1 | 0 | 1 | 23 | 0.043 | |
+| `momentum` | 0 | 0 | 0 | 27 | 0.000 | |
+| `failed_breakout` | 0 | 0 | 0 | 23 | 0.000 | |
+| `downtrend_rally` | 0 | 0 | 0 | 23 | 0.000 | |
+
+**Düzeltme 1 — sıfır üreten model DÖRT değil ÜÇ.** `squeeze` 2 pozisyon açtı
+(`ledgers/squeeze/positions.json`); hiçbiri kapanmadı çünkü hedefi yok ve stop'u uzakta.
+Yani `squeeze` **ölü kod değil, yavaş kod**. Emekliliği geçerli (0.074 ≪ 0.3) ama sebebi
+"hiç sinyal üretmiyor" değil, "ürettiği sinyal ölçülebilir sıklığın çok altında".
+
+**Düzeltme 2 — "poz/bar" iki ayrı değişkeni tek sayıya çökertiyordu.** Gerçekleşen oran
+şunun minimumudur:
+
+```
+poz/bar = min( sinyal/bar ,  max_positions / tutma_barı )
+```
+
+`meanrev` ve `random_ctrl` şu anda **5/5 slotta doymuş**. Onların ölçülen hızı bir sinyal
+ölçüsü DEĞİL, bir **devir** ölçüsüdür ve slotlar dolu kaldıkça daha da yavaşlar. Bu, karar
+33'ün "meanrev n=30'a ~18 günde ulaşır" tahminini iyimser yapar ve çareyi değiştirir:
+`meanrev`in darboğazı sinyal arzı değil, **süre sınırının olmamasıdır** (aynı teşhis
+`scalp_fixed ↔ scalp_patient` ekseninde ölçüldü, karar 31/32).
+
+**Yöntem notu:** bundan sonra sıklık her zaman `positions.json` + `trades.csv` BİRLİKTE
+sayılır ve slot doluluğu ayrıca raporlanır. Yalnızca deftere bakmak, hedefi olmayan bir
+modeli "sinyal üretmiyor" diye gösterir.
+
+### 33-DÜZELTME (2): belge ile cron ayrışmış
+
+`.github/workflows/run.yml` cron'u `5 0,4,8,12,16,20` — yani **4 saatte bir, 4 saatlik bar
+başına tam bir tur.** `config.yaml` (iki yerde) ve CLAUDE.md katman tablosu "6 saatte bir"
+diyordu. Fark önemsiz değil: "6 saatte bir" doğru olsaydı base'de telafi RUTİN olurdu ve
+`signals_per_bar: false` her turda sinyal fırsatı kaybettirirdi. Gerçekte telafi
+İSTİSNADIR (yalnızca kaçan cron'da), ki `signals_per_bar`ın kökte kapalı olmasının gerekçesi
+tam olarak budur. Üç yerde de düzeltildi.
+
+---
+
+## 34. `momentum_burst` doğduğunda ölüydü: kapı aritmetiği kolu imkânsız kılıyor
+
+Karar 32, `momentum_burst` ve `funding_spike_fade` kollarının 47 günde HİÇ tetiklemediğini
+ölçtü ama sebebini yazmadı. Sebep piyasa değil, **geometri**.
+
+`strategies/scalp/arms.py::momentum_burst` engeli `closes[-1] ± burst` olarak veriyor, yani
+**tanımı gereği her zaman girişin ÖNÜNDE.** `_maybe_setup` önde olan engeli hedef yapar
+(`min(projeksiyon, engel)`), dolayısıyla:
+
+```
+hedef mesafesi = min(10×ATR, burst) = burst        (burst < 10×ATR olduğu sürece)
+stop mesafesi  = 5×ATR
+kapı: hedef/stop ≥ 1.5   ⟹   burst ≥ 7.5 × ATR
+```
+
+`burst` 3 barlık kapanış-kapanış hareketidir; tipik büyüklüğü ~1×ATR mertebesindedir.
+**Koşu log'larından gözlenen gerçek oranlar: 0.20, 0.26, 0.29, 0.31, 0.32, 0.36, 0.37,
+0.39, 0.43, 0.45** — yani `burst ≈ 1.0–2.25 × ATR`. Kapının istediği 7.5×ATR, gözlenenin
+**3-7 katı.** Kol hiçbir piyasa koşulunda tetiklenemez.
+
+**Genel kural (diğer kollara da uygulanır):** stop `k×ATR` iken yapısal engel en az
+`1.5k×ATR` ötede olmalı. `k=5` için bu **7.5×ATR**tır ve 15 dakikalık barda hiçbir gün-içi
+yapısal seviye (Bollinger orta bandı, gün zirvesi, VWAP) tipik olarak o kadar uzakta
+değildir. Sonuç: kapıyı geçen kurulumlar ağırlıklı olarak **engeli GERİDE kalmış**
+olanlardır; onlarda hedef projeksiyona düşer ve R:R tam 2.00 olur. Yani **hayatta kalan
+işlemlerde kolun kendi tez seviyesi hedefe hiç girmez** — beş kol geometrik olarak aynı
+projeksiyon modelini oynuyor.
+
+Bu, karar 30 ve 32'nin iki ayrı gözlemini tek sebeple açıklıyor: hedefe varma oranının
+rastgele yürüyüş nullüyle örtüşmesi, ve bandit'in tahsis edecek bir şeyinin olmaması.
+
+**Yöntem sonucu:** `ScalpModel` `take_survey` UYGULAMIYOR (`metrics_scalp.json`de beş kollu
+modellerin `survey` alanı `{}`). Bu yüzden "bir kol hiç kurulum üretmiyor" bilgisi iki
+backtest sonra öğrenildi, oysa ilk turun yük dosyasında görünebilirdi. **Yeni bir kol ya da
+tez eklenecekse `take_survey` o modelin ilk gereksinimidir.**
+
+---
+
+## 35. Çıta bir R değeri değil, bir YÜZDE sürüklenmesidir
+
+Üç özdeşlik (ölçülen sayılarla doğrulandı):
+
+```
+cost_per_r      = maliyet% / stop%
+net R           = (brüt sürüklenme% − maliyet%) / stop%
+brüt sürüklenme% = (ort.R + cost_per_r) × avg_stop_distance_pct
+```
+
+**Sonuç: stop genişliği net R'nin İŞARETİNİ değiştiremez.** Stop'u genişletmek maliyet/R'yi
+düşürür ama R cinsinden brüt edge'i aynı oranda düşürür. Karar 31'de stop'u daraltmamayı
+seçmiştik ve gerekçe doğruydu; bu özdeşlik onun tersinin de kurtarmayacağını gösteriyor —
+"stop ölçeği" tartışması birinci mertebede boştur.
+
+`scalp_patient`e uygulanınca:
+
+| | |
+|---|---|
+| brüt sürüklenme% | `0.114 × %2.29` = **%0.261** |
+| tur maliyeti% | `0.124 × %2.29` = **%0.284** |
+
+**Ortalama R'nin −0.01 çıkması tesadüf değil, bu iki sayının neredeyse eşit olmasıdır.**
+
+Yeni bir giriş tezinin geçmesi gereken çıta bu yüzden R cinsinden değil **% cinsinden**
+yazılmalıdır: **pozisyon başına > %0.30 brüt sürüklenme.** R ölçeği seçilebilir bir
+birimdir, yüzde değildir; ayrıca bu birim katman ve stop bağımsızdır.
+
+**Sürüklenme çıtasının kaldıraçları:**
+
+| kaldıraç | etki | durum |
+|---|---|---|
+| maliyet% ↓ | doğrudan | ayrı çalışma (maker/kademe) |
+| stop% (R ölçeği) | **nötr** | tartışmaya değmez |
+| tutuş süresi ↑ | sürüklenme ↑ (√N), maliyet sabit | karar 31/32'de ölçüldü: −0.15 → −0.01 |
+| **volatilite rejimi (ATR%) ↑** | edge σ ile ölçekleniyorsa sürüklenme ↑, maliyet SABİT | **hiç denenmedi** |
+
+---
+
+## 36. `scalp_vol` (model 17): ön-kayıtlı P1 DÜŞTÜ — "edge σ ile ölçeklenir" yanlış
+
+**Koşu.** `backtest.yml` #10 (`35099002276`), pencere 2026-07-19 → 2026-09-04,
+`--history-bars 6000`, modeller `scalp_patient,scalp_vol`. Ön-kayıt:
+`docs/backtest.md > 6b`, commit `a7c08ae` — koşudan ÖNCE.
+
+| model | n | ort.R | kaz% | PF | stopMes% | maliyet/R | getiri | maxDD | topl.R | PnL |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `scalp_patient` | 230 | −0.01 | 47.4 | 0.98 | 2.29 | 0.124 | −4.04% | −19.98% | −2.07 | −348.38 |
+| `scalp_vol` | 223 | −0.01 | 43.0 | 0.98 | 2.70 | 0.103 | +6.06% | −15.41% | −2.17 | +575.27 |
+
+### Tahminlerin karnesi
+
+| # | Ölçüm | Tahmin | Gerçekleşen | Sonuç |
+|---|---|---|---|---|
+| **P1** | brüt sürüklenme% | `vol` > `patient` | **0.253 < 0.263** | **DÜŞTÜ** |
+| P2 | maliyet/R | `vol` < 0.124 | 0.103 (stop 2.29 → 2.70) | tuttu |
+| P3 | örneklem | n ≥ 30 | n = 223 | tuttu |
+| P4 | stop bandı | ⚠B yanmasın | band 1.58–3.94, ikisi de içeride | tuttu |
+
+P2 bir sağlamaydı ve tuttu: kapı gerçekten daha yüksek ATR'li sembolleri seçti (stop mesafesi
+%2.29 → %2.70, maliyet/R 0.124 → 0.103). Yani P1'in sonucu **yorumlanabilir** — kapı çalıştı,
+tez tutmadı.
+
+### Ne öğrenildi
+
+Ön-kayıt bu durumun anlamını önceden yazmıştı: *"P1 tutmazsa 'edge σ ile ölçeklenir'
+varsayımı YANLIŞTIR."* Ölçüm bunu söylüyor. Volatilite %18 arttığında (stop mesafesi
+vekiliyle) brüt sürüklenme artmadı, **hafifçe azaldı.** Yani bu geometride sinyalin
+sürüklenmesi σ ile değil, kabaca SABİT bir yüzdedir — tıpkı maliyet gibi. Karar 35'in
+kaldıraç tablosundaki tek denenmemiş satır böylece kapandı:
+
+| kaldıraç | beklenen | ölçülen |
+|---|---|---|
+| stop% (R ölçeği) | nötr | nötr (karar 35, özdeşlik) |
+| tutuş süresi ↑ | sürüklenme ↑ | doğrulandı (−0.15 → −0.01, karar 31/32) |
+| **volatilite rejimi ↑** | sürüklenme ↑ | **YANLIŞ (0.263 → 0.253)** |
+| maliyet% ↓ | doğrudan | henüz denenmedi |
+
+Geriye tek kaldıraç kalıyor: **maliyeti düşürmek** ya da **sürüklenmesi gerçekten daha büyük
+bir SİNYAL bulmak.** Rejim seçerek mevcut sinyalden daha fazlasını çıkarmak mümkün değil.
+
+### +%6.06 getiri bir BAŞARI DEĞİLDİR — ve nedeni ölçülebilir
+
+En çarpıcı gözlem: iki modelin toplam R'si neredeyse aynı (−2.07 ↔ −2.17) ama hesap getirisi
+ters işaretli (−%4.04 ↔ +%6.06). Bunu "scalp_vol kazandırdı" diye okumak **§7.4'ün
+yasakladığı metrik değiştirmedir**: birincil metrik ortalama R'dir, ön-kayıtta öyle yazılıdır
+ve ikisi de −0.01'dir.
+
+Mekanizma da zaten edge değil, **ölçekleme yolu**: boyut `risk_per_trade × GÜNCEL sermaye`
+ile kurulur, yani her işlemin R'si o anki bakiyeyle ağırlıklanır. 223 işlemde |R| akışı
+~200R iken NET R ~2R'dir. Yani hangi R'lerin yüksek bakiyede gerçekleştiği, net edge'den
+**iki mertebe büyük** bir etkidir; brüt akışın %10'luk bir ağırlık kayması tek başına 10
+puanlık getiri farkı üretir. Bu bir sıralama/bileşiklenme etkisidir, sinyal farkı değil.
+
+**Yöntem sonucu (yeni):** `|net R| ≈ 0` iken **hesap getirisi bir edge ölçüsü değildir.**
+Karar 33 dashboard'un ana sayısını özsermaye yapmıştı ve bu doğru kalır — özsermaye her model
+için AYNI birimdir — ama sıralamayı ortalama R'nin belirlemesi de aynı kararda yazılıydı ve
+bu ölçüm onun neden zorunlu olduğunu gösteriyor.
+
+Kurtarma denemesi yapılmadı: bu gözlem **yeni ve sınanmamış bir hipotezdir** (R'nin işareti
+ile bakiye seviyesi arasında korelasyon), düşen bir hipotezin kurtarıcısı değil. Sınanacaksa
+kendi ön-kaydıyla gelir.
+
+### Sonuç
+
+- `scalp_vol` canlıya (kâğıt katmanına bile) **ALINMAZ.** C-1 (ort. R > 0) sağlanmıyor
+  (−0.01) ve tezi zaten düştü. `REGISTRY`de kalır, `layers.scalp.models`te yoktur.
+- Destekleyici kırılımlar tezin lehine bir şey söylemiyor: çıkış kuralı dağılımı neredeyse
+  aynı (`tp` 41 ↔ 39, `stop` 90 ↔ 85, `signal:time_stop` 99 ↔ 99). Kol kırılımında `vol`un
+  `rsi2_reversal`ı +0.02 (patient −0.02) ama `vwap_pullback`ı −1.01 (n=6) — ikisi de
+  örneklem kapısının altında, yorumlanmaz.
+- **Çoklu karşılaştırma (§7.5): araştırmadan çıkan 10 önerinin 1.'si test edildi.**
+
+---
+
+## 37. `vwap_managed` temiz pencere (C-5): örneklem kapısı GEÇİLMEDİ, brüt sürüklenme NEGATİF
+
+Bu koşu karar 31-32 döneminde kuyruğa alınmıştı ve **sonucu hiç okunmamıştı.** Kayda
+geçiriliyor: okunmamış bir ölçüm, yapılmamış bir ölçümden daha kötüdür — yapılmış gibi
+görünür.
+
+**Koşu.** `backtest.yml` #9 (`35086158249`), pencere 2026-07-19 → 2026-08-17 (2783 bar),
+yalnızca `vwap_managed`.
+
+| yön | n | ort.R | medyan R | topl.R | kaz% | PF | stopMes% | maliyet/R | PnL |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| long | 15 | −0.36 | −0.70 | −5.42 | 33.3 | 0.40 | 1.45 | 0.151 | −507.22 |
+| short | 10 | −0.21 | −0.05 | −2.12 | 40.0 | 0.48 | 1.43 | 0.177 | −232.54 |
+| **TOPLAM** | **25** | **−0.30** | −0.33 | −7.54 | 36.0 | 0.42 | 1.44 | 0.161 | −739.77 |
+
+hesap: getiri −%7.40 | maxDD −%10.78
+
+### Kapılar
+
+- **B-1 (örneklem) DÜŞTÜ: n = 25 < 30.** Bu yüzden aşağıdaki hiçbir sayı bir SONUÇ değildir;
+  yön kırılımları (n=15 / n=10) hiç yorumlanmaz.
+- **C-1 (ort. R > 0) düştü** ve kıl payı değil: −0.30.
+
+### Yorumlanmayan ama kaydedilen gözlem
+
+Karar 35'in birimiyle: brüt sürüklenme = `(−0.30 + 0.161) × %1.44` = **−%0.20**, tur maliyeti
+`0.161 × %1.44` = %0.23. Yani `scalp_patient`ten farklı olarak burada **maliyet sıfırlansa
+bile** model kaybediyor — sinyalin kendisi yanlış yöne sürükleniyor. Bu, maliyet çalışmasının
+`vwap_managed`i kurtaramayacağı anlamına gelir. n=25 olduğu için bir sonuç değil, sınanacak
+bir hipotezdir; kapıyı geçtiğinde ilk bakılacak sayı budur.
+
+### Katman kadrosuna etkisi: YOK (şimdilik)
+
+`vwap_managed` scalp KÂĞIT katmanında kalır. Karar 33'ün ölçütü performans değil
+ÖLÇÜLEBİLİRLİKTİR ve bu model 29 günde 25 pozisyon açıyor (~0.86/gün, n=30'a ~35 gün) —
+yani ölçülebilir. Kâğıtta koşması onun eşiği geçtiği anlamına gelmez; `scalp_patient` için
+karar 33'te yazılan cümlenin aynısı geçerlidir.
+
+**Bu koşu sonucuna göre HİÇBİR parametre değiştirilmedi** (§7.1): `vwap.managed.*` olduğu
+gibi duruyor.
+
+---
+
+## 38. Model 14 tripwire'ı ateşledi — ama çıtası, projenin kendi sonraki ölçümüyle çürümüştü
+
+**Gözlem.** 2026-09-15T11:45 → 2026-09-16T17:15 arası 119 canlı bar (`origin/main`
+geçmişinden, `round.models[].survey` toplanarak): `vwap_managed` **32 kurulum** buldu,
+**0 sinyal** üretti. `skipped_signals=0`, yani kural 14'ün stop tavanı hiç tetiklemedi —
+eleme tamamen ev kapılarında.
+
+Tarama sayımı (aynı pencere): `bant_ici` 1414, `z_ge_1_0` 690, `z_ge_1_5` 276,
+`z_ge_2_0` 42, `z_ge_2_5` 5, `donus_yok` 10, `vwap_yok` 91.
+
+### Elemenin YERİ: tek bir turun TAM dökümü
+
+`as_of=2026-09-16T08:30`, kurulum=5, beşi de elendi (Actions log'u, run 196):
+
+| sembol | kapı | değer |
+|---|---|---|
+| BTC | %1 stop tabanı | stop %0.539 |
+| BNB | %1 stop tabanı | stop %0.696 |
+| DOGE | %1 stop tabanı | stop %0.826 |
+| PENGU | 1.5R | hedef/stop 0.91 |
+| LINK | 1.5R | hedef/stop 0.99 |
+
+Stop `2.5 × ATR` olduğu için bu satırlar doğrudan bir **volatilite ölçümüdür**:
+ATR% = %0.22 / %0.28 / %0.33. Ağustos penceresinden (C-5 backtest, karar 37) örneklenen
+11 eleme de aynı deseni veriyor: 7 stop tabanı (%0.305–0.829), 4 R:R (0.67–1.08).
+
+**Bir tuzak: bu R:R değerleri KAPIYA TAKILANLARIN değerleridir.** Hepsi tanım gereği
+1.5'in altında; medyanlarını kalibrasyonun KOŞULSUZ medyanıyla (1.89) kıyaslamak seçim
+yanlılığıdır ve yapılmadı. Geçerli olan kıyas dağılımın kendisidir: medyan gerçekten 1.89
+olsaydı 32 kurulumun 0'ının 1.5'i geçmesi imkânsıza yakındı.
+
+### Asıl bulgu: üç ayrı taban, üç ayrı cevap
+
+| taban | kaynak | beklenen sinyal (119 bar) | P(0 gözlem) |
+|---|---|---:|---:|
+| "kurulumların %13'ü geçer" | kalibrasyon (karar 26) | 4.16 | **%1.2** |
+| "haftada 16.8 sinyal" | kalibrasyon (karar 26) | 2.97 | %5.1 |
+| **0.86 dolum/gün** | **C-5 backtest, 29 gün, AYNI motor (karar 37)** | **1.07** | **%34** |
+
+Tripwire birinci satıra göre kurulmuştu. Üçüncü satır — canlı motorun taze bir 29 günlük
+pencerede gerçekten ne ürettiği — bugün ilk kez okundu (karar 37) ve kalibrasyonun
+oranını **2.8 kat** aşağı düzeltiyor. O tabana göre 29 saatte 0 sinyal görmek **hiç
+şaşırtıcı değildir.**
+
+**Yani ateşlenen şey modelin arızası değil, tripwire'ın eski tabanıdır.** Kalibrasyon
+`scripts/measure_vwap_signal.py`'nin bir süpürmesiydi; backtest ise maliyet, dolum,
+likidasyon ve kota dâhil tam motordur. İkisi çeliştiğinde motor kazanır.
+
+### Hiçbir parametre DEĞİŞTİRİLMEDİ
+
+- **§7.1:** sonucu görüp `atr_multiple` ya da `min_stop_pct` oynatmak tam olarak yasak olan
+  şeydir. `atr_multiple` zaten bir kez süpürülüp 2.5'e sabitlendi (karar 26).
+- **`band_mult` bir frekans düğmesi DEĞİLDİR** ve bu ölçülmüştür
+  (`scripts/measure_vwap_signal.py` modül başlığı): aday olmanın şartı `|z_now| < |z_prev|`
+  olduğu için bandı düşürmek `|z_now|`ı da düşürür, R:R küçülür, yeni adaylar aynı kapıda
+  ölür.
+- **Kapıları gevşetmek bu modelde ZARARLI olurdu:** karar 37 `vwap_managed`in brüt
+  sürüklenmesini **−%0.20** ölçtü. Maliyet sıfırlansa bile kaybeden bir sinyalde frekansı
+  artırmak, yalnızca kaybı hızlandırır.
+
+### Karar
+
+Tripwire'ın tabanı C-5 backtest'in oranına çekildi (0.86 dolum/gün): yeni eşik **7 gün
+üst üste 0 dolum** (P ≈ e^−6 ≈ %0.25). Kontrol devam ediyor, model kadroda kalıyor
+(karar 37: ölçüt ölçülebilirlik).
+
+Yan gözlem: `origin/main`in canlı kadrosu hâlâ 5 model (`scalp_bandit`, `scalp_managed`
+dâhil) — karar 33'ün sadeleştirmesi dalda, henüz merge edilmedi.
+
+---
+
+## 39. Base katmanı barlarının **%26'sı sinyalsiz geçiyor** — ve kaybolan barlar RASTGELE değil
+
+Karar 33 base için ölçütü "performans değil ÖLÇÜLEBİLİRLİK" diye koymuştu ve modellerin
+n=30'a ne zaman ulaşacağını hesaplamıştı. O hesap, her barın bir sinyal fırsatı ürettiğini
+varsayıyordu. **Varsayım yanlış.**
+
+**Ölçüm** (`origin/main` geçmişi, `round.bars_processed`, 2026-09-12T04:00 → 09-16T12:00):
+
+| | |
+|---|---|
+| benzersiz tur | 20 |
+| işlenen bar | 27 |
+| `bars_processed > 1` olan tur | 7 |
+| **sinyal fırsatı hiç doğmayan bar** | **7 / 27 = %25.9** |
+| `missing_bars` | 0 (veri kaybı YOK) |
+
+Telafi edilen bar `signals_per_bar: false` yüzünden pozisyon yönetimi yapar (stop/TP/
+likidasyon/funding) ama **sinyal üretmez** — bu, ayarın belgelenmiş davranışıdır. Sorun
+ayarda değil, ayarın DAYANDIĞI varsayımda.
+
+### Kaybolan barlar sistematik
+
+```
+2026-09-13T00:00   2026-09-14T00:00   2026-09-14T08:00
+2026-09-15T00:00   2026-09-15T08:00
+2026-09-16T00:00   2026-09-16T08:00        saate göre: 00:00 → 4 kez, 08:00 → 3 kez
+```
+
+Yani kaybolan bar **her zaman 00:00 ya da 08:00 barıdır** ve 09-14'ten beri **her gün
+ikisi de** kayboluyor. Günlük altı bardan ikisi, yani sinyal fırsatının **üçte biri**,
+hep aynı iki saatte siliniyor.
+
+Sebep: `run.yml`in cron'u `5 0,4,8,12,16,20` ve GitHub'ın zamanlanmış tetikleyicileri
+düşüyor/gecikiyor. Gözlenen son beş tetikleme: 16:24, 22:43, 03:39, 09:07, 16:16 — yani
+2.6 saate varan gecikmeler. Bir tetikleme düştüğünde motor barı TELAFİ eder (bu yüzden
+`missing_bars = 0`), ama telafi barı sinyal üretmez.
+
+### Neden CLAUDE.md bunu öngörmüyordu
+
+Belge şunu yazıyor: *"`run.yml` güvenilir tetikleniyor, yani base katmanında telafi nadiren
+devreye girer."* Bu cümle `signals_per_bar: false`un TEK gerekçesiydi ve ölçüm onu
+çürütüyor: telafi nadir değil, **turların %35'i** (7/20). Scalp katmanında 15 dakikalık
+cron'un %91'inin düştüğü ölçülüp `signals_per_bar: true` yapılmıştı; base'de aynı arıza
+daha küçük ölçekte ve fark edilmeden sürüyor.
+
+**Üstelik base'deki hâli scalp'tekinden daha kötü huylu:** scalp'te kayıp turdan tura
+değişiyordu (gürültü), base'de kayıp **saate kilitli** (yanlılık). 00:00 barının sinyali
+bir sonraki barın açılışından, yani 04:00'te dolardı (kural 13) — o dolumlar
+`00-07_asya` seansına düşerdi. 08:00 barınınki 12:00'de dolar, `12-16_abd`ye düşerdi.
+Bugün base'de seans kırılımı YOK, ama açılırsa bu iki seans yapısal olarak eksik
+örneklenmiş olur.
+
+### Ne DEĞİŞTİRİLMEDİ ve neden
+
+Hiçbir ayar oynatılmadı. İki yol da canlı ölçümün koşullarını değiştirir ve bu bir
+parametre değil, kadans kararıdır:
+
+| yol | etkisi | bedeli |
+|---|---|---|
+| **A — `run.yml` cron'unu sıklaştır** (ör. saatlik) | her 4H barı KENDİ turunda kapanır, `bars_processed` 1'de kalır, defterin kuralı DEĞİŞMEZ | yeni bar kapanmayan turlar da `generated_at` yüzünden commit üretir: günde 6 yerine 24 commit |
+| **B — base'de `signals_per_bar: true`** | telafi barı da sinyal üretir | defterin kuralı akış ortasında değişir; biriken 27 barın bir kısmı "tur başına", kalanı "bar başına" ile üretilmiş olur ve iki dönemin işlem sıklığı kıyaslanamaz (CLAUDE.md'nin bu ayarı base'de kapalı tutma gerekçesinin ta kendisi) |
+
+**A tercih edilir**, çünkü ölçüm kuralına hiç dokunmaz: yalnızca tetikleyiciyi, belgenin
+zaten varsaydığı güvenilirliğe getirir. B, tam olarak kaçınılmak istenen ayrışmayı üretir.
+Karar kullanıcınındır; ikisi de canlı kadansı değiştirdiği için tek taraflı uygulanmadı.
+
+**Karar 33'ün n=30 projeksiyonları bu oranda iyimserdir** (~%26): `trend` için "10 gün"
+gerçekte ~13 gün, `meanrev` için "18 gün" ~24 gündür.
+
+---
+
+## 39-UYGULAMA (aynı gün): A uygulandı
+
+Kullanıcı A'yı seçti. `run.yml`in cron'u `5 0,4,8,12,16,20` -> **`5 * * * *`**.
+
+Her 4H barı artık dört bağımsız tetikleme şansı alır (20:00 barı 00:05'te kapanır;
+tutmazsa 01:05, 02:05, 03:05). **Ölçüm kuralı değişmedi:** `signals_per_bar` base'de
+kapalı kalır, defter yine "bar başına tek sinyal" ile yazılır.
+
+### Saatlik kadansın iki yan etkisi vardı ve ikisi de tek bir kapıyla kesildi
+
+Turların dörtte üçü yeni bar bulamaz (`core/engine.py::_timeline` boş döner, defter ve
+`last_processed_bar` aynı kalır). Ama `main.py` her koşuda `generated_at`i tazeler, yani
+`metrics.json` "değişmiş" görünür ve mevcut "değişiklik yoksa commit atlanır" kapısı bunu
+YAKALAMAZ. Commit edilselerdi:
+
+1. **Denetim izi ezilirdi.** HEAD'deki `round` bölümü `bars_processed=0` olan boş bir
+   turla değişirdi — `emitted`, `survey` ve `rejections` oradan okunur (kural 15) ve
+   kararlar 38-39 tam olarak o alanları okudu.
+2. **Günlük özet dört kez giderdi.** `scripts/telegram_report.py`nin kapısı `as_of`
+   saatidir ve `as_of` dört tur boyunca 20:00'de sabit kalır.
+
+Bu yüzden yeni bir adım eklendi (`Did the round advance?`): turun gerçekten bar işleyip
+işlemediğini `round.models[].bars_processed`in maksimumundan okur ve hem commit'i hem
+bildirimi ona bağlar. `round` bölümü hiç yoksa kapı KAPALI sayar — bozuk bir yükü commit
+etmektense atlamak doğru arıza modudur.
+
+Kapı üç durumda sınandı: gerçek canlı yük (telafi turu, `bars_processed=2`) -> açık;
+tüm modeller 0 -> kapalı; `round` yok -> kapalı.
+
+**Bu bir onarımdır, bir parametre değişikliği değil** (§7.1 ile çelişmez): maliyet, risk,
+dolum, likidasyon ve metrik tanımlarının hiçbirine dokunulmadı. Değişen tek şey,
+belgenin zaten varsaydığı tetikleyici güvenilirliğidir.
+
+**Beklenen etki:** base'in sinyal fırsatı ~%26 artar ve 00:00/08:00 barlarındaki
+yapısal boşluk kapanır. Karar 33'ün n=30 projeksiyonları yeniden geçerli olur
+(`trend` ~10 gün, `meanrev` ~18 gün). Bu bir TAHMİNDİR; doğrulaması birkaç gün sonra
+`bars_processed` dağılımının 1'e yakınsamasıdır.
+

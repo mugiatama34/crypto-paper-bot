@@ -2,13 +2,28 @@ name: run
 
 # Periyodik paper-trading turu. Testler ci.yml'de koşar; burada yalnızca tur çalışır.
 #
-# Zamanlama: bar 4H, yani barlar 00/04/08/12/16/20 UTC'de KAPANIR. Cron 5 dakika sonra
-# tetiklenir — core/data.py kapanmamış barı atar (kural 12), erken tetiklenen bir koşu
-# bir önceki barı işleyip turu boşa harcardı. GitHub cron'u zaten birkaç dakika
-# gecikebilir; bu pay onu da soğurur.
+# Zamanlama: bar 4H, yani barlar 00/04/08/12/16/20 UTC'de KAPANIR. Cron SAATLİKTİR ve
+# barın kapanışından 5 dakika sonraya çapalıdır — core/data.py kapanmamış barı atar
+# (kural 12), erken tetiklenen bir koşu bir önceki barı işleyip turu boşa harcardı.
+#
+# Neden 4 saatlik değil de saatlik (docs/decisions.md > 39): cron `5 0,4,8,12,16,20` iken
+# her bara TEK bir tetikleme düşüyordu ve GitHub o tetiklemeyi düzenli olarak düşürüyor
+# (2.6 saate varan gecikmeler gözlendi). Düşen her tetikleme barı TELAFİ barına çeviriyor,
+# telafi barı ise `signals_per_bar: false` yüzünden sinyal ÜRETMİYOR: barların %26'sı
+# sinyalsiz geçti ve kayıp rastgele değil, hep 00:00 ve 08:00 barlarındaydı — yani
+# gürültü değil YANLILIK.
+#
+# Saatlik cron her 4H barına DÖRT bağımsız şans verir (ör. 20:00 barı 00:05'te kapanır;
+# tutmazsa 01:05, 02:05, 03:05). Ölçüm kuralı DEĞİŞMEZ — `signals_per_bar` kapalı kalır,
+# defter yine "bar başına tek sinyal" ile yazılır; değişen yalnızca tetikleyicinin
+# güvenilirliği, yani belgenin zaten varsaydığı şey.
+#
+# Yeni bar bulamayan turlar (dörtte üçü) hiçbir şey işlemez: `core/engine.py::_timeline`
+# boş döner, defter ve `last_processed_bar` aynı kalır. Onların commit'i ve bildirimi
+# aşağıdaki `advanced` kapısıyla kesilir.
 on:
   schedule:
-    - cron: "5 0,4,8,12,16,20 * * *"
+    - cron: "5 * * * *"
   workflow_dispatch:
 
 # Defter koşular arası taşınan DURUMDUR: iki tur aynı anda koşarsa ikisi de aynı
@@ -41,7 +56,32 @@ jobs:
       - name: Run round
         run: python main.py --log-level INFO
 
+      # Tur GERÇEKTEN bar işledi mi? Saatlik cron'da turların dörtte üçü yeni bar
+      # bulamaz ve hiçbir şey yazmaz — ama `main.py` her koşuda `generated_at`i
+      # tazelediği için `metrics.json` yine de "değişmiş" görünür. O dosyayı commit
+      # etmek iki ayrı zarar verirdi:
+      #   1. HEAD'deki `round` bölümü BOŞ bir turla (bars_processed=0) ezilirdi. O
+      #      bölüm denetim izidir — `emitted`, `survey`, `rejections` oradan okunur
+      #      (kural 15; kararlar 38-39 tam olarak onu okudu).
+      #   2. Günlük özetin kapısı `as_of` saatidir ve `as_of` dört tur boyunca aynı
+      #      kalır: 20:00 barının özeti 00:05, 01:05, 02:05 ve 03:05'te, yani DÖRT
+      #      kez yollanırdı.
+      # Bu yüzden iki adım da tek bir kapıya bağlanır.
+      - name: Did the round advance?
+        id: round
+        run: |
+          set -euo pipefail
+          BARS="$(python -c 'import json,pathlib; p=json.loads(pathlib.Path("docs/data/metrics.json").read_text()); m=(p.get("round") or {}).get("models") or []; print(max((int(x.get("bars_processed") or 0) for x in m), default=0))')"
+          echo "bars_processed=${BARS}"
+          if [ "${BARS}" -gt 0 ]; then
+            echo "advanced=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "advanced=false" >> "$GITHUB_OUTPUT"
+            echo "yeni kapanmış bar yok: commit ve bildirim atlanıyor"
+          fi
+
       - name: Commit ledgers and metrics
+        if: steps.round.outputs.advanced == 'true'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -84,11 +124,14 @@ jobs:
       # "Günde bir kez, 20:00 UTC turunda" kararını script verir (as_of saati 20 olan
       # tur) ve raporun tazeliğini de ayrıca kontrol eder. Kapıyı cron'a taşımak,
       # gecikmiş ya da elle tetiklenmiş bir koşuda özeti ya iki kez ya hiç yollardı.
+      # `advanced` kapısı bunun YERİNE geçmez, onu tamamlar: script "hangi bar" sorusunu
+      # cevaplar, kapı "bu tur o barı gerçekten yeni mi işledi" sorusunu — saatlik cron'da
+      # `as_of` dört tur boyunca aynı kalır ve script tek başına dördünde de yollardı.
       #
       # Secret tanımlı değilse (fork, yeni depo) script bunu bilgi olarak loglar ve
       # sessizce geçer: eksik bir secret bir arıza değil, bir tercihtir.
       - name: Telegram daily summary
-        if: always()
+        if: always() && steps.round.outputs.advanced == 'true'
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

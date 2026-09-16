@@ -38,7 +38,7 @@ yapar.
 | `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni, çıkış yönetimi alanlarının tutarlılığı (`trailing_atr` ile `trail_giveback_pct` aynı anda kullanılamaz). Ayrıca `validate_model`: model bayrak/limit bildiriminin kapısı (`ModelLimits` yalnızca `is_replica`, kaldıraç tavanı `REPLICA_LEVERAGE_CAP`), `strategies/registry.py` kurulumda çağırır. Geçersizde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
 | `strategies/scalp/arms.py` | Scalp katmanının **beş ortak kolu** (VWAP geri çekilme, açılış aralığı kırılımı, RSI(2) dönüşü, momentum patlaması, funding sıçraması fade'i). İki model de bu tek kopyayı görür. Stop mesafesi her kolda aynıdır (`stop_atr_multiple × ATR`) — kollar stop ölçeğinde ayrışsaydı kol tablosu bir sinyal değil maliyet karşılaştırması olurdu. Hedef ise projeksiyon (`target_reward_risk × stop`) ile kolun yapısal engelinin YAKIN olanıdır. |
-| `strategies/scalp/model.py` | Scalp modellerinin ortak gövdesi: stop tabanı (%1), hedef/stop kapısı (1.5R), zaman stop'u (16 bar), sinyal kurulumu, kol etiketi. Alt sınıfın değiştirebileceği YALNIZCA üç nokta vardır ve her biri ölçülen bir eksene karşılık gelir: `choose_arm` (kol seçimi), `exit_management` (çıkış yönetimi), `rng_identity` (çekiliş kimliği). Fark bu üç noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü olmaktan çıkar. |
+| `strategies/scalp/model.py` | Scalp modellerinin ortak gövdesi: stop tabanı (%1), hedef/stop kapısı (1.5R), zaman stop'u (16 bar), sinyal kurulumu, kol etiketi. Alt sınıfın değiştirebileceği noktalar SAYILIDIR ve **her biri ölçülen bir eksene karşılık gelmek zorundadır** — kural sayı değil, bu karşılıklılıktır: `choose_arm` (kol seçimi, 11 ↔ 12), `exit_management` (çıkış yönetimi, 12 ↔ 15), `rng_identity` (çekiliş kimliği), `time_stop_key` (zaman stop'unun SINIRI, 12 ↔ 16), `regime_filter` (ek rejim kapısı, 16 ↔ 17). Liste uzayabilir; uzatmanın bedeli şudur: **karşılığı bir eksen olmayan bir override noktası eklenemez.** Fark tek bir noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü olmaktan çıkar. |
 | `strategies/scalp_bandit.py` | **Model 11:** Thompson sampling ile kollar arası tahsis. Posterior yalnızca KAPANMIŞ işlemlerin gerçekleşmiş R'sinden beslenir ve her turda defterden sıfırdan kurulur (ayrı durum dosyası yoktur — ikinci bir doğruluk kaynağı olurdu). Isınma 20 işlem/kol, taban tahsis %5, kayan pencere 100 işlem. |
 | `strategies/scalp_fixed.py` | **Model 12 (KONTROL):** aynı beş kol, eşit ağırlıklı çekiliş, öğrenme yok. Model 11'in null hipotezi; `observe_closed_trades`ı bilinçli olarak UYGULAMAZ, yani geçmişe erişimi hiç yoktur. |
 | `strategies/time_stop.py` | Zaman stop'unun TEK tanımı (modeller 11, 12, 14 ve 15 aynı kopyayı okur): `scalp.time_stop_bars` bar boyunca ne stop'a ne hedefe değmiş pozisyon piyasa fiyatından kapatılır. Yalnızca config'i okuyup `ExitInstruction` üretir (kural 10); dolum bir SONRAKİ barın açılışındadır (kural 13), yani gerçek ömür `bars + 1` bardır. Beş kollu modeller kuralı `ScalpModel` gövdesinden alıyordu, model 14 o gövdeden türemediği için HİÇ almıyordu — kural buraya çıkarıldı, çünkü iki uygulama `model 14 ↔ scalp_fixed` kıyasına ölçülmeyen bir değişken koyardı. Model 13'e UYGULANMAZ (kaynak sistemde yok, kural 15b). |
@@ -47,6 +47,8 @@ yapar.
 | `strategies/vwap/clone_signal.py` | **Model 13'ün** sinyali: kaynak sistemin (`vwap_detector.py`) kuralları, olduğu gibi. VWAP son `vwap_window` barın KÜMÜLATİFİdir (gün çapası yok, çapa her barda kayar); σ o sapma serisinin AĞIRLIKSIZ örneklem sapmasıdır (`rolling(std_window)`, ddof=1) — VWAP ağırlıklı, σ değil, ve bu tutarsızlık kaynakta gerçekten böyledir. Bant dışı olma şartı MEVCUT bara bakar; dönüş şartının tamamı `close > prev_close`tur ("sapma daraldı" şartı YOK). Stop ve hedef BURADA kurulur (`band_mult × sl_mult × σ` ve `max(\|VWAP − giriş\|,0) × tp_mult`), çünkü kaynakta geometri kontrolü (`sl < entry < tp`) onlara bakar — "VWAP geçilmiş" için ayrı bir eleme kuralı yoktur, eleme oradan gelir. `signal.py` ile kural mantığı PAYLAŞILMAZ (paylaşılsaydı model 13 ↔ 14 ekseninin tanımı bir dallanmanın durumuna bağlı olurdu); ortak olan yalnızca `core/indicators.py` yardımcılarıdır. Kendi `Survey`'i ve kendi kol etiketi (`vwap_revert_src`) vardır. Bkz. docs/decisions.md > 23. || `strategies/vwap_clone.py` | **Model 13 (KOPYA, `is_replica=True`):** dış bir sistemin kurallarını birebir yeniden üretir. Sinyali `strategies/vwap/clone_signal.py`'dedir (model 14 ile PAYLAŞILMAZ). Sabit teminat × 10x (`notional_fraction` + `ModelLimits.leverage`), üç aşamalı çıkış yönetimi, kendi limitleri (5 pozisyon, yönde 3, portföy riski %8), 12 sembollük kendi evreni, epsilon-greedy parametre öğrenimi (3 bant × 3 hedef = 9 kombinasyon, sembol bazlı, 3 örnek altında genele düşer). Seçim kaynağın üç adımıdır: o sembolde DENENMEMİŞ kombinasyon varsa önce o, sonra `epsilon` ile keşif, sonra sömürü. Evreni SIRAYLA tarar — güce göre sıralama yoktur. Ev kapıları (%1 stop tabanı, 1.5R, zaman stop'u) UYGULANMAZ — kaynak sistemde yok. Kopyalanamayan sapmalar docs/decisions.md > "Sadık kopyanın sınırları" altında yazılıdır. Yarışmacı değildir. |
 | `strategies/vwap_managed.py` | **Model 14:** VWAP sapma-dönüş sinyali, EV kurallarıyla (`strategies/vwap/signal.py`; model 13 kendi kurallarını okuduğu için sinyal artık ortak DEĞİLDİR ve 13 ↔ 14 farkı sinyal farkını da içerir) — `sizing="risk"`, katmanın `leverage_cap`i, %1 stop tabanı ve 1.5R kapısı geçerli, parametre öğrenimi YOK (sabit çarpanlar config'te). Barda tek sinyal. Tam yarışmacı; kıyas hedefleri model 13 (ev kurallarının katkısı) ve `scalp_fixed`. |
 | `strategies/scalp_managed.py` | **Model 15:** `scalp_fixed`in BİREBİR ikizi (aynı beş kol, aynı eşit ağırlıklı çekiliş — `choose_arm` miras alınır, kopyalanmaz), tek farkı üç aşamalı çıkış yönetimi. Çekiliş kimliği (`rng_identity`) bilinçli olarak `scalp_fixed` ile PAYLAŞILIR: iki model her turda aynı kolu ve aynı sembolü seçer, aradaki ortalama R farkı yalnızca yönetimden gelir (eşleştirilmiş deney). |
+| `strategies/scalp_patient.py` | **Model 16 (kâğıt katmanında KOŞAR, eşiği geçmiş DEĞİL):** `scalp_fixed`in ikizi, tek farkı zaman stop'unun SINIRI (16 ↔ 100 bar). Kol seçimi, kapılar, geometri ve çekiliş kimliği `ScalpFixed`ten MİRAS ALINIR. Cevapladığı soru: *kuruluma hedefine varacak süreyi vermek işe yarıyor mu?* Gerekçe karar 30'un ölçümüdür: 5×ATR stop + 10×ATR hedef, 16 barlık tipik yayılımın (√16 = 4×ATR) içinde ulaşılamaz ve `scalp_fixed`in 151 pozisyonundan 2'si hedefe vardı (%1.3 — sürüklenmesiz rastgele yürüyüşün öngördüğü %1.24). 100 sayısı TEORİDEN gelir (`N = (hedef/ATR)²`), veriden değil. Karar 33'te katmanın `models` listesine ALINDI — hareket eden tek eksenin diğer ucu odur ve ileriye dönük kanıt yalnızca kâğıtta birikir. Bu, `docs/backtest.md > 4`ün canlıya alma eşiğini geçtiği anlamına GELMEZ: C-1 (OOS ort. R > 0) sağlanmıyor (−0.01), yani gerçek parayla işlem açamaz. |
+| `strategies/scalp_vol.py` | **Model 17 (ADAY — tezi DÜŞTÜ, karar 36; canlıda KOŞMAZ):** `scalp_patient`in ikizi, tek farkı **kesitsel volatilite rejimi kapısı** — sembolün `ATR/close` değeri o bardaki evrenin MEDYANININ altındaysa kurulum atlanır. Tez karar 35'in özdeşliğinden gelir: friksiyon notional'ın sabit yüzdesi, sürüklenme volatiliteyle ölçekleniyor; `scalp_patient`in başabaş noktası tam olarak medyan volatilitede (brüt %0.261 ↔ maliyet %0.284). Eşik SERBEST PARAMETRE DEĞİLDİR (medyan, süpürülmez) ve EVRENDEN hesaplanır, adaylardan değil — adaylara göre olsaydı eşik "o barda kaç aday var"a bağlanırdı. `take_survey` UYGULAR (karar 34'ün dersi: sayım olmadan ölü kol iki backtest sonra fark edilir). Ön-kayıt: `docs/backtest.md > 6b`; **sonuç: ön-kayıtlı birincil tahmin P1 düştü** (brüt sürüklenme %0.263 → %0.253, yani artmadı) — bkz. docs/decisions.md > 36. Katmanın `models` listesinde YOKTUR; `REGISTRY`de durur ve backtest onu `--models` ile çağırır. |
 | `strategies/buyhold.py` | **Referans çıpası** (kural 15), yarışmacı değil: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınır ve hiç satılmaz. `is_benchmark = True`. |
 | `strategies/registry.py` | Model adı -> strateji sınıfı eşlemesi. `config.yaml`'ın `models` listesi buradan çözülür; tanınmayan ad sessizce atlanmaz. |
 | `strategies/*.py` (ileride) | `Strategy`'den türeyen, yalnızca `generate_signals` uygulayan bağımsız, birbirinden habersiz modüller. |
@@ -67,8 +69,8 @@ yapar.
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
 | `state/` | Bildirim bookkeeping'i, ölçüm DEĞİL: `state/telegram_scalp.json` yalnızca "hangi kurulum en son hangi barda bildirildi" bilgisini tutar (susturma penceresi). Defterden ayrı durur çünkü defter denetim izidir (kural 1) ve bu dosya silinse ölçüm hiç değişmez — en kötü ihtimalle bir mesaj tekrar eder. Koşular arası commit edilir (runner her koşuda sıfırdan kurulur), ama KENDİ adımında: defter commit'ine katmak, ağ erişimi olan bildirim adımını turun kaydedilmesinin önüne koymayı gerektirirdi. |
 | `ledgers_scalp/` | Scalp katmanının defteri. İki katman asla aynı defteri paylaşmaz: paylaşsalardı 15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı. |
-| `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`, SAATLİK: her koşu dört 15m barını işler). Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. Defter commit'inden SONRA anlık sinyal bildirimi (`scripts/telegram_signals.py`) ve onun durum dosyasının kendi commit'i gelir; ikisi de `continue-on-error` — bildirim katmanı ölçümü düşüremez. 15 dakikalık cron ölçüldü ve tetiklemelerin ~%91'i düşüyordu; saatlik kadans `signals_per_bar` sayesinde sinyal kaybı üretmez (bkz. "Telafi edilen barlarda sinyal"). |
-| `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
+| `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`). Dosyada cron YOKTUR, yalnızca `workflow_dispatch`; gözlenen kadans ~15 dakikadır (her koşu bir 15m barı işler) ve tetikleyici depo dışındadır. Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. Defter commit'inden SONRA anlık sinyal bildirimi (`scripts/telegram_signals.py`) ve onun durum dosyasının kendi commit'i gelir; ikisi de `continue-on-error` — bildirim katmanı ölçümü düşüremez. 15 dakikalık cron ölçüldü ve tetiklemelerin ~%91'i düşüyordu; saatlik kadans `signals_per_bar` sayesinde sinyal kaybı üretmez (bkz. "Telafi edilen barlarda sinyal"). |
+| `.github/workflows/run.yml` | Base katmanının periyodik turu. Cron **SAATLİKTİR**, 4 saatlik değil: tek tetikleme başına tek bar, GitHub'ın düşen cron'uyla birleşince barların %26'sını sinyalsiz bırakıyordu (karar 39). Saatlik kadans her 4H barına dört şans verir ve ölçüm kuralına DOKUNMAZ — `signals_per_bar` kapalı kalır. Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü `main.py` her koşuda `generated_at`i tazeler ve commit edilseler HEAD'deki `round` denetim izini (`emitted`/`survey`/`rejections`) BOŞ bir turla ezerlerdi — ayrıca `as_of` dört tur sabit kaldığı için günlük Telegram özeti dört kez giderdi. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
 
 ### config.yaml Değerleri
 
@@ -98,7 +100,7 @@ yapar.
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
 | `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
 | `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, `signals_per_bar`, …). Bkz. "Katmanlar". |
-| `scalp.*` | scalp kısıtları | Beş kollu modellerin (11, 12, 15) ve model 14'ün BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
+| `scalp.*` | scalp kısıtları | Beş kollu modellerin (11, 12, 15) ve model 14'ün BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16; `patient.time_stop_bars` 100 — yalnızca model 16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
 | `exit_management.*` | üç aşamalı çıkış | Modeller 13, 14 ve 15'in TEK kaynağı: `breakeven_at_r` (1.0), `partial_tp.r` (1.5), `partial_tp.fraction` (0.5), `trail_giveback_pct` (0.5). Model başına ayrı bloklar, bir gün birinin sessizce ayrışması ve model 15 ↔ `scalp_fixed` farkının "iki ayrı yönetimin farkı"na dönüşmesi demekti. |
 | `vwap.*` | modeller 13-14 | Model 14'ün sinyali (`band_mult` 2.0, `min_vwap_bars` 8 — YALNIZCA model 14'ün, kopya okumaz) ve sabit çarpanları (`managed.*`); kopyanın KENDİ kuralları (`clone.*`: sabit teminat oranı, kaldıraç, limitler, kaynağın sinyal sabitleri `vwap_window` 300 / `std_window` 20 / `min_bars` 25 / `sl_mult` 0.5, 3×3 = 9 kombinasyon, epsilon, 12 sembollük evren). İki blok ayrıdır ve `band_mult`i paylaşmaz: model 13 onu ÖĞRENİR, model 14 config'ten sabit okur. |
 
@@ -320,7 +322,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (11, 12, 14, 15) + 1 dış sistem kopyası (13) |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
-| Cron | `run.yml` (6 saatte bir tur, 4 saatlik bar) | `run-scalp.yml` (saatlik; tur başına 4 bar) |
+| Cron | `run.yml` (SAATLİK; her 4H barına dört şans — karar 39. Bar ilerletmeyen turlar commit ve bildirim üretmez) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
 | Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |
@@ -368,10 +370,20 @@ N ayrı turda koşulan N bar **birebir aynı defteri** üretir. Bunu sağlayan d
 - **`as_of`'tan sonrası işlenmez:** kapanmamış bar ne sinyal ne özsermaye satırı üretir.
 
 Ayar **kökte kapalıdır** (4 saatlik katman), scalp katmanında açıktır. Gerekçe kural 6'nın
-kendisi değil, defterin tek bir kuralla yazılmasıdır: `run.yml` güvenilir tetikleniyor,
-yani base katmanında telafi nadiren devreye girer — ama devreye girdiği turlarda defterin
+kendisi değil, defterin tek bir kuralla yazılmasıdır: devreye girdiği turlarda defterin
 kuralı sessizce değişir ve biriken geçmişin bir kısmı "tur başına tek sinyal", bir kısmı
 "bar başına tek sinyal" ile üretilmiş olurdu. İki dönemin işlem sıklığı kıyaslanamazdı.
+
+⚠ **Bu ayarın base'deki dayanağı ÖLÇÜLDÜ, çürüdü ve ONARILDI.** Burada bir zamanlar
+"`run.yml` güvenilir tetikleniyor, yani base katmanında telafi nadiren devreye girer"
+yazıyordu. Ölçüm (karar 39): turların %35'i telafi yapıyordu ve barların **%26'sı
+sinyalsiz** geçiyordu — üstelik kaybolan bar her zaman 00:00 ya da 08:00 barıydı, yani
+kayıp gürültü değil YANLILIK. Sebep GitHub cron'unun düşmesi/gecikmesiydi (2.6 saate
+varan). **Onarım ayarda değil TETİKLEYİCİDE yapıldı:** `run.yml` saatlik cron'a geçti ve
+her 4H barı dört bağımsız şans aldı. `signals_per_bar` base'de KAPALI kalır — defterin
+kuralı değişmedi, yalnızca belgenin zaten varsaydığı güvenilirlik sağlandı. Alternatif
+(base'de ayarı açmak) tam olarak yukarıdaki dönem ayrışmasını üretirdi; bkz.
+docs/decisions.md > 39.
 Katmanlar arası kıyas zaten yapılmadığı için ayarın katmana göre farklı olması bir
 tutarsızlık değildir; katman **içi** kıyasta ise beş model de aynı ayarı görür.
 
@@ -384,13 +396,19 @@ kalır ve sıkıştırma her model için birebir aynı uygulanır.
 
 ### Scalp katmanının model kuralları
 
-Katmanda **üç ölçüm ekseni** vardır ve her eksende yalnızca TEK bir değişken ayrışır:
+Katmanın ölçüm eksenleri; her eksende yalnızca TEK bir değişken ayrışır. Bir eksen
+kapandığında satır SİLİNMEZ — kapanışın kendisi bir ölçüm sonucudur:
 
-| Eksen | Çift | Ayrışan tek şey |
-|---|---|---|
-| Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi |
-| Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış |
-| İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_managed` (14) | **tek değişken DEĞİL** — bkz. aşağısı |
+| Eksen | Çift | Ayrışan tek şey | Durum |
+|---|---|---|---|
+| Sürenin katkısı | `scalp_fixed` (12) ↔ `scalp_patient` (16) | zaman stop'u sınırı (16 ↔ 100 bar) | **AÇIK** (tek hareket eden eksen: −0.15 ↔ −0.01) |
+| İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_managed` (14) | **tek değişken DEĞİL** — bkz. aşağısı | AÇIK |
+| Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi | KAPALI — iki kez "fark yok" (karar 33); 11 emekli |
+| Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış | KAPALI — iki kez "fark yok" (karar 33); 15 emekli |
+| Volatilite rejiminin katkısı | `scalp_patient` (16) ↔ `scalp_vol` (17) | kesitsel ATR% medyan kapısı | KAPALI — ön-kayıtlı P1 düştü (karar 36); 17 canlıda koşmaz |
+
+**Emekli model = katmanın `models` listesinde yok; kodu ve defteri DURUYOR** (kural 1).
+Kapalı bir eksenin çifti backtest'te `--models` ile yeniden çağrılabilir.
 
 **13 ↔ 14 bir EKSEN DEĞİL, bir toplam farktır.** Bu satır bir zamanlar "ev kurallarının
 katkısı" olarak yazılıydı ve o zaman doğruydu: iki model aynı sinyal modülünü okuyordu.
