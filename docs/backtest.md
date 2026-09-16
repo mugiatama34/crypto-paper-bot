@@ -210,6 +210,48 @@ uydurulmuş demektir.
 
 ---
 
+## 6b. ÖN-KAYIT — `scalp_vol` (model 17)
+
+**Bu bölüm koşudan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.** Sonuç
+görüldükten sonra hiçbir satırı değiştirilmeyecek (§7).
+
+**Hipotez.** Friksiyon notional'ın sabit bir yüzdesidir; sinyalin sürüklenmesi volatiliteyle
+ölçeklenir. `scalp_patient`in başabaş noktası evrenin MEDYAN volatilitesindedir (karar 35:
+brüt %0.261 ↔ maliyet %0.284). O hâlde medyanın ÜSTÜNDEKİ kurulumlarla sınırlanmış aynı
+model, daha yüksek brüt sürüklenme üretmelidir.
+
+**Eksen.** `scalp_patient` ↔ `scalp_vol`; ayrışan TEK şey kesitsel ATR% medyan kapısı.
+Kol seçimi, kapılar, geometri, 100 barlık zaman stop'u ve çekiliş kimliği miras.
+
+**Pencere.** 2026-07-19 → 2026-09-04, `--history-bars 6000`. Bu pencere `scalp_vol` için
+TAZEDİR (model o koşudan sonra yazıldı). Sonuca göre kaydırılmayacak (§7.3).
+
+**ÖN-KAYITLI TAHMİNLER** (sonucu görmeden):
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | brüt sürüklenme% | `scalp_vol` > `scalp_patient` (%0.261) | ≤ %0.261 |
+| **P2** | maliyet/R | `scalp_vol` < `scalp_patient` (0.124) — stop ATR ile büyür | ≥ 0.124 |
+| **P3** | örneklem | n ≥ 30 | n < 30 → satır okunmaz (B-1) |
+| **P4** | stop bandı | ⚠B yanmaz (C-4) | yanarsa kıyas geçersiz |
+
+**P1 birincildir.** P1 tutmazsa "edge σ ile ölçeklenir" varsayımı YANLIŞTIR — o zaman edge
+mutlak, maliyet oranlıdır ve bu geometride hiçbir 15m tezi kurtarılamaz. Bu, **olumsuz
+çıktığında da değerli** bir ölçümdür ve o durumda doğru hamle katmanı kapatmak ya da maliyet
+çalışmasına geçmektir.
+
+**P2 bir SAĞLAMADIR, bir başarı ölçütü değil.** Kapı ATR'yi seçiyorsa stop mesafesi
+büyümek zorundadır. P2 tutmazsa kapı ATR'yi değil başka bir şeyi seçmiştir ve P1'in sonucu
+yorumlanamaz.
+
+**Canlıya alma eşiği (§4) AYRICA geçilmelidir.** P1'in tutması `scalp_vol`u canlıya almaz;
+C-1 (ort. R > 0) ayrı bir çıtadır ve `scalp_patient` onu −0.01 ile geçememişti.
+
+**Çoklu karşılaştırma (§7.5).** Araştırmadan 10 öneri çıktı; bu, test edilen **1.**sidir.
+Sonuç raporlanırken bu sayı yazılacak.
+
+---
+
 ## 7. Sonucu gördükten SONRA yapılmayacaklar
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.

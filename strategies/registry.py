@@ -29,6 +29,7 @@ from strategies.scalp_bandit import ScalpBandit
 from strategies.scalp_fixed import ScalpFixed
 from strategies.scalp_managed import ScalpManaged
 from strategies.scalp_patient import ScalpPatient
+from strategies.scalp_vol import ScalpVol
 from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
@@ -61,6 +62,9 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # Katmanın `models` listesinde YOKTUR: canlıya alınmadan önce taze bir OOS penceresinde
     # doğrulanmalı (docs/backtest.md > 4, C-5). Backtest onu `--models` ile çağırır.
     ScalpPatient.name: ScalpPatient,
+    # scalp_vol — scalp_patient'in ikizi, tek farkı KESİTSEL volatilite rejimi kapısı.
+    # Katmanın `models` listesinde YOKTUR: önce taze bir OOS penceresinde ölçülür.
+    ScalpVol.name: ScalpVol,
     VwapClone.name: VwapClone,
     VwapManaged.name: VwapManaged,
 }

@@ -449,6 +449,50 @@ def compare_signals(
     return result
 
 
+def format_drift(metrics: Sequence[ModelMetrics]) -> str:
+    """Brüt sürüklenme% — R ölçeğinden BAĞIMSIZ tek karşılaştırma birimi (karar 35).
+
+        brüt sürüklenme% = (ort.R + cost_per_r) × avg_stop_distance_pct
+
+    Neden gerekli: `cost_per_r = maliyet% / stop%` özdeşliği yüzünden stop'u genişletmek
+    maliyet/R'yi düşürür AMA R cinsinden brüt edge'i aynı oranda düşürür — yani **stop
+    genişliği net R'nin İŞARETİNİ değiştiremez** ve iki modelin ort. R'sini kıyaslamak,
+    farklı stop ölçeklerinde farklı şeyleri kıyaslamak olur. Yüzde cinsinden sürüklenme
+    o ölçekten bağımsızdır ve maliyet duvarıyla (~%0.26/tur) doğrudan kıyaslanabilir.
+
+    Burada TÜRETİLİR, `core/metrics.py`ye eklenmez: ölçümün kendisi değil, ölçümün
+    okunma birimidir ve yalnızca backtest kararlarında kullanılır. Çıpa ve kopya
+    satırları `nan` taşır (kural 15/15b), o yüzden `—` görünür.
+    """
+    if not metrics:
+        return ""
+    out = ["\nBRÜT SÜRÜKLENME (karar 35) — R ölçeğinden bağımsız birim",
+           "-" * 78,
+           f"{'model':18s}{'ort.R':>8}{'maliyet/R':>11}{'stopMes.%':>11}"
+           f"{'brüt%':>9}{'maliyet%':>10}"]
+    for item in metrics:
+        t = item.total
+        r, cost, stop = _num(t.avg_r), _num(t.cost_per_r), _num(t.avg_stop_distance_pct)
+        if r is None or cost is None or stop is None:
+            out.append(f"{item.model:18s}{_cell(t.avg_r):>8}{_cell(t.cost_per_r):>11}"
+                       f"{_cell(t.avg_stop_distance_pct):>11}{'—':>9}{'—':>10}")
+            continue
+        out.append(f"{item.model:18s}{r:8.2f}{cost:11.3f}{stop:11.2f}"
+                   f"{(r + cost) * stop:9.3f}{cost * stop:10.3f}")
+    return "\n".join(out) + "\n"
+
+
+def _num(value: Any) -> float | None:
+    """`nan` ve None aynı şeyi söyler burada: bu satır için sayı YOK."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if number != number else number
+
+
 def format_breakdowns(breakdowns: Mapping[str, Any]) -> str:
     """Katmanın kırılımlarını okunur bir tabloya çevirir.
 
@@ -554,6 +598,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     print(format_report(list(result.metrics)))
+    print(format_drift(result.metrics))
     print(format_breakdowns(result.breakdowns))
 
     violations = check_validity(result.report)
