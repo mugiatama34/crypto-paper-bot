@@ -65,6 +65,19 @@ Config'in değiştiği pencereler bu teste uygun değildir: `fee_rate` (karar 25
 `vwap.managed.atr_multiple` (karar 26) 15 Eylül'de değişti, o tarihten öncesi ile sonrası
 aynı kurallarla koşmadı.
 
+**Kapı 0 HARNESS düzeyindedir, pencere düzeyinde DEĞİL.** Kapı "bu harness canlı motoru
+yeniden üretiyor mu" diye sorar; cevap harness'ın bir özelliğidir ve her yeni pencerede
+yeniden kazanılması gerekmez. Bu ayrım pratik bir zorunluluktur: canlı scalp katmanı
+2026-09-13'te başladı, yani ondan ÖNCEYE uzanan her pencerede canlı kayıt yoktur ve
+karşılaştırma zorunlu olarak "yalnız backtest" dolu bir liste üretir. O liste bir sadakat
+hatası DEĞİLDİR — ölçtüğü şey "canlı o tarihte henüz koşmuyordu"dur, ve onu kapı saymak
+kapıyı veri kapsamının ölçüsüne çevirirdi.
+
+Kural şu: Kapı 0, canlının TAMAMEN kapsadığı bir pencerede koşulur ve geçmelidir; geçtikten
+sonra aynı config ile koşulan daha uzun pencereler o doğrulamaya dayanır. Config değişirse
+(yukarıdaki iki karar gibi) kapı yeniden koşulur — çünkü o zaman ölçülen harness değil,
+harness'ın okuduğu kurallar değişmiştir.
+
 ---
 
 ## 2. Ölçülen şey
