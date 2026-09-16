@@ -2377,3 +2377,91 @@ Boyutlandırma `core/portfolio.py`nin tekelindedir (kural 3/11) ve `risk_per_tra
 modeller için tek sabittir (kural 6); bir model kendi riskini oynatırsa ortak 1R birimi
 kaybolur ve modeller aynı ölçekte yarışmaz. **İşlem açmamak** serbesttir — model yalnızca
 sinyal üretmez.
+
+## 29. Backtest harness: ikinci bir motor değil, canlı motorun geçmiş penceresi
+
+Backtest altyapısı istendi ve **değerlendirme kuralları sonuç görülmeden önce yazıldı**
+(`docs/backtest.md`, ayrı commit). Bu kaydın konusu harness'ın kendisidir.
+
+### Neden yeni bir motor yazılmadı
+
+`core/engine.py` atlanan turları telafi ederken zaten tam olarak bir backtest yapıyor: son
+işlenmiş bardan `as_of`'a kadar her barı SIRAYLA işliyor, emirler kendi barının ertesinden
+doluyor (kural 13), stop/TP/likidasyon her barın kendi `high`/`low`'uyla kontrol ediliyor
+(kural 12/13), pozisyon limitleri her barda yeniden soruluyor.
+
+Ve bu yolun sadakati iddia değil, **testle sabit**:
+`tests/test_engine_per_bar.py::test_catch_up_matches_running_each_bar_in_its_own_round`
+bir turda telafi edilen N bar ile N ayrı turda koşulan N barın BİREBİR aynı defteri
+ürettiğini gösteriyor (karar 19).
+
+Ayrı bir backtest motoru yazmak, bu projede yasaklanan şeyin ta kendisi olurdu: maliyet,
+dolum, likidasyon ve metrik kurallarının ikinci bir kopyası. İki kopya bugün hizalansa
+bile yarın ayrışır ve backtest, canlıda koşandan başka bir sistemi ölçmeye başlar — üstelik
+bunu hiçbir test yakalamaz, çünkü iki uygulama da kendi içinde tutarlı olur.
+
+### Harness'ın yaptığı üç şey
+
+1. **Ayrı defter kökü** (`backtests/<koşu-id>/`). Gerçek defter açılmaz; workflow'un
+   `permissions: contents: read` olması bunu niyetle değil YETKİYLE garanti eder.
+2. **`last_processed_bar` tohumlama.** `_timeline` boş defterli bir model için bilinçli
+   olarak `index[-1:]` döner — canlıda yeni açılan bir modelin geçmişi geriye dönük
+   işlemesi yalnızca boş özsermaye satırı üretirdi. Backtest tam olarak o geçmişi istediği
+   için başlangıç barını kendisi yazar; motorun kuralı DEĞİŞMEZ, ona canlıdakiyle aynı
+   girdi verilir. Pencere yarı açıktır: `start` işlenmez, `end` işlenir.
+3. **`signals_per_bar: true`.** Kapalıyken tüm pencere tek bir sinyal üretirdi.
+
+Model kurulumu `main.py::build_strategies`ten gelir (bu yüzden alt çizgisi kaldırıldı).
+Backtest'in kendi kurulumunu yazması, `main.py`'nin tek giriş noktası olma gerekçesini
+delerdi.
+
+### Kapı 0: harness kanıtlanmadan hiçbir sayı okunmaz
+
+Backtest'lerin çoğu burada sessizce yalan söyler, o yüzden doğrulama bir KAPI yapıldı.
+
+Yer gerçeği elimizde: canlı turların `round.models[].emitted` kaydı — her barda her modelin
+tam olarak hangi sinyali ürettiği. Harness aynı pencerede koşturulur ve sinyaller
+karşılaştırılır. Kayıt git GEÇMİŞİNDEN okunur, çünkü `docs/data/metrics_*.json` her turda
+üzerine yazılır; canlının bar bar ne ürettiği yalnızca commit geçmişinde durur — ve orası
+zaten değiştirilemez bir kayıttır.
+
+**Ayrım kancadan TÜRETİLİR, elle listelenmez:**
+
+| Sınıf | Beklenti | Gerekçe |
+|---|---|---|
+| `observe_closed_trades` UYGULAMAYAN (`scalp_fixed`, `scalp_managed`, `vwap_managed`) | **birebir eşleşme ZORUNLU** | Sinyal, piyasa verisinin ve sabit tohumun saf fonksiyonu. `ScalpModel._round_rng` her barı `random_seed:as_of:kimlik` ile yeniden tohumlar — çekiliş durum TAŞIMAZ. `vwap_managed`de rastgelelik hiç yok. |
+| UYGULAYAN (`scalp_bandit`, `vwap_clone`) | eşleşme **beklenmez** | İkisi de kendi kapanmış işlemlerinden öğrenir (kural 16); boş defterden başlayan koşu farklı bir geçmiş görür. Ayrışma raporlanır ama kapı sayılmaz. |
+
+Listenin elle yazılmaması bilinçli: yeni bir uyarlanabilir model eklendiği gün elle yazılmış
+liste sessizce yanlış olur ve Kapı 0 o modelden haksız yere birebir eşleşme beklerdi.
+
+Karşılaştırmanın birimi `(model, bar, sembol, yön)`; fiyat alanları KASTEN dışarıda. Kayan
+nokta eşitliği kırılgandır ve sorulan soru "aynı kurulumu buldu mu", "ondalık basamağına
+kadar aynı mı" değil.
+
+**Kapı 0 penceresi config'in DEĞİŞMEDİĞİ bir aralık olmalıdır:** `fee_rate` (karar 25) ve
+`vwap.managed.atr_multiple` (karar 26) 15 Eylül'de değişti; öncesi ile sonrası aynı
+kurallarla koşmadı.
+
+### Geçerlilik kapısı B-2 mevcut sayaçlardan gelir
+
+`missing_bars` ve `unchecked_position_bars` (karar: PR #27) sıfırdan büyükse pencere eksik
+bir geçmişin üstüne yazılmıştır ve sonucu yorumlanamaz. Backtest'e yeni bir kontrol
+eklenmedi — motorun zaten tuttuğu sayaçlar kapı olarak kullanıldı. Bu, `data.history_bars`
+penceresi aşıldığında da sessiz kalmayı engeller: seri `last_processed_bar`a ulaşmazsa sayı
+raporda görünür.
+
+### Kabul edilen sapma: base katmanı
+
+Canlıda base `signals_per_bar: false` ve 6 saatte bir koşar; backtest bayrağı açar, yani
+**canlıdan çok işlem yapar**. Kapalı koşmak alternatif değil — tüm pencere tek sinyal
+üretirdi. Sapma `manifest.json > signals_per_bar_forced` alanında her koşuda yazılı durur.
+Base için yalnızca ortalama R karara girer; `R/gün` ve toplam getiri bilgi olarak kalır.
+
+### Koşu kendini denetleyebilir kılar
+
+Her koşu `manifest.json` yazar: pencere, katman, model listesi, uyarlanabilir model
+listesi, **config parmak izi** (maliyet/risk sabitlerinin özeti), harness git SHA'sı ve
+model başına geçerlilik sayaçları. Aynı girdilerle tekrar koşulduğunda aynı sonucu
+vermelidir (`random_seed` sabit). Çıktılar `backtests/` altındadır ve depoya girmez: bir
+backtest ölçümün kendisi değil, ölçüm hakkında bir denemedir.
