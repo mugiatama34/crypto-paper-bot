@@ -70,7 +70,7 @@ yapar.
 | `state/` | Bildirim bookkeeping'i, ölçüm DEĞİL: `state/telegram_scalp.json` yalnızca "hangi kurulum en son hangi barda bildirildi" bilgisini tutar (susturma penceresi). Defterden ayrı durur çünkü defter denetim izidir (kural 1) ve bu dosya silinse ölçüm hiç değişmez — en kötü ihtimalle bir mesaj tekrar eder. Koşular arası commit edilir (runner her koşuda sıfırdan kurulur), ama KENDİ adımında: defter commit'ine katmak, ağ erişimi olan bildirim adımını turun kaydedilmesinin önüne koymayı gerektirirdi. |
 | `ledgers_scalp/` | Scalp katmanının defteri. İki katman asla aynı defteri paylaşmaz: paylaşsalardı 15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı. |
 | `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`). Dosyada cron YOKTUR, yalnızca `workflow_dispatch`; gözlenen kadans ~15 dakikadır (her koşu bir 15m barı işler) ve tetikleyici depo dışındadır. Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. Defter commit'inden SONRA anlık sinyal bildirimi (`scripts/telegram_signals.py`) ve onun durum dosyasının kendi commit'i gelir; ikisi de `continue-on-error` — bildirim katmanı ölçümü düşüremez. 15 dakikalık cron ölçüldü ve tetiklemelerin ~%91'i düşüyordu; saatlik kadans `signals_per_bar` sayesinde sinyal kaybı üretmez (bkz. "Telafi edilen barlarda sinyal"). |
-| `.github/workflows/run.yml` | Periyodik çalıştırma (cron) ve CI'da test doğrulaması. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
+| `.github/workflows/run.yml` | Base katmanının periyodik turu. Cron **SAATLİKTİR**, 4 saatlik değil: tek tetikleme başına tek bar, GitHub'ın düşen cron'uyla birleşince barların %26'sını sinyalsiz bırakıyordu (karar 39). Saatlik kadans her 4H barına dört şans verir ve ölçüm kuralına DOKUNMAZ — `signals_per_bar` kapalı kalır. Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü `main.py` her koşuda `generated_at`i tazeler ve commit edilseler HEAD'deki `round` denetim izini (`emitted`/`survey`/`rejections`) BOŞ bir turla ezerlerdi — ayrıca `as_of` dört tur sabit kaldığı için günlük Telegram özeti dört kez giderdi. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
 
 ### config.yaml Değerleri
 
@@ -322,7 +322,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (11, 12, 14, 15) + 1 dış sistem kopyası (13) |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
-| Cron | `run.yml` (cron `5 0,4,8,12,16,20`; ⚠ tetiklemeler düşüyor — barların %26'sı sinyalsiz, bkz. karar 39) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) |
+| Cron | `run.yml` (SAATLİK; her 4H barına dört şans — karar 39. Bar ilerletmeyen turlar commit ve bildirim üretmez) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR |
 | Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |
@@ -374,12 +374,16 @@ kendisi değil, defterin tek bir kuralla yazılmasıdır: devreye girdiği turla
 kuralı sessizce değişir ve biriken geçmişin bir kısmı "tur başına tek sinyal", bir kısmı
 "bar başına tek sinyal" ile üretilmiş olurdu. İki dönemin işlem sıklığı kıyaslanamazdı.
 
-⚠ **Bu ayarın base'deki dayanağı ÖLÇÜLDÜ ve çürüdü.** Burada bir zamanlar "`run.yml`
-güvenilir tetikleniyor, yani base katmanında telafi nadiren devreye girer" yazıyordu.
-Gerçek: turların %35'i telafi yapıyor ve barların **%26'sı sinyalsiz** geçiyor — üstelik
-kaybolan bar her zaman 00:00 ya da 08:00 barı, yani kayıp gürültü değil YANLILIK.
-Sebep GitHub cron'unun düşmesi/gecikmesi (2.6 saate varan). Ayar değiştirilmedi; iki
-onarım yolu ve neden A'nın tercih edildiği docs/decisions.md > 39'da.
+⚠ **Bu ayarın base'deki dayanağı ÖLÇÜLDÜ, çürüdü ve ONARILDI.** Burada bir zamanlar
+"`run.yml` güvenilir tetikleniyor, yani base katmanında telafi nadiren devreye girer"
+yazıyordu. Ölçüm (karar 39): turların %35'i telafi yapıyordu ve barların **%26'sı
+sinyalsiz** geçiyordu — üstelik kaybolan bar her zaman 00:00 ya da 08:00 barıydı, yani
+kayıp gürültü değil YANLILIK. Sebep GitHub cron'unun düşmesi/gecikmesiydi (2.6 saate
+varan). **Onarım ayarda değil TETİKLEYİCİDE yapıldı:** `run.yml` saatlik cron'a geçti ve
+her 4H barı dört bağımsız şans aldı. `signals_per_bar` base'de KAPALI kalır — defterin
+kuralı değişmedi, yalnızca belgenin zaten varsaydığı güvenilirlik sağlandı. Alternatif
+(base'de ayarı açmak) tam olarak yukarıdaki dönem ayrışmasını üretirdi; bkz.
+docs/decisions.md > 39.
 Katmanlar arası kıyas zaten yapılmadığı için ayarın katmana göre farklı olması bir
 tutarsızlık değildir; katman **içi** kıyasta ise beş model de aynı ayarı görür.
 

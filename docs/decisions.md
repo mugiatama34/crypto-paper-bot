@@ -3122,3 +3122,43 @@ Karar kullanıcınındır; ikisi de canlı kadansı değiştirdiği için tek ta
 **Karar 33'ün n=30 projeksiyonları bu oranda iyimserdir** (~%26): `trend` için "10 gün"
 gerçekte ~13 gün, `meanrev` için "18 gün" ~24 gündür.
 
+---
+
+## 39-UYGULAMA (aynı gün): A uygulandı
+
+Kullanıcı A'yı seçti. `run.yml`in cron'u `5 0,4,8,12,16,20` -> **`5 * * * *`**.
+
+Her 4H barı artık dört bağımsız tetikleme şansı alır (20:00 barı 00:05'te kapanır;
+tutmazsa 01:05, 02:05, 03:05). **Ölçüm kuralı değişmedi:** `signals_per_bar` base'de
+kapalı kalır, defter yine "bar başına tek sinyal" ile yazılır.
+
+### Saatlik kadansın iki yan etkisi vardı ve ikisi de tek bir kapıyla kesildi
+
+Turların dörtte üçü yeni bar bulamaz (`core/engine.py::_timeline` boş döner, defter ve
+`last_processed_bar` aynı kalır). Ama `main.py` her koşuda `generated_at`i tazeler, yani
+`metrics.json` "değişmiş" görünür ve mevcut "değişiklik yoksa commit atlanır" kapısı bunu
+YAKALAMAZ. Commit edilselerdi:
+
+1. **Denetim izi ezilirdi.** HEAD'deki `round` bölümü `bars_processed=0` olan boş bir
+   turla değişirdi — `emitted`, `survey` ve `rejections` oradan okunur (kural 15) ve
+   kararlar 38-39 tam olarak o alanları okudu.
+2. **Günlük özet dört kez giderdi.** `scripts/telegram_report.py`nin kapısı `as_of`
+   saatidir ve `as_of` dört tur boyunca 20:00'de sabit kalır.
+
+Bu yüzden yeni bir adım eklendi (`Did the round advance?`): turun gerçekten bar işleyip
+işlemediğini `round.models[].bars_processed`in maksimumundan okur ve hem commit'i hem
+bildirimi ona bağlar. `round` bölümü hiç yoksa kapı KAPALI sayar — bozuk bir yükü commit
+etmektense atlamak doğru arıza modudur.
+
+Kapı üç durumda sınandı: gerçek canlı yük (telafi turu, `bars_processed=2`) -> açık;
+tüm modeller 0 -> kapalı; `round` yok -> kapalı.
+
+**Bu bir onarımdır, bir parametre değişikliği değil** (§7.1 ile çelişmez): maliyet, risk,
+dolum, likidasyon ve metrik tanımlarının hiçbirine dokunulmadı. Değişen tek şey,
+belgenin zaten varsaydığı tetikleyici güvenilirliğidir.
+
+**Beklenen etki:** base'in sinyal fırsatı ~%26 artar ve 00:00/08:00 barlarındaki
+yapısal boşluk kapanır. Karar 33'ün n=30 projeksiyonları yeniden geçerli olur
+(`trend` ~10 gün, `meanrev` ~18 gün). Bu bir TAHMİNDİR; doğrulaması birkaç gün sonra
+`bars_processed` dağılımının 1'e yakınsamasıdır.
+
