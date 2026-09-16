@@ -3,14 +3,20 @@
 Model 11 (`scalp_bandit`), model 12 (`scalp_fixed`) ve model 15 (`scalp_managed`) bu
 sınıftan türer. Her şey — hangi kolların çağrıldığı, stop tabanı, hedef/stop kapısı,
 zaman stop'u, sinyalin nasıl kurulduğu, ret gerekçelerinin nasıl loglandığı — burada tek
-kopyadır. Alt sınıfın değiştirebileceği yalnızca ÜÇ nokta vardır ve her biri ölçülen bir
-eksene karşılık gelir:
+kopyadır. Alt sınıfın değiştirebileceği noktalar SAYILIDIR ve **her biri ölçülen bir eksene
+karşılık gelmek ZORUNDADIR** — kural sayı değil, bu karşılıklılıktır:
 
     choose_arm       — kol seçimi (model 11 ↔ model 12: adaptasyonun katkısı)
     exit_management  — üç aşamalı çıkış yönetimi (model 12 ↔ model 15: yönetimin katkısı)
     rng_identity     — çekilişin kimliği (aşağıya bkz.)
+    time_stop_key    — zaman stop'unun SINIRI (model 12 ↔ model 16: sürenin katkısı)
+    regime_filter    — ek rejim kapısı (model 16 ↔ model 17: volatilite rejiminin katkısı)
 
-Fark bu üç noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü
+Liste zamanla uzadı ve uzayabilir; uzatmanın bedeli şudur: **karşılığı bir eksen olmayan
+bir override noktası eklenemez.** Aksi hâlde iki model arasındaki fark birden çok yerden
+gelir ve hangisinin ölçüldüğü bilinemez (bkz. CLAUDE.md > "13 ↔ 14 bir EKSEN DEĞİL").
+
+Fark tek bir noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü
 olmaktan çıkar ve iki ayrı uygulamanın farkı hâline gelir; oysa model 12 tam da model
 11'in NULL HİPOTEZİDİR ve model 15 de model 12'nin çıkış yönetimi eklenmiş İKİZİDİR.
 
@@ -81,7 +87,7 @@ SIGNALS_PER_ROUND = 1
 
 
 class ScalpModel(Strategy):
-    """Scalp modellerinin ortak gövdesi. Alt sınıfın değiştirebileceği üç nokta vardır."""
+    """Scalp modellerinin ortak gövdesi; her override noktası bir ÖLÇÜLEN eksene karşılıktır."""
 
     allowed_directions: list[Direction] = ["long", "short"]
     # Turluk çekilişin kimliği. None = modelin kendi adı (bağımsız çekiliş). Bir alt
