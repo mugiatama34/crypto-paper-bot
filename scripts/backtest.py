@@ -156,7 +156,15 @@ def run_backtest(
     # Anlık görüntü `end`e kadar kesilir: `now` verildiğinde core/data.py hem çıpayı hem
     # tüm serileri oraya kadar budar, yani model geleceği GÖREMEZ (kural 12). Backtest'in
     # look-ahead güvencesi burada başlar ve motorun bar bazlı dilimlemesiyle sürer.
-    market = load_market_data(config, symbols=layer.symbols, now=end)
+    # `now` GELECEKTE olamaz. `load_market_data` bunu "şimdi" sayar ve çıpanın tazeliğini
+    # ona göre ölçer (`data.max_staleness_bars`); gelecek bir `end` ile BTC'nin son kapanmış
+    # barı zorunlu olarak "bayat" çıkar ve anlık görüntü hiç üretilmez. Oysa istenen şey
+    # "eldeki en taze bara kadar koş"tur ve onun karşılığı zaten aşağıdaki uyarıdır.
+    # Kısaltma SESSİZ değildir: burada da, `market.as_of < end` dalında da söylenir.
+    now = pd.Timestamp.now(tz="UTC")
+    if end > now:
+        logger.warning("istenen bitiş (%s) gelecekte; anlık görüntü şimdiye (%s) kadar kurulur", end, now)
+    market = load_market_data(config, symbols=layer.symbols, now=min(end, now))
     logger.info(
         "katman=%s pencere=(%s, %s] as_of=%s sembol=%d model=%d",
         layer.name, start, end, market.as_of, len(market.ohlcv), len(strategies),
