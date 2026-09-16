@@ -3051,3 +3051,74 @@ Tripwire'ın tabanı C-5 backtest'in oranına çekildi (0.86 dolum/gün): yeni e
 Yan gözlem: `origin/main`in canlı kadrosu hâlâ 5 model (`scalp_bandit`, `scalp_managed`
 dâhil) — karar 33'ün sadeleştirmesi dalda, henüz merge edilmedi.
 
+---
+
+## 39. Base katmanı barlarının **%26'sı sinyalsiz geçiyor** — ve kaybolan barlar RASTGELE değil
+
+Karar 33 base için ölçütü "performans değil ÖLÇÜLEBİLİRLİK" diye koymuştu ve modellerin
+n=30'a ne zaman ulaşacağını hesaplamıştı. O hesap, her barın bir sinyal fırsatı ürettiğini
+varsayıyordu. **Varsayım yanlış.**
+
+**Ölçüm** (`origin/main` geçmişi, `round.bars_processed`, 2026-09-12T04:00 → 09-16T12:00):
+
+| | |
+|---|---|
+| benzersiz tur | 20 |
+| işlenen bar | 27 |
+| `bars_processed > 1` olan tur | 7 |
+| **sinyal fırsatı hiç doğmayan bar** | **7 / 27 = %25.9** |
+| `missing_bars` | 0 (veri kaybı YOK) |
+
+Telafi edilen bar `signals_per_bar: false` yüzünden pozisyon yönetimi yapar (stop/TP/
+likidasyon/funding) ama **sinyal üretmez** — bu, ayarın belgelenmiş davranışıdır. Sorun
+ayarda değil, ayarın DAYANDIĞI varsayımda.
+
+### Kaybolan barlar sistematik
+
+```
+2026-09-13T00:00   2026-09-14T00:00   2026-09-14T08:00
+2026-09-15T00:00   2026-09-15T08:00
+2026-09-16T00:00   2026-09-16T08:00        saate göre: 00:00 → 4 kez, 08:00 → 3 kez
+```
+
+Yani kaybolan bar **her zaman 00:00 ya da 08:00 barıdır** ve 09-14'ten beri **her gün
+ikisi de** kayboluyor. Günlük altı bardan ikisi, yani sinyal fırsatının **üçte biri**,
+hep aynı iki saatte siliniyor.
+
+Sebep: `run.yml`in cron'u `5 0,4,8,12,16,20` ve GitHub'ın zamanlanmış tetikleyicileri
+düşüyor/gecikiyor. Gözlenen son beş tetikleme: 16:24, 22:43, 03:39, 09:07, 16:16 — yani
+2.6 saate varan gecikmeler. Bir tetikleme düştüğünde motor barı TELAFİ eder (bu yüzden
+`missing_bars = 0`), ama telafi barı sinyal üretmez.
+
+### Neden CLAUDE.md bunu öngörmüyordu
+
+Belge şunu yazıyor: *"`run.yml` güvenilir tetikleniyor, yani base katmanında telafi nadiren
+devreye girer."* Bu cümle `signals_per_bar: false`un TEK gerekçesiydi ve ölçüm onu
+çürütüyor: telafi nadir değil, **turların %35'i** (7/20). Scalp katmanında 15 dakikalık
+cron'un %91'inin düştüğü ölçülüp `signals_per_bar: true` yapılmıştı; base'de aynı arıza
+daha küçük ölçekte ve fark edilmeden sürüyor.
+
+**Üstelik base'deki hâli scalp'tekinden daha kötü huylu:** scalp'te kayıp turdan tura
+değişiyordu (gürültü), base'de kayıp **saate kilitli** (yanlılık). 00:00 barının sinyali
+bir sonraki barın açılışından, yani 04:00'te dolardı (kural 13) — o dolumlar
+`00-07_asya` seansına düşerdi. 08:00 barınınki 12:00'de dolar, `12-16_abd`ye düşerdi.
+Bugün base'de seans kırılımı YOK, ama açılırsa bu iki seans yapısal olarak eksik
+örneklenmiş olur.
+
+### Ne DEĞİŞTİRİLMEDİ ve neden
+
+Hiçbir ayar oynatılmadı. İki yol da canlı ölçümün koşullarını değiştirir ve bu bir
+parametre değil, kadans kararıdır:
+
+| yol | etkisi | bedeli |
+|---|---|---|
+| **A — `run.yml` cron'unu sıklaştır** (ör. saatlik) | her 4H barı KENDİ turunda kapanır, `bars_processed` 1'de kalır, defterin kuralı DEĞİŞMEZ | yeni bar kapanmayan turlar da `generated_at` yüzünden commit üretir: günde 6 yerine 24 commit |
+| **B — base'de `signals_per_bar: true`** | telafi barı da sinyal üretir | defterin kuralı akış ortasında değişir; biriken 27 barın bir kısmı "tur başına", kalanı "bar başına" ile üretilmiş olur ve iki dönemin işlem sıklığı kıyaslanamaz (CLAUDE.md'nin bu ayarı base'de kapalı tutma gerekçesinin ta kendisi) |
+
+**A tercih edilir**, çünkü ölçüm kuralına hiç dokunmaz: yalnızca tetikleyiciyi, belgenin
+zaten varsaydığı güvenilirliğe getirir. B, tam olarak kaçınılmak istenen ayrışmayı üretir.
+Karar kullanıcınındır; ikisi de canlı kadansı değiştirdiği için tek taraflı uygulanmadı.
+
+**Karar 33'ün n=30 projeksiyonları bu oranda iyimserdir** (~%26): `trend` için "10 gün"
+gerçekte ~13 gün, `meanrev` için "18 gün" ~24 gündür.
+
