@@ -363,3 +363,32 @@ def test_history_bars_override_refuses_to_shallow_the_window(tmp_path: Path) -> 
             out_dir=tmp_path / "out",
             history_bars=1,
         )
+
+
+def test_history_bars_override_reaches_the_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Override'ın config'e GERÇEKTEN işlediğini sabitler.
+
+    Koşu süresinin uzaması ya da manifest'e bir sayı yazılması "daha derin veri çekildi"nin
+    KANITI değildir; kanıt, `core/data.py`ye giden config'in o değeri taşımasıdır. Bayrak
+    sessizce düşerse backtest sığ veriyle koşar ve bunu kimse fark etmez.
+    """
+    seen: dict[str, Any] = {}
+
+    def _capture(config: Any, **kwargs: Any) -> Any:
+        seen["history_bars"] = config["data"]["history_bars"]
+        raise RuntimeError("dur")  # anlık görüntüden sonrasına gerek yok
+
+    monkeypatch.setattr("scripts.backtest.load_market_data", _capture)
+
+    from scripts.backtest import run_backtest
+
+    with pytest.raises(RuntimeError, match="dur"):
+        run_backtest(
+            layer_name="scalp",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=Path("/tmp/does-not-matter"),
+            history_bars=6000,
+        )
+    assert seen["history_bars"] == 6000
+
