@@ -73,7 +73,7 @@ from strategies.base import (
 )
 from strategies.exit_management import ExitManagement
 from strategies.scalp.arms import ARM_NAMES, ArmParams, ArmSetup, propose_all
-from strategies.time_stop import TimeStop
+from strategies.time_stop import CONFIG_KEY as TIME_STOP_KEY, TimeStop
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,10 @@ class ScalpModel(Strategy):
     rng_identity: str | None = None
     # Üç aşamalı çıkış yönetimi; None = kapalı (model 11 ve 12'nin sözleşmesi).
     exit_management: ExitManagement | None = None
+    # Zaman stop'u DEĞERİNİN config anahtarı. Kural tek kopyadır
+    # (`strategies/time_stop.py`); ayrışan yalnızca sınırın kaç bar olduğudur ve bu,
+    # `scalp_fixed ↔ scalp_patient` ekseninin ölçtüğü tek değişkendir.
+    time_stop_key: str = TIME_STOP_KEY
 
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:
         settings = dict(config) if config is not None else load_config()
@@ -105,7 +109,7 @@ class ScalpModel(Strategy):
         # Zaman stop'u tek kopyadır (strategies/time_stop.py): model 14 bu gövdeden
         # türemiyor ama aynı kuralı okuyor — iki uygulama, sessiz bir dördüncü
         # değişken demekti (bkz. o modülün docstring'i).
-        self._time_stop = TimeStop.from_config(settings)
+        self._time_stop = TimeStop.from_config(settings, key=self.time_stop_key)
         self._seed = int(get_setting(settings, "random_seed"))
 
     # ------------------------------------------------------------------ #

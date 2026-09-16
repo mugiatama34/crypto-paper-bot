@@ -2543,3 +2543,51 @@ Teşhis net bir düzeltme öneriyor (stop'u daraltmak ya da zaman stop'unu uzatm
 hedefi ulaşılabilir kılar). **`docs/backtest.md > 7.1` bunu BU pencerede test etmeyi
 yasaklar:** parametre değiştirip aynı veride yeniden koşmak ölçüm değil, eğri uydurmadır.
 Düzeltme YENİ bir hipotezdir ve TAZE bir OOS penceresi gerektirir — bkz. karar 31.
+
+---
+
+## 31. `scalp_patient` (model 16): karar 30'un teşhisine tek değişkenli cevap
+
+Karar 30 şunu ölçtü: `scalp_fixed`in 151 pozisyonundan 2'si hedefe vardı (%1.3) ve bu
+oran, sürüklenmesiz rastgele yürüyüşün öngördüğü %1.24 ile örtüşüyor. Sinyalin iyi ya da
+kötü olmasıyla ilgili değil — **hedefe ulaşmak için verilen süre yetmiyor.**
+
+```
+stop  = 5×ATR,  hedef = 2.0 × stop = 10×ATR
+16 barlık tipik yayılım = √16 = 4×ATR
+hedefin gerektirdiği süre = (10)² = 100 bar ≈ 25 saat
+```
+
+**Düzeltme: süreyi hedefe uydur.** `scalp_patient`, `scalp_fixed`in ikizidir; ayrışan tek
+şey `time_stop_bars` (16 → 100). Kol seçimi, kapılar, stop/hedef geometrisi ve çekiliş
+kimliği miras alınır — `scalp_managed` ile aynı desen (eşleştirilmiş deney).
+
+**100 TEORİDEN gelir, veriden değil.** `N = (hedef/ATR)² = 10² = 100`. Birkaç değer
+süpürüp en iyisini seçmek `docs/backtest.md > 7.1`in yasakladığı şeydir; tek değer
+ön-kayıtla sabitlendi ve taze bir OOS penceresinde sınanır.
+
+**Neden stop'u daraltmak DEĞİL.** Hedefi yaklaştırmanın diğer yolu stop'u küçültmekti:
+
+| | stop'u daralt | süreyi uzat (seçilen) |
+|---|---|---|
+| hedef ulaşılabilir olur mu | evet | evet |
+| %1 `min_stop_pct` tabanı | ATR≈%0.48 iken 2×ATR≈%0.96 → **taban altı, kurulumlar elenir** | dokunulmaz |
+| maliyet/R | 0.11 → **~0.25** (kural 14'ün ölçüm kolonu bozulur) | 0.11'de kalır |
+| tutuş süresi | 4 saat | ~25 saat, `max_positions` daha uzun dolu |
+
+Taban keyfi değil: tur maliyeti ~%0.25 ve daha dar stop'ta maliyet 0.25R'yi aşar. Yani
+stop'u daraltmak bir sorunu çözerken ölçümün kendisini bozardı.
+
+**Neden YENİ bir model.** `scalp_fixed` model 11'in null hipotezidir; zaman stop'unu
+değiştirmek onun ölçtüğü ekseni (adaptasyonun katkısı) sessizce başka bir şeye çevirirdi.
+CLAUDE.md'nin kuralı: tek değişkenli bir eksen isteniyorsa yolu yeni bir model açmaktır.
+
+**Kural TEK KOPYA kalır.** `TimeStop.from_config(settings, key=...)` yalnızca DEĞERİN
+nereden okunacağını söyler; zaman stop'unun ne yaptığı `strategies/time_stop.py`de tek
+yerdedir. Kuralı kopyalamak, `scalp_fixed ↔ scalp_patient` farkını "iki ayrı uygulamanın
+farkı" hâline getirirdi.
+
+**Canlıda KOŞMAZ.** Kayıt defterinde durur (backtest `--models` ile çağırır) ama
+`layers.scalp.models` listesinde yoktur ve bu bir testle çivilidir
+(`tests/test_scalp_patient.py::test_the_candidate_is_not_in_the_live_layer`). Doğrulanmamış
+bir adayın gerçek deftere yazması, bu altyapının engellemek için kurulduğu şeydir.

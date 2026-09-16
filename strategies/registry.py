@@ -28,6 +28,7 @@ from strategies.random_ctrl import RandomControl
 from strategies.scalp_bandit import ScalpBandit
 from strategies.scalp_fixed import ScalpFixed
 from strategies.scalp_managed import ScalpManaged
+from strategies.scalp_patient import ScalpPatient
 from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
@@ -56,6 +57,10 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     #   vwap_managed  — aynı sinyal, EV kurallarıyla (risk boyutlandırma, %1 taban, 1.5R)
     #   scalp_managed — scalp_fixed'in ikizi, tek farkı üç aşamalı çıkış yönetimi
     ScalpManaged.name: ScalpManaged,
+    # scalp_patient — scalp_fixed'in ikizi, tek farkı zaman stop'unun SINIRI (16 ↔ 100).
+    # Katmanın `models` listesinde YOKTUR: canlıya alınmadan önce taze bir OOS penceresinde
+    # doğrulanmalı (docs/backtest.md > 4, C-5). Backtest onu `--models` ile çağırır.
+    ScalpPatient.name: ScalpPatient,
     VwapClone.name: VwapClone,
     VwapManaged.name: VwapManaged,
 }
