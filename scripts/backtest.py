@@ -498,6 +498,42 @@ def _num(value: Any) -> float | None:
     return None if number != number else number
 
 
+def format_fill_ambiguity(report: RoundReport) -> str:
+    """Kural 13'ün mum içi sıralama varsayımı ne sıklıkta BAĞLADI?
+
+    Aynı mumda hem stop hem hedef aralığa giriyorsa mum içi sıra bilinemez ve kural 13
+    **kötü olanın (stop) gerçekleştiğini varsayar**. Varsayım muhafazakârdır ve doğru
+    taraftadır — iyimser olan, elde olmayan bir bilgiyle kâr yazmak olurdu — ama BEDELİ
+    bugüne kadar hiç ölçülmedi: "modeller kaybediyor" sonucunun ne kadarı sinyalden, ne
+    kadarı bu varsayımdan geliyor bilinmiyordu.
+
+    Sayı buradan okunur çünkü canlı tur raporu yalnızca O TURUN stop'larını sayar; bir
+    backtest ise pencerenin tamamını tek turda işler, yani kümülatif cevabı verir.
+
+    **Bu bir duyarlılık ANALİZİ DEĞİL, onun tetikleyicisidir.** Oran küçükse tartışma
+    biter. Büyükse sıra varsayımını oynatan bir duyarlılık koşusu gerekir — ve o koşu
+    yalnızca harness'ta yapılır, canlı defterde asla: defterin kuralı tek olmalıdır
+    (bkz. docs/backtest.md > 5e).
+    """
+    rows = [model for model in report.models if model.stop_exits]
+    if not rows:
+        return ""
+    out = ["\nAYNI-BAR BELİRSİZLİĞİ (kural 13) — stop varsayımı ne sıklıkta bağladı",
+           "-" * 78,
+           f"{'model':18s}{'stop çıkış':>12}{'belirsiz':>10}{'oran':>8}"]
+    total_stops = total_ambiguous = 0
+    for model in rows:
+        share = model.ambiguous_stop_exits / model.stop_exits
+        total_stops += model.stop_exits
+        total_ambiguous += model.ambiguous_stop_exits
+        out.append(f"{model.model:18s}{model.stop_exits:12d}"
+                   f"{model.ambiguous_stop_exits:10d}{share:8.1%}")
+    if len(rows) > 1:
+        out.append(f"{'TOPLAM':18s}{total_stops:12d}{total_ambiguous:10d}"
+                   f"{total_ambiguous / total_stops:8.1%}")
+    return "\n".join(out) + "\n"
+
+
 def format_breakdowns(breakdowns: Mapping[str, Any]) -> str:
     """Katmanın kırılımlarını okunur bir tabloya çevirir.
 
@@ -604,6 +640,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(format_report(list(result.metrics), min_trades=result.min_trades or None))
     print(format_drift(result.metrics))
+    print(format_fill_ambiguity(result.report))
     print(format_breakdowns(result.breakdowns))
 
     violations = check_validity(result.report)

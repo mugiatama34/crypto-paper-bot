@@ -844,11 +844,25 @@ class Portfolio:
         ts: pd.Timestamp,
         bars: Mapping[str, Bar],
         on_unchecked: Callable[[str], None] | None = None,
+        on_stop_exit: Callable[[bool], None] | None = None,
     ) -> list[Trade]:
         """Açık pozisyonları tek bir mum boyunca ilerletir ve kapananların kaydını döndürür.
 
         `on_unchecked`, barı olmayan her AÇIK POZİSYON için bir kez çağrılır (sembol adıyla).
         Çağıran bunu tur raporuna sayar; bkz. aşağıdaki dal.
+
+        `on_stop_exit`, stop'la kapanan her pozisyon için bir kez çağrılır ve argümanı
+        şudur: **aynı mumun aralığı lehte bir seviyeye (hedef ya da kısmi çıkış) DE
+        değiyor muydu?** Kural 13 böyle bir mumda kötü olanın (stop) gerçekleştiğini
+        VARSAYAR — mum içi sıralama bilinemez — ve bu varsayım muhafazakârdır, yani
+        sonuçları aşağı çeker. Varsayımın BEDELİ bugüne kadar hiç ölçülmedi: "modeller
+        kaybediyor" sonucunun ne kadarı sinyalden, ne kadarı bu varsayımdan geliyor
+        bilinmiyor. Sayaç tam olarak o payı ölçer.
+
+        **Bu bir DENETİM İZİDİR, bir kural değil** (`rejections` / `survey` ile aynı
+        statü): hiçbir dolumu, fiyatı ya da sırayı değiştirmez; yalnızca sayar. Varsayımın
+        kendisini oynatmak ayrı bir karardır ve canlı deftere DEĞİL, backtest'in duyarlılık
+        koşusuna aittir — defterin kuralı tek olmalıdır.
         """
         account = self.account(model)
         trades: list[Trade] = []
@@ -872,12 +886,20 @@ class Portfolio:
                 if on_unchecked is not None:
                     on_unchecked(position.symbol)
                 continue
-            trades.extend(self._process_position(account, position, bar=bar, ts=ts))
+            trades.extend(self._process_position(
+                account, position, bar=bar, ts=ts, on_stop_exit=on_stop_exit
+            ))
 
         return trades
 
     def _process_position(
-        self, account: Account, position: OpenPosition, *, bar: Bar, ts: pd.Timestamp
+        self,
+        account: Account,
+        position: OpenPosition,
+        *,
+        bar: Bar,
+        ts: pd.Timestamp,
+        on_stop_exit: Callable[[bool], None] | None = None,
     ) -> list[Trade]:
         long = position.direction == "long"
 
@@ -895,6 +917,10 @@ class Portfolio:
         #    Stop'suz referans pozisyonda (kural 15) bu adım tümden atlanır.
         stop = position.stop_price
         if stop is not None and ((long and bar.low <= stop) or (not long and bar.high >= stop)):
+            # Sayım dolumdan ÖNCE yapılır: `_close` pozisyonun hedeflerini tüketir ve
+            # sonrasında "bu mumda hedef de aralıktaydı" sorusu artık sorulamaz.
+            if on_stop_exit is not None:
+                on_stop_exit(_favourable_level_in_range(position, bar))
             reference = min(stop, bar.open) if long else max(stop, bar.open)
             exit_price = self.fill_price(
                 direction=position.direction, reference_price=reference, side="exit", is_stop=True
@@ -1154,6 +1180,34 @@ def _mark(position: OpenPosition, marks: Mapping[str, float]) -> float:
     # Fiyatı olmayan sembol için giriş fiyatı kullanılır: bilgi yokken pozisyonu kâr ya da
     # zararda göstermek, boyutlandırmanın dayandığı sermayeyi uydurmak olurdu.
     return float(marks.get(position.symbol, position.entry_price))
+
+
+def _favourable_level_in_range(position: OpenPosition, bar: Bar) -> bool:
+    """Bu mumun aralığı pozisyonun LEHİNE bir seviyeye değiyor mu (hedef ya da kısmi)?
+
+    Kural 13'ün "kötü olan gerçekleşmiş varsayılır" kuralının ne sıklıkta BAĞLADIĞINI
+    ölçmek için: stop'la kapanan bir pozisyonun mumu hedefe de değmişse, o işlemin sonucu
+    bir piyasa gerçeği değil bir SIRALAMA VARSAYIMIDIR.
+
+    Kısmi çıkış seviyesi de sayılır: o da lehte bir seviyedir ve aynı mumda stop'a
+    öncelik verilmesi onu da yutmuştur (bkz. `_process_position` 3. adım).
+
+    Zaten dolmuş kısmi (`partial_done`) sayılmaz: o seviye bu mumda değil daha önce
+    geçilmiştir ve burada ölçülen şey BU mumun belirsizliğidir.
+    """
+    long = position.direction == "long"
+    levels = [take_profit.price for take_profit in position.take_profits]
+
+    partial = position.partial_tp
+    if partial is not None and not position.partial_done:
+        trigger = position.price_at_r(partial.r)
+        if trigger is not None:
+            levels.append(trigger)
+
+    return any(
+        bar.high >= level if long else bar.low <= level
+        for level in levels
+    )
 
 
 def _tighten_stop(position: OpenPosition, stop_price: float, *, rule: str = "") -> bool:

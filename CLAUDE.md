@@ -160,6 +160,21 @@ yapar.
     dolar. Bir barın aralığında hem stop hem take-profit varsa, mum içi sıralama
     bilinemeyeceği için **kötü olan (stop) gerçekleşmiş varsayılır.** Aynı barda likidasyon
     seviyesi de dokunulmuşsa likidasyon her ikisinden de önce gelir (bkz. `core/portfolio.py`).
+    - **Bu varsayımın ne sıklıkta BAĞLADIĞI sayılır** (`ModelReport.stop_exits` /
+      `ambiguous_stop_exits`; ölçüt `core/portfolio.py::_favourable_level_in_range`).
+      Varsayım muhafazakârdır ve doğru taraftadır — iyimser olan, elde olmayan bir
+      bilgiyle kâr yazmak olurdu — ama bedeli hiç ölçülmemişti: "modeller kaybediyor"
+      sonucunun ne kadarı sinyalden, ne kadarı bu varsayımdan geliyor bilinmiyordu.
+      Kısmi çıkış seviyesi de lehte sayılır (aynı mumda stop'a öncelik vermek onu da
+      yutar); zaten dolmuş kısmi sayılmaz.
+    - Sayım `rejections`/`survey`/`emitted` ile **aynı statüde bir denetim izidir:**
+      hiçbir dolumu, fiyatı ya da sırayı değiştirmez. Canlı tur raporu yalnızca o turun
+      stop'larını sayar; kümülatif cevap backtest'ten okunur (pencerenin tamamı tek turda
+      işlenir — `scripts/backtest.py::format_fill_ambiguity`).
+    - **Varsayımın kendisini oynatmak ayrı bir karardır ve canlı deftere ASLA girmez:**
+      defterin kuralı tek olmalıdır (aynı gerekçe `signals_per_bar`in base'de kapalı
+      tutulmasıdır — biriken geçmişin bir kısmı bir kuralla, kalanı başka bir kuralla
+      üretilemez). Duyarlılık ancak harness'ta koşulur.
 
 13b. **Üç aşamalı çıkış yönetimi motorun yeteneğidir, stratejinin değil** (kural 9'un aynı
 sınırı). `Signal.breakeven_at_r`, `Signal.partial_tp` ve `Signal.trail_giveback_pct`
