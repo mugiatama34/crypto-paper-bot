@@ -158,6 +158,23 @@ iyimser gösterir. **Backtest'in mutlak getirisi bir tahmin değildir.**
 canlıyla **aynı** varsayımı kullanır, dolayısıyla göreli kıyas geçerlidir; ama gerçek
 dolum, kitap derinliği ve borsa kesintisi modellenmez.
 
+### 5e. Dolum belirsizliği tek yönlü bir varsayımdır
+
+Kural 13 aynı mumda hem stop hem hedef aralığa girdiğinde **kötü olanın (stop)
+gerçekleştiğini** varsayar. Varsayım muhafazakârdır ve doğru taraftadır — iyimser olanı,
+elde olmayan bir bilgiyle kâr yazmak olurdu — ama tek yönlüdür, yani sonuçları
+sistematik olarak AŞAĞI çeker.
+
+Payı artık ölçülüyor: `ModelReport.stop_exits` / `ambiguous_stop_exits` ve backtest
+çıktısındaki **AYNI-BAR BELİRSİZLİĞİ** tablosu, stop'la kapanan pozisyonların kaçında
+aynı mumun hedefe (ya da kısmi çıkış seviyesine) de değdiğini söyler.
+
+**Sayı bir düzeltme değil, bir tetikleyicidir.** Oran küçükse varsayım tartışmaya değmez.
+Büyükse sıra varsayımını oynatan bir duyarlılık koşusu gerekir — ve o koşu **yalnızca
+harness'ta** yapılır: canlı defterin kuralı tek olmalıdır (aynı gerekçe `signals_per_bar`in
+base'de kapalı tutulmasıdır — biriken geçmişin bir kısmı bir kuralla, kalanı başka bir
+kuralla üretilemez). Duyarlılık koşusu bir sonuç DEĞİL, sonucun etrafındaki banttır.
+
 ### 5d. Veri derinliği
 
 `data.history_bars` pencereyi sınırlar (base 600 bar ≈ 100 gün; scalp 1500 bar ≈ 15,6 gün).
@@ -208,6 +225,31 @@ Bir modelin parametresi hangi veride seçildiyse o veri onun için **in-sample**
 pencerede de sağlanmalıdır (C-5). O pencerede sağlanmıyorsa kalibrasyon o 30 güne
 uydurulmuş demektir.
 
+### 6.1 Embargo — OOS penceresinin başındaki boşluk
+
+Parametresi `T` tarihine kadarki veriyle seçilmiş bir model için, OOS penceresini `T`'den
+hemen başlatmak **temiz değildir.** Sebep pozisyonların zaman içinde ÖRTÜŞMESİDİR: IS
+penceresinin son kurulumları `T`'den sonraki barlarda çözülür, yani o barların fiyat
+hareketi IS etiketlerinin sonucuna zaten katkı yapmıştır. Aynı barları OOS'un ilk
+sonuçları olarak okumak, "bağımsız pencere" iddiasını sessizce çürütür.
+
+**Doğru boşluk tam olarak azami tutuş süresidir** (`scalp.time_stop_bars`; `patient` için
+100 bar), çünkü bu geometride hiçbir pozisyon ondan uzun yaşamaz — zaman stop'u kapatır.
+Daha uzun bir embargo veri harcar, daha kısası örtüşmeyi bırakır.
+
+**Neden tam bir purged walk-forward makinesi değil.** Purging/embargo literatürdeki ağır
+biçimiyle, etiketleri belirsiz sürelerle örtüşen ve ÇOK sayıda parametresi süpürülen
+kurulumlar içindir. Burada ikisi de yok: tutuş süresi sınırlı ve BİLİNEN, süpürülmüş
+parametre ise pratikte tek (`vwap.managed.atr_multiple`, karar 26 — ve o zaten §6'da
+IN-SAMPLE olarak işaretli). `scalp.patient.time_stop_bars = 100` veriden değil teoriden
+gelir (`N = (hedef/ATR)²`), `scalp_vol`'un eşiği medyandır (serbest parametre değil).
+Yani düzeltilecek olan seçim yanlılığı burada elle ve açıkça yönetiliyor; eklenen tek şey
+örtüşme boşluğudur. Süpürülen parametre sayısı 1'i geçtiğinde bu karar yeniden açılır.
+
+**Uygulama:** `scripts/backtest.py --embargo-bars N`. Pencere N bar ileri kaydırılır ve
+`manifest.json > window` hem `requested_start`i hem uygulanan `start`i yazar — boşluk
+sessiz olamaz.
+
 ---
 
 ## 6b. ÖN-KAYIT — `scalp_vol` (model 17)
@@ -252,7 +294,49 @@ Sonuç raporlanırken bu sayı yazılacak.
 
 ---
 
-## 7. Sonucu gördükten SONRA yapılmayacaklar
+## 6c. ÖN-KAYIT SİCİLİ — her hipotez, sonucu ne olursa olsun, buraya yazılır
+
+**Bu tablo §7.5'in ("çoklu karşılaştırma açıkça raporlanır") tutulan hâlidir.** §7.5 bir
+RAPORLAMA kuralıydı ve sayıyı tutan bir yer yoktu; karar 36 "10 önerinin 1.'si" diye
+saymaya başlamıştı ama sayaç hiçbir yerde durmuyordu. Sicil olmadan çoklu karşılaştırma
+düzeltmesi yapılamaz, çünkü düzeltme tam olarak "kaç test yapıldı" sayısına dayanır.
+
+**Kayıt kuralı:** bir hipotez koşulmadan ÖNCE satırı açılır (ön-kayıt commit'i ile), koşu
+bittiğinde sonucu yazılır. **Düşen hipotez silinmez.** Silmek, paydayı küçültüp kalan
+sonuçları olduğundan anlamlı gösterirdi — yayın yanlılığının kendisi budur ve bu projede
+onu üretecek olan tek şey bu tabloyu düzenlemektir.
+
+| # | Hipotez | Ön-kayıt | Pencere | Birincil tahmin | Sonuç |
+|---|---|---|---|---|---|
+| 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
+
+**Araştırmadan çıkan öneri sayısı: 10.** Bunların 1'i test edildi (yukarıdaki), 4'ü
+ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
+senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
+hakkında bir iddia taşımaz), 2'si reddedildi (işlem sıklığı tavanı, sembol eleme), 3'ü
+kuyrukta (maliyet modeli, rejim filtresi, portföy tavanı).
+
+### Çoklu karşılaştırma düzeltmesi: Benjamini-Hochberg
+
+`m` ön-kayıtlı birincil tahminin `p` değerleri küçükten büyüğe sıralanır (`p₍₁₎ ≤ … ≤ p₍ₘ₎`)
+ve `p₍ᵢ₎ ≤ (i/m) × q` koşulunu sağlayan en büyük `i`ye kadarki hipotezler kabul edilir;
+`q = 0.10` (yanlış keşif oranı).
+
+**Neden Bonferroni değil.** Bonferroni aile düzeyinde HATA OLASILIĞINI kontrol eder ve 10
+test için eşiği 0.005'e indirir; bu geometride (n≈200, ort. R ≈ −0.01) gerçek bir edge
+bile o eşiği geçemez, yani prosedür her şeyi eler ve ölçüm anlamını yitirir. BH ise
+yanlış keşif ORANINI kontrol eder: bir tanesinin yanlışlıkla geçmesini tamamen engellemez
+ama geçenlerin çoğunluğunun gerçek olmasını sağlar. Bir kâğıt katmanında doğru denge budur
+— yanlış bir modeli kâğıtta koşturmanın bedeli, gerçek bir edge'i hiç görmemenin
+bedelinden küçüktür.
+
+**`q` sonucu görmeden sabitlendi ve §7.4 gereği sonuca göre değiştirilmeyecektir.**
+
+**Düzeltme kabul çıtasının (`acceptance`) YERİNE geçmez, ONDAN SONRA gelir.** Çıta tek bir
+modelin kendi verisiyle cevaplanabilen soruyu sorar ("bu satır okunabilir mi"); BH ise
+"kaç hipotez denendi" sorusunu sorar ve cevabı tek bir modelin defterinde yoktur. Bir
+model iki kapıyı geçip BH'de düşebilir; o zaman sonuç "edge yok" değil, **"bu kadar
+denemeden sonra bu kadar farkı görmek beklenirdi"** demektir.
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
 
@@ -263,9 +347,11 @@ Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıka
    sabitlenir.
 4. **Metrik değiştirmek yok.** Ortalama R kötü çıkıp "ama Sharpe iyi" demek yasaktır;
    birincil metrik §2'de sabittir.
-5. **Çoklu karşılaştırma açıkça raporlanır.** Kaç model test edildi ve kaçı geçti, sonucun
-   yanında yazılır. 6 modelden 1'inin kıl payı geçmesi gürültüdür, bulgu değil —
-   ~%26 olasılıkla şansa bağlıdır.
+5. **Çoklu karşılaştırma açıkça raporlanır VE sicile yazılır** (§6c). Kaç model test
+   edildi ve kaçı geçti, sonucun yanında yazılır; hipotez sicile koşudan ÖNCE girer ve
+   **sonucu ne olursa olsun orada kalır.** 6 modelden 1'inin kıl payı geçmesi gürültüdür,
+   bulgu değil — ~%26 olasılıkla şansa bağlıdır. Düşen satırı sicilden silmek, paydayı
+   küçültüp kalanları olduğundan anlamlı göstermek olurdu.
 
 ---
 

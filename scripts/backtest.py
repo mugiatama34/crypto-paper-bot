@@ -68,7 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd  # noqa: E402
 
 from core.config import get_setting, load_config  # noqa: E402
-from core.data import load_market_data  # noqa: E402
+from core.data import bar_duration, load_market_data  # noqa: E402
 from core.engine import Engine, RoundReport  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
@@ -134,17 +134,40 @@ def run_backtest(
     models: Sequence[str] | None = None,
     config_path: str | None = None,
     history_bars: int | None = None,
+    embargo_bars: int | None = None,
 ) -> BacktestResult:
     """Katmanı `start`..`end` penceresinde koşturur ve ayrı bir deftere yazar.
 
     `start` TOHUMLANAN bardır: motor ondan SONRAKİ ilk bardan başlar (`_timeline`
     `ts > last_bar` süzer). Yani pencere yarı açıktır — `start` işlenmez, `end` işlenir.
+
+    `embargo_bars` bir OOS penceresinin başına konan boşluktur (docs/backtest.md > 6):
+    parametresi `start`e kadarki veriyle seçilmiş bir model için, `start`ten hemen sonra
+    başlamak temiz değildir — IS penceresinin SON kurulumları `start`ten sonraki barlarda
+    çözülür, yani o barlar IS etiketlerinin sonucuna katkı yapmıştır. Doğru boşluk tam
+    olarak azami tutuş süresidir (`scalp.time_stop_bars`), çünkü hiçbir pozisyon ondan
+    uzun yaşamaz. Verilirse işlenen pencere o kadar bar İLERİ kaydırılır ve `manifest.json`
+    hem istenen hem uygulanan başlangıcı yazar — boşluk sessiz olamaz.
     """
     if end <= start:
         raise ValueError(f"pencere boş: start={start} >= end={end}")
 
     layer = resolve_layer(load_config(config_path), layer_name)
     config = dict(layer.config)
+
+    requested_start = start
+    if embargo_bars:
+        if embargo_bars < 0:
+            raise ValueError(f"--embargo-bars negatif olamaz: {embargo_bars}")
+        start = start + embargo_bars * bar_duration(str(get_setting(config, "timeframe")))
+        if end <= start:
+            raise ValueError(
+                f"embargo penceriyi tüketti: {embargo_bars} bar sonrası start={start} >= end={end}"
+            )
+        logger.info(
+            "embargo: %d bar -> pencere başı %s yerine %s (IS kurulumlarının çözüldüğü "
+            "barlar OOS'a girmesin diye)", embargo_bars, requested_start, start,
+        )
     # Bilinçli sapma (docs/backtest.md > 5a): kapalıyken tüm pencere TEK sinyal üretirdi.
     signals_per_bar_was = bool(config.get("signals_per_bar"))
     config["signals_per_bar"] = True
@@ -229,6 +252,7 @@ def run_backtest(
         strategies=strategies,
         build_failures=build_failures,
         signals_per_bar_was=signals_per_bar_was,
+        embargo=(requested_start, int(embargo_bars or 0)),
         history_bars=(history_bars_was, int(get_setting(config, "data.history_bars"))),
     )
     # Kırılımlar `core/report.py`den OKUNUR, burada yeniden yazılmaz: kırılımın tanımı
@@ -275,12 +299,23 @@ def _write_manifest(
     build_failures: Mapping[str, str],
     signals_per_bar_was: bool,
     history_bars: tuple[int, int],
+    embargo: tuple[pd.Timestamp, int] = (pd.NaT, 0),
 ) -> None:
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "harness_sha": _git_sha(),
         "layer": layer.name,
-        "window": {"start": start.isoformat(), "end": end.isoformat()},
+        "window": {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            # Embargo sessiz olamaz: istenen pencere ile İŞLENEN pencere farklıysa,
+            # sonucu okuyan "hangi barlardan itibaren ölçüldü" sorusunu manifest'ten
+            # cevaplayabilmelidir (docs/backtest.md > 6 ve 9).
+            "requested_start": (
+                None if embargo[1] == 0 else pd.Timestamp(embargo[0]).isoformat()
+            ),
+            "embargo_bars": embargo[1],
+        },
         # Sapmalar koşunun kendi kaydında durur: sonradan "hangi ayarla koşmuştu" diye
         # sorulduğunda cevap log'da değil, manifest'te olmalı (docs/backtest.md > 9).
         "history_bars": {"config": history_bars[0], "used": history_bars[1]},
@@ -301,6 +336,17 @@ def _write_manifest(
                 "filled": model.filled,
             }
             for model in report.models
+        },
+        # Kural 13'ün mum içi sıralama varsayımının ne sıklıkta bağladığı. Geçerlilik
+        # kapısı DEĞİL (varsayım muhafazakârdır ve doğru taraftadır), ama sonucu okuyan
+        # payı bilmelidir.
+        "fill_ambiguity": {
+            model.model: {
+                "stop_exits": model.stop_exits,
+                "ambiguous_stop_exits": model.ambiguous_stop_exits,
+            }
+            for model in report.models
+            if model.stop_exits
         },
     }
     (out_dir / MANIFEST_FILENAME).write_text(
@@ -633,6 +679,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             models=args.models.split(",") if args.models else None,
             config_path=args.config,
             history_bars=args.history_bars,
+            embargo_bars=args.embargo_bars,
         )
     except Exception as exc:  # noqa: BLE001 — CLI sınırı; gerekçe kullanıcıya gider
         logger.error("backtest koşulamadı: %s", exc)
@@ -711,6 +758,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--history-bars", type=int, default=None, metavar="N",
         help="anlık görüntü derinliği; yalnızca DERİNLEŞTİRİR (config'teki değerin altına inemez)",
+    )
+    parser.add_argument(
+        "--embargo-bars", type=int, default=None, metavar="N",
+        help=(
+            "OOS penceresinin başına konan boşluk (docs/backtest.md > 6): IS kurulumlarının "
+            "çözüldüğü barlar OOS'a girmesin diye. Doğru değer azami tutuş süresidir "
+            "(katmanın time_stop_bars'ı)."
+        ),
     )
     parser.add_argument(
         "--verify-live", default=None, metavar="METRICS_PATH",

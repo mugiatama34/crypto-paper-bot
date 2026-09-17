@@ -12,6 +12,7 @@ harness'ın kendi motorunu yazdığı izlenimi verirdi — oysa yazmıyor (docs/
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -22,6 +23,7 @@ from core.config import load_config
 from core.engine import Engine, EmittedSignal, ModelReport, RoundReport
 from core.ledger import Ledger
 from core.portfolio import Portfolio
+from scripts import backtest
 from scripts.backtest import (
     SignalKey,
     check_validity,
@@ -392,3 +394,31 @@ def test_history_bars_override_reaches_the_snapshot(monkeypatch: pytest.MonkeyPa
         )
     assert seen["history_bars"] == 6000
 
+
+
+# --------------------------------------------------------------------------- #
+# Embargo (docs/backtest.md > 6.1)
+# --------------------------------------------------------------------------- #
+def test_embargo_shifts_the_window_forward_by_whole_bars() -> None:
+    """OOS penceresi, IS kurulumlarının çözüldüğü barlardan SONRA başlamalı.
+
+    Doğru boşluk azami tutuş süresidir: bu geometride hiçbir pozisyon zaman stop'undan
+    uzun yaşamaz, yani o kadar bar sonrası hiçbir IS etiketi bu pencereyle örtüşmez.
+    """
+    start = pd.Timestamp("2026-07-19T00:00:00+00:00")
+    with pytest.raises(ValueError, match="embargo penceriyi tüketti"):
+        backtest.run_backtest(
+            layer_name="scalp", start=start,
+            end=start + pd.Timedelta(minutes=15) * 4,   # 4 bar, embargo 16 bar
+            out_dir=Path(tempfile.mkdtemp()), embargo_bars=16,
+        )
+
+
+def test_embargo_rejects_a_negative_gap() -> None:
+    """Negatif embargo, pencereyi GERİ kaydırıp kontaminasyonu artırırdı."""
+    start = pd.Timestamp("2026-07-19T00:00:00+00:00")
+    with pytest.raises(ValueError, match="negatif olamaz"):
+        backtest.run_backtest(
+            layer_name="scalp", start=start, end=start + pd.Timedelta(days=5),
+            out_dir=Path(tempfile.mkdtemp()), embargo_bars=-4,
+        )
