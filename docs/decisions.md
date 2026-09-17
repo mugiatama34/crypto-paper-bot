@@ -3266,3 +3266,117 @@ BİREBİR AYNIDIR — değişen yalnızca o sinyallerin nasıl RAPORLANDIĞI ve 
 
 Tek davranış değişikliği kabul rozetindedir (madde 1) ve rozet defterin değil, defterin
 OKUNMASININ parçasıdır.
+
+---
+
+## 41. Friksiyon HIZI ölçülüyor: `cost_per_r` işlem başınaydı, hesabı eriten şey gün başına
+
+Araştırma listesinden gelen 11 önerinin **raporlama maddesi** uygulandı. Karar 40'ın
+ölçütü aynen geçerli: bu değişiklik bir sinyale, bir doluma, bir boyuta ya da bir maliyet
+sabitine dokunmaz — **defteri tarihli olarak bölmez.** Modellerin ürettiği sinyaller bu
+commit'ten önce ve sonra BİREBİR AYNIDIR; değişen yalnızca defterin nasıl OKUNDUĞUDUR.
+
+### Neden `cost_per_r` yetmiyordu
+
+`cost_per_r` maliyeti **işlem başına** ölçer ve işlem SIKLIĞINI görmez. Karar 35'in
+özdeşliği (`net R = (brüt sürüklenme% − maliyet%) / stop%`) tek bir pozisyonun içindedir;
+hesabın ne kadar hızlı eridiğini söyleyen şey ise o özdeşliğin **gün başına kaç kez**
+uygulandığıdır. İki model aynı `cost_per_r` ile koşup biri diğerinden on kat hızlı
+çevirebilir ve tabloda bu fark hiçbir yerde görünmüyordu.
+
+İkinci delik: `cost_per_r` kopya ve çıpa satırlarında `nan`dır (1R'leri başka bir
+birimden gelir, kural 15/15b). Yani **yarışma dışı satırların friksiyonu hiç ölçülmüyordu**
+— oysa ölçülmesi gereken tam olarak oydu.
+
+### Eklenenler (üçü de KAPI DEĞİL, okuma yardımı)
+
+| Kolon | Ne söyler |
+|---|---|
+| `avg_r_ci_low` / `avg_r_ci_high` | Ortalama R'nin yüzdelik bootstrap aralığı. Alfa ve örnekleme sayısı `acceptance.*`tan gelir (ikinci anahtar açılmadı), tohum `random_seed ^ model ^ yön` — aynı defter her zaman aynı aralığı verir. Havuzda (long ↔ short) da hesaplanır: projenin ana sorusu tam orada okunur. |
+| `cost_pct` | `Σ(komisyon+kayma) / Σnotional`. `cost_per_r`den farkı PAYDADIR ve fark önemlidir: notional **ortak bir birimdir**, yani kopya ve çıpa dâhil HER satırda hesaplanır. |
+| `turnover_per_day`, `cost_drag_pct_per_day` (`FrictionStats`) | Günde kaç kat sermaye çevrildi ve bu ne kadara mal oldu. Payda BAŞLANGIÇ sermayesi (güncel bakiyeye bölmek ciroyu modelin performansına bağlardı) ve özsermaye DAMGALARINDAN gelen takvim günü (bar sayısı değil: saklama penceresi eski satırları günlük özete indirir). |
+
+Ayrıca `beklenti` ayrışması rapora girdi. **Yeni bir metrik değildir**, bir özdeşliktir:
+R biriminde `WR × ort.kazanç + (1−WR) × ort.kayıp` tam olarak ortalama R'dir (test
+sabitliyor). Değeri sayının kendisinde değil, negatifliğin kazanma oranından mı ödeme
+oranından mı geldiğini göstermesinde.
+
+### İlk okuma: hipotez canlı defterde doğrulandı
+
+Öneri şunu iddia ediyordu: *"`vwap_clone` turnover'dan ölürdü, R'den önce."* Ölçüm
+(2026-09-17, canlı defterler):
+
+| model | ciro/gün | friksiyon/gün | tur maliyeti% | pencere | hesap getirisi | friksiyonun zarardaki payı |
+|---|---:|---:|---:|---:|---:|---:|
+| `vwap_clone` (kopya) | **24.9x** | **%6.94** | %0.278 | 3.2 gün | −%27.60 | **%78** (2226 $ / 2871 $) |
+| `scalp_fixed` | 4.3x | %1.13 | %0.264 | 3.8 gün | −%11.10 | %38 (429 $ / 1119 $) |
+| `trend` (base) | 0.6x | %0.17 | %0.302 | 5.5 gün | −%1.81 | — |
+
+**Tur maliyeti üçünde de aynı** (%0.26–0.30) — yani fark sinyalde ya da maliyet
+varsayımında değil, **sıklıkta.** `vwap_clone` günde 24.9 kat sermaye çeviriyor ve
+zararının dörtte üçü hiçbir sinyal kararından değil, kapıdan geçerken ödenen paradan
+geliyor. Bu sayı bugüne kadar hiçbir tabloda yoktu; `cost_per_r` onu tanım gereği
+gösteremezdi.
+
+`scalp_fixed`in ortalama R aralığı `[−0.48, −0.15]` (n=37): tamamı sıfırın altında, yani
+"−0.31 gürültü olabilir" savunması bu defterde artık yapılamaz.
+
+### Bu bir ÖLÇÜM, bir kural değil
+
+Hiçbir sinyal ciroya göre elenmez, hiçbir boyut ona göre değişmez. **İşlem sıklığı tavanı
+karar 40'ta açıkça REDDEDİLDİ** ve bu kolon o reddi geri almaz — tavanın yokluğunun
+bedelini ölçer. Seans, kayıp serisi ve portföy yoğunlaşması ölçümleriyle aynı statüdedir.
+
+Sicile (§6c) de girmez: bir modelin performansı hakkında bir İDDİA taşımıyor, bu yüzden
+hipotez değil. Çoklu karşılaştırma paydası 1'de kalır.
+
+---
+
+## 42. Geriye dönük değişiklik: hangi düzeltme meşru, hangisi sonuca bakıp geçmişi yazmak
+
+Soru şuydu: *"Çıktıya göre geçmişi düzeltmenin büyük hata olduğunu biliyorum — ama baştan
+bir şeyi atladıysak ya da daha iyi bir çözüm varsa, onu da görmezden gelmiş olmuyor
+muyuz?"*
+
+İkisi gerçekten farklı şeylerdir ve proje bugüne kadar ayrımı **örtük** yapıyordu.
+`docs/backtest.md > 7` yalnızca yasak olanı yazıyor; meşru olanın adı hiçbir yerde yoktu.
+Bu karar adı koyuyor.
+
+### Üç katman, üç ayrı cevap
+
+| Katman | Ne | Geriye dönük değişiklik |
+|---|---|---|
+| **1. Defter** | `trades.csv`, `equity.csv` | **ASLA.** Yanlış görünen bir satır bile düzeltilmez (kural 1). Defter ne olduğunun kaydıdır, ne olması gerektiğinin değil. |
+| **2. Ölçüm** | `core/metrics.py`, `core/report.py`, dashboard | **SERBEST, hatta zorunlu.** Metrik defterin saf bir fonksiyonudur; tanım düzeldiğinde TÜM geçmiş yeniden hesaplanır. Yeni tanım eski satırlara da uygulanmazsa defterin bir kısmı bir metrikle, kalanı başkasıyla okunur. |
+| **3. Kural** | sinyal, maliyet, dolum, boyutlandırma, evren | **HAYIR — ama yasak değil, İMKÂNSIZ.** Defter o kuralla üretilmedi. Meşru karşılığı vardır: aynı pencerede **backtest**. "Baştan bu kuralla koşsaydık ne olurdu" sorusunun cevabı odur ve yasak olan şey o değil, sonucu görüp pencereyi/parametreyi/metriği seçmektir. |
+
+Proje katman 2'de bunu zaten **yaptı**: `merge_fills` (dolum → pozisyon) geriye dönük bir
+ölçüm düzeltmesidir ve biriken tüm defteri yeniden okudu. Kimse buna "geçmişi düzeltmek"
+demedi, çünkü değildi — **yanlış olan ölçüydü, sonuç değil.**
+
+### Beş test: bir düzeltme meşru mu?
+
+Bir değişiklik aşağıdaki beşini de geçiyorsa geriye dönük uygulanır; birini bile
+geçmiyorsa ileri yönlüdür ve yeni bir hipotezdir (ön-kayıt + taze OOS).
+
+1. **Sonuç-körlüğü.** Düzeltme, sonucu HİÇ görmemiş biri tarafından da aynı cümleyle
+   savunulabiliyor mu? *"Aynı pozisyonu iki kez saymak yanlıştır"* hiçbir sonuca bakmaz.
+   *"Bu sembol çıkarılsa tablo düzelir"* yalnızca sonuca bakar.
+2. **Yön.** Düzeltme belirli bir modeli/satırı iyileştiriyor mu? Herkese aynı yönde
+   uygulanıp bazılarını KÖTÜLEŞTİRİYORSA temizdir. (`merge_fills` yönetimli modeli
+   kötüleştirebilirdi ve yine de uygulandı.)
+3. **Katman.** Defter mi, ölçüm mü, kural mı (yukarıdaki tablo).
+4. **Tekrarlanabilirlik.** Düzeltme geriye dönük uygulandığında aynı girdilerden aynı
+   çıktı üretilebiliyor mu? Anlık spread, order book derinliği ve sonradan düzenlenebilen
+   bir takvim **üretilemez** — bunlar ahlaki değil TEKNİK olarak geriye dönük
+   uygulanamazdır ve Kapı 0'ı (canlı ↔ backtest eşleşmesi) tanımsız kılarlar.
+5. **Ön-kayıt borcu.** Kural katmanındaysa hipotez sicile (§6c) girer ve çoklu
+   karşılaştırma paydasını büyütür. Ölçüm katmanındaysa girmez — bir performans iddiası
+   taşımaz.
+
+### Bu çerçeve neyi AÇAR
+
+Ayrım şunu görünür kılıyor: *"reddedildi"* demek *"içindeki gözlem yanlıştı"* demek
+değildir. Reddedilen bir KURAL önerisinin içinde, katman 2'ye ait meşru bir ÖLÇÜM
+eksikliği durabilir — ve o eksiklik reddedildiği için birlikte çöpe gider. Bu karar,
+reddedilen önerilerin ölçüm çekirdeğini ayrı ayrı değerlendirmeyi zorunlu kılar.

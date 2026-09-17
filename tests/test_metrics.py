@@ -1284,3 +1284,124 @@ def test_report_does_not_rank_models_below_the_sample_gate() -> None:
 def test_report_without_a_gate_keeps_the_single_table() -> None:
     """`min_trades` verilmezse davranış değişmez: kapı bir sunum kararı değil, bir ayardır."""
     assert "YETERSİZ ÖRNEKLEM" not in format_report([_winner("tiny", n=3)])
+
+
+# --------------------------------------------------------------------------- #
+# Okuma yardımları: beklenti ayrışması, ortalama R aralığı, friksiyon hızı
+# --------------------------------------------------------------------------- #
+def test_expectancy_is_an_identity_not_a_second_metric() -> None:
+    """`WR × ort.kazanç + (1−WR) × ort.kayıp` R biriminde ortalama R'nin TA KENDİSİDİR.
+
+    Bu yüzden tabloya yeni bir sayı olarak değil, mevcut sayının AYRIŞMASI olarak girer:
+    değeri "ortalama R negatif" bilgisinde değil, bunun kazanma oranından mı yoksa ödeme
+    oranından mı geldiğinde. İkisini iki ayrı metrik gibi raporlamak, aynı sayıyı iki kez
+    ölçüyormuş izlenimi verirdi.
+    """
+    trades = [
+        _trade(pnl=200.0), _trade(pnl=-100.0), _trade(pnl=-50.0), _trade(pnl=300.0),
+        _trade(direction="short", pnl=-100.0), _trade(direction="short", pnl=25.0),
+    ]
+    for stats in (
+        direction_stats(trades, direction="long"),
+        direction_stats(trades, direction="short"),
+        direction_stats(trades),
+    ):
+        expectancy = (
+            stats.win_rate * stats.avg_win_r + (1.0 - stats.win_rate) * stats.avg_loss_r
+        )
+        assert expectancy == pytest.approx(stats.avg_r)
+
+
+def test_cost_pct_divides_cost_by_notional_so_the_replica_stays_comparable() -> None:
+    """Friksiyon kolonları `cost_per_r` muafiyetinin DIŞINDADIR.
+
+    `cost_per_r` kopyada ve çıpada `nan`dır çünkü paydası (1R) onlarda başka bir birimden
+    gelir. `cost_pct`in paydası notional'dır — tek ve ortak bir birim — bu yüzden her
+    satırda hesaplanır. Kopyanın friksiyonunu görebilmenin tek yolu budur ve tam da
+    ölçülmek istenen şeydir: `vwap_clone` R'den önce cirodan ölüyor mu?
+    """
+    trades = [_trade(pnl=-100.0, notional=1000.0, fee=2.0, slippage_cost=1.0)]
+    for flags in ({}, {"is_replica": True}, {"is_benchmark": True}):
+        stats = direction_stats(trades, **flags)  # type: ignore[arg-type]
+        assert stats.notional == pytest.approx(1000.0)
+        assert stats.cost_pct == pytest.approx(0.3)
+
+    assert math.isnan(direction_stats(trades, is_replica=True).cost_per_r)
+
+
+def test_friction_rates_are_measured_against_the_starting_capital(tmp_path: Path) -> None:
+    """Payda BAŞLANGIÇ sermayesi ve TAKVİM günüdür, güncel bakiye ve bar sayısı değil.
+
+    Güncel bakiyeye bölmek ciroyu modelin kendi performansına bağlar: kaybeden modelin
+    cirosu yapay yükselir ve iki model aynı birimden konuşmayı bırakır.
+    """
+    ledger = Ledger(tmp_path)
+    ledger.initialize_model("alpha", initial_capital=10_000.0)
+    ledger.append_trades("alpha", [
+        _trade(pnl=-50.0, notional=5_000.0, fee=5.0, slippage_cost=5.0),
+        _trade(pnl=-50.0, notional=5_000.0, fee=5.0, slippage_cost=5.0),
+    ])
+    # İki satır, bir gün arayla: takvim aralığı 1 gün.
+    ledger.append_equity("alpha", _equity(10_000.0, 9_900.0))
+
+    (metrics,) = compare(["alpha"], ledger=ledger, config=load_config())
+
+    assert metrics.account.days == pytest.approx(1.0)
+    assert metrics.friction.trades_per_day == pytest.approx(2.0)
+    # Σnotional 10.000 / sermaye 10.000 / 1 gün
+    assert metrics.friction.turnover_per_day == pytest.approx(1.0)
+    # Σ(komisyon+kayma) 20 / sermaye 10.000 = %0.2, günde bir kez
+    assert metrics.friction.cost_drag_pct_per_day == pytest.approx(0.2)
+
+
+def test_span_days_comes_from_timestamps_so_compaction_cannot_shrink_it(
+    tmp_path: Path,
+) -> None:
+    """Saklama penceresi eski satırları günlük özete indirir; geçen zaman değişmez.
+
+    Günü bar SAYISINDAN türetseydik sıkıştırılmış bir defterde ciro yapay olarak
+    yükselirdi — aynı işlem sayısı daha az "gün"e bölünürdü.
+    """
+    ledger = Ledger(tmp_path)
+    ledger.initialize_model("alpha", initial_capital=10_000.0)
+    ledger.append_equity("alpha", [
+        {"ts": "2026-01-01T00:00:00+00:00", "cash": 10_000.0, "margin_used": 0.0,
+         "unrealized_pnl": 0.0, "equity": 10_000.0, "open_positions": 0},
+        {"ts": "2026-01-31T00:00:00+00:00", "cash": 10_000.0, "margin_used": 0.0,
+         "unrealized_pnl": 0.0, "equity": 10_000.0, "open_positions": 0},
+    ])
+
+    (metrics,) = compare(["alpha"], ledger=ledger, config=load_config())
+
+    assert metrics.account.bars == 2
+    assert metrics.account.days == pytest.approx(30.0)
+
+
+def test_average_r_interval_is_deterministic_and_brackets_the_average(
+    tmp_path: Path,
+) -> None:
+    """Aynı defter HER ZAMAN aynı aralığı verir ve aralık ortalamayı içerir.
+
+    Titreyen bir aralık, okuma yardımını bir çekilişe çevirirdi — `random_seed`in sabit
+    olmasının gerekçesiyle aynı (bkz. `bootstrap_diff_ci`).
+    """
+    ledger = Ledger(tmp_path)
+    ledger.initialize_model("alpha", initial_capital=10_000.0)
+    ledger.append_trades("alpha", [
+        _trade(pnl=150.0 if index % 3 else -100.0, risk=100.0)
+        for index in range(40)
+    ])
+    ledger.append_equity("alpha", _equity(10_000.0, 10_200.0))
+
+    (first,) = compare(["alpha"], ledger=ledger, config=load_config())
+    (second,) = compare(["alpha"], ledger=ledger, config=load_config())
+
+    assert first.total.avg_r_ci_low == second.total.avg_r_ci_low
+    assert first.total.avg_r_ci_high == second.total.avg_r_ci_high
+    assert first.total.avg_r_ci_low <= first.total.avg_r <= first.total.avg_r_ci_high
+
+
+def test_average_r_interval_is_undefined_when_bootstrap_is_not_requested() -> None:
+    """Varsayılan `nan`: aralık bir kapı değil, istendiğinde hesaplanan bir okuma yardımı."""
+    stats = direction_stats([_trade(pnl=100.0)])
+    assert math.isnan(stats.avg_r_ci_low) and math.isnan(stats.avg_r_ci_high)

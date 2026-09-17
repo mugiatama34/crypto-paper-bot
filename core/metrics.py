@@ -96,6 +96,23 @@ class DirectionStats:
     profit_factor: float
     avg_stop_distance_pct: float
     cost_per_r: float
+    # Ortalama R'nin yüzdelik bootstrap aralığı. `cost_per_r`'nin yanında durur çünkü
+    # ikisi de aynı soruya bakar: "bu satır okunabilir mi". `nan` = hesaplanmadı
+    # (bootstrap kapalı ya da örneklem boş) — 0.0 DEĞİL, çünkü sıfır bir aralık sınırı
+    # olabilir ve "hesaplanmadı" ile "sıfırı içeriyor" aynı hücreye yazılamaz.
+    avg_r_ci_low: float
+    avg_r_ci_high: float
+    # Friksiyon ölçeği. `notional` işlemlerin GİRİŞ notional'larının toplamıdır (dolum
+    # değil pozisyon birimiyle; merge_fills nakit kolonlarını toplar), `cost_pct` ise
+    # o notional'a düşen komisyon+kayma yüzdesi — yani karar 35'in "tur maliyeti%"
+    # değişkeninin defterden okunan hâli: net R = (brüt sürüklenme% − maliyet%) / stop%.
+    #
+    # `cost_per_r`den farkı PAYDADIR ve fark önemlidir: `cost_per_r` maliyeti 1R'ye,
+    # bu ise notional'a böler. Birincisi kopya ve çıpa satırlarında `nan`dır (1R'leri
+    # başka bir birimden gelir); ikincisi HER satırda kıyaslanabilir, çünkü notional
+    # tek ve ortak bir birimdir. Kopyanın friksiyonunu görebilmenin tek yolu budur.
+    notional: float
+    cost_pct: float
     pnl: float
     fees: float
     slippage_cost: float
@@ -114,6 +131,43 @@ class AccountStats:
     max_drawdown: float
     sharpe: float
     bars: int
+    # Defterin kapsadığı takvim günü (ilk ve son özsermaye damgası arası). Bar SAYISI
+    # değil: sıkıştırılmış eski satırlar (retention) bar başına bir satır taşımaz, ama
+    # damgaları yerinde durur. Friksiyon HIZI (gün başına ciro/sürüklenme) bu paydayı
+    # kullanır — "günde ne kadar yakıyor" sorusu bar sayısından okunamaz.
+    days: float
+
+
+@dataclass(frozen=True, kw_only=True)
+class FrictionStats:
+    """Modelin FRİKSİYON HIZI: günde ne kadar sermaye çeviriyor ve bu ne kadara mal oluyor.
+
+    **Neden ayrı bir ölçü:** `cost_per_r` maliyeti İŞLEM BAŞINA ölçer ve işlem sıklığını
+    görmez; iki model aynı `cost_per_r` ile koşup biri diğerinden on kat hızlı
+    çevirebilir. Karar 35'in özdeşliği (net R = (brüt sürüklenme% − maliyet%) / stop%)
+    tek bir pozisyonun içindedir; hesabın ne kadar hızlı eridiğini söyleyen şey ise o
+    özdeşliğin gün başına kaç kez uygulandığıdır.
+
+    **Birim kasten sermayedir, R değil.** `turnover_per_day` ve `cost_drag_pct_per_day`
+    BAŞLANGIÇ sermayesine bölünür: güncel bakiyeye bölmek sayıyı modelin kendi
+    performansına bağlar (kaybeden modelin cirosu yapay yükselir) ve modeller arası
+    kıyası bozardı. Başlangıç sermayesi tüm modellerde aynıdır (kural 6), yani bu iki
+    sayı çıpa, kopya ve yarışmacı satırlarında AYNI birimdedir — `cost_per_r`'nin
+    aksine.
+
+    **Bu bir ÖLÇÜMDÜR, bir kural DEĞİL** (seans ve yoğunlaşma ölçümleriyle aynı statü):
+    hiçbir sinyal ciroya göre elenmez, hiçbir boyut ona göre değişmez. Bir işlem sıklığı
+    tavanı karar 40'ta açıkça REDDEDİLDİ; burada ölçülen şey o tavanın yokluğunun bedeli.
+    """
+
+    days: float
+    trades_per_day: float
+    # Σnotional / başlangıç sermayesi / gün — "günde kaç kat sermaye çevrildi".
+    turnover_per_day: float
+    # Σ(komisyon + kayma) / başlangıç sermayesi / gün, yüzde. Funding DIŞARIDADIR:
+    # funding bir carry'dir, işareti iki yönlü olabilir ve bir işlem maliyeti değildir;
+    # `cost_per_r`nin payı da (komisyon + kayma) olduğu için iki sayı aynı şeyi sayar.
+    cost_drag_pct_per_day: float
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -123,6 +177,7 @@ class ModelMetrics:
     short: DirectionStats
     total: DirectionStats
     account: AccountStats
+    friction: FrictionStats
     is_benchmark: bool = False  # kural 15: yarışmacı değil, referans çıpası
     is_replica: bool = False    # yarışmacı değil, dış sistem kopyası
 
@@ -275,6 +330,9 @@ def direction_stats(
     direction: str = TOTAL,
     is_benchmark: bool = False,
     is_replica: bool = False,
+    ci_alpha: float = _NAN,
+    bootstrap_samples: int = 0,
+    seed: int = 0,
 ) -> DirectionStats:
     """`direction` ("long" | "short" | "total") için işlem metrikleri.
 
@@ -296,6 +354,14 @@ def direction_stats(
     anlamı kıyastır: kopya 1R'yi sabit teminattan türetir, yarışmacılar sermayenin
     %1'inden. İkisini aynı sütunda göstermek, farklı paydaya sahip iki oranı
     karşılaştırılabilirmiş gibi sunardı.
+
+    `notional` ve `cost_pct` bu muafiyetin DIŞINDADIR ve her satırda hesaplanır: paydası
+    notional'dır, yani ortak bir birim (bkz. `DirectionStats`).
+
+    `bootstrap_samples > 0` verilirse ortalama R'nin yüzdelik bootstrap aralığı da
+    hesaplanır. Aralık kabul çıtasının aralığıyla AYNI alfayı ve AYNI tohum türetmesini
+    kullanır (çağıran taşır): iki sayı aynı tabloda yan yana durduğu için ikinci bir
+    alfa, aynı modelin iki farklı kesinlik ölçüsünü göstermek olurdu.
     """
     # Ölçümün birimi POZİSYONDUR, dolum değil: `merge_fills` aynı pozisyonun kısmi çıkış
     # ve fraksiyonel TP satırlarını tek satıra indirger (bkz. merge_fills). Kapanış sırası
@@ -310,6 +376,16 @@ def direction_stats(
     wins = [r for r in r_values if r > 0.0]
     losses = [r for r in r_values if r < 0.0]
     loss_total = abs(sum(losses))
+    notional = _sum_column(rows, "notional")
+    cost = _sum_column(rows, "fee") + _sum_column(rows, "slippage_cost")
+    # Tohuma yön karıştırılır: long, short ve toplam aynı tohumla yeniden örneklenseydi
+    # üç aralık aynı çekiliş desenini paylaşır, bağımsız birer ölçü olmaktan çıkardı.
+    ci_low, ci_high = bootstrap_mean_ci(
+        r_values,
+        alpha=ci_alpha,
+        iterations=bootstrap_samples,
+        seed=int(seed) ^ hash_name(direction),
+    )
 
     return DirectionStats(
         direction=direction,
@@ -331,6 +407,10 @@ def direction_stats(
         cost_per_r=(
             _NAN if (is_benchmark or is_replica) else _mean(_collect(rows, cost_per_r))
         ),
+        avg_r_ci_low=ci_low,
+        avg_r_ci_high=ci_high,
+        notional=notional,
+        cost_pct=_pct(_ratio(cost, notional)),
         pnl=_sum_column(rows, "pnl"),
         fees=_sum_column(rows, "fee"),
         slippage_cost=_sum_column(rows, "slippage_cost"),
@@ -383,6 +463,7 @@ def account_stats(
             max_drawdown=_NAN,
             sharpe=_NAN,
             bars=0,
+            days=_NAN,
         )
 
     returns = [
@@ -397,7 +478,28 @@ def account_stats(
         max_drawdown=_max_drawdown_pct(equity),
         sharpe=_ratio(_mean(returns), _stdev(returns)) * math.sqrt(periods_per_year),
         bars=len(equity),
+        days=_equity_span_days(equity_rows),
     )
+
+
+def _equity_span_days(equity_rows: Sequence[Mapping[str, Any]]) -> float:
+    """Defterin kapsadığı takvim günü: ilk ve son damga arası.
+
+    Bar SAYISINDAN türetilmez, çünkü saklama penceresi eski satırları günlük özete
+    indirir (CLAUDE.md > Saklama penceresi) ve bar sayısı o noktadan sonra geçen zamanı
+    anlatmayı bırakır. Damga okunamıyorsa ya da tek satır varsa `nan`: sıfır gün bir
+    payda değildir ve "bir günde şu kadar çevirdi" demek, henüz ölçülmemiş bir hızı
+    ölçülmüş gibi gösterirdi.
+    """
+    stamps = [
+        stamp
+        for stamp in (_utc_stamp(row.get("ts")) for row in equity_rows)
+        if stamp is not None
+    ]
+    if len(stamps) < 2:
+        return _NAN
+    span = (max(stamps) - min(stamps)).total_seconds() / 86400.0
+    return span if span > 0.0 else _NAN
 
 
 def _max_drawdown_pct(equity: Sequence[float]) -> float:
@@ -408,6 +510,25 @@ def _max_drawdown_pct(equity: Sequence[float]) -> float:
         if peak > 0.0:
             worst = min(worst, value / peak - 1.0)
     return worst
+
+
+def friction_stats(
+    total: DirectionStats, *, initial_capital: float, days: float
+) -> FrictionStats:
+    """Friksiyon hızı. Girdi zaten hesaplanmış TOPLAM yön istatistiğidir.
+
+    Defteri ikinci kez toplamaz: `Σnotional` ve `Σ(komisyon+kayma)` tek bir yerde
+    (`direction_stats`) hesaplanır ve buraya taşınır. İkinci bir toplama yolu bugün
+    hizalansa bile yarın ayrışır — aynı modelin tablodaki maliyeti ile friksiyon
+    satırındaki maliyeti birbirini tutmazdı.
+    """
+    cost = total.fees + total.slippage_cost
+    return FrictionStats(
+        days=days,
+        trades_per_day=_ratio(float(total.trades), days),
+        turnover_per_day=_ratio(_ratio(total.notional, initial_capital), days),
+        cost_drag_pct_per_day=_ratio(_pct(_ratio(cost, initial_capital)), days),
+    )
 
 
 def periods_per_year(config: Mapping[str, Any]) -> float:
@@ -427,15 +548,31 @@ def model_metrics(
     periods_per_year: float,
     is_benchmark: bool = False,
     is_replica: bool = False,
+    ci_alpha: float = _NAN,
+    bootstrap_samples: int = 0,
+    seed: int = 0,
 ) -> ModelMetrics:
     flags = {"is_benchmark": is_benchmark, "is_replica": is_replica}
+    # Tohum model adına bağlanır — kabul çıtasının farkı için yapılanın aynısı
+    # (bkz. `acceptance_flags`): her model kendi yeniden örneklemesini alır ama aynı
+    # defter her zaman aynı aralığı verir.
+    ci = {
+        "ci_alpha": ci_alpha,
+        "bootstrap_samples": bootstrap_samples,
+        "seed": int(seed) ^ hash_name(model),
+    }
+    total = direction_stats(trades, direction=TOTAL, **flags, **ci)
+    account = account_stats(
+        equity_rows, initial_capital=initial_capital, periods_per_year=periods_per_year
+    )
     return ModelMetrics(
         model=model,
-        long=direction_stats(trades, direction="long", **flags),
-        short=direction_stats(trades, direction="short", **flags),
-        total=direction_stats(trades, direction=TOTAL, **flags),
-        account=account_stats(
-            equity_rows, initial_capital=initial_capital, periods_per_year=periods_per_year
+        long=direction_stats(trades, direction="long", **flags, **ci),
+        short=direction_stats(trades, direction="short", **flags, **ci),
+        total=total,
+        account=account,
+        friction=friction_stats(
+            total, initial_capital=initial_capital, days=account.days
         ),
         **flags,
     )
@@ -462,6 +599,12 @@ def compare(
     per_year = periods_per_year(config_dict)
     benchmark_names = set(benchmarks)
     replica_names = set(replicas)
+    # Aralığın alfası ve yeniden örnekleme sayısı kabul çıtasının anahtarlarından okunur,
+    # yeni bir anahtar açılmaz: aynı tabloda iki farklı kesinlik ölçüsü göstermek,
+    # `trailing.atr_period`in tek tutulmasıyla aynı gerekçeyle reddedilir.
+    ci_alpha = float(get_setting(config_dict, "acceptance.edge_ci_alpha"))
+    bootstrap_samples = int(get_setting(config_dict, "acceptance.bootstrap_samples"))
+    seed = int(get_setting(config_dict, "random_seed"))
     return [
         model_metrics(
             model,
@@ -471,6 +614,9 @@ def compare(
             periods_per_year=per_year,
             is_benchmark=model in benchmark_names,
             is_replica=model in replica_names,
+            ci_alpha=ci_alpha,
+            bootstrap_samples=bootstrap_samples,
+            seed=seed,
         )
         for model in models
     ]
@@ -721,6 +867,10 @@ def exit_rule_of(row: Mapping[str, Any]) -> str:
 # --------------------------------------------------------------------------- #
 def pooled_direction_stats(
     trades_by_model: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    ci_alpha: float = _NAN,
+    bootstrap_samples: int = 0,
+    seed: int = 0,
 ) -> dict[str, DirectionStats]:
     """Birden çok modelin işlemlerini TEK havuzda birleştirip yön bazında ölçer.
 
@@ -733,10 +883,20 @@ def pooled_direction_stats(
     Havuza kimin gireceğine çağıran karar verir: referans çıpalarının (kural 15) R'si
     yoktur, havuzda işleri de yoktur. Burada filtre uygulanmaz ki modül defterin
     içeriğinden başka bir şey varsaymasın.
+
+    Havuzun ortalama R'si projenin ANA sorusunun cevabıdır, bu yüzden güven aralığı
+    burada opsiyonel bir süs değil: "short'lar long'lardan iyi" cümlesi ancak iki
+    aralık ayrıştığında kurulabilir.
     """
     rows = [row for trades in trades_by_model.values() for row in trades]
     return {
-        direction: direction_stats(rows, direction=direction)
+        direction: direction_stats(
+            rows,
+            direction=direction,
+            ci_alpha=ci_alpha,
+            bootstrap_samples=bootstrap_samples,
+            seed=seed,
+        )
         for direction in (*DIRECTIONS, TOTAL)
     }
 
@@ -874,6 +1034,42 @@ def bootstrap_diff_ci(
         diffs.append(left - right)
     diffs.sort()
     return (_percentile(diffs, alpha / 2.0), _percentile(diffs, 1.0 - alpha / 2.0))
+
+
+def bootstrap_mean_ci(
+    sample: Sequence[float],
+    *,
+    alpha: float,
+    iterations: int,
+    seed: int,
+) -> tuple[float, float]:
+    """Tek bir örneklemin ORTALAMASININ yüzdelik bootstrap aralığı.
+
+    `bootstrap_diff_ci` ile aynı gerekçeler geçerlidir (çarpık R dağılımı, normal
+    varsayımı yok, deterministik tohum) ve aynı `_percentile` yardımcısını kullanır;
+    farkı sorudur: o "fark sıfırdan ayırt edilebiliyor mu" der, bu "bu ortalamanın
+    kendisi ne kadar belirsiz" der.
+
+    **Neden gerekli:** tabloda `ort. R = −0.31` ile `ort. R = −0.01` yan yana durur ve
+    n=37 ile n=230 aynı yazı tipiyle yazılır. Aralık, okuyucunun örneklem büyüklüğünü
+    tabloda ARAMASINI gerektirmeden iki satırın ne kadar konuşabildiğini gösterir.
+
+    **Bir kapı DEĞİLDİR** (kabul çıtası `passed`'ı bu sayıdan okumaz): bir okuma
+    yardımıdır, tıpkı band uyarısı gibi. Kapı yapmak, `min_trades`in sorduğu soruyu
+    ikinci bir eşikle tekrar sormak olurdu.
+
+    Örneklem boşsa, `iterations` sıfırsa ya da alfa tanımsızsa `(nan, nan)`.
+    """
+    if not sample or iterations <= 0 or math.isnan(alpha):
+        return (_NAN, _NAN)
+
+    rng = random.Random(seed)
+    size = len(sample)
+    means = sorted(
+        sum(sample[rng.randrange(size)] for _ in range(size)) / size
+        for _ in range(int(iterations))
+    )
+    return (_percentile(means, alpha / 2.0), _percentile(means, 1.0 - alpha / 2.0))
 
 
 def _percentile(ordered: Sequence[float], fraction: float) -> float:
@@ -1324,6 +1520,7 @@ def _model_block(item: ModelMetrics) -> list[str]:
         f"maxDD {_fmt(_pct(account.max_drawdown), digits=2)}% | "
         f"Sharpe {_fmt(account.sharpe)} | {account.bars} bar"
     )
+    lines.extend(_reading_lines(item))
     # Yarışma dışı satırda R'siz işlem beklenendir (çıpada stop yoktur, kopyanın kısmi
     # dolumları farklı bir birimdedir); yarışmacıda ise denetlenmesi gereken bir
     # anomalidir. Uyarıyı hepsine yazmak, gerçek uyarıyı gürültüye boğardı.
@@ -1339,6 +1536,47 @@ def _model_block(item: ModelMetrics) -> list[str]:
 # --------------------------------------------------------------------------- #
 # Yardımcılar
 # --------------------------------------------------------------------------- #
+def _reading_lines(item: ModelMetrics) -> list[str]:
+    """Satırın OKUNMASINA yardım eden üç kuyruk: aralık, beklenti ayrışması, friksiyon.
+
+    Üçü de tabloya KOLON olarak eklenmedi: tablo zaten on dört kolon geniştir ve
+    okunabilirliği ölçümün parçasıdır (`docs/shared.css`'in tek kopya olmasıyla aynı
+    gerekçe). Kuyruk satırları model bloğunun içinde durur, yani hangi modele ait
+    oldukları tartışmasızdır.
+    """
+    total = item.total
+    pad = f"{'':<{_WIDTHS[0]}}  "
+    lines: list[str] = []
+
+    if not math.isnan(total.avg_r_ci_low) or not math.isnan(total.avg_r_ci_high):
+        lines.append(
+            f"{pad}ort. R aralığı: [{_fmt(total.avg_r_ci_low)}, "
+            f"{_fmt(total.avg_r_ci_high)}] (bootstrap; bir KAPI değil, okuma yardımı)"
+        )
+
+    # Beklenti bir ÖZDEŞLİKTİR, yeni bir metrik değil: WR×ort.kazanç + (1−WR)×ort.kayıp
+    # R biriminde tam olarak ortalama R'ye eşittir (test: tests/test_metrics.py).
+    # Değeri sayının kendisinde değil AYRIŞMASINDA: ortalama R'nin negatif olması
+    # kazanma oranından mı, ödeme oranından mı geliyor?
+    if not math.isnan(total.avg_r) and not math.isnan(total.win_rate):
+        loss_rate = 1.0 - total.win_rate
+        lines.append(
+            f"{pad}beklenti: %{_fmt(_pct(total.win_rate), digits=1)} × "
+            f"{_fmt(total.avg_win_r)}R + %{_fmt(_pct(loss_rate), digits=1)} × "
+            f"{_fmt(total.avg_loss_r)}R = {_fmt(total.avg_r)}R"
+        )
+
+    friction = item.friction
+    lines.append(
+        f"{pad}friksiyon: ciro {_fmt(friction.turnover_per_day)}x/gün | "
+        f"tur maliyeti %{_fmt(total.cost_pct, digits=3)} | "
+        f"sürüklenme %{_fmt(friction.cost_drag_pct_per_day, digits=3)}/gün | "
+        f"{_fmt(friction.trades_per_day, digits=1)} işlem/gün | "
+        f"{_fmt(friction.days, digits=1)} gün"
+    )
+    return lines
+
+
 def _to_float(value: Any) -> float | None:
     if value is None or value == "":
         return None

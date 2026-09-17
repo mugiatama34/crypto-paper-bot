@@ -97,8 +97,18 @@ def build_dashboard(
     equity = {model: ledger.read_equity(model) for model in models}
     marks = marks_from_market(market)
 
-    pooled = pooled_direction_stats({model: trades[model] for model in competitors})
     control_model = str(get_setting(config_dict, "acceptance.control_model"))
+    ci_alpha = float(get_setting(config_dict, "acceptance.edge_ci_alpha"))
+    bootstrap_samples = int(get_setting(config_dict, "acceptance.bootstrap_samples"))
+    # Havuzun aralığı projenin ANA sorusunu okunur kılar: "short'lar long'lardan iyi"
+    # ancak iki aralık ayrıştığında söylenebilir. Tohum model adına değil havuza
+    # bağlanır (havuz tek bir kümedir), alfa ise model tablosuyla aynı anahtardan gelir.
+    pooled = pooled_direction_stats(
+        {model: trades[model] for model in competitors},
+        ci_alpha=ci_alpha,
+        bootstrap_samples=bootstrap_samples,
+        seed=int(get_setting(config_dict, "random_seed")),
+    )
     # R örneklemleri kabul çıtasının bootstrap'ı için: aynı `merge_fills` -> `r_multiple`
     # yolundan gelir (core/metrics.py::r_series), yani tablodaki ortalama R ile aralığın
     # altındaki sayılar AYNI kümedir. Kontrol yarışmacı listesinde olmasa bile eklenir:
@@ -113,8 +123,8 @@ def build_dashboard(
         edge_margin_r=float(get_setting(config_dict, "acceptance.edge_margin_r")),
         control_min_trades=int(get_setting(config_dict, "acceptance.control_min_trades")),
         r_samples=r_samples,
-        ci_alpha=float(get_setting(config_dict, "acceptance.edge_ci_alpha")),
-        bootstrap_samples=int(get_setting(config_dict, "acceptance.bootstrap_samples")),
+        ci_alpha=ci_alpha,
+        bootstrap_samples=bootstrap_samples,
         seed=int(get_setting(config_dict, "random_seed")),
     )
     positions = open_positions(models, ledger=ledger, marks=marks)
