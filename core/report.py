@@ -38,6 +38,7 @@ from core.metrics import (
     exit_rule_of,
     loss_streak_of,
     pooled_direction_stats,
+    r_series,
     return_correlation,
     session_of,
     symbol_of,
@@ -93,12 +94,24 @@ def build_dashboard(
     marks = marks_from_market(market)
 
     pooled = pooled_direction_stats({model: trades[model] for model in competitors})
+    control_model = str(get_setting(config_dict, "acceptance.control_model"))
+    # R örneklemleri kabul çıtasının bootstrap'ı için: aynı `merge_fills` -> `r_multiple`
+    # yolundan gelir (core/metrics.py::r_series), yani tablodaki ortalama R ile aralığın
+    # altındaki sayılar AYNI kümedir. Kontrol yarışmacı listesinde olmasa bile eklenir:
+    # farkın öteki tarafı odur.
+    sample_models = {*competitors, control_model} & set(trades)
+    r_samples = {model: r_series(trades[model]) for model in sample_models}
     flags = acceptance_flags(
         metrics,
         min_trades=int(get_setting(config_dict, "acceptance.min_trades")),
         stop_band_ratio=float(get_setting(config_dict, "acceptance.stop_band_ratio")),
-        control_model=str(get_setting(config_dict, "acceptance.control_model")),
+        control_model=control_model,
         edge_margin_r=float(get_setting(config_dict, "acceptance.edge_margin_r")),
+        control_min_trades=int(get_setting(config_dict, "acceptance.control_min_trades")),
+        r_samples=r_samples,
+        ci_alpha=float(get_setting(config_dict, "acceptance.edge_ci_alpha")),
+        bootstrap_samples=int(get_setting(config_dict, "acceptance.bootstrap_samples")),
+        seed=int(get_setting(config_dict, "random_seed")),
     )
     positions = open_positions(models, ledger=ledger, marks=marks)
 
@@ -110,9 +123,16 @@ def build_dashboard(
             },
         },
         "acceptance": {
-            "control_model": str(get_setting(config_dict, "acceptance.control_model")),
+            "control_model": control_model,
             "min_trades": int(get_setting(config_dict, "acceptance.min_trades")),
+            "control_min_trades": int(
+                get_setting(config_dict, "acceptance.control_min_trades")
+            ),
             "edge_margin_r": float(get_setting(config_dict, "acceptance.edge_margin_r")),
+            "edge_ci_alpha": float(get_setting(config_dict, "acceptance.edge_ci_alpha")),
+            "bootstrap_samples": int(
+                get_setting(config_dict, "acceptance.bootstrap_samples")
+            ),
             "stop_band_ratio": float(get_setting(config_dict, "acceptance.stop_band_ratio")),
             "models": [asdict(item) for item in flags],
         },

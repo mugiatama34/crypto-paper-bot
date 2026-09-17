@@ -116,6 +116,10 @@ class BacktestResult:
     # Tabloyu görüp kırılımı görmemek, ortalama R'nin ARDINDAKİ mekanizmayı (hangi çıkış
     # kuralı kaç kez tetikledi, hangi kol/sembol taşıdı) çıkarıma bırakırdı.
     breakdowns: Mapping[str, Any] = field(default_factory=dict)
+    # Örneklem kapısı (B-1) tabloyu da böler: kapıyı geçmeyen model sıralanmaz
+    # (bkz. core/metrics.py::format_report). Koşunun config'inden okunur ki backtest ile
+    # canlı tablo aynı çıtayı göstersin.
+    min_trades: int = 0
 
 
 # --------------------------------------------------------------------------- #
@@ -237,6 +241,7 @@ def run_backtest(
         layer=layer.name, start=start, end=market.as_of, out_dir=out_dir,
         report=report, metrics=tuple(metrics), build_failures=build_failures,
         breakdowns=breakdowns,
+        min_trades=int(get_setting(config, "acceptance.min_trades")),
     )
 
 
@@ -597,7 +602,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error("backtest koşulamadı: %s", exc)
         return 1
 
-    print(format_report(list(result.metrics)))
+    print(format_report(list(result.metrics), min_trades=result.min_trades or None))
     print(format_drift(result.metrics))
     print(format_breakdowns(result.breakdowns))
 

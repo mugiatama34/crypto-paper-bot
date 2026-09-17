@@ -94,7 +94,10 @@ yapar.
 | `trailing.atr_period` | `14` | Projenin **tek ATR tanımı**: hem trailing stop (kural 9) hem stop mesafesi bandı (kural 14) bu periyodu kullanır. İkisi ayrışırsa "3×ATR" iki farklı mesafe demeye başlar. Uygulama `core/engine.py`'dedir; periyot ortak olmalı ki aynı `trailing_atr` değeri her modelde aynı stop mesafesi anlamına gelsin. |
 | `acceptance.min_trades` | `30` | **Kapı** — örneklem: R'ye giren kapanmış işlem bu sayının altındaysa ortalama R bir ölçüm değil gürültüdür. |
 | `acceptance.control_model` | `"random_ctrl"` | **Kapı** — edge'in kontrol referansı. `is_benchmark` değildir (aynı sütunda yarışır), bu yüzden adı `benchmarks` listesinden türetilemez. |
+| `acceptance.control_min_trades` | `30` | **Kapı** — kontrolün KENDİ örneklemi. Marj kontrolün ortalamasına göre ölçülür; kontrol bu sayıya ulaşmadıysa edge değerlendirilemez. |
 | `acceptance.edge_margin_r` | `0.15` | **Kapı** — edge marjı: kontrolü geçmek için ortalama R farkının en az bu kadar olması gerekir. Çekilişin kendi gürültüsü kıl payı bir farkı tek başına üretebilir. |
+| `acceptance.edge_ci_alpha` | `0.05` | **Kapı** — edge'in kesinlik koşulu: (model − kontrol) farkının yüzdelik bootstrap aralığı bu alfa ile kurulur, ALT SINIRI sıfırın üstünde olmalıdır. |
+| `acceptance.bootstrap_samples` | `2000` | Bootstrap yeniden örnekleme sayısı. Tohum `random_seed`den türer: aynı defter her zaman aynı aralığı verir. |
 | `acceptance.stop_band_ratio` | `2.5` | **Uyarı** — band (kural 14). Defterde ATR olmadığı için band yarışmacıların `avg_stop_distance_pct` medyanına göre kurulur: `medyan/√oran .. medyan×√oran`, uçtan uca tam bu oran kadar geniş. Bandın dışında kalmak doğrulamayı ENGELLEMEZ; raporda uyarı ikonudur. |
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
@@ -633,7 +636,7 @@ Tablo "hangi model önde" der; çıta "bu satır okunabilir mi" der. Hesap
 | Kapı | Soru | Geçme koşulu |
 |---|---|---|
 | **Ö** — örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış POZİSYON ≥ `acceptance.min_trades` (30); kısmi çıkış ve fraksiyonel hedef dilimleri ayrı sayılmaz (bkz. "Dolum ve Pozisyon") |
-| **E** — edge | Sonuç sinyalden mi geliyor, piyasadan ve şanstan mı? | ortalama R > 0 **ve** kontrol grubunun ortalama R'sini **en az `acceptance.edge_margin_r` (0.15R) marjla** aşıyor **ve** hesap getirisi referans çıpasını geçiyor |
+| **E** — edge | Sonuç sinyalden mi geliyor, piyasadan ve şanstan mı? | ortalama R > 0 **ve** kontrol grubunun ortalama R'sini **en az `acceptance.edge_margin_r` (0.15R) marjla** aşıyor **ve** farkın bootstrap güven aralığının **alt sınırı > 0** (`acceptance.edge_ci_alpha`) **ve** hesap getirisi referans çıpasını geçiyor. Kontrolün KENDİ örneklemi `acceptance.control_min_trades`in altındaysa kapı **değerlendirilemez** ve geçilmiş sayılmaz |
 
 **Bir UYARI** — `passed`'ı **etkilemez**, yalnızca sonucun nasıl okunacağını söyler:
 
@@ -657,6 +660,31 @@ Kararlar:
   Karşılaştırma `fark >= marj` şeklindedir ("en az bu kadar"); iki kayan noktalı ortalamanın
   farkı söz konusu olduğu için sınırın ULP düzeyinde tanımı anlamsızdır ve koda yapay bir
   tolerans eklenmez.
+- **Marj ile güven aralığı birbirinin yerine geçmez; ikisi de gerekir.** Marj bir ETKİ
+  BÜYÜKLÜĞÜ eşiğidir ("fark yeterince büyük mü"), güven aralığı bir KESİNLİK eşiğidir
+  ("fark örneklem gürültüsünden ayırt edilebiliyor mu"). 8 işlemle ölçülen 0.40R'lik bir
+  fark marjı rahatça geçer ama aralığı sıfırı fazlasıyla içerir. Aralık **yüzdelik
+  bootstrap** ile kurulur (`core/metrics.py::bootstrap_diff_ci`), normal varsayımıyla
+  değil: stop'lu bir sistemde R dağılımı tanım gereği çarpıktır — kayıplar −1R civarında
+  kümelenir, kazançlar uzun kuyruk yapar. İki örneklem BAĞIMSIZ yeniden örneklenir
+  (model ile kontrol aynı barlarda aynı sembollerde işlem açmaz, eşleştirilecek çift
+  yoktur). Hesap **deterministiktir**: tohum `random_seed`den türer ve model adına
+  bağlanır, yani aynı defter her zaman aynı aralığı verir — rozetin koşudan koşuya
+  titremesi, çıtayı bir ölçü olmaktan çıkarıp bir çekilişe çevirirdi.
+- **Kontrolün KENDİ örneklemi de bir kapıdır** (`acceptance.control_min_trades`). Marj
+  kontrolün ortalamasına göre ölçülür ve o ortalama da bir örneklemden gelir; kontrol
+  n=4 iken bir modeli ona karşı 0.15R marjla "ölçmek" gürültüyü gürültüyle kıyaslamaktır
+  (base katmanında gerçekten böyleydi). Kontrol kapısını geçmemişse `edge`
+  **değerlendirilemez** ve `logger.warning` yazılır. **Kontrolün kümede HİÇ olmaması ayrı
+  bir durumdur** ve yukarıdaki "koşul düşer" kuralı orada geçerli kalır: ikisini tek
+  sayıya indirmek, kontrolü listeden çıkarmayı kapıyı geçmenin bir yolu hâline getirirdi.
+- **Kapıyı geçmeyen satır SIRALANMAZ, ama gizlenmez de.** `format_report` ve dashboard
+  rütbeyi yalnızca **Ö** kapısını geçen yarışmacılara verir; geçmeyenler ayrı bir bölümde
+  ve işlem SAYISINA göre dizilir. Rozette "kapı geçilmedi" yazarken satırı "#1" olarak
+  göstermek, okuyucunun ikincisini okuması demekti; 4 işlemlik bir ortalamayı 200
+  işlemlik bir ortalamayla aynı sütunda sıralamak ise zaten kapının reddettiği kıyastır.
+  Satır gizlenmez çünkü base katmanının ölçütü (karar 33) tam olarak "model n=30'a
+  ulaşabiliyor mu"dur — bu yüzden ayrı bölümün sırası R değil, kapıya uzaklıktır.
 - **Kapılar yalnızca yarışmacılara uygulanır.** Referans çıpası (kural 15) yarışmacı
   değildir; ölçmediği bir yarışta not vermek, çıpanın ne olduğunu yanlış anlatırdı. Çıpa
   `acceptance` bölümüne hiç girmez, tabloda bayrak sütununda `—` görünür.

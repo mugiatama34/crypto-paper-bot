@@ -97,6 +97,30 @@ acceptance:
                                  # buna göre ölçülür. is_benchmark DEĞİLdir (aynı sütunda
                                  # yarışır), bu yüzden adı benchmarks listesinden
                                  # türetilemez; açıkça yazılır.
+  control_min_trades: 30  # KAPI — KONTROLÜN KENDİ ÖRNEKLEMİ. Marj, kontrolün ortalama
+                          # R'sine göre ölçülür ve o ortalama da bir örneklemden gelir.
+                          # Bu kapı olmadan şu mümkündü (ve base katmanında GERÇEKTEN
+                          # oldu): random_ctrl n=4 iken trend n=17 ona karşı 0.15R marjla
+                          # "ölçülüyordu" — kapı çalışıyormuş gibi görünürken gürültüyü
+                          # gürültüyle kıyaslıyordu. Kontrol bu sayıya ulaşmadıysa edge
+                          # DEĞERLENDİRİLEMEZ (geçilmiş sayılmaz) ve logger.warning yazar.
+                          # min_trades ile aynı değer: kontrol de bir yarışmacıdır ve
+                          # örneklem kapısı herkes için aynıdır (kural 6). Ayrı anahtar
+                          # olmasının sebebi, bir gün ayrışması gerekirse bunun sessiz
+                          # değil açık bir karar olması.
+  edge_ci_alpha: 0.05     # KAPI — EDGE'in KESİNLİK koşulu: (model − kontrol) farkının
+                          # yüzdelik bootstrap güven aralığı bu alfa ile kurulur ve ALT
+                          # SINIRI sıfırın üstünde olmalıdır. Marjın yerine geçmez,
+                          # yanına gelir: marj "fark yeterince büyük mü" (etki büyüklüğü),
+                          # aralık "fark gürültüden ayırt edilebiliyor mu" (kesinlik)
+                          # sorusudur. 8 işlemle ölçülen 0.40R marjı geçer ama aralığı
+                          # sıfırı içerir; ikisini birlikte istemek bunu eler.
+  bootstrap_samples: 2000 # Bootstrap yeniden örnekleme sayısı. Tohum random_seed'den
+                          # türer (model adına bağlı), yani aynı defter HER ZAMAN aynı
+                          # aralığı verir — rozetin koşudan koşuya titremesi, çıtayı bir
+                          # ölçü olmaktan çıkarıp bir çekilişe çevirirdi. 0 yazmak
+                          # aralığı hesaplanamaz yapar ve edge yalnızca marja düşer
+                          # (sessizce değil: logger.warning).
   edge_margin_r: 0.15     # KAPI — EDGE marjı: kontrolü "geçmek" için kıl payı önde olmak
                           # yetmez, ort. R farkı en az bu kadar olmalıdır. Çekilişin kendi
                           # gürültüsü küçük bir farkı tek başına üretebilir; marj, kontrolü
