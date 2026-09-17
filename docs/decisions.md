@@ -3650,3 +3650,77 @@ seans-ağırlıklı σ ile sıfır kurulum" GÖRÜLDÜ. Düzeltilmiş model ön-
 - Canlı cron'lar: sürekli süreç YAZILDI ama devreye ALINMADI — ikisi aynı anda koşarsa
   aynı barı iki tetikleyici işlemeye çalışır (`docs/live_runner.md`). Cron'un kaldırılması,
   sürecin gerçekten bir makinede koştuğu gün yapılacak bir commit'tir.
+
+### Koşu B — σ düzeltildi: model YAŞIYOR ama ÖLÇÜLEMİYOR
+
+`backtest.yml` #14 (`35227403372`), pencere 2026-05-01 → 06-24 (54 gün),
+`--history-bars 6000`, modeller `vwap_guarded,vwap_clone,vwap_managed,scalp_fixed`.
+Ön-kayıt: `docs/backtest.md > 6e`, commit `a7514de` — koşudan ÖNCE.
+
+| model | n | ort.R | kaz% | PF | stopMes% | maliyet/R | getiri | maxDD | brüt% | topl.R |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **`vwap_guarded`** | **8** | **+0.30** | 87.5 | 3.07 | 2.82 | 0.108 | +2.40% | −0.94% | 1.143 | +2.38 |
+| `vwap_managed` | 69 | −0.07 | 46 | 0.82 | 2.04 | 0.130 | — | — | 0.113 | −5.12 |
+| `scalp_fixed` | 663 | −0.15 | 37 | 0.50 | 2.47 | 0.108 | — | — | −0.098 | −106.24 |
+| `vwap_clone` (kopya) | 2903 | −0.70 | 29 | 0.29 | — | — | −98.00% | −98.01% | — | −2031.45 |
+
+### Tahminlerin karnesi
+
+| # | Ölçüm | Tahmin | Gerçekleşen | Sonuç |
+|---|---|---|---|---|
+| **P3** | örneklem | n ≥ 30 | **n = 8** | **DÜŞTÜ** |
+| P1 | ortalama R | > 0 | +0.30 | **DEĞERLENDİRİLEMEZ** (B-1 düştü) |
+| P2 | kopyayı geçer | > −0.70 | +0.30 | değerlendirilemez (aynı birim değil, kural 15b) |
+| P4 | stop bandı | ⚠B yanmaz | 2.82 ∈ [1.56, 3.91] | tuttu |
+| P5 | işlem sayısı | kopyadan az | 8 ↔ 2903 | tuttu (fazlasıyla) |
+| P6 | `pick=exploit` > `pick=explore` | — | 8 işlemin tamamı ISINMA (`unexplored`) | ölçülemedi |
+
+**P3 birincil sonuçtur ve ön-kayıt onun anlamını önceden yazmıştı:** *"n < 30 çıkarsa sonuç
+'model kötü' değil, bu kapı kümesi bu pencerede ölçülemez demektir."* Ölçüm bunu söylüyor.
+
+### +0.30R okunmaz — ve bunun üç ayrı sebebi var
+
+1. **Örneklem kapısı (B-1/Ö).** 8 pozisyon. Bootstrap aralığı **[−0.19, +0.69]**: sıfırı
+   rahatça içeriyor. Tablo bu satırı zaten "YETERSİZ ÖRNEKLEM" bölümüne koydu ve
+   sıralamaya almadı.
+2. **Piyasa rüzgârı.** Karar 43'ün kolonu tam da bunun için var:
+   `market_R = +0.28`, yani **R − market_R = +0.02**. Pozisyonlar çıpayla (BTC) birebir
+   hareket etseydi kazanacakları R, ölçülen R'nin neredeyse tamamıdır. 8 işlemin artısı
+   sinyalden değil, tutuş pencerelerindeki piyasa yönünden geliyor gibi görünüyor — ve bu
+   ayrım ancak örneklem büyüdüğünde kesinleşir.
+3. **Isınma.** 8 işlemin tamamı bandit'in `unexplored` aşamasında açıldı: hiçbiri
+   öğrenilmiş bir kombinasyonun sonucu değil. Yani bu sayı modelin ÖĞRENDİĞİ hâlini
+   değil, rastgele kol çeken hâlini ölçüyor.
+
+### Asıl bulgu: 0.1 işlem/gün
+
+`friksiyon: ciro 0.07x/gün | 0.1 işlem/gün | 54.0 gün`. Bu kadansla örneklem kapısına
+(n=30) ulaşmak **~300 gün** sürer. Kıyas: kopya 53.8 işlem/gün, `scalp_fixed` 12.3.
+
+Altı kapı (bant 2.5/3.0σ + ADX + EMA eğimi + BTC yönü + tükenme + 1.5R) üst üste
+bindiğinde geriye 54 günde 8 kurulum kalıyor. **Bu bir kusur değil, bir ÖLÇÜDÜR:**
+"kapıları sıkarsan kalan kurulum sayısı ne olur" sorusunun cevabı burada yazılı.
+
+**Kapıları gevşetmek bu koşudan SONRA yapılamaz** (`docs/backtest.md > 7.1`): sonucu görüp
+parametre oynatmaktır. Gevşetilmiş bir kapı kümesi YENİ bir hipotezdir, kendi ön-kaydını
+ve taze bir pencere ister. Bu karar onu yapmaz; hangi kapının ne kadar elediğini ölçmek
+ise bir kural değişikliği değildir ve tur raporundaki `survey` sayaçları bunu zaten
+biriktirir.
+
+### Kâğıt katmanına ALINDI — canlıya alma eşiği GEÇİLMEDİ
+
+İkisi ayrı şeylerdir ve `scalp_patient` (model 16, karar 33) ile kurulan ayrımın aynısıdır:
+
+- **Alındı:** `layers.scalp.models` listesine eklendi, yani 15 dakikalık KÂĞIT katmanında
+  koşar ve kendi defterini biriktirir. Gerekçe: ileriye dönük kanıt yalnızca kâğıtta
+  birikir ve bu modelde ölçülmesi gereken şey tam olarak KADANSTIR — 0.1 işlem/gün canlıda
+  da doğrulanacak mı?
+- **Geçilmedi:** `docs/backtest.md > 4`ün eşiği sağlanmıyor. C-1 değerlendirilemez (B-1
+  düştü), C-2 bu katmanda hiç değerlendirilemez (kontrol modeli katmanda koşamıyor, bkz.
+  yukarısı), C-3 değerlendirilemez (katmanda çıpa yok), C-5 yok. **Gerçek parayla işlem
+  açamaz.**
+
+Kill-switch'ler bu koşuda hiç tetiklenmedi (drawdown −0.94%, günlük R hiçbir gün −2R'ye
+inmedi) — yani ölçülmediler. Tetikleyen mekanizmanın kendisi testlidir
+(`tests/test_vwap_guarded.py`), ama canlı defterde bir kez yanana kadar "çalıştığı
+görüldü" denmeyecek.

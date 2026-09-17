@@ -221,7 +221,13 @@ layers:
     # tetiklemedi, yani bandit'in tahsis edecek bir şeyi yok ("1 uygun kol"). Eksenleri
     # kapatmak bilgi kaybı değil, iki kez alınan "fark yok" cevabını kabul etmektir.
     # Hareket eden TEK eksen süredir (scalp_patient ↔ scalp_fixed: −0.01 ↔ −0.15).
-    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
+    # vwap_guarded (model 18) KÂĞIT katmanına alındı (karar 45). Bu, canlıya alma
+    # eşiğinin (docs/backtest.md > 4) geçildiği anlamına GELMEZ — `scalp_patient` ile
+    # kurulan ayrımın aynısı: backtest'te örneklem kapısı düştü (n=8 < 30), yani
+    # ortalama R'si (+0.30) bir ölçüm değil. Kâğıtta koşmasının sebebi ileriye dönük
+    # kanıtın yalnızca orada birikmesi ve bu modelde ölçülmesi gereken şeyin KADANS
+    # olmasıdır: 54 günde 8 kurulum (0.1 işlem/gün) canlıda da böyle mi?
+    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed", "vwap_guarded"]
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle

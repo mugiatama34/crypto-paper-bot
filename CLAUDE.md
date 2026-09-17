@@ -342,7 +342,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 |---|---|---|
 | Bar | 4H | 15m |
 | Evren | hacme göre ilk 50 (30 günde bir yenilenir) | **SABİT 13 sembol**, otomatik seçim yok |
-| Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (11, 12, 14, 15) + 1 dış sistem kopyası (13) |
+| Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (12, 14, 16, 18) + 1 dış sistem kopyası (13) |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
 | Cron | `run.yml` (SAATLİK; her 4H barına dört şans — karar 39. Bar ilerletmeyen turlar commit ve bildirim üretmez) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) |
@@ -426,6 +426,7 @@ kapandığında satır SİLİNMEZ — kapanışın kendisi bir ölçüm sonucudu
 |---|---|---|---|
 | Sürenin katkısı | `scalp_fixed` (12) ↔ `scalp_patient` (16) | zaman stop'u sınırı (16 ↔ 100 bar) | **AÇIK** (tek hareket eden eksen: −0.15 ↔ −0.01) |
 | İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_managed` (14) | **tek değişken DEĞİL** — bkz. aşağısı | AÇIK |
+| İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_guarded` (18) | **tek değişken DEĞİL** — sekiz kalem (çapa, bant, rejim, tükenme, boyutlandırma, zaman stop'u, evren, risk kesicileri) | AÇIK ama ÖLÇÜLEMİYOR: 54 günde 8 kurulum (karar 45) |
 | Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi | KAPALI — iki kez "fark yok" (karar 33); 11 emekli |
 | Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış | KAPALI — iki kez "fark yok" (karar 33); 15 emekli |
 | Volatilite rejiminin katkısı | `scalp_patient` (16) ↔ `scalp_vol` (17) | kesitsel ATR% medyan kapısı | KAPALI — ön-kayıtlı P1 düştü (karar 36); 17 canlıda koşmaz |
