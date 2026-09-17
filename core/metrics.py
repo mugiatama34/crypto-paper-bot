@@ -726,7 +726,12 @@ def compare(
 # Kırılımlar (kol / sembol)
 # --------------------------------------------------------------------------- #
 def breakdown(
-    trades: Iterable[Mapping[str, Any]], *, key: Callable[[Mapping[str, Any]], str]
+    trades: Iterable[Mapping[str, Any]],
+    *,
+    key: Callable[[Mapping[str, Any]], str],
+    ci_alpha: float = _NAN,
+    bootstrap_samples: int = 0,
+    seed: int = 0,
 ) -> dict[str, DirectionStats]:
     """İşlemleri `key`e göre gruplayıp her grup için aynı metrikleri hesaplar.
 
@@ -746,12 +751,27 @@ def breakdown(
     sembol pozisyonun özellikleridir, yani bir pozisyonun tüm dilimleri zaten aynı
     gruba düşer. Ters sırada kurmak (önce birleştir, sonra grupla) aynı sayıyı verirdi;
     böylesi `key`in defterin ham satırını görmesini korur.
+
+    Gruplar da ortalama R'nin bootstrap aralığını alır (`bootstrap_samples > 0` iken).
+    Gerekçe bu projenin kendi geçmişidir: karar 27 (saat hipotezi) ve karar 28 (kayıp
+    serisi cooldown'u) tam olarak bir KIRILIM grubunun ortalamasına bakıp kural yazma
+    denemeleriydi ve ikisi de daha uzun örneklemde çürüdü. Grup ortalamasını örneklemi
+    ve aralığı olmadan göstermek, o hatayı arayüzün içine yerleştirmek olurdu.
+
+    Tohum grup ADINA bağlanır (model adına bağlandığı gibi): her grup kendi yeniden
+    örneklemesini alır, aynı defter her zaman aynı aralığı verir.
     """
     grouped: dict[str, list[Mapping[str, Any]]] = {}
     for row in trades:
         grouped.setdefault(key(row), []).append(row)
     return {
-        group: direction_stats(rows, direction=TOTAL)
+        group: direction_stats(
+            rows,
+            direction=TOTAL,
+            ci_alpha=ci_alpha,
+            bootstrap_samples=bootstrap_samples,
+            seed=int(seed) ^ hash_name(group),
+        )
         for group, rows in sorted(grouped.items())
     }
 
@@ -1161,9 +1181,15 @@ def bootstrap_mean_ci(
     yardımıdır, tıpkı band uyarısı gibi. Kapı yapmak, `min_trades`in sorduğu soruyu
     ikinci bir eşikle tekrar sormak olurdu.
 
-    Örneklem boşsa, `iterations` sıfırsa ya da alfa tanımsızsa `(nan, nan)`.
+    **Tek gözlemde aralık YOKTUR** — `_stdev`in "iki işlemden azında tanımsızdır"
+    sözleşmesinin aynısı. Tek bir R'nin yeniden örneklemesi her zaman kendisini verir ve
+    `[+0.08, +0.08]` gibi DEJENERE bir aralık üretir: okuyucuya kıl payı bir kesinlik
+    vaat eder, oysa ortada dağılım yoktur. Eşik serbest bir parametre değil, bootstrap'ın
+    tanım sınırıdır.
+
+    Örneklem iki gözlemden azsa, `iterations` sıfırsa ya da alfa tanımsızsa `(nan, nan)`.
     """
-    if not sample or iterations <= 0 or math.isnan(alpha):
+    if len(sample) < 2 or iterations <= 0 or math.isnan(alpha):
         return (_NAN, _NAN)
 
     rng = random.Random(seed)

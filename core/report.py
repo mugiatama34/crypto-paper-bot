@@ -162,7 +162,15 @@ def build_dashboard(
         ),
         "recent_trades": recent_trades(trades, limit=RECENT_TRADE_LIMIT),
         "model_trades": model_trades(trades, limit=model_trade_limit),
-        "breakdowns": model_breakdowns(trades, kinds=breakdowns),
+        # Gruplar da aralık alır: bir kırılım grubunun ortalamasına örneklemi ve
+        # aralığı olmadan bakmak, karar 27/28'in iki kez düştüğü tuzaktır.
+        "breakdowns": model_breakdowns(
+            trades,
+            kinds=breakdowns,
+            ci_alpha=ci_alpha,
+            bootstrap_samples=bootstrap_samples,
+            seed=int(get_setting(config_dict, "random_seed")),
+        ),
         "activity": activity(
             trades, positions=positions, as_of=market.as_of, hours=ACTIVITY_HOURS
         ),
@@ -191,7 +199,12 @@ _BREAKDOWN_PREPARE: Mapping[str, Any] = {
 
 
 def model_breakdowns(
-    trades: Mapping[str, Sequence[Mapping[str, Any]]], *, kinds: Sequence[str]
+    trades: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    kinds: Sequence[str],
+    ci_alpha: float = float("nan"),
+    bootstrap_samples: int = 0,
+    seed: int = 0,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """Model başına kol ve/veya sembol kırılımı. `kinds` boşsa bölüm de boştur.
 
@@ -215,7 +228,11 @@ def model_breakdowns(
             model: {
                 group: asdict(stats)
                 for group, stats in breakdown(
-                    prepare(rows) if prepare is not None else rows, key=key
+                    prepare(rows) if prepare is not None else rows,
+                    key=key,
+                    ci_alpha=ci_alpha,
+                    bootstrap_samples=bootstrap_samples,
+                    seed=seed,
                 ).items()
             }
             for model, rows in trades.items()

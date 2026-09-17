@@ -3467,3 +3467,70 @@ sorunun sorulacağını değiştiriyor.
 Hiçbir sinyal, dolum, boyut, maliyet sabiti ya da kabul kapısı değişmedi. `avg_r`
 dokunulmadan durdu. Modellerin ürettiği sinyaller bu commit'ten önce ve sonra BİREBİR
 AYNIDIR.
+
+---
+
+## 44. Kırılım grupları kapıya bağlandı; kümülatif R eğrisi ÖLÇÜLDÜ ve ERTELENDİ
+
+Karar 42'nin çerçevesinden çıkan iki ölçüm maddesi. İkisi de aynı kuralla ele alındı:
+**önce mevcut defter üzerinde koş, sayı mantıklıysa koda bağla.** Biri bağlandı, biri
+ölçümün kendisi tarafından reddedildi.
+
+### Bağlanan: kırılım gruplarına örneklem kapısı + aralık
+
+Kırılımlar (`arm`, `symbol`, `exit_rule`, `session`, `loss_streak`) grup başına ortalama R
+gösteriyordu — **örneklemsiz ve aralıksız.** Oysa model satırı için bu tam olarak yasak:
+`acceptance.min_trades` (30) altındaki bir ortalama sıralanmıyor bile (karar 40/1).
+
+Ölçüm (`scalp_fixed`, 37 pozisyon) sorunun büyüklüğünü verdi:
+
+| kırılım | grup | kapıyı geçen | en büyük grup |
+|---|---:|---:|---|
+| `symbol` | 11 | **0** | BNB n=9 |
+| `session` | 4 | **0** | 00-07 asya n=14 |
+| `arm` | 2 | 1 | rsi2_reversal n=33 |
+| `exit_rule` | 2 | 1 | signal:time_stop n=31 |
+
+**Dashboard 11 sembol satırını ortalama R'leriyle gösteriyordu ve hiçbiri bir ölçüm
+değildi.** En uç örnek XRP: n=3, ort. R −1.03. Karar 27 ve 28 tam olarak böyle bir
+satıra bakıp kural yazma denemeleriydi ve ikisi de daha uzun örneklemde çürüdü; yani bu,
+projenin iki kez düştüğü tuzağın arayüze yerleşmiş hâliydi.
+
+Artık her grup kendi bootstrap aralığını taşıyor (tohum grup adına bağlı, deterministik),
+kapı altındaki satır **solgun** çiziliyor ve `Ö` işareti taşıyor. Satır GİZLENMİYOR:
+base katmanının ölçütü zaten "n=30'a ulaşılabiliyor mu"dur.
+
+**Yan bulgu — bootstrap'ın tanım sınırı.** İlk koşuda n=1 olan grup `[+0.08, +0.08]`
+gibi DEJENERE bir aralık üretti: okuyucuya kıl payı kesinlik vaat ediyor, oysa yeniden
+örneklenecek dağılım yok. `bootstrap_mean_ci` artık iki gözlemden azında `nan` döndürüyor
+— `_stdev`in zaten uyguladığı sözleşmenin aynısı. Bu bir eşik SEÇİMİ değil, bootstrap'ın
+tanım sınırıdır.
+
+### Ertelenen: kümülatif R eğrisi
+
+Tez karar 36'dan geliyordu: boyut `risk_per_trade × GÜNCEL sermaye` ile kurulduğu için
+özsermaye eğrisi bileşiklenme yolunu taşır ve `|net R| ≈ 0` iken hesap getirisi bir edge
+ölçüsü DEĞİLDİR (orada iki model aynı toplam R ile −%4.04 ↔ +%6.06 getirmişti). Öneri:
+özsermaye eğrisinin yanına bileşiklenmesiz bir kümülatif R eğrisi koymak.
+
+Ölçüm (canlı scalp defteri) tezi bu pencerede **doğrulamadı:**
+
+| model | n | toplam R | maxDD(R) | getiri | maxDD |
+|---|---:|---:|---:|---:|---:|
+| `scalp_fixed` | 37 | −11.48 | −12.94 | −%11.10 | −%12.89 |
+| `scalp_bandit` | 32 | −9.42 | −9.44 | −%9.25 | −%9.64 |
+| `vwap_clone` | 184 | −149.72 | −150.03 | −%27.60 | −%27.84 |
+
+İki eğri **aynı hikâyeyi** anlatıyor. Sebep açık: hesap henüz yeterince hareket etmedi
+(10.000 → 8.890), yani bileşiklenme ayrışacak kadar birikmedi. Karar 36'nın ayrışması
+223 pozisyonluk bir backtest penceresinde ve iki mertebe daha büyük |R| akışıyla oluşmuştu.
+
+Üstelik o ayrışmayı yakalayan sayılar **zaten var:** `total_r` ve `max_drawdown_r` karar
+36'da tam olarak bu işi gördü. Eğri bilgi eklemiyor, görselleştirme ekliyor.
+
+**Karar: ERTELENDİ.** Tetikleyici yazılıdır — `|toplam R|` ile hesap getirisi (yüzde
+olarak) arasındaki fark %20'yi aştığında ya da bir backtest penceresi bunu gösterdiğinde
+karar yeniden açılır. O zamana kadar iki skaler yeterlidir.
+
+Bu, ölçüm katmanının kendi kuralını kendine uygulamasıdır: bir aracın eklenmesi de
+"ölçülmeden karar verilmez" ilkesine tabidir.

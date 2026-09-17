@@ -57,6 +57,10 @@
   .ls-hero { font-size: clamp(27px, 9vw, 34px); font-weight: 650; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .ls-hero small { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 6px; letter-spacing: 0; }
   .ls-ci { font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  /* Kapı altındaki kırılım satırı: gizlenmez, SOLGUN. Okuyucu satırı görür ama
+     ortalamasını model tablosundaki bir ortalamayla aynı ağırlıkta okumaz. */
+  tr.below-gate { opacity: 0.55; }
+  .gate-mark { font-size: 10px; border: 1px solid var(--ink-muted); border-radius: 4px; padding: 0 3px; color: var(--ink-muted); }
   .ls-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
   .ls-tiles > div { min-width: 0; }
   .verdict { margin-top: var(--gap); }
@@ -601,14 +605,24 @@ function renderScalp(d) {
       "</tbody></table></div>"
     : "";
 
-  renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol");
-  renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol");
-  renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı");
+  // Kapı, kırılımı ÜRETEN yükten okunur (base yükünün değil): iki katmanın eşiği
+  // bugün aynı olsa da birinden okuyup diğerine uygulamak sessiz bir bağ olurdu.
+  const gate = num((d.acceptance || {}).min_trades);
+  renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol", gate);
+  renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol", gate);
+  renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı", gate);
 }
 
-const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "kazanma", "toplam R", "cost/R"];
+const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "ort. R aralığı", "kazanma", "toplam R", "cost/R"];
 
-function renderBreakdown(hostId, byModel, label) {
+/* Kırılım grubu, örneklem kapısını (acceptance.min_trades) MODEL SATIRIYLA aynı
+   ölçütle geçmek zorundadır. Geçmeyen satır gizlenmez — base katmanının ölçütü zaten
+   "n=30'a ulaşılabiliyor mu" (karar 33) — ama SOLGUN çizilir ve işlem sayısının yanına
+   kapı işareti konur. Gerekçe projenin kendi geçmişidir: karar 27 (saat hipotezi) ve
+   karar 28 (kayıp serisi) tam olarak bir kırılım grubunun ortalamasına bakıp kural
+   yazma denemeleriydi; ikisi de daha uzun örneklemde çürüdü. Grup ortalamasını
+   örneklemsiz göstermek o hatayı arayüzün içine yerleştirmek olurdu. */
+function renderBreakdown(hostId, byModel, label, gate) {
   const host = el(hostId);
   if (!byModel || !Object.keys(byModel).length) {
     host.innerHTML = '<p class="empty">Henüz kırılım üretecek kapanmış işlem yok.</p>';
@@ -627,13 +641,18 @@ function renderBreakdown(hostId, byModel, label) {
       BREAKDOWN_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
       names.map((name) => {
         const g = groups[name] || {};
-        return '<tr class="data"><td>' + esc(name) + "</td>" +
-          "<td>" + (g.trades ?? DASH) + "</td>" +
+        const n = num(g.trades);
+        const short = gate !== null && gate !== undefined && n !== null && n < gate;
+        return '<tr class="data' + (short ? " below-gate" : "") + '"><td>' + esc(name) + "</td>" +
+          "<td>" + (g.trades ?? DASH) + (short ? ' <span class="gate-mark" title="örneklem kapısının altında: bu ortalama bir ölçüm değil">Ö</span>' : "") + "</td>" +
           '<td class="' + signClass(g.avg_r) + '">' + fmtSigned(g.avg_r) + "</td>" +
+          "<td>" + ciBand(g.avg_r_ci_low, g.avg_r_ci_high) + "</td>" +
           "<td>" + pct(g.win_rate) + "</td>" +
           '<td class="' + signClass(g.total_r) + '">' + fmtSigned(g.total_r, 1) + "</td>" +
           "<td>" + fmt(g.cost_per_r, 3) + "</td></tr>";
-      }).join("") + "</tbody></table></div></div>";
+      }).join("") + "</tbody></table></div></div>" +
+      (gate ? '<p class="note">Ö = örneklem kapısının altında (n &lt; ' + gate +
+        "): satır gizlenmez ama ortalaması bir ölçüm değil gürültüdür.</p>" : "");
   }).join("");
 }
 

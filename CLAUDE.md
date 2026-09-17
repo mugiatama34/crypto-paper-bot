@@ -612,6 +612,15 @@ bir ayrışma satırı olarak girer.
 gruplama ölçütüne göre böler ve her grup için aynı metrikleri hesaplar; hangi kırılımların
 üretileceği katman ayarıdır (`layers.<ad>.breakdowns`). Scalp katmanı ikisini de ister:
 
+⚠ **Grup ortalaması, MODEL satırıyla aynı ölçütle okunur: örneklem kapısı ve aralık.** Her
+grup kendi `avg_r_ci_low/high` değerini alır (tohum grup adına bağlıdır) ve `acceptance.min_trades`
+altında kalan satır dashboard'da **solgun** çizilip `Ö` işareti taşır. Satır gizlenmez — base
+katmanının ölçütü zaten "n=30'a ulaşılabiliyor mu"dur (karar 33) — ama ortalaması bir ölçüm
+değil gürültüdür. Gerekçe projenin kendi geçmişidir: karar 27 (saat hipotezi) ve karar 28
+(kayıp serisi cooldown'u) tam olarak bir KIRILIM grubunun ortalamasına bakıp kural yazma
+denemeleriydi ve ikisi de daha uzun örneklemde çürüdü. Grup ortalamasını örneklemsiz
+göstermek, o hatayı arayüzün içine yerleştirmek olurdu.
+
 - **kol** (`arm`) — hangi kolun kaç işlem yaptığı, ortalama R'si ve kazanma oranı. Grup ölçütü
   `signal_reason` kuyruğundaki `arm=` etiketidir; etiket yoksa `TagError` fırlatılır, satır
   sessizce atlanmaz (atlamak kırılım toplamı ile model toplamını ayrıştırırdı).

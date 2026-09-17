@@ -19,6 +19,7 @@ from core.tags import TagError, format_tags
 from core.metrics import (
     acceptance_flags,
     bootstrap_diff_ci,
+    bootstrap_mean_ci,
     account_stats,
     annotate_loss_streak,
     arm_of,
@@ -1526,3 +1527,49 @@ def test_reference_timestamps_are_read_as_utc(tmp_path: Path) -> None:
 
     assert stats.market_measured == 1
     assert stats.market_tailwind_pct == pytest.approx(2.0)
+
+
+def test_breakdown_groups_carry_their_own_interval() -> None:
+    """Grup ortalaması da örneklemiyle ve aralığıyla birlikte raporlanır.
+
+    Karar 27 (saat hipotezi) ve karar 28 (kayıp serisi cooldown'u) tam olarak bir
+    KIRILIM grubunun ortalamasına bakıp kural yazma denemeleriydi; ikisi de daha uzun
+    örneklemde çürüdü. Grup ortalamasını aralıksız göstermek, o hatayı ölçüm katmanının
+    içine yerleştirmek olurdu.
+    """
+    trades = [
+        _trade(pnl=100.0 if index % 2 else -100.0, risk=100.0,
+               signal_reason=format_tags("kurulum", arm="a" if index < 6 else "b"))
+        for index in range(12)
+    ]
+
+    groups = breakdown(trades, key=arm_of, ci_alpha=0.05, bootstrap_samples=200, seed=7)
+    again = breakdown(trades, key=arm_of, ci_alpha=0.05, bootstrap_samples=200, seed=7)
+
+    assert set(groups) == {"a", "b"}
+    for name, stats in groups.items():
+        assert not math.isnan(stats.avg_r_ci_low)
+        assert stats.avg_r_ci_low <= stats.avg_r <= stats.avg_r_ci_high
+        # Aynı defter, aynı aralık: tohum grup adına bağlıdır ve titremez.
+        assert stats.avg_r_ci_low == again[name].avg_r_ci_low
+
+
+def test_breakdown_reports_no_interval_when_bootstrap_is_off() -> None:
+    trades = [_trade(pnl=100.0, signal_reason=format_tags("kurulum", arm="a"))]
+    (stats,) = breakdown(trades, key=arm_of).values()
+    assert math.isnan(stats.avg_r_ci_low)
+
+
+def test_single_observation_has_no_interval_only_a_value() -> None:
+    """Tek gözlemde bootstrap dejenere bir aralık üretir; `_stdev` ile aynı sınır.
+
+    `[+0.08, +0.08]` okuyucuya kıl payı bir kesinlik vaat eder, oysa yeniden
+    örneklenecek bir dağılım yoktur. Eşik serbest bir parametre değil, bootstrap'ın
+    tanım sınırıdır.
+    """
+    assert bootstrap_mean_ci([0.08], alpha=0.05, iterations=500, seed=1) == (
+        pytest.approx(float("nan"), nan_ok=True),
+        pytest.approx(float("nan"), nan_ok=True),
+    )
+    low, high = bootstrap_mean_ci([0.08, -1.0], alpha=0.05, iterations=500, seed=1)
+    assert not math.isnan(low) and low < high
