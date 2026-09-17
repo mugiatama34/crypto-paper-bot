@@ -594,6 +594,54 @@ class Portfolio:
             if position.initial_stop_price is not None
         )
 
+    def concentration(self, model: str, marks: Mapping[str, float]) -> dict[str, float]:
+        """Açık pozisyonların YOĞUNLAŞMASI: net/brüt maruziyet ve en büyük sembol payı.
+
+        **Bu bir ÖLÇÜMDÜR, bir kural DEĞİL** — hiçbir sinyal bu sayılara göre elenmez ve
+        hiçbir pozisyon boyutu onlara göre değişmez (seans ve kayıp serisi kırılımlarıyla
+        aynı statü). Gerekçe: "sinyal ≠ emir; korelasyon ve net beta tavanı gerekir"
+        önerisi makul görünüyor ama bugün ölçülen bir şeye dayanmıyor — modellerin
+        gerçekten yoğunlaşıp yoğunlaşmadığını söyleyen bir sayı yok. Tavan koymak ise
+        BEDAVA değil: 13 sembollük bir kripto evreninde pozisyonlar birbirine yüksek
+        korelasyonludur, yani bir korelasyon tavanı `max_positions` kotasını (5) pratikte
+        1-2'ye indirir ve `acceptance.min_trades` (30) kapısına zaten zor ulaşan bir
+        katmanda ölçümü durdurur. Kural 11'in "atlamak işlem sayısını sessizce düşürür"
+        itirazının aynısı, daha sert hâli.
+
+        Kaba bir portföy katmanı zaten VAR (`max_positions`, `max_short_positions`,
+        kopyanın `max_portfolio_risk`i); eksik olan, o katmanın yetip yetmediğini
+        söyleyecek sayıydı.
+
+        Döndürülen alanlar (hepsi özsermayenin katı; pozisyon yoksa hepsi 0.0):
+
+        - `net_exposure`   — (long notional − short notional) / özsermaye. Yönlü
+          maruziyet: kripto evreninde bu sayı kabaca BTC betasının vekilidir.
+        - `gross_exposure` — (long + short) / özsermaye. Kaldıracın gerçekleşen hâli.
+        - `top_symbol_share` — en büyük tek sembolün brüt içindeki payı. 1.0 "tüm risk
+          tek sembolde", 1/n "eşit dağılmış" demektir.
+
+        Notional GÜNCEL fiyattan ölçülür, girişten değil: sorulan şey "şu an ne kadar
+        maruzuz", "ne kadar maruz kalmıştık" değil.
+        """
+        account = self.account(model)
+        equity = self.equity(model, marks)
+        if not account.positions or equity <= 0.0:
+            return {"net_exposure": 0.0, "gross_exposure": 0.0, "top_symbol_share": 0.0}
+
+        by_symbol: dict[str, float] = {}
+        net = 0.0
+        for position in account.positions:
+            notional = position.qty * _mark(position, marks)
+            by_symbol[position.symbol] = by_symbol.get(position.symbol, 0.0) + notional
+            net += notional if position.direction == "long" else -notional
+
+        gross = sum(by_symbol.values())
+        return {
+            "net_exposure": net / equity,
+            "gross_exposure": gross / equity,
+            "top_symbol_share": (max(by_symbol.values()) / gross) if gross > 0.0 else 0.0,
+        }
+
     def unrealized_pnl(self, model: str, marks: Mapping[str, float]) -> float:
         return sum(
             _gross_pnl(position, _mark(position, marks), position.qty)

@@ -206,6 +206,29 @@ bir modeli ölçerdi.
 Kullanılan değer her koşuda `manifest.json > history_bars` altında (`config` ve `used`)
 yazılı durur.
 
+### 5f. Uzun pencere bir DERİNLİK sorunudur, bir niyet değil
+
+"2-3 yıllık araştırma backtest'i" ayrı bir motor ya da ayrı bir mimari gerektirmez —
+harness zaten canlı motoru geçmiş bir pencerede koşturur (§0). Gerektiren şey **veridir**
+ve sınır ağdadır, diskte değil:
+
+- OKX `history-candles` istek başına **100 bar** verir. 3 yıllık 15m verisi sembol başına
+  ~105.000 bar, 13 sembol için ~13.600 istek demektir — throttle ile saatler.
+- `data/` depoya GİRMEZ (çalışma zamanı verisi, denetim izi değil) ve runner her koşuda
+  sıfırdan kurulur; önbelleksiz her koşu bu maliyeti baştan öder.
+
+Bu yüzden `backtest.yml` mum önbelleğini koşular arasında **taşır** (`actions/cache`,
+rolling anahtar). Önbellek ölçümü değiştiremez: `core/data.py` yalnızca EKSİK barları
+çeker ve kapanmamış barı zaten atar (kural 12). Bayat bir önbellek **eksik** bar üretir,
+yanlış bar değil — ve eksik bar B-2 kapısında (`missing_bars`,
+`unchecked_position_bars`) görünür, sessizce geçmez.
+
+**Pencere uzadıkça §5b'nin evren look-ahead uyarısı AĞIRLAŞIR.** `scalp`in sabit 13
+sembolü bugün bilinerek seçildi; 2023'e uzanan bir pencerede bu listenin bir kısmı ya
+listelenmemişti ya da ince kitaplıydı, ve o dönemde likit olup bugün düşmüş semboller hiç
+görünmez. Uzun pencerenin MUTLAK getirisi bu yüzden bir tahmin değildir; modeller ARASI
+kıyas geçerli kalır (hepsi aynı evreni görür, kural 6).
+
 ---
 
 ## 6. Kontaminasyon ve OOS

@@ -43,6 +43,10 @@ from core.metrics import (
     session_of,
     symbol_of,
 )
+# Yoğunlaşma hesabı burada YAZILMAZ, Portfolio'dan çağrılır (kural 7): bu modül çizer,
+# hesaplamaz — ikinci bir maruziyet hesabı, dashboard'un motorun bilmediği bir sayı
+# göstermesi demekti.
+from core.portfolio import Portfolio
 from core.tags import find_tag
 from strategies.base import MarketData
 
@@ -139,6 +143,10 @@ def build_dashboard(
         "correlation": return_correlation(equity),
         "equity": {model: equity_series(rows) for model, rows in equity.items()},
         "open_positions": positions,
+        # Portföy yoğunlaşması: ÖLÇÜM, kural değil (bkz. concentration).
+        "concentration": concentration(
+            models, ledger=ledger, config=config_dict, marks=marks
+        ),
         "recent_trades": recent_trades(trades, limit=RECENT_TRADE_LIMIT),
         "model_trades": model_trades(trades, limit=model_trade_limit),
         "breakdowns": model_breakdowns(trades, kinds=breakdowns),
@@ -274,6 +282,36 @@ def open_positions(
         for payload in state.get("positions", ()) or ():
             rows.append(_position_row(model, payload, marks))
     rows.sort(key=lambda row: (row["model"], row["symbol"]))
+    return rows
+
+
+def concentration(
+    models: Sequence[str],
+    *,
+    ledger: Ledger,
+    config: Mapping[str, Any],
+    marks: Mapping[str, float],
+) -> dict[str, dict[str, float]]:
+    """Model -> açık pozisyonların yoğunlaşması (net/brüt maruziyet, en büyük sembol payı).
+
+    Hesap BURADA YAPILMAZ: `core/portfolio.py::Portfolio.concentration` çağrılır (kural 7
+    ve bu modülün sözleşmesi — rapor çizer, hesaplamaz). Portföy defterin durumundan
+    kurulur, yani sayı `positions.json`daki aynı pozisyonlardan gelir; ikinci bir yol,
+    dashboard'un motorun bilmediği bir maruziyet göstermesi demekti.
+
+    **Bu bir ÖLÇÜMDÜR, bir kural değil.** Hiçbir sinyal bu sayılara göre elenmez. Neden
+    yine de raporlanıyor: bir korelasyon/net beta tavanı önerisi ancak modellerin
+    gerçekten yoğunlaştığı GÖSTERİLİRSE tartışılabilir ve bugün o sayı hiçbir yerde yok
+    (bkz. `Portfolio.concentration`).
+    """
+    portfolio = Portfolio(config)
+    rows: dict[str, dict[str, float]] = {}
+    for model in models:
+        state = ledger.load_state(model)
+        if not state:
+            continue
+        portfolio.load_state(model, state)
+        rows[model] = portfolio.concentration(model, marks)
     return rows
 
 

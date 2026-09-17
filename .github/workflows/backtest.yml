@@ -33,6 +33,10 @@ on:
         description: "Anlık görüntü derinliği (boş = config); yalnızca derinleştirir"
         required: false
         default: ""
+      embargo_bars:
+        description: "OOS boşluğu (boş = yok); IS kurulumlarının çözüldüğü barlar atlanır"
+        required: false
+        default: ""
       verify_live:
         description: "KAPI 0: karşılaştırılacak rapor dosyası (boş = atla)"
         required: false
@@ -70,6 +74,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Mum önbelleği koşular arasında TAŞINIR. `data/` depoya girmez (çalışma zamanı
+      # verisi, denetim izi değil) ve runner her koşuda sıfırdan kurulur; önbelleksiz her
+      # backtest tüm pencereyi baştan indirir. OKX'in history-candles uç noktası istek
+      # başına 100 bar verdiği için uzun pencere = binlerce istek = saatler, ve pratikte
+      # `--history-bars`ın derinleştirebileceği sınırı ağ belirler, disk değil.
+      #
+      # Önbellek ölçümü DEĞİŞTİREMEZ: `core/data.py` yalnızca EKSİK barları çeker ve
+      # kapanmamış barı zaten atar (kural 12). Bayat bir önbellek eksik bar üretir, yanlış
+      # bar değil — ve eksik bar `missing_bars`/`unchecked_position_bars` ile B-2 kapısında
+      # görünür (docs/backtest.md > 3), sessizce geçmez.
+      #
+      # Anahtar her koşuda tazelenir, restore-keys ile en son önbellek geri yüklenir:
+      # "yükle, eksiği tamamla, yeniden kaydet" — rolling cache.
+      - name: Restore market data cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: market-data-${{ inputs.layer }}-${{ github.run_id }}
+          restore-keys: |
+            market-data-${{ inputs.layer }}-
+
       - name: Run backtest
         run: |
           python scripts/backtest.py \
@@ -78,6 +103,7 @@ jobs:
             --end "${{ inputs.end }}" \
             ${{ inputs.models != '' && format('--models "{0}"', inputs.models) || '' }} \
             ${{ inputs.history_bars != '' && format('--history-bars {0}', inputs.history_bars) || '' }} \
+            ${{ inputs.embargo_bars != '' && format('--embargo-bars {0}', inputs.embargo_bars) || '' }} \
             ${{ inputs.verify_live != '' && format('--verify-live "{0}"', inputs.verify_live) || '' }} \
             --out "backtests/run" \
             --log-level INFO
