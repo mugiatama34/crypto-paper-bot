@@ -520,6 +520,49 @@ vwap:
       min_bar_quote_volume: 250000
       lookback: 96
 
+  # Mod B (model 21, `vwap_bounce`) — F2'nin ikinci kanadı: TREND gününde VWAP'e
+  # dönüşte trend yönünde giriş. Gövde `vwap_scored` ile ORTAKTIR (boyut, maker giriş,
+  # zaman stop'u, likidite, korelasyon); bu blok yalnızca ayrışan üç noktayı taşır ve
+  # ortak gövdenin okuduğu anahtarları AYNI adlarla tekrar eder — iki modelin aynı
+  # kuralı iki farklı sayıyla okuması, "kurulum farkı" iddiasını çürütürdü.
+  bounce:
+    # --- Kurulum (Mod A'dan ayrışan tek şey) ---
+    min_slope_sigma: 1.0    # seans VWAP'i `slope_bars` barda en az bu kadar σ yol almalı
+    slope_bars: 16          # 4 saat: seansın yönü bir barın gürültüsünden okunamaz
+    touch_sigma: 0.25       # VWAP'e "değdi" sayılan bant
+    stop_sigma: 0.75        # stop VWAP'in ÖTESİNDE: tezin çürüdüğü yer
+    target_reward_risk: 1.5 # hedef PROJEKSİYONU; gerçek hedef bununla önceki UCUN yakını
+    extreme_lookback: 24    # "bir önceki uç" 6 saatlik pencerede aranır
+    min_reward_risk: 1.0    # altında kurulum atlanır (istenen 1.0-1.5R bandının tabanı)
+    min_bars: 8
+
+    # --- Rejim: kademe TERSİNE döner ---
+    regime:
+      adx_period: 14
+      adx_min: 25.0         # altında bounce YOK. Mod A'nın tavanı 30, yani 25-30 bandında
+                            # İKİ model de YARIM boyla konuşur; bu bir çakışma değil, iki
+                            # tezin de zayıf konuştuğu bölgedir ve ayrı defterlerde ölçülür.
+      adx_full: 30.0        # üstü TAM boy
+      adx_max: 100.0        # bounce için üst tavan yoktur; tez güçlü trendin kendisidir
+
+    # --- Ortak gövdenin okuduğu anahtarlar (Mod A ile AYNI değerler) ---
+    max_new_per_bar: 2
+    score:
+      volume_lookback: 20
+      rejection_ratio: 0.5
+      rejection_weight: 0.6
+    size:
+      full: 0.6
+      half: 0.3
+    entry:
+      use_limit: true
+    time_stop:
+      bars: 8
+      min_progress_r: 0.3
+    liquidity:
+      min_bar_quote_volume: 250000
+      lookback: 96
+
   # Model 18 — kopyanın CANLIYA HAZIRLANMIŞ uyarlaması (strategies/vwap_guarded.py).
   # Model 13'ün kuralları DEĞİŞTİRİLMEDİ (kural 15b: değiştirilen kopya kopya olmaktan
   # çıkar); uyarlama ayrı bir modeldir ve buradaki sayılar YALNIZCA onundur.

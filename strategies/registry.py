@@ -35,6 +35,7 @@ from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_guarded import VwapGuarded
 from strategies.vwap_managed import VwapManaged
+from strategies.vwap_bounce import VwapBounce
 from strategies.vwap_scored import VwapScored
 from strategies.vwap_session import VwapSession
 
@@ -85,6 +86,11 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # zaman stop'u, risk boyutlandırma (5x) ve likidite kuralı. Tam YARIŞMACIDIR:
     # `sizing="risk"`, yani 1R'si yarışmacılarınkiyle aynı birimdedir.
     VwapScored.name: VwapScored,
+    # vwap_bounce (Mod B) — F2'nin ikinci kanadı: trend gününde VWAP'e dönüşte trend
+    # yönünde giriş. Gövdeyi `VwapScored`tan MİRAS ALIR; ayrışan üç nokta kurulum,
+    # ters kademe ve sıralama ölçütüdür. AYRI defter, AYRI R (ön-kayıt: tek birleşik
+    # PnL ile karar verilmez).
+    VwapBounce.name: VwapBounce,
 }
 
 

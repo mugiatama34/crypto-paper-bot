@@ -77,6 +77,9 @@ from strategies.vwap import session_signal
 
 logger = logging.getLogger(__name__)
 
+# Alt sınıflar (Mod B) kendi bloklarını okur; gövde ortaktır. Ortak gövdenin gerekçesi
+# ölçümün kendisidir: Mod A ↔ Mod B farkı ancak boyut, dolum ve zaman stop'u AYNI
+# uygulamadan geldiğinde "kurulum farkı" olarak okunabilir.
 CONFIG_PREFIX = "vwap.scored"
 
 # Sayım anahtarları. `session_signal.REASONS` ile ÇAKIŞMAZ: ikisi aynı sözlükte
@@ -101,62 +104,103 @@ class ScoredSetup:
 
 class VwapScored(Strategy):
     name = "vwap_scored"
+    config_prefix = CONFIG_PREFIX
+    arm_name = session_signal.ARM_NAME
     allowed_directions: list[Direction] = ["long", "short"]
 
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:
         settings = dict(config) if config is not None else load_config()
-        self._params = session_signal.SessionParams(
-            band_mult=float(get_setting(settings, f"{CONFIG_PREFIX}.band_mult")),
-            tp_mult=float(get_setting(settings, f"{CONFIG_PREFIX}.tp_mult")),
-            sl_mult=float(get_setting(settings, f"{CONFIG_PREFIX}.sl_mult")),
-        )
-        self._min_bars = int(get_setting(settings, f"{CONFIG_PREFIX}.min_bars"))
-        self._max_new = int(get_setting(settings, f"{CONFIG_PREFIX}.max_new_per_bar"))
-        self._adx_period = int(get_setting(settings, f"{CONFIG_PREFIX}.regime.adx_period"))
-        self._adx_full = float(get_setting(settings, f"{CONFIG_PREFIX}.regime.adx_full"))
-        self._adx_max = float(get_setting(settings, f"{CONFIG_PREFIX}.regime.adx_max"))
+        self._load_signal_params(settings)
+        self._max_new = int(get_setting(settings, f"{self.config_prefix}.max_new_per_bar"))
+        self._adx_period = int(get_setting(settings, f"{self.config_prefix}.regime.adx_period"))
+        self._adx_full = float(get_setting(settings, f"{self.config_prefix}.regime.adx_full"))
+        self._adx_max = float(get_setting(settings, f"{self.config_prefix}.regime.adx_max"))
         self._volume_lookback = int(
-            get_setting(settings, f"{CONFIG_PREFIX}.score.volume_lookback")
+            get_setting(settings, f"{self.config_prefix}.score.volume_lookback")
         )
         self._rejection_ratio = float(
-            get_setting(settings, f"{CONFIG_PREFIX}.score.rejection_ratio")
+            get_setting(settings, f"{self.config_prefix}.score.rejection_ratio")
         )
         self._rejection_weight = float(
-            get_setting(settings, f"{CONFIG_PREFIX}.score.rejection_weight")
+            get_setting(settings, f"{self.config_prefix}.score.rejection_weight")
         )
-        self._size_full = float(get_setting(settings, f"{CONFIG_PREFIX}.size.full"))
-        self._size_half = float(get_setting(settings, f"{CONFIG_PREFIX}.size.half"))
-        self._use_limit = bool(get_setting(settings, f"{CONFIG_PREFIX}.entry.use_limit"))
-        self._time_stop_bars = int(get_setting(settings, f"{CONFIG_PREFIX}.time_stop.bars"))
+        self._size_full = float(get_setting(settings, f"{self.config_prefix}.size.full"))
+        self._size_half = float(get_setting(settings, f"{self.config_prefix}.size.half"))
+        self._use_limit = bool(get_setting(settings, f"{self.config_prefix}.entry.use_limit"))
+        self._time_stop_bars = int(get_setting(settings, f"{self.config_prefix}.time_stop.bars"))
         self._min_progress_r = float(
-            get_setting(settings, f"{CONFIG_PREFIX}.time_stop.min_progress_r")
+            get_setting(settings, f"{self.config_prefix}.time_stop.min_progress_r")
         )
         self._min_quote_volume = float(
-            get_setting(settings, f"{CONFIG_PREFIX}.liquidity.min_bar_quote_volume")
+            get_setting(settings, f"{self.config_prefix}.liquidity.min_bar_quote_volume")
         )
         self._liquidity_lookback = int(
-            get_setting(settings, f"{CONFIG_PREFIX}.liquidity.lookback")
+            get_setting(settings, f"{self.config_prefix}.liquidity.lookback")
         )
         self._bar = bar_duration(str(get_setting(settings, "timeframe")))
         for name, value in (("size.full", self._size_full), ("size.half", self._size_half)):
             if not 0.0 < value <= 1.0:
                 raise ValueError(
-                    f"{CONFIG_PREFIX}.{name} (0, 1] aralığında olmalı — boyut ölçeği "
+                    f"{self.config_prefix}.{name} (0, 1] aralığında olmalı — boyut ölçeği "
                     f"yalnızca KÜÇÜLTÜR (kural 3/11): {value}"
                 )
         if self._size_half > self._size_full:
             raise ValueError(
-                f"{CONFIG_PREFIX}.size.half, size.full'dan büyük olamaz: "
+                f"{self.config_prefix}.size.half, size.full'dan büyük olamaz: "
                 f"{self._size_half} > {self._size_full}"
             )
         if self._adx_full > self._adx_max:
-            raise ValueError(f"{CONFIG_PREFIX}.regime: adx_full, adx_max'ı aşamaz")
+            raise ValueError(f"{self.config_prefix}.regime: adx_full, adx_max'ı aşamaz")
         if self._max_new < 1:
-            raise ValueError(f"{CONFIG_PREFIX}.max_new_per_bar en az 1 olmalı")
+            raise ValueError(f"{self.config_prefix}.max_new_per_bar en az 1 olmalı")
 
         self._survey: dict[str, int] = {}
         self._open: tuple[tuple[str, Direction], ...] = ()
         self._open_at: pd.Timestamp | None = None
+
+    # ------------------------------------------------------------------ #
+    # Alt sınıfın değiştirebileceği ÜÇ nokta — her biri ölçülen bir eksene
+    # karşılık gelmek zorundadır (`strategies/scalp/model.py`nin aynı kuralı):
+    #   _load_signal_params + _detect  -> KURULUM (Mod A fade ↔ Mod B bounce)
+    #   _regime_tier                   -> rejimin BOYUTA çevrilmesi (ters kademe)
+    #   _extension                     -> sıralama ölçütü (sapma ↔ geometri)
+    # Karşılığı bir eksen olmayan bir override noktası eklenemez.
+    # ------------------------------------------------------------------ #
+    def _load_signal_params(self, settings: Mapping[str, Any]) -> None:
+        self._params = session_signal.SessionParams(
+            band_mult=float(get_setting(settings, f"{self.config_prefix}.band_mult")),
+            tp_mult=float(get_setting(settings, f"{self.config_prefix}.tp_mult")),
+            sl_mult=float(get_setting(settings, f"{self.config_prefix}.sl_mult")),
+        )
+        self._min_bars = int(get_setting(settings, f"{self.config_prefix}.min_bars"))
+
+    def _detect(self, frame: pd.DataFrame, *, symbol: str, as_of: pd.Timestamp):
+        return session_signal.detect(
+            frame, symbol=symbol, as_of=as_of, params=self._params, min_bars=self._min_bars
+        )
+
+    def _empty_counts(self) -> dict[str, int]:
+        return session_signal.empty_counts()
+
+    def _describe(self, counts: Mapping[str, int]) -> str:
+        return session_signal.Survey(counts=counts).describe()
+
+    def _regime_tier(self, strength: float) -> tuple[float, float] | None:
+        """Trend gücünü (boyut ölçeği, skor ağırlığı) çiftine çevirir; None = kurulum düşer.
+
+        Mod A'da kademe TERS yönlüdür (sakin rejim = tam boy), çünkü fade sakin günde
+        çalışır. Mod B onu tersine çevirir ve gerekçe aynıdır: bounce tezinin geçerli
+        olduğu yer GÜÇLÜ trenddir.
+        """
+        if strength > self._adx_max:
+            return None
+        return (
+            (self._size_full, 1.0) if strength < self._adx_full else (self._size_half, 0.5)
+        )
+
+    def _extension(self, candidate: Any) -> float:
+        """Sıralama ölçütünün SİNYALDEN gelen parçası; skorun geri kalanı ortaktır."""
+        return abs(candidate.z) / self._params.band_mult
 
     # ------------------------------------------------------------------ #
     # Sinyal
@@ -167,7 +211,7 @@ class VwapScored(Strategy):
         peer_signals: Mapping[str, tuple[Signal, ...]] | None = None,
     ) -> list[Signal]:
         """Skorla sıralanmış en iyi `max_new_per_bar` kurulum."""
-        counts = session_signal.empty_counts()
+        counts = self._empty_counts()
         setups: list[ScoredSetup] = []
 
         for symbol in sorted(market.ohlcv):
@@ -175,10 +219,7 @@ class VwapScored(Strategy):
             if frame is None or not self._liquid(frame, as_of=market.as_of):
                 self._count(THIN_BOOK)
                 continue
-            candidate, reason = session_signal.detect(
-                frame, symbol=symbol, as_of=market.as_of,
-                params=self._params, min_bars=self._min_bars,
-            )
+            candidate, reason = self._detect(frame, symbol=symbol, as_of=market.as_of)
             counts[reason] += 1
             if candidate is None:
                 continue
@@ -204,8 +245,8 @@ class VwapScored(Strategy):
 
         logger.info(
             "%s %s %s -> %s; skorlanan=%d, açılan=%d",
-            self.name, session_signal.ARM_NAME, market.as_of.isoformat(),
-            session_signal.Survey(counts=counts).describe(), len(setups), len(signals),
+            self.name, self.arm_name, market.as_of.isoformat(),
+            self._describe(counts), len(setups), len(signals),
         )
         return signals
 
@@ -261,9 +302,11 @@ class VwapScored(Strategy):
             # tam boy açmak, kademeyi hiç koymamakla aynı şey olurdu.
             self._count(TRENDING)
             return None
-        if strength > self._adx_max:
+        tier = self._regime_tier(strength)
+        if tier is None:
             self._count(TRENDING)
             return None
+        size_scale, regime_weight = tier
 
         volumes = frame["volume"].to_numpy(dtype="float64")
         baseline = (
@@ -278,20 +321,20 @@ class VwapScored(Strategy):
         )
         rejection = _rejection(frame.iloc[-1], direction=candidate.direction,
                                ratio=self._rejection_ratio)
-        regime_weight = 1.0 if strength < self._adx_full else 0.5
-        extension = abs(candidate.z) / self._params.band_mult
-        score = extension * exhaustion * (1.0 if rejection else self._rejection_weight) * regime_weight
+        extension = self._extension(candidate)
+        score = (
+            extension * exhaustion
+            * (1.0 if rejection else self._rejection_weight)
+            * regime_weight
+        )
 
         limit = self._limit_price(candidate, frame=frame)
         if limit is None:
             self._count(NO_LIMIT)
             return None
         return ScoredSetup(
-            candidate=candidate,
-            score=score,
-            adx=strength,
-            size_scale=self._size_full if strength < self._adx_full else self._size_half,
-            limit_price=limit,
+            candidate=candidate, score=score, adx=strength,
+            size_scale=size_scale, limit_price=limit,
         )
 
     def _limit_price(
@@ -385,7 +428,7 @@ class VwapScored(Strategy):
                 f"{candidate.stop_price:.6g}, hedef {candidate.target_price:.6g}; "
                 f"ilerleme koşullu zaman stop'u {self._time_stop_bars} bar / "
                 f"{self._min_progress_r:g}R",
-                arm=session_signal.ARM_NAME,
+                arm=self.arm_name,
                 score=setup.score,
                 adx=setup.adx,
                 scale=scale,
