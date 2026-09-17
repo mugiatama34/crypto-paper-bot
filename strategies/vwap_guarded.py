@@ -20,6 +20,40 @@ gerekçeleridir, hiçbiri "daha iyi görünen sayı" arayışı değildir:
 | 6 | zaman stop'u yok | **`vwap.guarded.time_stop_bars` (10 bar)** | dönmeyen kurulum marjı süresiz tutar |
 | 7 | 12 sembollük kaynak evreni | **kendi evreni (PENGU/ETHFI yok)** | bkz. aşağıda "sembol elemesi" |
 | 8 | risk kesici yok | **günlük zarar limiti + drawdown kill-switch + korelasyon kotası** | canlı bir hesabın ölçümde karşılığı olmayan tek eksiği buydu |
+| 9 | öğrenme: 9 kombinasyon, ε=0.25, sembol eşiği 3, ödül = ham ort. R | **aynı 3×3 iskelet, ε=0.10, sembol eşiği 30, ödül drawdown ile cezalandırılmış** | bkz. "Öğrenme" |
+
+**Öğrenme (epsilon-greedy, kaynağın iskeleti korunur).** Kopya bant ve hedef çarpanını
+öğrenir; bu model de öğrenir ama üç yerde ayrışır:
+
+1. **Ödül işlem MALİYETİNİ zaten içerir.** Öğrenmenin girdisi `ClosedTrade.r_multiple`dır
+   ve o `pnl / risk_amount`tır — `pnl` komisyon, kayma ve funding DÜŞÜLMÜŞ nettir
+   (`core/portfolio.py`). Yani "ödüle işlem maliyetini ekle" bu depoda bir değişiklik
+   değil, zaten geçerli olan tanımın kendisidir; burada yazılı olmasının sebebi, bunun
+   sessiz bir varsayım olarak kalmamasıdır.
+2. **Ödül DRAWDOWN ile cezalandırılır:** `skor = (Σr − w × en_derin_düşüş_R) / n`. Ceza
+   bir kez ve TAM olarak uygulanır (`w = 1.0`), örnekleme bölünerek: iki kombinasyon aynı
+   ortalama R'yi verdiğinde, oraya daha derin bir çukurdan geçerek ulaşan kaybeder.
+   Ortalama R tek başına sıralama ölçütü olsaydı, "önce 10R kaybedip sonra 12R kazanan"
+   bir kol "hiç kaybetmeden 2R kazanan" ile aynı görünürdü — canlı bir hesapta ikisi aynı
+   şey DEĞİLDİR.
+3. **Sembol eşiği 30'dur** (kopyada 3). Bir kombinasyonun o semboldeki ortalaması ancak
+   `acceptance.min_trades` kadar örnekle GÜVENİLİRDİR; altında kalan hücre tüm semboller
+   genelindeki ortalamaya düşer. Eşiğin kabul çıtasıyla aynı sayı olması tesadüf değil:
+   "bu ortalama bir ölçüm mü, gürültü mü" sorusunun cevabı öğrenme içinde de aynı olmalı.
+4. **Keşif payı 0.25 değil 0.10'dur.** Sıfıra İNMEZ (kopyanın ve `scalp_bandit`in aynı
+   gerekçesi: susturulan kombinasyon bir daha ÖLÇÜLEMEZ ve "kötüydü" iddiası sınanamaz
+   hâle gelir), ama canlı bir hesapta keşfin bedelini gerçek işlemler öder — 0.10 o bedeli
+   dörtte bire indirir.
+
+**Isınma GLOBALDİR, sembol başına değil** (kopyada sembol başınadır). Gerekçe 3. maddenin
+doğrudan sonucudur: sembol istatistiğine 30 örnekten önce güvenilmiyorsa, "bu sembolde
+denenmemiş kombinasyon" da bir ısınma ölçütü olamaz — 9 kombinasyon × 11 sembol, bu
+katmanın tüm örneklemini saf keşfe harcardı.
+
+**Stop çarpanı grid'in EKSENİ DEĞİLDİR** (`atr_multiple` sabit 2.5). Stop mesafesi aynı
+zamanda maliyet ölçeğidir (kural 14) ve onu öğrenmeye açmak, modelin kendi ⚠B bandını
+koşu sırasında kaydırması demekti: iki koşunun `avg_stop_distance_pct` değeri ayrışır ve
+kıyas geçersizleşir.
 
 **Ev kapıları GEÇERLİDİR** (model 14 ile aynı anahtarlardan): %1 stop tabanı ve 1.5R
 hedef/stop kapısı `scalp.*`tan okunur. İki ayrı anahtar açmak, iki ayrı çıta demekti.
@@ -70,14 +104,16 @@ Rollere dikkat: bu modül boyut/komisyon/bakiye hesaplamaz (kural 1/2/3/7), deft
 from __future__ import annotations
 
 import logging
+import random
 from collections import defaultdict
+from dataclasses import dataclass, replace
 from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
 from core.config import get_setting, load_config
 from core.data import bar_duration
-from core.tags import format_tags
+from core.tags import find_tag, format_tags
 from strategies.base import (
     ClosedTrade,
     Direction,
@@ -105,6 +141,43 @@ CORRELATION_QUOTA = "korelasyon_kotasi"
 GATE_STOP_FLOOR = "stop_tabani"
 GATE_REWARD_RISK = "hedef_stop_kapisi"
 
+NAN = float("nan")
+
+
+@dataclass(frozen=True, kw_only=True)
+class Combo:
+    """Bandit'in bir kolu: bir bant çarpanı + bir hedef oranı.
+
+    `key` deftere yazılan ve geri okunan etikettir ve İNDEKSTEN türetilir, sayıdan değil
+    (kopyadaki aynı gerekçe): "2.5" gibi bir kayan noktayı etiket anahtarı yapmak,
+    biçimlendirme ile geri ayrıştırmanın bir gün ayrışması ve öğrenmenin sessizce
+    boşalması demekti.
+    """
+
+    key: str
+    band_short: float
+    band_long: float
+    target_reward_risk: float
+
+
+@dataclass(frozen=True, kw_only=True)
+class ComboStats:
+    """Bir kombinasyonun gözlem özeti. `nan` = ölçülmedi (0.0 DEĞİL).
+
+    `score` sıralama ölçütüdür ve ortalama R'den farklıdır: `(Σr − w × maxDD) / n`.
+    İkisi ayrı alanlarda durur çünkü ikisi ayrı sorulara cevap verir — ortalama R
+    "ne kazandırdı", skor "hangi yoldan kazandırdı".
+    """
+
+    trades: int
+    mean_r: float
+    max_drawdown_r: float
+    score: float
+
+    @property
+    def measured(self) -> bool:
+        return self.trades > 0
+
 
 class VwapGuarded(Strategy):
     name = "vwap_guarded"
@@ -117,10 +190,11 @@ class VwapGuarded(Strategy):
             raise ValueError(f"{CONFIG_PREFIX}.universe boş olamaz")
         self._atr_period = int(get_setting(settings, "trailing.atr_period"))
         self._atr_multiple = float(get_setting(settings, f"{CONFIG_PREFIX}.atr_multiple"))
-        self._target_reward_risk = float(
-            get_setting(settings, f"{CONFIG_PREFIX}.target_reward_risk")
-        )
-        self._params = guarded_signal.GuardParams(
+        # Bant ve hedef oranı ÖĞRENİLİR (aşağıdaki grid); `_template` ise öğrenilmeyen
+        # kapıların tek kopyasıdır — her kombinasyon onun üstüne yalnızca kendi bandını
+        # yazar. İki ayrı GuardParams kurmak, bir gün bir kapının yalnızca bir kolda
+        # değişmesi ve farkın "kapının katkısı" olmaktan çıkması demekti.
+        self._template = guarded_signal.GuardParams(
             band_long=float(get_setting(settings, f"{CONFIG_PREFIX}.band.long")),
             band_short=float(get_setting(settings, f"{CONFIG_PREFIX}.band.short")),
             min_vwap_bars=int(get_setting(settings, f"{CONFIG_PREFIX}.min_vwap_bars")),
@@ -137,6 +211,33 @@ class VwapGuarded(Strategy):
                 get_setting(settings, f"{CONFIG_PREFIX}.exhaustion.rejection_wick_ratio")
             ),
         )
+        self._combos = _build_combos(
+            [float(v) for v in get_setting(settings, f"{CONFIG_PREFIX}.bandit.band_mults")],
+            [
+                float(v)
+                for v in get_setting(settings, f"{CONFIG_PREFIX}.bandit.target_reward_risks")
+            ],
+            long_extra=float(get_setting(settings, f"{CONFIG_PREFIX}.bandit.long_extra")),
+            floor=self._template.band_short,
+        )
+        self._epsilon = float(get_setting(settings, f"{CONFIG_PREFIX}.bandit.epsilon"))
+        if not 0.0 < self._epsilon <= 1.0:
+            raise ValueError(
+                f"{CONFIG_PREFIX}.bandit.epsilon (0, 1] aralığında olmalı — sıfır, "
+                f"susturulan kombinasyonun bir daha ölçülememesi demekti: {self._epsilon}"
+            )
+        self._min_symbol_samples = int(
+            get_setting(settings, f"{CONFIG_PREFIX}.bandit.min_symbol_samples")
+        )
+        self._drawdown_weight = float(
+            get_setting(settings, f"{CONFIG_PREFIX}.bandit.drawdown_weight")
+        )
+        if self._drawdown_weight < 0.0:
+            raise ValueError(
+                f"{CONFIG_PREFIX}.bandit.drawdown_weight negatif olamaz: "
+                f"{self._drawdown_weight}"
+            )
+        self._seed = int(get_setting(settings, "random_seed"))
         self._btc_timeframe = str(get_setting(settings, f"{CONFIG_PREFIX}.btc_bias.timeframe"))
         self._btc_ema_period = int(get_setting(settings, f"{CONFIG_PREFIX}.btc_bias.ema_period"))
         self._btc_slope_bars = int(get_setting(settings, f"{CONFIG_PREFIX}.btc_bias.slope_bars"))
@@ -182,12 +283,14 @@ class VwapGuarded(Strategy):
                 f"{CONFIG_PREFIX}.risk.max_correlated_positions en az 1 olmalı "
                 f"(0, modeli hiç işlem açamaz hâle getirirdi): {self._max_correlated}"
             )
-        if self._params.band_short <= 0.0 or self._params.band_long <= 0.0:
+        if self._template.band_short <= 0.0 or self._template.band_long <= 0.0:
             raise ValueError(f"{CONFIG_PREFIX}.band değerleri pozitif olmalı")
 
         # --- Defterden kurulan durum (kural 16: yalnızca KENDİ kapanmış işlemleri) ---
         self._daily_r: dict[pd.Timestamp, float] = {}
         self._drawdown_r = 0.0
+        self._global: dict[str, ComboStats] = _empty_stats(self._combos)
+        self._by_symbol: dict[str, dict[str, ComboStats]] = {}
         # --- Bar bazlı denetim izi ve kota defteri ---
         self._survey: dict[str, int] = {}
         self._scan_counts: Mapping[str, int] | None = None
@@ -218,6 +321,10 @@ class VwapGuarded(Strategy):
         cumulative = 0.0
         peak = 0.0
         unmeasured = 0
+        overall: dict[str, list[float]] = {combo.key: [] for combo in self._combos}
+        by_symbol: dict[str, dict[str, list[float]]] = {}
+        untagged = 0
+        unknown: set[str] = set()
 
         for trade in sorted(trades, key=lambda item: item.closed_at):
             if trade.r_multiple is None:
@@ -228,8 +335,43 @@ class VwapGuarded(Strategy):
             peak = max(peak, cumulative)
             daily[pd.Timestamp(trade.closed_at).normalize()] += value
 
+            key = find_tag(trade.signal_reason, "combo")
+            if key is None:
+                untagged += 1
+                continue
+            if key not in overall:
+                # Grid değişmişse (config'te çarpan listesi düzenlenmişse) eski satırlar
+                # yeni kollara ait DEĞİLDİR; onları yeni kolların ortalamasına katmak,
+                # öğrenmeyi defterde görünmeyen bir geçmişe bağlardı.
+                unknown.add(key)
+                continue
+            overall[key].append(value)
+            by_symbol.setdefault(trade.symbol, {k: [] for k in overall})[key].append(value)
+
         self._daily_r = dict(daily)
         self._drawdown_r = peak - cumulative
+        self._global = {
+            key: _summarize(values, weight=self._drawdown_weight)
+            for key, values in overall.items()
+        }
+        self._by_symbol = {
+            symbol: {
+                key: _summarize(values, weight=self._drawdown_weight)
+                for key, values in per_combo.items()
+            }
+            for symbol, per_combo in by_symbol.items()
+        }
+        if untagged:
+            logger.warning(
+                "%s: %d kapanmış işlemde combo etiketi yok, öğrenmeye girmedi",
+                self.name, untagged,
+            )
+        if unknown:
+            logger.warning(
+                "%s: defterde tanınmayan kombinasyon: %s — grid değişmiş olabilir, bu "
+                "satırlar öğrenmeye girmedi",
+                self.name, ", ".join(sorted(unknown)),
+            )
         if unmeasured:
             logger.warning(
                 "%s: %d kapanmış işlemin R'si yok, risk sayacına girmedi",
@@ -240,6 +382,20 @@ class VwapGuarded(Strategy):
             "gün sayısı=%d",
             self.name, cumulative, self._drawdown_r, self._max_drawdown_r, len(self._daily_r),
         )
+        logger.info("%s öğrenme durumu: %s", self.name, self.state_summary())
+
+    def state_summary(self) -> str:
+        """Kombinasyonların tek satırlık özeti — denetim ve testler için."""
+        return " ".join(
+            f"{key}(n={item.trades},R={item.mean_r:.3f},skor={item.score:.3f})"
+            if item.measured
+            else f"{key}(n=0)"
+            for key, item in self._global.items()
+        )
+
+    def stats_for(self, symbol: str) -> dict[str, ComboStats]:
+        """Sembolün istatistikleri; testler ve denetim için salt okunur kopya."""
+        return dict(self._by_symbol.get(symbol, {}))
 
     # ------------------------------------------------------------------ #
     # Sinyal
@@ -269,18 +425,32 @@ class VwapGuarded(Strategy):
             min_slope_atr=self._btc_min_slope_atr,
             atr_period=self._atr_period,
         )
+        rng = self._round_rng(market)
+        picks: dict[str, tuple[Combo, ComboStats, str]] = {}
+
+        def params_for(symbol: str) -> guarded_signal.GuardParams:
+            """Sembolün kombinasyonunu çeker ve parametreye çevirir.
+
+            Çekiliş kurulumdan ÖNCE gelir (kaynağın `learner.select(symbol)` deseni) ve
+            sembol başına bir kezdir. `symbol_views` adı SIRALI döndürdüğü için çekiliş
+            dizisi tekrarlanabilirdir — sıra sözlük sırasına bırakılsaydı aynı bar iki
+            koşuda farklı kombinasyon dağılımı verirdi.
+            """
+            combo, stats, pick = self.choose_combo(symbol, rng=rng)
+            picks[symbol] = (combo, stats, pick)
+            return self._params_for(combo)
+
         candidates, survey = guarded_signal.scan(
             market,
             atr_period=self._atr_period,
-            params=self._params,
+            params_for=params_for,
             bias=bias,
             symbols=self._universe,
         )
         self._scan_counts = survey.report()
         logger.info(
-            "%s %s %s bant=%.2f/%.2fσ -> %s",
-            self.name, guarded_signal.ARM_NAME, market.as_of.isoformat(),
-            self._params.band_long, self._params.band_short, survey.describe(),
+            "%s %s %s -> %s",
+            self.name, guarded_signal.ARM_NAME, market.as_of.isoformat(), survey.describe(),
         )
 
         exposure = self._exposure(market.as_of)
@@ -294,14 +464,18 @@ class VwapGuarded(Strategy):
                 )
                 self._count(CORRELATION_QUOTA)
                 continue
+            combo, stats, pick = picks[candidate.symbol]
             stop = guarded_signal.stop_price(candidate, atr_multiple=self._atr_multiple)
             projected = guarded_signal.projected_target(
-                candidate, stop=stop, reward_risk=self._target_reward_risk
+                candidate, stop=stop, reward_risk=combo.target_reward_risk
             )
             target = guarded_signal.nearest_target(candidate, projected=projected)
             if not self._passes_gates(candidate, stop=stop, target=target):
                 continue
-            signal = self._signal(candidate, stop=stop, target=target, bias=bias)
+            signal = self._signal(
+                candidate, stop=stop, target=target, bias=bias,
+                combo=combo, stats=stats, pick=pick,
+            )
             self._emitted = ((candidate.symbol, candidate.direction),)
             self._emitted_at = market.as_of
             return [signal]
@@ -386,6 +560,92 @@ class VwapGuarded(Strategy):
     ) -> bool:
         return self._same_direction(direction, exposure) >= self._max_correlated
 
+    # ------------------------------------------------------------------ #
+    # Epsilon-greedy seçim (kaynağın iskeleti; ödül ve eşikler bu modelin)
+    # ------------------------------------------------------------------ #
+    def choose_combo(
+        self, symbol: str, *, rng: random.Random
+    ) -> tuple[Combo, ComboStats, str]:
+        """Üç adım; dönen üçüncü değer deftere yazılan `pick` etiketidir.
+
+        1. **Isınma — GLOBAL olarak denenmemiş kombinasyon.** Kopyada bu adım SEMBOL
+           başınadır; burada değil, çünkü sembol istatistiğine `min_symbol_samples` (30)
+           örnekten önce zaten güvenilmiyor. Sembol başına ısınma, 9 kombinasyon × 11
+           sembol = 99 işlemi saf keşfe harcardı ve bu katmanın toplam örneklemi o kadar
+           bile değil.
+        2. **Keşif** — `epsilon` (0.10) olasılıkla eşit çekiliş. Sıfıra İNMEZ: susturulan
+           kombinasyon bir daha ölçülemez ve "kötüydü" iddiası sınanamaz hâle gelir.
+        3. **Sömürü** — en yüksek SKOR (ortalama R değil): `(Σr − w × maxDD) / n`.
+           Beraberlikte anahtar adına göre, çünkü sıralamanın kendisi de tekrarlanabilir
+           olmalıdır.
+        """
+        stats = self._stats_for_choice(symbol)
+
+        unexplored = [combo for combo in self._combos if not self._global[combo.key].measured]
+        if unexplored:
+            combo = rng.choice(unexplored)
+            logger.info(
+                "%s %s: denenmemiş kombinasyon (%d/%d kaldı) -> %s",
+                self.name, symbol, len(unexplored), len(self._combos), combo.key,
+            )
+            return combo, stats[combo.key], "unexplored"
+
+        if rng.random() < self._epsilon:
+            combo = rng.choice(self._combos)
+            logger.info(
+                "%s %s: keşif çekilişi (epsilon=%.2f) -> %s",
+                self.name, symbol, self._epsilon, combo.key,
+            )
+            return combo, stats[combo.key], "explore"
+
+        measured = [combo for combo in self._combos if stats[combo.key].measured]
+        if not measured:
+            # Buraya ancak defter etiketleri okunamadığında düşülür (bkz.
+            # observe_closed_trades'in "tanınmayan kombinasyon" uyarısı). Sabit bir
+            # kombinasyonu ayrıcalıklı kılmamak için çekiliş yapılır.
+            combo = rng.choice(self._combos)
+            logger.info("%s %s: ölçüm yok, eşit çekiliş -> %s", self.name, symbol, combo.key)
+            return combo, stats[combo.key], "explore"
+
+        combo = max(measured, key=lambda item: (stats[item.key].score, item.key))
+        logger.info(
+            "%s %s: en iyi kombinasyon -> %s (skor=%.3f, R=%.3f, n=%d)",
+            self.name, symbol, combo.key, stats[combo.key].score,
+            stats[combo.key].mean_r, stats[combo.key].trades,
+        )
+        return combo, stats[combo.key], "exploit"
+
+    def _stats_for_choice(self, symbol: str) -> dict[str, ComboStats]:
+        """Kombinasyon -> istatistik; sembolde yeterli örnek yoksa o hücre GENELE düşer.
+
+        Geri düşüş kombinasyon BAZINDADIR, sembolün tamamı için değil: bir sembolde bir
+        kombinasyon 40 kez, diğeri 2 kez oynanmış olabilir ve ölçülmüş olanı genelin
+        ortalamasına feda etmek, sembolün gerçekten taşıdığı bilgiyi atmak olurdu.
+        """
+        per_symbol = self._by_symbol.get(symbol, {})
+        resolved: dict[str, ComboStats] = {}
+        for combo in self._combos:
+            local = per_symbol.get(combo.key)
+            if local is not None and local.trades >= self._min_symbol_samples:
+                resolved[combo.key] = local
+            else:
+                resolved[combo.key] = self._global[combo.key]
+        return resolved
+
+    def _params_for(self, combo: Combo) -> guarded_signal.GuardParams:
+        """Kombinasyonun bandı + öğrenilmeyen kapıların tek kopyası."""
+        return replace(self._template, band_short=combo.band_short, band_long=combo.band_long)
+
+    def _round_rng(self, market: MarketData) -> random.Random:
+        """Bar ve model başına bağımsız RNG; tohum sabit, çekiliş tekrarlanabilir.
+
+        Durum TAŞIMAZ: her bar `random_seed`, `as_of` ve model adıyla yeniden tohumlanır,
+        yani aynı defter aynı barda her zaman aynı çekilişi verir (backtest Kapı 0'ın
+        bunu uyarlanabilir modellerden beklememesinin sebebi öğrenilen GEÇMİŞTİR, çekiliş
+        değil).
+        """
+        return random.Random(f"{self._seed}:{market.as_of.isoformat()}:{self.name}")
+
     def _passes_gates(
         self, candidate: guarded_signal.GuardedCandidate, *, stop: float, target: float
     ) -> bool:
@@ -419,6 +679,9 @@ class VwapGuarded(Strategy):
         stop: float,
         target: float,
         bias: guarded_signal.Bias,
+        combo: Combo,
+        stats: ComboStats,
+        pick: str,
     ) -> Signal:
         stop_pct = guarded_signal.stop_distance_pct(candidate, stop=stop)
         reward_risk = guarded_signal.reward_risk_of(candidate, stop=stop, target=target)
@@ -436,9 +699,94 @@ class VwapGuarded(Strategy):
                 f"({reward_risk:.2f}R), {self._time_stop.describe()}; "
                 f"{self._exit.describe()}",
                 arm=guarded_signal.ARM_NAME,
+                combo=combo.key,
+                combo_score=stats.score,
+                combo_n=stats.trades,
+                pick=pick,
                 rr=reward_risk,
                 adx=candidate.adx,
                 exhaustion=candidate.exhaustion,
                 btc=bias,
             ),
         )
+
+
+# --------------------------------------------------------------------------- #
+# Yardımcılar
+# --------------------------------------------------------------------------- #
+def _build_combos(
+    band_mults: Sequence[float],
+    target_reward_risks: Sequence[float],
+    *,
+    long_extra: float,
+    floor: float,
+) -> list[Combo]:
+    """Kartezyen çarpım, SABİT sırayla. Sıra tekrarlanabilirliğin parçasıdır.
+
+    `long_extra` bandın YÖN ASİMETRİSİDİR ve grid'in ekseni DEĞİLDİR: long tarafı her
+    kombinasyonda short'tan tam bu kadar geniştir. Ayrı bir eksen olsaydı grid 27 kola
+    çıkar ve her kolun örneklemi üçe bölünürdü — bu katmanda hiçbiri ölçülebilir
+    olmazdı.
+
+    `floor` bandın tabanıdır (2.5σ): grid'in altına inmesi, "1.5σ gürültüdür" kararını
+    bir config satırıyla geri almak olurdu.
+    """
+    if not band_mults or not target_reward_risks:
+        raise ValueError(f"{CONFIG_PREFIX}.bandit listeleri boş olamaz")
+    if any(value < floor for value in band_mults):
+        raise ValueError(
+            f"{CONFIG_PREFIX}.bandit.band_mults tabanın ({floor:g}σ) altına inemez: "
+            f"{list(band_mults)}"
+        )
+    if any(value <= 0.0 for value in target_reward_risks):
+        raise ValueError(
+            f"{CONFIG_PREFIX}.bandit.target_reward_risks pozitif olmalı: "
+            f"{list(target_reward_risks)}"
+        )
+    if long_extra < 0.0:
+        raise ValueError(
+            f"{CONFIG_PREFIX}.bandit.long_extra negatif olamaz — long tarafı short'tan "
+            f"DAR olamaz: {long_extra}"
+        )
+    return [
+        Combo(
+            key=f"band{band_index}_rr{rr_index}",
+            band_short=float(band),
+            band_long=float(band) + long_extra,
+            target_reward_risk=float(reward_risk),
+        )
+        for band_index, band in enumerate(band_mults)
+        for rr_index, reward_risk in enumerate(target_reward_risks)
+    ]
+
+
+def _empty_stats(combos: Sequence[Combo]) -> dict[str, ComboStats]:
+    return {
+        combo.key: ComboStats(trades=0, mean_r=NAN, max_drawdown_r=NAN, score=NAN)
+        for combo in combos
+    }
+
+
+def _summarize(values: Sequence[float], *, weight: float) -> ComboStats:
+    """Kombinasyonun özeti: ortalama R, en derin düşüş ve cezalandırılmış skor.
+
+    En derin düşüş, o kombinasyonun KENDİ kapanış sırasındaki kümülatif R eğrisinin
+    zirveden en büyük gerilemesidir. Zirve 0'dan başlar: ilk işlemi kaybeden bir kol
+    zaten çukurdadır ve "henüz zirve yapmadı" diye cezasız kalmamalıdır.
+    """
+    if not values:
+        return ComboStats(trades=0, mean_r=NAN, max_drawdown_r=NAN, score=NAN)
+    cumulative = 0.0
+    peak = 0.0
+    drawdown = 0.0
+    for value in values:
+        cumulative += value
+        peak = max(peak, cumulative)
+        drawdown = max(drawdown, peak - cumulative)
+    count = len(values)
+    return ComboStats(
+        trades=count,
+        mean_r=cumulative / count,
+        max_drawdown_r=drawdown,
+        score=(cumulative - weight * drawdown) / count,
+    )

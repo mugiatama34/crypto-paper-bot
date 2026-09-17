@@ -57,7 +57,7 @@ ve üretilen sinyaller canlı kayıtla karşılaştırılır.
 | Model sınıfı | Beklenti |
 |---|---|
 | **Uyarlanabilir OLMAYAN** (`scalp_fixed`, `scalp_managed`, `vwap_managed`) | Sinyaller **birebir** eşleşmeli. Sinyal, piyasa verisinin ve sabit tohumun saf fonksiyonudur. |
-| **Uyarlanabilir** (`scalp_bandit`, `vwap_clone`) | Eşleşme BEKLENMEZ ve aranmaz: ikisi de kendi kapanmış işlemlerinden öğrenir (kural 16), boş defterden başlayan bir koşu farklı bir geçmiş görür. Rapor edilir, kapı sayılmaz. |
+| **Uyarlanabilir** (`scalp_bandit`, `vwap_clone`, `vwap_guarded`) | Eşleşme BEKLENMEZ ve aranmaz: ikisi de kendi kapanmış işlemlerinden öğrenir (kural 16), boş defterden başlayan bir koşu farklı bir geçmiş görür. Rapor edilir, kapı sayılmaz. |
 
 **Birebir eşleşme sağlanmazsa hiçbir backtest çıktısı yorumlanmaz.** Önce fark açıklanır.
 
@@ -241,6 +241,7 @@ Bir modelin parametresi hangi veride seçildiyse o veri onun için **in-sample**
 | `trend`, `meanrev`, `momentum`, `squeeze`, `confluence`, `failed_breakout`, `downtrend_rally`, `avwap`, `random_ctrl`, `ensemble`, `buyhold` | Parametreleri son 30 günün verisinden seçilmedi -> **tüm pencere OOS** |
 | `scalp_bandit`, `scalp_fixed`, `scalp_managed` | Aynı -> **tüm pencere OOS** |
 | `vwap_clone` | Kaynak sistemin parametreleri; bizim veriyle seçilmedi -> **OOS** |
+| `vwap_guarded` | Parametreleri koşudan önce sabitlendi (ön-kayıt §6d) -> **OOS**; tek istisna SEMBOL SEÇİMİDİR (PENGU/ETHFI elemesi geçmiş defter bilinerek yapıldı) -> o eksende **IN-SAMPLE** |
 | **`vwap_managed`** | `atr_multiple=2.5`, **17 Ağu – 16 Eyl 2026** verisinde seçildi (karar 26) -> o pencere **IN-SAMPLE** |
 | **`vwap_fast`** (henüz kurulmadı) | `band_mult` aynı pencerede ölçüldü -> o pencere **IN-SAMPLE** |
 
@@ -350,6 +351,29 @@ değerini karar 26'dan devralır ve o değer **17 Ağu – 16 Eyl 2026** verisin
 doğrulamak için vardır (C-5'in "başka bir pencerede de sağlanıyor" koşulu). Sonuca göre
 kaydırılmayacak (§7.3).
 
+**Öğrenme.** Model kopyanın epsilon-greedy iskeletini KORUR (3 bant × 3 hedef oranı = 9
+kombinasyon, sembol bazlı istatistik, keşif payı sıfıra inmez) ve üç yerde ayrışır: ödül
+drawdown ile cezalandırılır (`skor = (Σr − w × maxDD) / n`, `w = 1.0`), sembol eşiği 3
+değil **30**'dur (`acceptance.min_trades` ile aynı sayı) ve keşif payı 0.25 değil
+**0.10**'dur. İşlem maliyeti ödülün İÇİNDEDİR ve bu bir ekleme değildir: ödülün girdisi
+`r_multiple = pnl / risk_amount`tır ve `pnl` komisyon, kayma ve funding düşülmüş nettir
+(test: `tests/test_live_readiness.py::test_realized_pnl_is_net_of_fee_and_slippage`).
+
+Öğrenme modeli **uyarlanabilir** yapar (§1): Kapı 0'da ondan birebir eşleşme BEKLENMEZ ve
+bu, `scripts/backtest.py::is_adaptive` tarafından `observe_closed_trades` kancasından
+TÜRETİLİR — elle yazılmış bir liste bugün doğru, yarın sessizce yanlış olurdu.
+
+Grid'in ekseni bant ve hedef oranıdır; **stop çarpanı (`atr_multiple`) SABİTTİR.** Stop
+mesafesi aynı zamanda maliyet ölçeğidir (kural 14) ve onu öğrenmeye açmak, modelin kendi
+⚠B bandını koşu sırasında kaydırması demekti — C-4 o zaman neyi ölçtüğünü söyleyemezdi.
+
+**TADİLAT NOTU (aynı gün, SONUÇ GÖRÜLMEDEN).** Bu bölümün ilk hâli öğrenmesiz bir model
+tarif ediyordu; kullanıcının listesindeki C maddeleri (ödül, epsilon, sembol eşiği) tam
+olarak öğrenmeye dairdir ve modele eklendi. İlk hâliyle tetiklenen iki koşu **iptal
+edildi ve hiçbir çıktısı okunmadı** — §7.1'in yasakladığı şey "sonucu görüp parametre
+değiştirmek"tir; burada görülen bir sonuç yoktur, bu yüzden pencereler, tahminler ve
+metrik AYNEN kalır ve koşu yeni modelle baştan yapılır.
+
 **Kıyas kümesi:** `vwap_guarded`, `vwap_clone`, `vwap_managed`, `scalp_fixed`,
 `random_ctrl`. Kontrol olmadan C-2 değerlendirilemez; `scalp_fixed` katmanın kontrol
 geometrisidir.
@@ -363,6 +387,7 @@ geometrisidir.
 | **P3** | örneklem | n ≥ 30 (B-1) | n < 30 → satır OKUNMAZ |
 | **P4** | stop bandı | ⚠B yanmaz (C-4) | yanarsa kıyas geçersiz |
 | **P5** | işlem sayısı | `vwap_guarded` < `vwap_clone` | tersi: kapılar elemiyor demektir |
+| **P6** | öğrenmenin izi | `pick=exploit` işlemlerinin ortalama R'si `pick=explore`den YÜKSEK | düşükse öğrenme gürültü seçiyor demektir |
 
 **P1 birincildir** ve canlıya alma eşiğinin C-1'i ile aynı sayıdır. P2 ikincildir ve tek
 başına bir başarı ölçütü DEĞİLDİR: kopya kendi boyutlandırmasıyla koşar, yani iki satırın

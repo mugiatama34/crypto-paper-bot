@@ -49,7 +49,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Collection, Literal, Mapping
+from typing import Callable, Collection, Literal, Mapping
 
 import pandas as pd
 
@@ -134,10 +134,23 @@ class GuardedCandidate:
     adx: float
     exhaustion: str  # hangi tükenme izi tetikledi: klimaks / red mumu
     btc_bias: Bias
+    band: float  # bu kurulumun geçmek zorunda olduğu eşik (yöne VE kola göre değişir)
 
     @property
     def extension(self) -> float:
         return abs(self.z_prev)
+
+    @property
+    def extension_ratio(self) -> float:
+        """Sapmanın KENDİ bandına oranı — adayların tek karşılaştırılabilir sırası.
+
+        Ham |z| ile sıralamak, bandit farklı sembollere farklı bant çeken bir kol
+        verdiğinde (kural: kombinasyon sembol başına çekilir) iki adayı FARKLI eşiklere
+        göre ölçüp aynı sütunda kıyaslamak olurdu: 2.5σ bandını 3.0σ ile geçen bir
+        kurulum, 3.5σ bandını 3.4σ ile ISKALAYAN bir sembolden "daha güçlü" görünürdü.
+        Oran, "eşiğini ne kadar aştı" sorusunu sorar ve bandit'in çekilişinden bağımsızdır.
+        """
+        return abs(self.z_prev) / self.band
 
     def detail(self) -> str:
         return (
@@ -230,15 +243,25 @@ def btc_bias(
     return "flat"
 
 
+def fixed_params(params: GuardParams) -> Callable[[str], GuardParams]:
+    """Her sembole AYNI parametreyi veren çözücü — öğrenmeyen bir tarama için."""
+    return lambda _symbol: params
+
+
 def scan(
     market: MarketData,
     *,
     atr_period: int,
-    params: GuardParams,
+    params_for: Callable[[str], GuardParams],
     bias: Bias,
     symbols: Collection[str] | None = None,
 ) -> tuple[list[GuardedCandidate], Survey]:
     """O barın adayları (GÜÇ SIRASINDA) ve eleme sayımı.
+
+    `params_for` sembol -> parametre çözücüsüdür, tek bir parametre nesnesi değil: model
+    18 bandit'iyle her sembol için AYRI bir kombinasyon çeker (kaynak sistemin
+    `learner.select(symbol)` deseni) ve çekiliş kurulumdan ÖNCE gelir. Sabit parametreyle
+    taramak isteyen `fixed_params(...)` ile çağırır.
 
     `bias` dışarıdan verilir, burada hesaplanmaz: bar başına TEK bir BTC okuması olmalıdır
     ve sembol döngüsünün içinde hesaplamak aynı sayıyı 13 kez üretip aralarında sessizce
@@ -246,7 +269,8 @@ def scan(
 
     Sıra sözlük sırasına bırakılmaz (`strategies/scalp/arms.py::symbol_views` ile aynı
     gerekçe): model tek bir kurulum oynar ve seçimin tekrarlanabilir olması sıranın
-    belirli olmasına bağlıdır.
+    belirli olmasına bağlıdır. Sıralama ölçütü sapmanın KENDİ bandına oranıdır
+    (`extension_ratio`), ham |z| değil.
     """
     allowed = None if symbols is None else set(symbols)
     counts = empty_counts()
@@ -255,12 +279,12 @@ def scan(
     for view in symbol_views(market, atr_period=atr_period):
         if allowed is not None and view.symbol not in allowed:
             continue
-        candidate, reason = _evaluate(view, params=params, bias=bias)
+        candidate, reason = _evaluate(view, params=params_for(view.symbol), bias=bias)
         counts[reason] += 1
         if candidate is not None:
             candidates.append(candidate)
 
-    candidates.sort(key=lambda item: (-item.extension, item.symbol))
+    candidates.sort(key=lambda item: (-item.extension_ratio, item.symbol))
     return candidates, Survey(counts=counts, btc_bias=bias)
 
 
@@ -334,6 +358,7 @@ def _evaluate(
             adx=strength.adx,
             exhaustion=exhaustion,
             btc_bias=bias,
+            band=band,
         ),
         SETUP,
     )

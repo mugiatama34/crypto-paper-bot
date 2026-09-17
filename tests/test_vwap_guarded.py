@@ -12,7 +12,7 @@ modeldir ve bu modelin varlığı onun kurallarını değiştirmez.
 
 from __future__ import annotations
 
-import copy
+import random
 from typing import Any, Sequence
 
 import pandas as pd
@@ -29,6 +29,7 @@ from strategies.vwap_guarded import (
     HALT_DAILY,
     HALT_DRAWDOWN,
     VwapGuarded,
+    _summarize,
 )
 from tests.helpers_market import frame, market
 
@@ -70,7 +71,10 @@ def _deviating(
     closes[-1] = closes[-2] + (0.3 * -sign if turn else 0.3 * sign)
     volumes = [1.0] * BARS
     if climax:
-        volumes[-2] = 6.0
+        # Klimaks 1.5× tabanı geçmeli ama ABARTILI olmamalı: hacim aynı zamanda
+        # VWAP'in ağırlığıdır ve 6× bir bar, sapmayı ölçen σ'yı kendi başına
+        # şişirip |z|'yi bandın altına çekerdi.
+        volumes[-2] = 2.0
     highs = [close + 0.2 for close in closes]
     lows = [close - 0.2 for close in closes]
     if not rejection:
@@ -95,15 +99,27 @@ def _market(frames: dict[str, pd.DataFrame] | None = None, *, btc_closes: list[f
     return market(payload, btc=btc)
 
 
-def _trade(*, r: float, closed_at: pd.Timestamp) -> ClosedTrade:
+def _trade(
+    *, r: float, closed_at: pd.Timestamp, combo: str = "band0_rr0", symbol: str = SYMBOL
+) -> ClosedTrade:
     return ClosedTrade(
-        symbol=SYMBOL,
+        symbol=symbol,
         direction="long",
         opened_at=closed_at - pd.Timedelta("1h"),
         closed_at=closed_at,
         r_multiple=r,
-        signal_reason="test | arm=vwap_revert_guard",
+        signal_reason=f"test | arm=vwap_revert_guard | combo={combo}",
         exit_reason="stop",
+    )
+
+
+def _seed_every_combo(model: VwapGuarded, *, day: pd.Timestamp, r: float = 0.0) -> None:
+    """Her kombinasyona bir işlem: ısınma biter, seçim sömürüye/keşfe düşer."""
+    model.observe_closed_trades(
+        [
+            _trade(r=r, closed_at=day + pd.Timedelta(minutes=index), combo=combo.key)
+            for index, combo in enumerate(model._combos)
+        ]
     )
 
 
@@ -189,18 +205,20 @@ def test_long_needs_a_wider_band_than_short() -> None:
     sayıdır ve `band_for` onu tek yerde taşır.
     """
     params = guarded_signal.GuardParams(
-        band_long=4.0, band_short=2.5, min_vwap_bars=8, adx_period=14, adx_max=22.0,
+        band_long=8.0, band_short=2.5, min_vwap_bars=8, adx_period=14, adx_max=22.0,
         ema_period=50, slope_bars=10, max_slope_atr=1.5, exhaustion_lookback=20,
         climax_mult=1.5, rejection_wick_ratio=0.5,
     )
 
     _, down = guarded_signal.scan(
         _market({SYMBOL: _deviating(direction="long")}),
-        atr_period=14, params=params, bias="flat", symbols=[SYMBOL],
+        atr_period=14, params_for=guarded_signal.fixed_params(params), bias="flat",
+        symbols=[SYMBOL],
     )
     up_candidates, up = guarded_signal.scan(
         _market({SYMBOL: _deviating(direction="short")}),
-        atr_period=14, params=params, bias="flat", symbols=[SYMBOL],
+        atr_period=14, params_for=guarded_signal.fixed_params(params), bias="flat",
+        symbols=[SYMBOL],
     )
 
     assert down.counts[guarded_signal.INSIDE_BAND] == 1
@@ -475,3 +493,137 @@ def _market_at(ts: pd.Timestamp, snapshot: Any):
         symbol: value.loc[:ts] for symbol, value in snapshot.ohlcv.items()
     }
     return market(frames, btc=snapshot.btc.loc[:ts], as_of=ts)
+
+
+# --------------------------------------------------------------------------- #
+# Öğrenme (epsilon-greedy): ödül, eşikler ve ısınma
+# --------------------------------------------------------------------------- #
+def test_reward_charges_the_deepest_drawdown_once() -> None:
+    """Aynı ortalama R'ye daha derin bir çukurdan geçerek ulaşan kol kaybeder."""
+    calm = _summarize([1.0, -0.5, 1.5], weight=1.0)
+    violent = _summarize([-4.0, 1.0, 5.0], weight=1.0)
+
+    assert calm.mean_r == pytest.approx(violent.mean_r)
+    assert violent.max_drawdown_r > calm.max_drawdown_r
+    assert violent.score < calm.score
+    # (Σr − maxDD) / n — ceza bir kez ve TAM uygulanır.
+    assert violent.score == pytest.approx((2.0 - 4.0) / 3.0)
+
+
+def test_reward_without_a_penalty_is_the_plain_mean() -> None:
+    """`drawdown_weight: 0` ham ortalama R'ye döner: ceza bir AYAR, gizli bir kural değil."""
+    stats = _summarize([-4.0, 1.0, 5.0], weight=0.0)
+
+    assert stats.score == pytest.approx(stats.mean_r)
+
+
+def test_first_loss_counts_as_drawdown_even_without_a_prior_peak() -> None:
+    """Zirve sıfırdan başlar: ilk işlemi kaybeden kol zaten çukurdadır."""
+    assert _summarize([-2.0], weight=1.0).max_drawdown_r == pytest.approx(2.0)
+
+
+def test_exploration_rate_is_one_tenth(config: dict[str, Any]) -> None:
+    bandit = config["vwap"]["guarded"]["bandit"]
+
+    assert float(bandit["epsilon"]) == pytest.approx(0.10)
+    # Sıfıra İNMEZ: susturulan kombinasyon bir daha ölçülemez.
+    assert float(bandit["epsilon"]) > 0.0
+
+
+def test_symbol_statistics_need_the_sample_gate(config: dict[str, Any]) -> None:
+    """Sembol eşiği kabul çıtasının örneklem kapısıyla AYNI sayıdır."""
+    assert int(config["vwap"]["guarded"]["bandit"]["min_symbol_samples"]) >= int(
+        config["acceptance"]["min_trades"]
+    )
+
+
+def test_a_thin_symbol_falls_back_to_the_global_average(config: dict[str, Any]) -> None:
+    """5 örnekle parlayan bir hücre, 30 örneklik eşiği geçmeden seçimi belirleyemez."""
+    model = VwapGuarded(config=config)
+    day = pd.Timestamp("2026-01-02 00:00:00", tz="UTC")
+    best, thin = model._combos[0].key, model._combos[1].key
+    trades = [
+        _trade(r=0.0, closed_at=day + pd.Timedelta(minutes=index), combo=combo.key)
+        for index, combo in enumerate(model._combos)
+    ]
+    # `best` genelde açık ara önde; `thin` genelde kötü ama ETH'te 5 örnekle parlıyor.
+    trades += [
+        _trade(r=2.0, closed_at=day + pd.Timedelta(hours=1 + index), combo=best)
+        for index in range(20)
+    ]
+    trades += [
+        _trade(r=-1.0, closed_at=day + pd.Timedelta(hours=30 + index), combo=thin)
+        for index in range(25)
+    ]
+    trades += [
+        _trade(r=9.0, closed_at=day + pd.Timedelta(hours=60 + index), combo=thin,
+               symbol="ETH-USDT-SWAP")
+        for index in range(5)
+    ]
+    model.observe_closed_trades(trades)
+
+    assert model.stats_for("ETH-USDT-SWAP")[thin].trades == 5  # eşiğin (30) altında
+    combo, _, pick = model.choose_combo("ETH-USDT-SWAP", rng=random.Random(0))
+
+    assert pick == "exploit"
+    assert combo.key == best
+
+
+def test_warmup_is_global_not_per_symbol(config: dict[str, Any]) -> None:
+    """Sembol başına ısınma, bu katmanın tüm örneklemini saf keşfe harcardı."""
+    model = VwapGuarded(config=config)
+    _seed_every_combo(model, day=pd.Timestamp("2026-01-02 00:00:00", tz="UTC"))
+
+    picks = {
+        model.choose_combo("ADA-USDT-SWAP", rng=random.Random(seed))[2] for seed in range(20)
+    }
+
+    assert "unexplored" not in picks
+
+
+def test_every_combo_is_played_before_exploitation(config: dict[str, Any]) -> None:
+    model = VwapGuarded(config=config)
+
+    _, _, pick = model.choose_combo(SYMBOL, rng=random.Random(3))
+
+    assert pick == "unexplored"
+
+
+def test_unknown_combo_tags_are_not_learned(config: dict[str, Any]) -> None:
+    """Grid değişmişse eski satırlar yeni kollara ait DEĞİLDİR."""
+    model = VwapGuarded(config=config)
+    day = pd.Timestamp("2026-01-02 00:00:00", tz="UTC")
+
+    model.observe_closed_trades([_trade(r=5.0, closed_at=day, combo="eski_kol")])
+
+    assert all(not stats.measured for stats in model._global.values())
+
+
+def test_the_signal_carries_its_combo_in_the_ledger_tail(config: dict[str, Any]) -> None:
+    """Öğrenme defterin saf bir fonksiyonudur: ayrı durum dosyası YOK, etiket ZORUNLU."""
+    signals = VwapGuarded(config=config).generate_signals(_market())
+
+    reason = signals[0].reason
+    assert find_tag(reason, "combo") is not None
+    assert find_tag(reason, "pick") == "unexplored"
+    assert find_tag(reason, "combo_n") == "0"
+
+
+def test_draws_are_reproducible_for_the_same_bar(config: dict[str, Any]) -> None:
+    """Tohum sabittir: aynı defter aynı barda her zaman aynı çekilişi verir."""
+    snapshot = _market()
+
+    first = VwapGuarded(config=config).generate_signals(snapshot)
+    second = VwapGuarded(config=config).generate_signals(snapshot)
+
+    assert [signal.reason for signal in first] == [signal.reason for signal in second]
+
+
+def test_the_stop_scale_is_not_a_learned_axis(config: dict[str, Any]) -> None:
+    """`atr_multiple` grid'e girseydi model kendi ⚠B bandını koşu sırasında kaydırırdı."""
+    bandit = config["vwap"]["guarded"]["bandit"]
+
+    assert "atr_multiple" not in bandit
+    assert all(float(band) >= float(config["vwap"]["guarded"]["band"]["short"])
+               for band in bandit["band_mults"])
+

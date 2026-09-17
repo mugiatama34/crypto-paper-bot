@@ -25,6 +25,7 @@ import pytest
 
 from core.config import load_config
 from core.portfolio import Bar, Portfolio
+from strategies.base import TakeProfit
 
 TS = pd.Timestamp("2026-01-01 00:00:00", tz="UTC")
 SYMBOL = "BTC-USDT-SWAP"
@@ -98,3 +99,32 @@ def test_costs_are_layer_independent(config: dict[str, Any]) -> None:
     for key in ("fee_rate", "slippage_base", "slippage_short_stop", "risk_per_trade",
                 "leverage_cap", "initial_capital", "maintenance_margin"):
         assert base[key] == scalp[key] == config[key], key
+
+
+def test_realized_pnl_is_net_of_fee_and_slippage(config: dict[str, Any]) -> None:
+    """R'nin PAYI nettir — yani "ödüle işlem maliyetini ekle" bu depoda zaten geçerlidir.
+
+    `core/metrics.py` R'yi `pnl / risk_amount` olarak kurar ve uyarlanabilir modeller
+    (`vwap_clone`, `vwap_guarded`) öğrenmeyi o R'den besler. Bu test o zincirin ilk
+    halkasını çiviler: defterdeki `pnl`, komisyon ve kayma DÜŞÜLDÜKTEN sonra kalan
+    tutardır. Brüt olsaydı öğrenme, hiç ödenmemiş bir kârı ödüllendirirdi.
+    """
+    portfolio = Portfolio(config)
+    result = portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=98.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+        take_profits=(TakeProfit(price=105.0, fraction=1.0),),
+    )
+    position = result.position
+    assert position is not None
+
+    trades = portfolio.process_bar(
+        "m", ts=TS + pd.Timedelta("15min"),
+        bars={SYMBOL: Bar(open=100.0, high=106.0, low=99.5, close=105.0)},
+    )
+
+    assert len(trades) == 1
+    trade = trades[0]
+    gross = (trade.exit_price - trade.entry_price) * trade.qty
+    assert trade.pnl == pytest.approx(gross - trade.fee + trade.funding)
+    assert trade.pnl < gross  # maliyet gerçekten düşüldü

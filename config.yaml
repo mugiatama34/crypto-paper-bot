@@ -441,7 +441,6 @@ vwap:
     # olmalı, MALİYET ÖLÇEĞİ olmamalı (kural 14 / ⚠B uyarısı): 2.5 ölçülmüş olarak
     # ~%2.05 stop mesafesi verir, beş kollu modeller ~%1.95 (karar 26).
     atr_multiple: 2.5
-    target_reward_risk: 2.0   # hedef PROJEKSİYONU; gerçek hedef bununla VWAP'in yakın olanı
     min_vwap_bars: 8          # seans çapasından bu kadar bar geçmeden sapma anlamlı değil
 
     # Azami tutuş: 10 × 15m = 2.5 saat (istenen 8-12 bar aralığının ortası). Dolum bir
@@ -483,6 +482,35 @@ vwap:
       ema_period: 50
       slope_bars: 4           # EMA50 4 saatte kaç ATR yol aldı
       min_slope_atr: 0.5      # altı: "yatay" — kapı yanmaz
+
+    # Epsilon-greedy parametre öğrenimi. Kaynağın (ve kopyanın) İSKELETİ korunur —
+    # 3 bant × 3 hedef oranı = 9 kombinasyon, sembol bazlı istatistik, keşif payı sıfıra
+    # inmez — ama ÜÇ yerde ayrışır ve üçü de canlı hesabın gereğidir:
+    #
+    #   1. ÖDÜL maliyeti zaten içerir: girdi `ClosedTrade.r_multiple` = pnl / risk_amount
+    #      ve pnl komisyon, kayma ve funding DÜŞÜLMÜŞ nettir (core/portfolio.py). Bu bir
+    #      değişiklik değil, zaten geçerli olan tanımdır; yazılı olması sessiz bir
+    #      varsayım olarak kalmaması içindir.
+    #   2. ÖDÜL drawdown ile cezalandırılır: skor = (Σr − w × en_derin_düşüş_R) / n.
+    #      Aynı ortalama R'ye daha derin bir çukurdan geçerek ulaşan kol kaybeder.
+    #   3. SEMBOL EŞİĞİ 30'dur (kopyada 3): bir kombinasyonun o semboldeki ortalaması
+    #      ancak `acceptance.min_trades` kadar örnekle güvenilirdir. Altında kalan hücre
+    #      genele düşer. Aynı gerekçeyle ISINMA da GLOBALDİR, sembol başına değil.
+    #
+    # Stop çarpanı (`atr_multiple`) grid'in EKSENİ DEĞİLDİR: stop mesafesi aynı zamanda
+    # maliyet ölçeğidir (kural 14) ve onu öğrenmeye açmak, modelin kendi ⚠B bandını koşu
+    # sırasında kaydırması demekti.
+    bandit:
+      epsilon: 0.10           # keşif payı; kaynakta 0.25 — canlıda keşfin bedelini
+                              # gerçek işlemler öder. Sıfıra İNMEZ: susturulan
+                              # kombinasyon bir daha ölçülemez.
+      min_symbol_samples: 30  # sembolde bu kadar örnek yoksa genele düşülür
+      drawdown_weight: 1.0    # ceza bir kez ve TAM uygulanır; 0 = ceza yok (ham ort. R)
+      band_mults: [2.5, 3.0, 3.5]        # taban (band.short) altına inemez
+      target_reward_risks: [1.5, 2.0, 2.5]  # hedef PROJEKSİYONU; gerçek hedef bununla
+                                            # VWAP'in YAKIN olanı
+      long_extra: 0.5         # long bandı her kombinasyonda short'tan bu kadar geniş
+                              # (grid'in ekseni DEĞİL: eksen olsaydı 27 kol olurdu)
 
     # Risk kesicileri. Model bakiyeyi göremez (kural 7) ve açık pozisyonun kâr/zararını
     # okuyamaz (kural 16), bu yüzden İKİSİ DE R cinsindendir: 1R tanımı gereği sermayenin
