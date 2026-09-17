@@ -511,9 +511,17 @@ değişikliğinin etkisiyle karışırdı. Geri kalan her kural kaynağınkidir:
 geometri, sabit teminat × 10x, limitler, üç aşamalı çıkış, bar başına kotaya kadar
 sinyal ve **hiçbir ev kapısı yok**.
 
-**Pencere.** 2026-03-01 → 2026-08-16 (168 gün), `--history-bars 18000`. Uzun seçildi
-çünkü ortak koşul `n ≥ 80` ve `işlem/gün ≥ 0.5`. F0'ın hiçbir parametresi hiçbir pencereden
-seçilmedi (orta değerler), dolayısıyla pencerenin tamamı OOS'tur.
+**Pencere.** ~~2026-03-01 → 2026-08-16 (168 gün), `--history-bars 18000`~~ →
+**2026-05-20 → 2026-08-16 (88 gün), `--history-bars 10000`.** Uzun seçildi çünkü ortak
+koşul `n ≥ 80` ve `işlem/gün ≥ 0.5`. F0'ın hiçbir parametresi hiçbir pencereden seçilmedi
+(orta değerler), dolayısıyla pencerenin tamamı OOS'tur.
+
+**TADİLAT NOTU (sonuç görülmeden).** İlk pencere 168 gündü ve koşu 56. dakikada runner'ın
+belleği tükendiği için ÖLDÜ (karar 48: motorun anlık görüntü önbelleği sınırsızdı, düzeltildi).
+Koşu hiçbir çıktı üretmedi — `vwap_session` için tek bir sayı okunmadı. Pencere sonuca göre
+değil **harness'ın tamamlayabildiği boya göre** kısaltıldı; eski değer yukarıda üstü çizili
+durur. 88 gün, ortak koşulun (`n ≥ 80`, `≥ 0.5 işlem/gün`) hâlâ ölçülebilir olduğu bir
+boydur: 0.5 işlem/gün'de ~44, 1.3 işlem/gün'de ~115 pozisyon.
 
 **Kıyas kümesi:** `vwap_session`, `vwap_clone`. İkisi de sabit teminatla koşar, yani
 aynı birimde okunurlar. `random_ctrl` YOKTUR (katmanda koşamıyor, karar 45) ve bunun
@@ -578,7 +586,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16 | P1: ortalama R > 0 | **ÖLÇÜLEMEDİ** — σ birimi hatası: 52 günde 0 kurulum; koşu ayrıca `random_ctrl` yüzünden düştü (karar 45) |
 | 3 | `vwap_guarded` (σ birimi düzeltilmiş): aynı tahminler, taze pencere | §6e | B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | **P3 DÜŞTÜ** (n=8 < 30) → P1 değerlendirilemez (+0.30R, aralık [−0.19, +0.69]); 0.1 işlem/gün — karar 45 |
-| 4 | **F0** `vwap_session`: kopyanın kaybı sinyalden değil BİRİMDEN geliyor | §6f | 2026-03-01 → 08-16 | P1: `R−market_R` aralığının alt sınırı > 0 | _koşu bekliyor_ |
+| 4 | **F0** `vwap_session`: kopyanın kaybı sinyalden değil BİRİMDEN geliyor | §6f | 2026-05-20 → 08-16 (168 günlük ilk pencere bellek yüzünden düştü, karar 48) | P1: `R−market_R` aralığının alt sınırı > 0 | _koşu bekliyor_ |
 
 **Araştırmadan çıkan öneri sayısı: 10.** Bunların 4'ü test edildi/edilmekte (yukarıdakiler), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge

@@ -3853,3 +3853,36 @@ Varsayılanlar `entry_type="market"` ve `size_scale=1.0`dır; eski defterlerdeki
 emirler de bu varsayılanlara düşer (`PendingOrder.from_state`). Hiçbir mevcut model
 limit emri ya da ölçek bildirmez, dolayısıyla hiçbirinin tek bir dolumu değişmez —
 1106 testin tamamı bunu doğruluyor.
+
+---
+
+## 48. 168 günlük koşu belleğe takıldı: anlık görüntü önbelleği sınırsızdı
+
+**Olay.** `backtest.yml` #15 (2026-03-01 → 08-16, `--history-bars 18000`, modeller
+`vwap_session,vwap_clone`) 56. dakikada **iptal oldu.** Zaman aşımı değil: o koşuda
+`timeout-minutes` zaten 120'ydi. Adım "cancelled", iş "failure" — yani süreç dışarıdan
+öldürüldü, harness kendi kapısında durmadı.
+
+**Sebep.** `core/engine.py` her bar için kurduğu anlık görüntüyü (`MarketData`: katmanın
+TÜM sembollerinin o bara kesilmiş çerçeveleri + funding serileri) bir SÖZLÜKTE
+biriktiriyordu. Bellek bar sayısıyla doğrusal büyür: 5.183 barlık koşular sorunsuz
+tamamlanmıştı, 16.128 barlık koşu runner'ın belleğini tüketti.
+
+**Düzeltme: tek gözlü önbellek.** Anlık görüntü bar başına BİR kez kurulur ve yalnızca o
+barda kullanılır — tek çağrı yeri `_trade_step`tir ve o da barın tüm modelleri için bir
+kez çalışır. Sözlüğün ikinci bir kullanıcısı hiç olmadı; yani tuttuğu her giriş, bir daha
+okunmayacak bir kopyaydı.
+
+**Ölçüme etkisi: SIFIR.** Önbellek bir hızlandırmadır, bir kural değil; aynı `ts` için
+aynı görüntü kurulur ve sinyaller, dolumlar, sıralar değişmez. 1129 testin tamamı
+(bar-bar eşdeğerlik testi dâhil: bir turda telafi edilen N bar ≡ N ayrı tur) geçmeye
+devam ediyor ve `tests/test_engine_per_bar.py` artık önbelleğin SINIRLI olduğunu da
+çiviliyor.
+
+**Pencere neden kısaltıldı ve bu neden sonuç-körü bir karardır.** F0'ın ön-kayıtlı
+penceresi (`docs/backtest.md > 6f`) 168 gündü. Koşu hiçbir çıktı üretmeden öldü — tablo
+yok, `vwap_session` için tek bir sayı okunmadı (loglarda yalnızca kopyanın öğrenme
+durumu görünüyordu, o da F0'ın değil model 13'ün). Pencere, sonuca göre değil **harness'ın
+tamamlayabildiği boya göre** yeniden seçildi ve bu, §7.3'ün ("pencereyi sonuca göre
+kaydırmak yok") yasakladığı şey değildir: görülen bir sonuç yoktur. Yine de sessiz
+olmaz — ön-kayıt bir TADİLAT notuyla güncellendi ve eski pencere orada yazılı kaldı.

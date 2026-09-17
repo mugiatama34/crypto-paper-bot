@@ -433,3 +433,23 @@ def test_each_recovered_bar_records_its_own_emitted_signal(tmp_path: Path) -> No
     assert [record.fills_at for record in emitted] == list(INDEX[2:5])
     # Her kayıt KENDİ barının kapanışını taşır, turun `as_of` kapanışını değil.
     assert [record.close for record in emitted] == [101.0, 102.0, 103.0]
+
+
+def test_the_snapshot_cache_stays_bounded(tmp_path: Path) -> None:
+    """Uzun bir pencere belleği bar sayısıyla ŞİŞİRMEZ (karar 48).
+
+    Önbellek bir sözlüktü ve her bar için katmanın tüm sembollerinin kesilmiş
+    çerçevelerini tutuyordu; 16.000 barlık bir backtest runner'ın belleğini tüketip
+    yarıda kesildi. Anlık görüntü bar başına BİR kez kurulur ve yalnızca o barda
+    kullanılır, yani tek gözlü önbellek aynı işi görür.
+    """
+    ledger = Ledger(tmp_path)
+    config = _config()
+    engine = _engine(_EveryBar(), ledger, config)
+    engine.run_round(_market(2))
+
+    engine.run_round(_market(8))
+
+    # Tek gözlü: sekiz barlık bir tur sonunda elde TEK bir görüntü kalır.
+    assert engine._snapshot_cache is not None
+    assert isinstance(engine._snapshot_cache, tuple) and len(engine._snapshot_cache) == 2

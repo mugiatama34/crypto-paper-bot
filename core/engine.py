@@ -389,14 +389,20 @@ class Engine:
         self._funding_enabled, self._funding_interval = funding_module.settings(self._config)
         # Katman ayarı (config.yaml): telafi edilen barlarda da sinyal üretilsin mi.
         self._signals_per_bar = bool(get_setting(self._config, "signals_per_bar"))
-        self._snapshots: dict[pd.Timestamp, MarketData] = {}
+        # TEK GÖZLÜ önbellek, sözlük değil. Sözlük her bar için bir MarketData
+        # (katmanın tüm sembollerinin kesilmiş çerçeveleri) tutuyordu ve uzun bir
+        # backtest'te bellek bar sayısıyla DOĞRUSAL büyüyordu: 16.000 barlık bir
+        # pencerede koşu runner'ın belleğini tüketip yarıda kesildi (karar 48).
+        # Tek gözlü önbellek aynı işi görür çünkü anlık görüntü bar başına BİR kez
+        # kurulur ve yalnızca o barda kullanılır (`_trade_step`, tek çağrı yeri).
+        self._snapshot_cache: tuple[pd.Timestamp, MarketData] | None = None
 
     # ------------------------------------------------------------------ #
     # Tur
     # ------------------------------------------------------------------ #
     def run_round(self, market: MarketData) -> RoundReport:
         runs = [self._load_model(strategy) for strategy in self._strategies]
-        self._snapshots = {}
+        self._snapshot_cache = None
         for run in runs:
             run.timeline = self._timeline(run, market)
 
@@ -588,9 +594,8 @@ class Engine:
         """
         if ts == market.as_of:
             return market
-        cached = self._snapshots.get(ts)
-        if cached is not None:
-            return cached
+        if self._snapshot_cache is not None and self._snapshot_cache[0] == ts:
+            return self._snapshot_cache[1]
 
         ohlcv: dict[str, pd.DataFrame] = {}
         for symbol, frame in market.ohlcv.items():
@@ -604,7 +609,7 @@ class Engine:
             funding={symbol: series.loc[:ts] for symbol, series in market.funding.items()},
             as_of=ts,
         )
-        self._snapshots[ts] = snapshot
+        self._snapshot_cache = (ts, snapshot)
         return snapshot
 
     def _timeline(self, run: _ModelRun, market: MarketData) -> list[pd.Timestamp]:
