@@ -405,6 +405,7 @@ eklemek bir commit'tir. Backtest onları `--models` ile hâlâ çağırabilir.
 | 17 | `scalp_vol` | aday, canlıda koşmaz | ön-kayıtlı birincil tahmin P1 DÜŞTÜ (karar 36) |
 | 18 | `vwap_guarded` | aday, canlıda koşmaz | altı kapı birden: 54 günde 8 kurulum, 0.1 işlem/gün — ölçülemez (karar 45/46) |
 | 19 | `vwap_session` | **F0 — ölçüm bekliyor** | kopyanın BİRİMİ düzeltilmiş hâli (seans çapası + seans σ), başka filtre yok; ön-kayıt `docs/backtest.md > 6f` |
+| 20 | `vwap_scored` | **F1 — F0'dan sonra ölçülür** | F0 + skorla boyut, post-only maker giriş, ilerleme koşullu zaman stop'u, risk boyutlandırma (5x) ve likidite kuralı |
 
 **Emekli ≠ silinmiş.** Ölçüt performans değil ÖLÇÜLEBİLİRLİKTİR: ne kadar iyi olduğunu asla
 öğrenemeyeceğimiz bir satır, tabloda bir bilgi değil bir gürültü kaynağıdır.

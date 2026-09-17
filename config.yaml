@@ -465,6 +465,61 @@ vwap:
     max_per_direction: 3
     max_portfolio_risk: 0.08
 
+  # F1 (model 20, `vwap_scored`) — F0 + MALİYET ve ÇIKIŞ tarafı. Ön-kayıt:
+  # docs/backtest.md > 6f. Sinyal F0'ın modülüdür ve çarpanları F0 ile AYNIDIR (birim
+  # ekseni sabit kalsın); F1 beş kalem ekler ve hepsi bir DEMET olarak ölçülür.
+  scored:
+    band_mult: 2.0          # F0 ile aynı
+    tp_mult: 0.75           # F0 ile aynı
+    sl_mult: 0.5            # F0 ile aynı
+    min_bars: 8             # F0 ile aynı
+    max_new_per_bar: 2      # evrenden en yüksek skorlu 1-2 kurulum
+
+    # Rejim KADEMESİ — sert yasak değil, boyut: ADX < 22 tam boy, 22-30 yarım boy,
+    # > 30 fade YOK. Sert bir eşik, ölçülemeyen bir modele giden yoldu (karar 45).
+    regime:
+      adx_period: 14
+      adx_full: 22.0
+      adx_max: 30.0
+
+    # Skor SIRALAMA içindir: S = (|z|/bant) × (1 − min(V/V₂₀,1)) × w_red × w_rejim.
+    # Hacim ortalamanın üstündeyse çarpan sıfıra iner ve kurulum skorda GERİYE düşer —
+    # elenmez. Red mumu yoksa skor 0.6 ile çarpılır (eleme değil, indirim).
+    score:
+      volume_lookback: 20
+      rejection_ratio: 0.5
+      rejection_weight: 0.6
+
+    # Boyut kademesi: katmanın risk_per_trade'inin (%1) KESRİ. %0.6 ve %0.3, istenen
+    # "hesap riskinin %0.4-0.6'sı" bandına oturur. `size_scale` yalnızca KÜÇÜLTÜR
+    # (kural 3/11, karar 47) — model kendi risk oranını büyütemez.
+    size:
+      full: 0.6
+      half: 0.3
+
+    # POST-ONLY limit giriş (karar 47): emir sinyal barının UCUNA konur. Dolarsa maker
+    # komisyonu ve kaymasız dolum; bir sonraki barda dolmazsa İPTAL ve `limit_not_filled`
+    # ile sayılır. Piyasa emrine düşmek seçenek DEĞİLDİR: sessizce taker'a dönen bir emir,
+    # F1'in ölçtüğü şeylerden birini (maker dolumun katkısı) kirletirdi.
+    entry:
+      use_limit: true
+
+    # İlerleme koşullu zaman stop'u: 8 barda (2 saat) en iyi ilerleme 0.3R'ye ulaşmadıysa
+    # çık. Fade ya çabuk çalışır ya yanlıştır. İlerleme LEHTE görülen uç fiyattan
+    # ölçülür (mum içi), kapanıştan değil.
+    time_stop:
+      bars: 8
+      min_progress_r: 0.3
+
+    # Likidite kuralı — P&L'ye DEĞİL hacme bakar (docs/backtest.md > 7.2'nin yasağı).
+    # Eşik bir görüşten değil bir büyüklükten gelir: tipik emrimiz (~5.000 USDT notional)
+    # bir barın işlem hacminin %2'sini aşmamalı -> 5.000 / 0.02 = 250.000 USDT. Ölçüt son
+    # 96 barın (24 saat) MEDYAN quote hacmidir; ortalama olsaydı tek bir haber mumu ince
+    # bir kitabı likit gösterirdi.
+    liquidity:
+      min_bar_quote_volume: 250000
+      lookback: 96
+
   # Model 18 — kopyanın CANLIYA HAZIRLANMIŞ uyarlaması (strategies/vwap_guarded.py).
   # Model 13'ün kuralları DEĞİŞTİRİLMEDİ (kural 15b: değiştirilen kopya kopya olmaktan
   # çıkar); uyarlama ayrı bir modeldir ve buradaki sayılar YALNIZCA onundur.

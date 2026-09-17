@@ -35,6 +35,7 @@ from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_guarded import VwapGuarded
 from strategies.vwap_managed import VwapManaged
+from strategies.vwap_scored import VwapScored
 from strategies.vwap_session import VwapSession
 
 StrategyFactory = Callable[[], Strategy]
@@ -80,6 +81,10 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # `is_replica`: 1R'si sabit teminattan gelir, yarışmacılarınkiyle aynı birim
     # değildir — bayrağın bütün sonuçları bu tek olgudan çıkar (kural 15b).
     VwapSession.name: VwapSession,
+    # vwap_scored (F1) — F0 + skorla boyut, post-only maker giriş, ilerleme koşullu
+    # zaman stop'u, risk boyutlandırma (5x) ve likidite kuralı. Tam YARIŞMACIDIR:
+    # `sizing="risk"`, yani 1R'si yarışmacılarınkiyle aynı birimdedir.
+    VwapScored.name: VwapScored,
 }
 
 
