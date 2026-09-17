@@ -35,6 +35,7 @@ from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_guarded import VwapGuarded
 from strategies.vwap_managed import VwapManaged
+from strategies.vwap_session import VwapSession
 
 StrategyFactory = Callable[[], Strategy]
 
@@ -74,6 +75,11 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # + BTC 1s yönü), tükenme şartı, risk boyutlandırma, zaman stop'u ve risk
     # kesicileri (günlük zarar limiti, drawdown kill-switch, korelasyon kotası).
     VwapGuarded.name: VwapGuarded,
+    # vwap_session (F0) — kopyanın BİRİMİ düzeltilmiş hâli: seans çapalı VWAP ve
+    # seans σ'su, başka hiçbir fark yok (çarpanlar grid'in ortasında sabit).
+    # `is_replica`: 1R'si sabit teminattan gelir, yarışmacılarınkiyle aynı birim
+    # değildir — bayrağın bütün sonuçları bu tek olgudan çıkar (kural 15b).
+    VwapSession.name: VwapSession,
 }
 
 

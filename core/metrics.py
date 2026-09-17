@@ -127,6 +127,19 @@ class DirectionStats:
     market_tailwind_pct: float
     market_r: float
     market_measured: int  # çıpa penceresinde fiyatlanabilen POZİSYON sayısı
+    # PİYASA FAZLASI: `mean(R_i − market_R_i)`, POZİSYON BAZINDA eşleştirilmiş.
+    # `avg_r − market_r` ile aynı şey DEĞİLDİR: o iki ORTALAMANIN farkıdır ve iki
+    # ortalama farklı satır kümelerinden gelir (R her pozisyonda vardır, market_R
+    # yalnızca çıpa penceresinde fiyatlanabilenlerde). Eşleştirilmiş fark aynı
+    # pozisyonun iki sayısını çıkarır, yani "bu kurulum piyasanın verdiğinin ÜSTÜNE
+    # ne koydu" sorusunun tek dürüst cevabıdır — ve aralığı ancak böyle kurulabilir:
+    # iki bağımsız ortalamanın farkının bootstrap'ı, eşleşmeyi atıp gürültüyü şişirirdi.
+    #
+    # Bu da bir ÖLÇÜDÜR, bir KAPI değil (market_r ile aynı statü): kabul çıtası ona
+    # bakmaz, sıralama ondan yapılmaz. `avg_r`den çıkarılmaz, YANINDA durur.
+    excess_r: float
+    excess_r_ci_low: float
+    excess_r_ci_high: float
     pnl: float
     fees: float
     slippage_cost: float
@@ -397,7 +410,9 @@ def direction_stats(
     loss_total = abs(sum(losses))
     notional = _sum_column(rows, "notional")
     cost = _sum_column(rows, "fee") + _sum_column(rows, "slippage_cost")
-    tailwind, market_r, market_measured = _market_context(rows, reference=reference)
+    tailwind, market_r, market_measured, excess = _market_context(
+        rows, reference=reference
+    )
     # Tohuma yön karıştırılır: long, short ve toplam aynı tohumla yeniden örneklenseydi
     # üç aralık aynı çekiliş desenini paylaşır, bağımsız birer ölçü olmaktan çıkardı.
     ci_low, ci_high = bootstrap_mean_ci(
@@ -405,6 +420,16 @@ def direction_stats(
         alpha=ci_alpha,
         iterations=bootstrap_samples,
         seed=int(seed) ^ hash_name(direction),
+    )
+
+    # Fazlanın tohumu ortalama R'nin tohumundan AYRILIR: aynı tohumla kurulan iki
+    # aralık aynı çekiliş desenini paylaşır ve bağımsız birer ölçü olmaktan çıkardı
+    # (yön tohumlarıyla aynı gerekçe).
+    excess_low, excess_high = bootstrap_mean_ci(
+        excess,
+        alpha=ci_alpha,
+        iterations=bootstrap_samples,
+        seed=int(seed) ^ hash_name(direction) ^ hash_name("excess"),
     )
 
     return DirectionStats(
@@ -434,6 +459,9 @@ def direction_stats(
         market_tailwind_pct=tailwind,
         market_r=market_r,
         market_measured=market_measured,
+        excess_r=_mean(excess),
+        excess_r_ci_low=excess_low,
+        excess_r_ci_high=excess_high,
         pnl=_sum_column(rows, "pnl"),
         fees=_sum_column(rows, "fee"),
         slippage_cost=_sum_column(rows, "slippage_cost"),
@@ -476,8 +504,13 @@ def _price_at_or_before(series: "pd.Series", when: pd.Timestamp) -> float | None
 
 def _market_context(
     rows: Sequence[Mapping[str, Any]], *, reference: Any
-) -> tuple[float, float, int]:
-    """Pozisyonların tutuş penceresinde çıpanın katkısı: (tailwind%, market_R, sayı).
+) -> tuple[float, float, int, list[float]]:
+    """Çıpanın katkısı: (tailwind%, market_R, sayı, EŞLEŞTİRİLMİŞ fazla listesi).
+
+    Dördüncü dönen değer pozisyon bazında `R_i − market_R_i`dir ve yalnızca İKİSİ DE
+    tanımlı olan pozisyonları içerir. Ayrı bir liste olarak dönmesinin sebebi aralıktır:
+    ortalamaların farkının aralığı kurulamaz (iki ortalama farklı kümelerden gelir),
+    eşleştirilmiş farkın aralığı kurulabilir.
 
     **Ortalama, ORANLARIN ortalamasıdır** — `cost_per_r` ile birebir aynı sözleşme:
     önce her pozisyon için `tailwind% / stop%`, sonra ortalama. Önce ortalamaları alıp
@@ -491,10 +524,11 @@ def _market_context(
     """
     series = normalize_reference(reference)
     if series is None:
-        return (_NAN, _NAN, 0)
+        return (_NAN, _NAN, 0, [])
 
     tailwinds: list[float] = []
     market_r: list[float] = []
+    excess: list[float] = []
     for row in rows:
         opened = _utc_stamp(row.get("opened_at"))
         closed = _utc_stamp(row.get("closed_at"))
@@ -509,8 +543,12 @@ def _market_context(
         tailwinds.append(value)
         stop = stop_distance_pct(row)
         if stop:
-            market_r.append(value / stop)
-    return (_mean(tailwinds), _mean(market_r), len(tailwinds))
+            reference_r = value / stop
+            market_r.append(reference_r)
+            realized = r_multiple(row)
+            if realized is not None:
+                excess.append(realized - reference_r)
+    return (_mean(tailwinds), _mean(market_r), len(tailwinds), excess)
 
 
 def _max_drawdown_r(r_values: Sequence[float]) -> float:
@@ -1703,14 +1741,12 @@ def _reading_lines(item: ModelMetrics) -> list[str]:
         if not stats.market_measured:
             continue
         label = ("TOPLAM" if direction == TOTAL else direction).ljust(6)
-        adjusted = (
-            stats.avg_r - stats.market_r
-            if not (math.isnan(stats.avg_r) or math.isnan(stats.market_r))
-            else _NAN
-        )
+        # Yazılan fark EŞLEŞTİRİLMİŞTİR (`excess_r`), iki ortalamanın farkı değil:
+        # aynı pozisyonun iki sayısı çıkarılır ve aralığı ancak böyle kurulabilir.
         lines.append(
             f"{pad}piyasa (beta=1) {label} tailwind %{_fmt(stats.market_tailwind_pct, digits=3)} | "
-            f"market_R {_fmt(stats.market_r)} | R−market_R {_fmt(adjusted)} | "
+            f"market_R {_fmt(stats.market_r)} | R−market_R {_fmt(stats.excess_r)} "
+            f"[{_fmt(stats.excess_r_ci_low)}, {_fmt(stats.excess_r_ci_high)}] | "
             f"{stats.market_measured}/{stats.trades} fiyatlandı"
         )
 

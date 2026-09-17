@@ -3724,3 +3724,74 @@ Kill-switch'ler bu koşuda hiç tetiklenmedi (drawdown −0.94%, günlük R hiç
 inmedi) — yani ölçülmediler. Tetikleyen mekanizmanın kendisi testlidir
 (`tests/test_vwap_guarded.py`), ama canlı defterde bir kez yanana kadar "çalıştığı
 görüldü" denmeyecek.
+
+---
+
+## 46. Kademeli program (F0/F1/F2): önce BİRİM, sonra maliyet, sonra rejim
+
+Karar 45 iki sonuç bıraktı ve bu karar ikisini de uygular.
+
+### Model 18 kâğıttan ÇIKARILDI
+
+Karar 45 onu "ölçülmesi gereken şey kadanstır" gerekçesiyle kâğıda almıştı. Gerekçe artık
+geçersiz: kadans ZATEN ölçüldü — 54 günde 8 kurulum, 0.1 işlem/gün, n=30 kapısına ~300
+gün. Bir modelin kâğıtta koşmasının tek meşru gerekçesi ileriye dönük KANIT biriktirmektir
+ve bu hızda kanıt birikmiyor; koşmaya devam etmesi yalnızca her turda bir satır log
+üretirdi. Kodu, kaydı ve (boş) defteri DURUR (kural 1); backtest onu `--models` ile hâlâ
+çağırabilir.
+
+**Genel ders, tek cümle:** *altı kapıyı aynı anda takmak ölçümü öldürür.* Bir kapı kümesi,
+her biri tek başına ölçülmeden takılmaz. Bu, `docs/backtest.md > 6f`in kademeli
+programının tek gerekçesidir.
+
+### `R − market_R` artık EŞLEŞTİRİLMİŞ ve kendi aralığı var
+
+Karar 45'te ortalama R'nin (+0.30) neredeyse tamamı piyasa rüzgârı çıktı (`market_R`
++0.28). O fark tabloda `avg_r − market_r` olarak, yani İKİ ORTALAMANIN farkı olarak
+yazılıyordu — ve iki ortalama farklı satır kümelerinden geliyordu: R her pozisyonda
+vardır, `market_R` yalnızca çıpa penceresinde fiyatlanabilenlerde. Ölçülemeyen bir
+pozisyonun R'si farkın içine "piyasa sıfır verdi" varsayımıyla sızıyordu.
+
+Artık fark POZİSYON BAZINDA eşleştirilir (`DirectionStats.excess_r`) ve kendi yüzdelik
+bootstrap aralığıyla raporlanır (`excess_r_ci_low/high`). Aralık ancak eşleştirilmiş
+farkla kurulabilir: iki bağımsız ortalamanın farkını bootstrap'lamak eşleşmeyi atıp
+gürültüyü şişirirdi.
+
+**Bu bir ÖLÇÜ, bir KAPI değil** (`market_r` ile aynı statü): kabul çıtası ona bakmaz,
+sıralama ondan yapılmaz, ortalama R'den çıkarılmaz. Ama `docs/backtest.md > 6f`in
+BİRİNCİL ÖLÇÜSÜ odur — ön-kayıt bunu koşulardan önce yazdı.
+
+### F0 (`vwap_session`, model 19): kopyanın kaybı BİRİMDEN mi geliyor?
+
+Kopyanın defteri şunu söylüyor: 54 günde 2903 pozisyon, ort. −0.70R, hesap −%98, 53.8
+işlem/gün. Bu bir sinyal başarısızlığı gibi okunuyordu; ama kaynağın stop'u
+`band × sl_mult × σ`dır ve σ orada 20 barlık dar bir pencereden gelir. Dar σ = dar stop =
+büyük notional = yüksek friksiyon. Yani kayıp, sinyal fikrinden ÖNCE birimden geliyor
+olabilir.
+
+F0 tam olarak bunu sorar ve **yalnızca birimi** değiştirir: VWAP çapası seans (UTC gün),
+σ seansın hacim ağırlıklı σ'su. Kaynağın geri kalan her kuralı — dönüş şartı, geometri,
+sabit teminat × 10x, limitler, üç aşamalı çıkış, bar başına kotaya kadar sinyal, hiçbir
+ev kapısı olmaması — aynen korunur. Bant ve hedef çarpanı ÖĞRENİLMEZ: grid'in ortasında
+sabitlenir (2.0 / 0.75), çünkü keşif payı birim değişikliğinin etkisiyle karışırdı.
+
+**`is_replica = True` ve bu bayrağın anlamı burada netleşti.** F0 dış bir sistemin sadık
+kopyası DEĞİLDİR (o hâlâ yalnızca model 13'tür), ama bayrağın işlevsel anlamını taşır:
+**1R'si sabit teminattan gelir, yarışmacılarınkiyle aynı birim değildir.** Bayrağın
+bütün sonuçları bu tek olgudan çıkar — sıralamaya girmemesi, maliyet ölçeği kolonlarında
+`nan` alması, stop bandı medyanına katılmaması, `ModelLimits` bildirebilmesi. Kural 15b
+bundan böyle "kopya ve aynı boyutlandırma birimini taşıyan türevleri" için okunur; ölçülen
+soru satırın kendi docstring'inde yazılıdır ve tabloda ikisi de aynı bölümdedir.
+
+### Program: F0 → F1 → F2 (ön-kayıt `docs/backtest.md > 6f`)
+
+Kazanma ölçütleri koşulardan ÖNCE sabitlendi ve sonuca göre değiştirilmeyecek:
+
+| Koşu | Ekleyen | Kazandı sayılma |
+|---|---|---|
+| F0 | birim | `R−market_R` aralığının alt sınırı > 0 |
+| F1 | skorla boyut + maker dolum + zaman stop'u + 5x + likidite kuralı | ücret sonrası ort. R > F0 ve maxDD ≤ F0 |
+| F2 | Mod A/B (fade ↔ bounce) ayrı defterlerde | portföy `R−market_R` geçmeli |
+
+Ortak geçerlilik koşulu: **n ≥ 80 ve işlem/gün ≥ 0.5.** Altında kalan satır "kötü" değil
+**ölçülemez**dir — ve karar 45'ten sonra bu ayrım artık pazarlık konusu değildir.

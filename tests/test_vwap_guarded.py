@@ -680,16 +680,16 @@ def test_the_stop_scale_is_not_a_learned_axis(production: dict[str, Any]) -> Non
                for band in bandit["band_mults"])
 
 
-def test_the_model_runs_in_the_paper_layer(production: dict[str, Any]) -> None:
-    """Kâğıt katmanına ALINMASI bir commit'tir ve bu test onu çiviler (karar 45).
+def test_the_model_no_longer_runs_in_the_paper_layer(production: dict[str, Any]) -> None:
+    """Karar 46: model 18 kâğıt katmanından ÇIKARILDI — kadans kanıt biriktirmiyordu.
 
-    Listeye girmek canlıya alma eşiğini (docs/backtest.md > 4) geçmek DEĞİLDİR: backtest'te
-    örneklem kapısı düştü (n=8 < 30). Kâğıtta koşmasının sebebi, ölçülmesi gereken şeyin
-    KADANS olmasıdır — 54 günde 8 kurulum canlıda da böyle mi?
+    Karar 45 onu "ölçülmesi gereken şey kadanstır" diyerek almıştı; ölçüm cevabı zaten
+    vermişti: 54 günde 8 kurulum, 0.1 işlem/gün, n=30 kapısına ~300 gün. Kodu ve kaydı
+    DURUR (kural 1) ve backtest onu `--models` ile çağırabilir; kâğıtta koşması ise
+    yalnızca her turda bir satır log üretirdi.
     """
-    assert VwapGuarded.name in resolve_layer(load_config(), "scalp").models
-    # Katmanın evreni modelin evrenini KAPSAMALI: aksi hâlde sinyal doğrulama kapısı
-    # (kural 8) her turda patlardı.
+    assert VwapGuarded.name not in resolve_layer(load_config(), "scalp").models
+    # Evren sözleşmesi korunur: bir gün geri alınırsa katmanın evrenini aşmamalı.
     assert set(production["vwap"]["guarded"]["universe"]) <= set(
         resolve_layer(load_config(), "scalp").symbols
     )

@@ -385,7 +385,6 @@ defter yazan modeller), **katalog** (`strategies/registry.py`'de kayıtlı ama l
 | 16 | `scalp_patient` | long + short | `scalp_fixed`in ikizi, tek farkı zaman stop'u sınırı (16 ↔ 100 bar) |
 | 13 | `vwap_clone` | long + short | **dış sistem kopyası** (kural 15b), yarışmacı değil |
 | 14 | `vwap_managed` | long + short | VWAP sapma-dönüş sinyali, ev kurallarıyla (risk boyutlandırma, %1 taban, 1.5R) |
-| 18 | `vwap_guarded` | long + short | model 13'ün canlıya hazırlanmış uyarlaması: seans VWAP'i, rejim kapıları, tükenme şartı, risk kesicileri (karar 45; **kâğıtta koşar, canlıya alma eşiğini GEÇMEDİ** — n=8 < 30) |
 
 ### Katalog — kayıtlı ama listede değil
 
@@ -404,6 +403,8 @@ eklemek bir commit'tir. Backtest onları `--models` ile hâlâ çağırabilir.
 | 11 | `scalp_bandit` | emekli | adaptasyon ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
 | 15 | `scalp_managed` | emekli | çıkış yönetimi ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
 | 17 | `scalp_vol` | aday, canlıda koşmaz | ön-kayıtlı birincil tahmin P1 DÜŞTÜ (karar 36) |
+| 18 | `vwap_guarded` | aday, canlıda koşmaz | altı kapı birden: 54 günde 8 kurulum, 0.1 işlem/gün — ölçülemez (karar 45/46) |
+| 19 | `vwap_session` | **F0 — ölçüm bekliyor** | kopyanın BİRİMİ düzeltilmiş hâli (seans çapası + seans σ), başka filtre yok; ön-kayıt `docs/backtest.md > 6f` |
 
 **Emekli ≠ silinmiş.** Ölçüt performans değil ÖLÇÜLEBİLİRLİKTİR: ne kadar iyi olduğunu asla
 öğrenemeyeceğimiz bir satır, tabloda bir bilgi değil bir gürültü kaynağıdır.

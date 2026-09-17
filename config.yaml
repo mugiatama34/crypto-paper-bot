@@ -221,13 +221,12 @@ layers:
     # tetiklemedi, yani bandit'in tahsis edecek bir şeyi yok ("1 uygun kol"). Eksenleri
     # kapatmak bilgi kaybı değil, iki kez alınan "fark yok" cevabını kabul etmektir.
     # Hareket eden TEK eksen süredir (scalp_patient ↔ scalp_fixed: −0.01 ↔ −0.15).
-    # vwap_guarded (model 18) KÂĞIT katmanına alındı (karar 45). Bu, canlıya alma
-    # eşiğinin (docs/backtest.md > 4) geçildiği anlamına GELMEZ — `scalp_patient` ile
-    # kurulan ayrımın aynısı: backtest'te örneklem kapısı düştü (n=8 < 30), yani
-    # ortalama R'si (+0.30) bir ölçüm değil. Kâğıtta koşmasının sebebi ileriye dönük
-    # kanıtın yalnızca orada birikmesi ve bu modelde ölçülmesi gereken şeyin KADANS
-    # olmasıdır: 54 günde 8 kurulum (0.1 işlem/gün) canlıda da böyle mi?
-    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed", "vwap_guarded"]
+    # vwap_guarded (model 18) LİSTEDEN ÇIKARILDI (karar 46). Karar 45'te kâğıda
+    # alınmıştı; ölçüm onu geri aldı: 54 günde 8 kurulum (0.1 işlem/gün) ve n=30
+    # kapısına ~300 gün. Bir modelin kâğıtta koşmasının tek gerekçesi ileriye dönük
+    # KANIT biriktirmektir ve bu kadansta kanıt birikmiyor — koşmaya devam etmesi
+    # yalnızca her turda bir satır log üretirdi. Kodu ve (boş) defteri DURUR.
+    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle
@@ -435,6 +434,30 @@ vwap:
       - "ETHFI-USDT-SWAP"
       - "PENGU-USDT-SWAP"
       - "NEAR-USDT-SWAP"
+
+  # F0 (model 19, `vwap_session`) — kopyanın BİRİMİ düzeltilmiş hâli. Tek değişken:
+  # VWAP çapası SEANS (UTC gün) ve σ seansın hacim ağırlıklı σ'su. Kaynağın geri kalan
+  # her kuralı aynen korunur (dönüş şartı, stop/hedef geometrisi, sabit teminat × 10x,
+  # limitler, üç aşamalı çıkış, bar başına kotaya kadar sinyal, hiçbir ev kapısı yok).
+  #
+  # Çarpanlar SABİTTİR ve grid'in ORTASINDAN alınır: öğrenen bir model, birim
+  # değişikliğinin etkisini kendi keşif payıyla karıştırırdı. Süpürülmediler — orta
+  # değer, sonucu görmeden seçilebilen tek değerdir.
+  #
+  # Ön-kayıt: docs/backtest.md > 6f (F0). Boyut, maker dolum, skor ve zaman stop'u
+  # buraya DEĞİL, F1'e aittir ve kendi ön-kaydıyla gelir.
+  session:
+    band_mult: 2.0          # kaynağın grid'i [1.5, 2.0, 2.5] -> ortası
+    tp_mult: 0.75           # kaynağın grid'i [0.5, 0.75, 1.0] -> ortası
+    sl_mult: 0.5            # kaynakta zaten SABİT (VWAP_SL_MULT)
+    min_bars: 8             # seans çapasından bu kadar bar geçmeden sapma anlamlı değil
+                            # (model 14'ün `min_vwap_bars` değeriyle AYNI sayı: aynı
+                            # çapanın iki farklı tanımı olamaz)
+    notional_fraction: 0.5  # kaynağın boyutlandırması: sabit teminat × kaldıraç
+    leverage: 10            # tavanı core/validate.py::REPLICA_LEVERAGE_CAP
+    max_positions: 5
+    max_per_direction: 3
+    max_portfolio_risk: 0.08
 
   # Model 18 — kopyanın CANLIYA HAZIRLANMIŞ uyarlaması (strategies/vwap_guarded.py).
   # Model 13'ün kuralları DEĞİŞTİRİLMEDİ (kural 15b: değiştirilen kopya kopya olmaktan

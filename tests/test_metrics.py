@@ -1512,6 +1512,67 @@ def test_market_r_averages_per_position_ratios_like_cost_per_r() -> None:
     assert stats.market_r == pytest.approx((1.0 + 0.25) / 2.0)
 
 
+def test_excess_r_is_paired_per_position_not_a_difference_of_means() -> None:
+    """`R − market_R` AYNI pozisyonun iki sayısından çıkar, iki ortalamadan değil.
+
+    Fark, çıpanın fiyatlayamadığı pozisyon olduğunda ortaya çıkar: `avg_r` onu sayar,
+    `market_r` saymaz. İki ortalamayı çıkarmak, ölçülmemiş bir pozisyonun R'sini
+    "piyasa sıfır verdi" varsayımıyla farkın içine sokardı.
+    """
+    reference = pd.Series(
+        [100.0, 101.0],
+        index=pd.to_datetime(["2026-01-03T00:00:00+00:00", "2026-01-04T00:00:00+00:00"]),
+    )
+    rows = [
+        # Çıpa serisinden ÖNCE: R'si var, market_R'si YOK -> fazlaya girmez.
+        _window_trade(direction="long", pnl=300.0, opened="1", closed="2"),
+        # Seri içinde: R = +0.10, market_R = +1.0 -> fazla = -0.90
+        _trade(direction="long", pnl=10.0, risk=100.0, entry_price=100.0, stop_price=99.0,
+               opened_at="2026-01-03T00:00:00+00:00", closed_at="2026-01-04T00:00:00+00:00"),
+    ]
+
+    stats = direction_stats(rows, direction="long", reference=reference)
+
+    assert stats.excess_r == pytest.approx(-0.90)
+    # İki ortalamanın farkı BAŞKA bir sayıdır: avg_r = (3.00 + 0.10)/2 = 1.55 ve
+    # market_r = 1.00 -> 0.55. Ölçülemeyen pozisyonun R'si farkın içine sızdı.
+    assert stats.avg_r - stats.market_r == pytest.approx(0.55)
+
+
+def test_excess_r_interval_is_deterministic_and_separate_from_the_r_interval() -> None:
+    """Aynı defter her zaman aynı aralığı verir; fazlanın aralığı R'ninkinden AYRIDIR."""
+    reference = _reference(100.0, 101.0, 102.0, 103.0)
+    rows = [
+        _trade(direction="long", pnl=value, risk=100.0, symbol=f"S{index}-USDT-SWAP",
+               entry_price=100.0, stop_price=99.0,
+               opened_at="2026-01-01T00:00:00+00:00", closed_at="2026-01-03T00:00:00+00:00")
+        for index, value in enumerate((120.0, -80.0, 40.0, 10.0, -30.0))
+    ]
+
+    kwargs = dict(direction="long", reference=reference, ci_alpha=0.05,
+                  bootstrap_samples=500, seed=7)
+    first = direction_stats(rows, **kwargs)
+    second = direction_stats(rows, **kwargs)
+
+    assert first.excess_r_ci_low == pytest.approx(second.excess_r_ci_low)
+    assert first.excess_r_ci_high == pytest.approx(second.excess_r_ci_high)
+    assert first.excess_r_ci_low < first.excess_r < first.excess_r_ci_high
+    assert (first.excess_r_ci_low, first.excess_r_ci_high) != (
+        first.avg_r_ci_low, first.avg_r_ci_high
+    )
+
+
+def test_excess_r_is_not_computed_without_an_anchor() -> None:
+    """Çıpa yoksa fazla `nan`dır — `0.0` "ölçtük, sıfır çıktı" demek olurdu."""
+    stats = direction_stats(
+        [_window_trade(direction="long", pnl=50.0, opened="1", closed="2")],
+        direction="long",
+    )
+
+    assert math.isnan(stats.excess_r)
+    assert math.isnan(stats.excess_r_ci_low)
+
+
 def test_reference_timestamps_are_read_as_utc(tmp_path: Path) -> None:
     """Zaman dilimsiz bir çıpa serisi UTC sayılır — defter UTC yazar (kural 12).
 

@@ -468,6 +468,99 @@ IN-SAMPLE).
 
 ---
 
+## 6f. ÖN-KAYIT — F0 / F1 / F2: kademeli program
+
+**Bu bölüm koşulardan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.**
+
+**Neden kademeli.** Karar 45'in dersi tek cümledir: *altı kapıyı aynı anda takmak ölçümü
+öldürür.* `vwap_guarded` 54 günde 8 pozisyon üretti ve hiçbir sayısı okunamadı. Bir
+değişikliğin etkisi, ancak tek başına ve ölçülebilir bir örneklemle sorulabilir. Bu yüzden
+tek yığın bir koşu YOKTUR; üç kısa, AYRI ön-kayıt vardır ve her biri bir öncekinin
+üstüne tek bir kalem ekler.
+
+| Koşu | Ne değişir | n hedefi | Kazandı sayılma |
+|---|---|---|---|
+| **F0** | Sadece BİRİM: seans VWAP + seans σ, bant 2.0 sabit. Başka filtre yok | orijinalin %40–80'i | `R−market_R` aralığının ALT SINIRI sıfırın üstünde |
+| **F1** | F0 + skorla boyut + maker dolum + zaman stop'u + 5x | F0'ın %50–90'ı (dolmayan limitler) | ücret sonrası ort. R > F0 **ve** maxDD ≤ F0 |
+| **F2** | F1 + Mod A/B rejim anahtarı | F1'den AZ DEĞİL, farklı karışım | fade ve bounce AYRI defter; ikisinin birden F1'i geçmesi şart değil, PORTFÖY `R−market_R` geçmeli |
+
+**Her üçü için ortak geçerlilik koşulu** (§3'e ek): `n ≥ 80` **ve** `işlem/gün ≥ 0.5`.
+Bu ikisi sağlanmazsa satır OKUNMAZ ve sonuç "model kötü" değil, **"ölçülemedi"**dir.
+0.5 işlem/gün 54 günde ~27 işlem demektir — hâlâ zayıf, ama n=8'den ölçülebilir; bu yüzden
+pencereler UZUN seçilir (150+ gün).
+
+**Birincil ölçü `R − market_R`dir, ham ortalama R değil.** Karar 45'te +0.30R'nin
+neredeyse tamamı piyasa rüzgârı çıktı (`market_R` +0.28). Fark artık POZİSYON BAZINDA
+eşleştirilip kendi bootstrap aralığıyla raporlanır (`core/metrics.py::DirectionStats.excess_r`):
+aynı pozisyonun iki sayısı çıkarılır, iki ortalamanın farkı alınmaz.
+
+---
+
+### F0 — `vwap_session` (model 19)
+
+**Hipotez.** Kopyanın (model 13) kaybı sinyal fikrinden DEĞİL, BİRİMDEN geliyor: kayan
+300 barlık çapa + 20 barlık dar σ, stop'u (`band × sl_mult × σ`) çok dar bırakıyor,
+notional'ı şişiriyor ve 53.8 işlem/gün'lük bir friksiyon makinesi üretiyor (ölçüldü:
+ort. −0.70R, hesap −%98). Seans çapası ve seans σ'su aynı kuralları geniş bir ölçekte
+uygular.
+
+**Ayrışan TEK şey:** VWAP çapası (300 bar kümülatif → seans) ve σ tahmincisi (rolling(20)
+örneklem sd'si → seansın hacim ağırlıklı σ'su). Çarpanlar sabit ve grid'in ORTASINDAN
+(`band_mult` 2.0, `tp_mult` 0.75) — öğrenme KALDIRILDI, çünkü keşif payı birim
+değişikliğinin etkisiyle karışırdı. Geri kalan her kural kaynağınkidir: dönüş şartı,
+geometri, sabit teminat × 10x, limitler, üç aşamalı çıkış, bar başına kotaya kadar
+sinyal ve **hiçbir ev kapısı yok**.
+
+**Pencere.** 2026-03-01 → 2026-08-16 (168 gün), `--history-bars 18000`. Uzun seçildi
+çünkü ortak koşul `n ≥ 80` ve `işlem/gün ≥ 0.5`. F0'ın hiçbir parametresi hiçbir pencereden
+seçilmedi (orta değerler), dolayısıyla pencerenin tamamı OOS'tur.
+
+**Kıyas kümesi:** `vwap_session`, `vwap_clone`. İkisi de sabit teminatla koşar, yani
+aynı birimde okunurlar. `random_ctrl` YOKTUR (katmanda koşamıyor, karar 45) ve bunun
+sonucu açıktır: **C-2 bu katmanda değerlendirilemez.**
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | `R − market_R` aralığı | ALT SINIR > 0 | alt sınır ≤ 0 |
+| P2 | ortalama R | `vwap_session` > `vwap_clone` (−0.70) | ≤ −0.70 |
+| P3 | örneklem | n ≥ 80 **ve** ≥ 0.5 işlem/gün | altında → satır OKUNMAZ |
+| P4 | işlem sayısı | kopyanın %40–80'i | dışındaysa birim beklenenden farklı ölçekte |
+| P5 | friksiyon | `cost_pct` ve ciro kopyadan DÜŞÜK | değilse geniş stop tezi yanlış |
+
+**P1 birincildir.** P4 bir SAĞLAMADIR: birim gerçekten ölçeği değiştirdi mi? Tutmazsa
+P1'in sonucu yorumlanamaz — çünkü o zaman ölçülen şey birim değil, başka bir şeydir.
+
+**F0 bile `market_R`siz artı değilse model ölür.** Ön-kayıt bunu şimdi yazıyor: o durumda
+doğru hamle F1'e geçmek DEĞİL, VWAP fade tezini bırakmaktır.
+
+---
+
+### F1 ve F2 — parametreleri KENDİ ön-kayıt commit'lerinde sabitlenir
+
+İkisinin de KAZANMA ÖLÇÜTÜ yukarıdaki tabloda şimdiden yazılıdır ve sonuca göre
+değiştirilmeyecektir (§7.4). Değişecek olan yalnızca uygulama ayrıntılarıdır ve onlar da
+kendi koşularından ÖNCE commit edilir:
+
+- **F1:** skor `S = |z| × (1 − min(V/V₂₀,1)) × w_red × w_rejim` ile SIRALAMA ve BOYUT
+  (yasak değil, küçültme); post-only limit dolum + bir sonraki barda dolmazsa iptal;
+  maker komisyonu; ilerleme koşullu zaman stop'u (6–8 barda 0.3R yoksa çık); kaldıraç
+  5x; likidite kuralı (P&L'ye değil, 24s hacim tabanına göre sembol elemesi).
+- **F2:** Mod A (denge günü, fade) ve Mod B (trend günü, VWAP'e dönüşte trend yönünde
+  giriş) AYRI MODELLER — yani ayrı defter, ayrı R. "Tek PnL" ile karar verilmez; portföy
+  ölçüsü ikisinin havuzudur.
+
+**Yasaklar (§7'nin bu programa özel hâli).** Bunlar koşulardan önce yazıldı:
+
+1. Koşu görüldükten sonra kapı gevşetmek YOK.
+2. "Sadece SELL aç" YOK — kâğıttaki yön asimetrisi in-sample'dır.
+3. n < 80 iken "şu kadar R işe yaradı" YOK.
+4. Sembol elemesi P&L'ye bakarak YOK; yalnızca önceden yazılmış likidite kuralıyla.
+5. Cron ile sürekli sürecin birlikte koşması YOK.
+
+**Çoklu karşılaştırma (§7.5).** F0 sicildeki **4.** hipotezdir.
+
+---
+
 ## 6c. ÖN-KAYIT SİCİLİ — her hipotez, sonucu ne olursa olsun, buraya yazılır
 
 **Bu tablo §7.5'in ("çoklu karşılaştırma açıkça raporlanır") tutulan hâlidir.** §7.5 bir
@@ -485,8 +578,9 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16 | P1: ortalama R > 0 | **ÖLÇÜLEMEDİ** — σ birimi hatası: 52 günde 0 kurulum; koşu ayrıca `random_ctrl` yüzünden düştü (karar 45) |
 | 3 | `vwap_guarded` (σ birimi düzeltilmiş): aynı tahminler, taze pencere | §6e | B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | **P3 DÜŞTÜ** (n=8 < 30) → P1 değerlendirilemez (+0.30R, aralık [−0.19, +0.69]); 0.1 işlem/gün — karar 45 |
+| 4 | **F0** `vwap_session`: kopyanın kaybı sinyalden değil BİRİMDEN geliyor | §6f | 2026-03-01 → 08-16 | P1: `R−market_R` aralığının alt sınırı > 0 | _koşu bekliyor_ |
 
-**Araştırmadan çıkan öneri sayısı: 10.** Bunların 3'ü test edildi (yukarıdakiler), 4'ü
+**Araştırmadan çıkan öneri sayısı: 10.** Bunların 4'ü test edildi/edilmekte (yukarıdakiler), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
 hakkında bir iddia taşımaz), 2'si reddedildi (işlem sıklığı tavanı, sembol eleme), 3'ü
