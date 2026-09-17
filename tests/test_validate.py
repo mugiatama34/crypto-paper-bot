@@ -27,14 +27,74 @@ def test_valid_long_signal_passes() -> None:
     )
 
 
-def test_limit_entry_type_not_implemented() -> None:
+def test_unknown_entry_type_not_implemented() -> None:
     with pytest.raises(NotImplementedError):
+        validate_signal(
+            _signal(entry_type="stop_limit"),
+            entry_price=100.0,
+            allowed_directions=["long"],
+            symbol_universe=UNIVERSE,
+        )
+
+
+def test_post_only_limit_must_rest_on_the_favourable_side() -> None:
+    """Limit emri tek bir amaç için vardır: dolumu PASİF yapmak.
+
+    Referansın ters tarafındaki bir "limit", kitaba konduğu anda karşı tarafı alır ve
+    taker dolar — maker komisyonuyla ölçmek, hiç gerçekleşmemiş bir indirimi deftere
+    yazmak olurdu.
+    """
+    with pytest.raises(ValueError, match="ALTINDA"):
+        validate_signal(
+            _signal(entry_type="limit", limit_price=101.0),
+            entry_price=100.0,
+            allowed_directions=["long"],
+            symbol_universe=UNIVERSE,
+        )
+
+    validate_signal(
+        _signal(entry_type="limit", limit_price=99.5),
+        entry_price=100.0,
+        allowed_directions=["long"],
+        symbol_universe=UNIVERSE,
+    )
+
+
+def test_limit_price_is_required_and_market_orders_cannot_carry_one() -> None:
+    """Yok saymak, modelin hangi dolumu istediğini TAHMİN etmek olurdu."""
+    with pytest.raises(ValueError, match="limit_price zorunludur"):
         validate_signal(
             _signal(entry_type="limit"),
             entry_price=100.0,
             allowed_directions=["long"],
             symbol_universe=UNIVERSE,
         )
+    with pytest.raises(ValueError, match="limit_price dolu olamaz"):
+        validate_signal(
+            _signal(limit_price=99.0),
+            entry_price=100.0,
+            allowed_directions=["long"],
+            symbol_universe=UNIVERSE,
+        )
+
+
+def test_size_scale_can_only_shrink() -> None:
+    """Büyütmeye izin vermek, modelin kendi risk oranını seçmesi demekti (kural 3/11)."""
+    for scale in (0.0, -0.5, 1.5):
+        with pytest.raises(ValueError, match="size_scale"):
+            validate_signal(
+                _signal(size_scale=scale),
+                entry_price=100.0,
+                allowed_directions=["long"],
+                symbol_universe=UNIVERSE,
+            )
+
+    validate_signal(
+        _signal(size_scale=0.5),
+        entry_price=100.0,
+        allowed_directions=["long"],
+        symbol_universe=UNIVERSE,
+    )
 
 
 def test_symbol_outside_universe_rejected() -> None:

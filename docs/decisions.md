@@ -3795,3 +3795,61 @@ Kazanma ölçütleri koşulardan ÖNCE sabitlendi ve sonuca göre değiştirilme
 
 Ortak geçerlilik koşulu: **n ≥ 80 ve işlem/gün ≥ 0.5.** Altında kalan satır "kötü" değil
 **ölçülemez**dir — ve karar 45'ten sonra bu ayrım artık pazarlık konusu değildir.
+
+---
+
+## 47. Çekirdeğe iki yetenek: POST-ONLY limit dolum ve skorla boyut
+
+İkisi de F1'in (docs/backtest.md > 6f) ön koşuludur ve ikisi de ÇEKİRDEĞE eklendi, modele
+değil — çünkü ikisi de kural 13'ün (dolum bir sonraki barda) ve kural 3/11'in (boyutu
+yalnızca portföy belirler) sınırları içinde kalmak zorundadır. Bir stratejinin kendi dolum
+fiyatını ya da kendi risk oranını yazması, ölçümün ortak birimini (1R) ortadan kaldırırdı.
+Strateji yalnızca İSTER (`entry_type`, `limit_price`, `size_scale`); uygulayan motor ve
+portföydür.
+
+### Neden: ölçülen en büyük kaldıraç maliyet
+
+Kopyanın defteri 53.8 işlem/gün ve tur maliyeti %0.253 gösteriyor. Her iki bacağı da taker
+olan bir sistemde komisyon, R'nin işaretini tek başına belirleyebilir. Maker dolum bu
+kalemi yarıdan fazla düşürür (0.055% → 0.02%) — ama **bedava değildir** ve bedeli
+simülasyonda gerçekten ödenmelidir.
+
+### POST-ONLY limit: üç kural birden
+
+1. **Fiyat LEHTE tarafta olmak zorundadır** (long'da referansın altı, short'ta üstü).
+   Ters taraftaki bir "limit" kitaba konduğu anda karşı tarafı alır ve TAKER dolar; maker
+   komisyonuyla ölçmek, hiç gerçekleşmemiş bir indirimi deftere yazmak olurdu. Kapı
+   `core/validate.py`dedir ve eşitlik de geçmez (borsanın post-only kuralı reddederdi).
+2. **Emir YALNIZCA bir bar geçerlidir.** Kural 13'ün "bir sonraki barın açılışı" tanımının
+   limit karşılığı budur: dolmazsa iptal edilir ve `limit_not_filled` sebep koduyla
+   SAYILIR. Bir backtest'in en kolay yalanı, maker komisyonunu alıp dolmama riskini
+   almamaktır; o risk artık tur raporunda bir sayıdır.
+3. **Dolum ölçütü mum İÇİ aralıktır** (stop/TP ile aynı sözleşme): long emri barın en
+   düşüğü limite indiyse, short emri en yükseği limite çıktıysa dolmuş sayılır. Kayma
+   UYGULANMAZ — emir kitapta BELİRLİ bir fiyatta duruyordu.
+
+**Bu varsayım İYİMSERDİR ve bu yazılı kalmalıdır.** Gerçekte kuyruk vardır: fiyat limite
+yalnızca değip döndüyse emir sırada kalmış olabilir. Yani kural 13'ün muhafazakâr yönünün
+(aynı barda stop ve hedef varsa kötü olan gerçekleşmiş sayılır) TERSİ yöndedir. Kuyruk
+modellemek emir defteri derinliği ister; o veri bu projede yoktur ve uydurulmuş bir dolum
+olasılığı ölçümü o uydurmaya bağlardı. Sapma `docs/backtest.md > 6f`de kabul edilmiş
+olarak durur ve maker koşularının sonucu okunurken hatırlanacaktır.
+
+### Skorla boyut: yalnızca KÜÇÜLTÜR
+
+`size_scale ∈ (0, 1]`. Model "bu kurulum zayıf" diyebilir, ama kendi risk oranını
+BÜYÜTEMEZ. Gerekçe kural 3/11'dir: büyütmeye izin vermek, her modelin kendi risk oranını
+seçmesi ve modellerin artık aynı ölçekte yarışmaması demekti. Küçültme 1R'nin tanımını
+bozmaz — R'nin paydası GERÇEKLEŞEN `risk_amount`tır ve o da kırpılmış miktardan hesaplanır
+(kural 14'ün `risk_amount` tanımı zaten böyle yazılıydı: formülün payı değil, gerçekleşen
+risk).
+
+Kırpma sessiz olamaz: gerekçe pozisyonun `notes` alanına yazılır (kural 14'ün "atlama
+sessiz olamaz" ilkesinin aynısı).
+
+### Mevcut modellerin davranışı DEĞİŞMEDİ
+
+Varsayılanlar `entry_type="market"` ve `size_scale=1.0`dır; eski defterlerdeki bekleyen
+emirler de bu varsayılanlara düşer (`PendingOrder.from_state`). Hiçbir mevcut model
+limit emri ya da ölçek bildirmez, dolayısıyla hiçbirinin tek bir dolumu değişmez —
+1106 testin tamamı bunu doğruluyor.

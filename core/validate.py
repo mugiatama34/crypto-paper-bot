@@ -30,6 +30,7 @@ oysa bu modeller tam olarak çıkış kuralını ölçmek için var.
 from __future__ import annotations
 
 import logging
+import math
 
 from strategies.base import Direction, ModelLimits, Signal, Strategy
 
@@ -54,8 +55,15 @@ def validate_signal(
     is_replica: bool = False,
 ) -> None:
     """Sinyali reddeder ya da sessizce geçirir; bayrakların varsayılanı kısıtlayıcı olandır."""
-    if signal.entry_type != "market":
+    if signal.entry_type not in ("market", "limit"):
         raise NotImplementedError(f"entry_type={signal.entry_type!r} henüz desteklenmiyor")
+    _validate_entry(signal, entry_price=entry_price)
+    if not 0.0 < signal.size_scale <= 1.0:
+        # Ölçek yalnızca KÜÇÜLTÜR: 1.0'ın üstü, modelin kendi risk oranını seçmesi
+        # demekti ve ortak risk birimi (1R) ortadan kalkardı (kural 3/11).
+        raise ValueError(
+            f"{signal.symbol}: size_scale (0, 1] aralığında olmalı: {signal.size_scale}"
+        )
 
     if signal.symbol not in symbol_universe:
         raise ValueError(f"{signal.symbol} sembol evreninde değil")
@@ -74,6 +82,45 @@ def validate_signal(
     _validate_take_profits(signal, entry_price=entry_price)
     _validate_exit_management(signal)
 
+
+
+def _validate_entry(signal: Signal, *, entry_price: float) -> None:
+    """Emir tipinin kendi içinde tutarlılığı: POST-ONLY limit gerçekten pasif mi?
+
+    Limit emri bu depoda tek bir amaç için vardır: dolumu AKTİF (taker) olmaktan
+    çıkarıp PASİF (maker) yapmak. Bu ancak fiyat girişin LEHİNE tarafta durursa
+    gerçekleşir — long'da referansın altında, short'ta üstünde. Ters taraftaki bir
+    "limit", kitaba konduğu anda karşı tarafı alır ve taker olarak dolar; maker
+    komisyonuyla ölçmek o zaman hiç gerçekleşmemiş bir indirimi deftere yazmak olurdu.
+
+    Eşitlik de geçmez: referansın TAM ÜSTÜNDE duran bir emir, borsanın post-only
+    kuralında reddedilirdi.
+
+    Piyasa emrinde `limit_price` dolu olamaz — yok saymak, modelin hangi dolumu
+    istediğini tahmin etmek olurdu (aynı gerekçe `sizing`/`notional_fraction` çiftinde).
+    """
+    if signal.entry_type == "market":
+        if signal.limit_price is not None:
+            raise ValueError(
+                f"{signal.symbol}: entry_type=\"market\" iken limit_price dolu olamaz"
+            )
+        return
+
+    if signal.limit_price is None:
+        raise ValueError(f"{signal.symbol}: entry_type=\"limit\" için limit_price zorunludur")
+    price = float(signal.limit_price)
+    if not math.isfinite(price) or price <= 0.0:
+        raise ValueError(f"{signal.symbol}: limit_price pozitif ve sonlu olmalı: {price}")
+    if signal.direction == "long" and price >= entry_price:
+        raise ValueError(
+            f"{signal.symbol}: long post-only limit referansın ALTINDA olmalı "
+            f"({price} >= {entry_price}) — aksi hâlde emir taker dolardı"
+        )
+    if signal.direction == "short" and price <= entry_price:
+        raise ValueError(
+            f"{signal.symbol}: short post-only limit referansın ÜSTÜNDE olmalı "
+            f"({price} <= {entry_price}) — aksi hâlde emir taker dolardı"
+        )
 
 def validate_model(strategy: Strategy) -> None:
     """Modelin bayrak/limit bildirimini kurulum anında denetler (kapı: strategies/registry.py).

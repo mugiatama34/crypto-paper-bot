@@ -6,8 +6,11 @@ Onaylanan tasarım (bkz. CLAUDE.md > "Strateji Arayüz Sözleşmesi"):
 - manage_positions: yalnızca mevcut pozisyonlarda kapanış/kısmi çıkış önerir.
   İkisi karıştırılmaz; engine'in "bu sinyal yeni mi, mevcut pozisyona müdahale mi"
   diye tahmin yürütmesi gerekmez.
-- entry_type sözleşmede "limit" olarak da yazılabilir ama v1'de yalnızca "market"
-  işlenir; core/validate.py "limit" gördüğünde NotImplementedError fırlatır.
+- entry_type "market" ya da "limit" olabilir. Limit emri POST-ONLY'dir ve tek bir
+  amaç için vardır: dolumu AKTİF (taker) olmaktan çıkarıp PASİF (maker) yapmak.
+  Bu yüzden fiyatı girişin LEHİNE tarafta olmak ZORUNDADIR (core/validate.py) ve
+  emir yalnızca BİR bar geçerlidir — dolmazsa iptal edilir ve `limit_not_filled`
+  ile sayılır. Bedeli budur: maker indirimi bedava değildir, dolmama riskiyle alınır.
 - trailing_atr yalnızca stratejinin isteğini taşır; trailing'in uygulanması
   core/engine.py'nin işidir, strateji kendi trailing mantığını yazmaz.
 - take_profits bir tuple'dır, liste değil: frozen dataclass içinde mutable liste
@@ -125,6 +128,18 @@ class Signal:
     # Yalnızca sizing="notional_fraction" iken anlamlı: sermayenin bu oranı kadar notional.
     notional_fraction: float | None = None
     entry_type: Literal["market", "limit"] = "market"
+    # POST-ONLY limit emrinin fiyatı; `entry_type="limit"` iken ZORUNLUDUR.
+    # Fiyat girişin LEHİNE tarafta olmalıdır (long'da referansın altı, short'ta
+    # üstü): aksi hâlde emir kitabı geçer ve pasif değil AKTİF dolar — yani
+    # maker varsayımı gerçekleşmeyen bir dolumu ölçüme sokardı (kapı:
+    # core/validate.py). Emir yalnızca BİR bar geçerlidir: dolmazsa iptal edilir
+    # ve `limit_not_filled` ile sayılır.
+    limit_price: float | None = None
+    # Boyut ÖLÇEĞİ: (0, 1] — yalnızca KÜÇÜLTÜR (kural 3/11'in sınırı). Model
+    # "bu kurulum zayıf" diyebilir ama kendi risk oranını BÜYÜTEMEZ; ortak risk
+    # birimi (1R) böyle korunur. Uygulayan yine tek yetkili yerdir
+    # (core/portfolio.py); strateji yalnızca ölçeği bildirir.
+    size_scale: float = 1.0
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None
     # --- Üç aşamalı çıkış yönetimi (hepsi OPSİYONEL, varsayılan KAPALI) ---

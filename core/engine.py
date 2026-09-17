@@ -128,6 +128,12 @@ class PendingOrder:
     breakeven_at_r: float | None = None
     partial_tp: PartialTakeProfit | None = None
     trail_giveback_pct: float | None = None
+    # Emir TİPİ ve post-only limit fiyatı. Emir koşular arası defterde taşındığı için
+    # (kural 13) tip de taşınmalıdır: taşınmasaydı bir sonraki turda dolan bir limit
+    # emri sessizce piyasa emrine dönüşür ve maker varsayımı deftere yanlış yazılırdı.
+    entry_type: Literal["market", "limit"] = "market"
+    limit_price: float | None = None
+    size_scale: float = 1.0
     fraction: float = 1.0
     reason: str = ""
 
@@ -145,6 +151,9 @@ class PendingOrder:
             "breakeven_at_r": self.breakeven_at_r,
             "partial_tp": partial_tp_to_state(self.partial_tp),
             "trail_giveback_pct": self.trail_giveback_pct,
+            "entry_type": self.entry_type,
+            "limit_price": self.limit_price,
+            "size_scale": self.size_scale,
             "fraction": self.fraction,
             "reason": self.reason,
         }
@@ -172,6 +181,10 @@ class PendingOrder:
             breakeven_at_r=_opt_float(payload.get("breakeven_at_r")),
             partial_tp=partial_tp_from_state(payload.get("partial_tp")),
             trail_giveback_pct=_opt_float(payload.get("trail_giveback_pct")),
+            # Eski defterlerde alan yok: yokluk "piyasa emri, tam boy" demektir.
+            entry_type=str(payload.get("entry_type", "market")),  # type: ignore[arg-type]
+            limit_price=_opt_float(payload.get("limit_price")),
+            size_scale=float(payload.get("size_scale", 1.0)),
             fraction=float(payload.get("fraction", 1.0)),
             reason=str(payload.get("reason", "")),
         )
@@ -332,6 +345,26 @@ class _ModelRun:
         for reason, count in counts.items():
             self.survey[reason] = self.survey.get(reason, 0) + int(count)
 
+
+
+def _limit_touched(order: PendingOrder, bar: Bar) -> bool:
+    """Post-only limit emri, geçerli olduğu barda dokunuldu mu?
+
+    Ölçüt mum İÇİ aralıktır (stop/TP kontrolüyle aynı sözleşme): long emri barın en
+    düşüğü limite indiyse, short emri en yükseği limite çıktıysa dolmuş sayılır.
+    Kapanışa bakmak, mumun içinde gerçekten çalışmış bir emri görmezden gelmek olurdu.
+
+    **Dokunma dolumu GARANTİ etmez — gerçekte kuyruk vardır** ve fiyat limite yalnızca
+    değip döndüyse emir sırada kalmış olabilir. Bu varsayım İYİMSERDİR ve kural 13'ün
+    (aynı barda stop ve hedef varsa kötü olan gerçekleşmiş sayılır) tersi yöndedir; bu
+    yüzden burada yazılıdır ve ön-kayıtta (docs/backtest.md > 6f) kabul edilmiş bir
+    sapma olarak durur: kuyruk modellemek emir defteri derinliği gerektirir, o veri bu
+    projede yoktur ve uydurulmuş bir dolum olasılığı ölçümü o uydurmaya bağlardı.
+    """
+    if order.limit_price is None:
+        return False
+    price = float(order.limit_price)
+    return bar.low <= price if order.direction == "long" else bar.high >= price
 
 class Engine:
     """Turu yürüten orkestratör. Strateji listesi dışarıdan verilir (test edilebilirlik)."""
@@ -529,6 +562,9 @@ class Engine:
                     breakeven_at_r=signal.breakeven_at_r,
                     partial_tp=signal.partial_tp,
                     trail_giveback_pct=signal.trail_giveback_pct,
+                    entry_type=signal.entry_type,
+                    limit_price=signal.limit_price,
+                    size_scale=signal.size_scale,
                     reason=signal.reason,
                 )
                 for signal in model_signals
@@ -700,12 +736,32 @@ class Engine:
                 filled += 1
                 continue
 
+            reference, fill = bar.open, "taker"
+            if order.entry_type == "limit":
+                touched = _limit_touched(order, bar)
+                if not touched:
+                    # Maker indiriminin BEDELİ budur ve simülasyonda gerçekten ödenir:
+                    # kitapta bekleyen emir, fiyat oraya gelmediği için dolmaz. Emir
+                    # yalnızca bu bar geçerliydi (kural 13'ün "bir sonraki barın
+                    # açılışı" tanımının limit karşılığı) ve iptal edilir.
+                    logger.info(
+                        "%s %s %s: post-only limit dolmadı [limit_not_filled] "
+                        "(limit=%.10g, bar aralığı %.10g–%.10g)",
+                        model, order.symbol, order.direction,
+                        order.limit_price, bar.low, bar.high,
+                    )
+                    run.reject("limit_not_filled")
+                    continue
+                reference, fill = float(order.limit_price), "maker"
+
             result = self._portfolio.open_position(
                 model,
                 symbol=order.symbol,
                 direction=order.direction,
                 stop_price=order.stop_price,
-                reference_price=bar.open,
+                reference_price=reference,
+                fill=fill,
+                size_scale=order.size_scale,
                 ts=ts,
                 marks=marks,
                 sizing_mode=order.sizing,

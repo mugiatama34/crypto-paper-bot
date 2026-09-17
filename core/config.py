@@ -26,6 +26,7 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "max_positions",
     "max_short_positions",
     "fee_rate",
+    "maker_fee_rate",
     "slippage_base",
     "slippage_short_stop",
     "maintenance_margin",

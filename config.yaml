@@ -20,6 +20,12 @@ max_short_positions: 3      # bunların en fazla kaçı short olabilir
 # bacak da taker. Maker oranı kullanmak hiç gerçekleşmeyen bir dolumu varsayıp sonuçları
 # optimist gösterirdi.
 fee_rate: 0.00055           # tek yön komisyon; giriş ve çıkışta ayrı ayrı uygulanır
+# MAKER oranı yalnızca PASİF dolumlarda (post-only limit girişi) geçerlidir. Bybit
+# USDT perpetual, standart (VIP0) kademe: maker %0.02. Çıkışlar piyasa emridir ve her
+# hâlükârda taker kalır — maker çıkış varsaymak, gerçekleşmeyeceği bilinen bir dolumu
+# ölçüme sokardı. Emri kitaba koymanın bedeli DOLMAMA ihtimalidir ve o ihtimal
+# simülasyonda gerçekten ödenir (core/engine.py: dokunma testi, `limit_not_filled`).
+maker_fee_rate: 0.0002     # tek yön PASİF komisyon; yalnızca entry_type="limit" girişte
 # slippage_base adı "slippage_long" değildir: bu oran yöne bakmaksızın HER dolumda
 # (long/short giriş, çıkış, TP) uygulanan temel kaymadır. Tek istisna short stop
 # dolumudur; orada slippage_short_stop devreye girer. Eski ad, short girişlerin

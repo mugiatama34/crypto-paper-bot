@@ -89,6 +89,8 @@ ExitReason = Literal["liquidation", "stop", "partial", "tp", "signal"]
 # aynı görünümüdür — beklenen bir tekrar (referans modelin zaten taşıdığı pozisyon) ile
 # gerçek bir boyutlandırma arızası (sıfır boyut, yetersiz nakit). Kod olmadan ikisi aylar
 # sonra ayırt edilemez.
+FillKind = Literal["taker", "maker"]
+
 RejectReason = Literal[
     "duplicate_position",    # aynı sembol+yönde zaten açık pozisyon var (BEKLENEN olabilir)
     "max_positions",         # eşzamanlı pozisyon kotası dolu
@@ -98,6 +100,7 @@ RejectReason = Literal[
     "insufficient_cash",     # nakit marj + komisyonu karşılamıyor (ARIZA sinyali)
     "max_direction_positions",  # modelin KENDİ yön kotası dolu (ModelLimits, kopya modeller)
     "portfolio_risk_cap",       # açık toplam risk modelin KENDİ tavanını aşardı (ModelLimits)
+    "limit_not_filled",         # post-only limit emri geçerli olduğu barda dokunulmadı
 ]
 
 # Boyutlandırmanın "çalıştı ama sıfır çıktı" hâlleri. Bunlar beklenen bir tekrar değildir:
@@ -551,6 +554,11 @@ class Portfolio:
         self.max_positions = int(get_setting(config_dict, "max_positions"))
         self.max_short_positions = int(get_setting(config_dict, "max_short_positions"))
         self.fee_rate = float(get_setting(config_dict, "fee_rate"))
+        # MAKER oranı yalnızca PASİF dolumlarda geçerlidir (post-only limit girişi):
+        # emri kitaba koyan taraf likidite SAĞLAR ve borsa onu daha ucuza çalıştırır.
+        # Çıkışlar piyasa emridir ve her hâlükârda taker kalır — maker çıkış varsaymak,
+        # gerçekleşmeyeceği bilinen bir dolumu ölçüme sokardı.
+        self.maker_fee_rate = float(get_setting(config_dict, "maker_fee_rate"))
         self.slippage_base = float(get_setting(config_dict, "slippage_base"))
         self.slippage_short_stop = float(get_setting(config_dict, "slippage_short_stop"))
         self.maintenance_margin = float(get_setting(config_dict, "maintenance_margin"))
@@ -715,6 +723,8 @@ class Portfolio:
         partial_tp: PartialTakeProfit | None = None,
         trail_giveback_pct: float | None = None,
         limits: ModelLimits | None = None,
+        fill: FillKind = "taker",
+        size_scale: float = 1.0,
         reason: str = "",
     ) -> OpenResult:
         """Bir sonraki barın açılışından pozisyon açar (kural 13); reddedilirse gerekçe döner."""
@@ -759,8 +769,17 @@ class Portfolio:
                     reason_code="max_direction_positions",
                 )
 
-        entry_price = self.fill_price(
-            direction=direction, reference_price=reference_price, side="entry"
+        # PASİF dolumda kayma YOKTUR ve bu bir iyimserlik değil, mekanizmanın tanımıdır:
+        # emir kitapta BELİRLİ bir fiyatta duruyordu ve ancak fiyat oraya geldiğinde
+        # doldu. Aktif (taker) dolumda ise referans fiyata kayma DAİMA aleyhte uygulanır.
+        # Karşılığı, emrin hiç dolmama ihtimalidir — o ihtimal `core/engine.py`de
+        # dokunma testiyle ölçülür ve dolmayan emir `limit_not_filled` ile sayılır.
+        entry_price = (
+            float(reference_price)
+            if fill == "maker"
+            else self.fill_price(
+                direction=direction, reference_price=reference_price, side="entry"
+            )
         )
         # Sinyal önceki barın kapanışına göre üretildi; bir sonraki bar stop'un ötesinde
         # açtıysa pozisyon doğduğu anda stoplanmış olurdu — böyle bir emir doldurulmaz.
@@ -808,8 +827,20 @@ class Portfolio:
             )
 
         qty, notional, margin = sizing.qty, sizing.notional, sizing.margin
-        fee = self.fee_rate * notional
         notes = sizing.note
+        # Skorla boyutlandırma yalnızca KÜÇÜLTÜR (kural 3/11'in sınırı): ortak risk
+        # birimi (1R) korunur, çünkü R'nin paydası gerçekleşen `risk_amount`tır ve o da
+        # kırpılmış miktardan hesaplanır. Büyütmeye izin vermek, modelin kendi risk
+        # oranını seçmesi demekti — o zaman modeller aynı ölçekte yarışmazdı.
+        scale = float(size_scale)
+        if not 0.0 < scale <= 1.0:
+            raise ValueError(f"size_scale (0, 1] aralığında olmalı: {size_scale}")
+        if scale < 1.0:
+            qty *= scale
+            notional *= scale
+            margin *= scale
+            notes = _join_notes(notes, f"boyut skorla {scale:.4f} oranında küçültüldü")
+        fee = (self.maker_fee_rate if fill == "maker" else self.fee_rate) * notional
 
         # Portföy riski tavanı (yalnızca kopya modeller, ModelLimits). Kural 11'in
         # "küçült, atlama" ilkesi burada GEÇERLİ DEĞİLDİR: bu bir ölçüm kuralı değil,

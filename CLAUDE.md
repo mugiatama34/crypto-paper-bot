@@ -35,7 +35,7 @@ yapar.
 | `core/metrics.py` | Performans metrikleri. **Birinci sınıf metrik: işlem başına ortalama R** (`PnL / risk_amount`) — bileşiklenmeden bağımsız olduğu için "bu model iyi mi" sorusuna toplam getiriden daha temiz cevap verir; tablo da ona göre sıralanır. Toplam getiri, Sharpe, max drawdown ve win-rate ikinci sırada raporlanır, atılmaz. **Her işlem metriği long ve short için AYRI hesaplanır ve ayrı raporlanır** (toplam değer de verilir, ama ayrışma yerine geçmez); özsermaye eğrisinden gelenler tek bakiye olduğu için hesap düzeyinde kalır. Ayrıca **maliyet ölçeği kolonlarını** (`avg_stop_distance_pct`, `cost_per_r`) model ve yön bazında raporlar — bkz. "Rapor Kolonları". Projenin ana sorusu "short işlemler daha mı başarılı" olduğu için bunların hiçbiri opsiyonel değil. **Ölçümün birimi POZİSYONDUR, defter satırı değil:** `merge_fills` aynı pozisyonun dolumlarını (kısmi çıkış ve `fraction < 1.0` olan take-profit'ler) tek ölçüm satırına indirger ve R'yi `Σpnl / Σrisk` olarak kurar — bkz. "Dolum ve pozisyon". Ayrıca üç **okuma yardımı** üretir (ortalama R'nin bootstrap aralığı, tur maliyeti yüzdesi, friksiyon hızı); hiçbiri kapı değildir, bkz. "Rapor Kolonları". Salt okunur — ledger'ı değiştirmez. |
 | `core/report.py` | Dashboard yükü: `docs/data/metrics.json`'un tablo dışında kalan bölümleri (özsermaye eğrileri, açık pozisyonlar, son işlemler, model başına son 100 kapanmış işlem, son 24 saatin hareketi, havuz ve kabul bayraklarının toplanması). Salt okunur; hiçbir şey hesaplamaz ki `core/portfolio.py` zaten hesaplamış olsun. Tek istisna açık pozisyonun güncel PnL'idir ve kapanış formülünün aynı parçalarından kurulur (brüt − giriş komisyonu + funding; çıkış maliyeti YOK). Açık pozisyon satırı ayrıca çıkış yönetiminin DURUMUNU taşır — `breakeven_at_r`/`breakeven_done`, `partial_tp`/`partial_done`, `trail_giveback_pct`/`trailing_active`, `stop_rule`/`stop_moved` — ve İSTEK ile OLAY ayrı alanlardadır: mekanizmayı bildiren ama henüz tetiklenmemiş bir pozisyonu "yönetildi" göstermek, modeller 13/14/15'in ölçtüğü katkıyı yanlış okuturdu. Sunum sabitleri (kaç işlem gösterilir, eğri kaç noktaya seyreltilir) burada durur, `config.yaml`'da değil. |
 | `core/ledger.py` | Her işlemi ve bakiye değişimini kalıcı, append-only biçimde katmanın defter kökü altına yazar. Sistemin denetim izi (audit trail) burasıdır. **Tek istisna `compact_equity`:** katmanın saklama penceresinden eski `equity.csv` satırlarını günlük özete indirir (bkz. "Katmanlar > Saklama penceresi"). `trades.csv` için istisna YOKTUR — bir işlem satırı hiçbir gerekçeyle değişmez veya silinmez. |
-| `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni, çıkış yönetimi alanlarının tutarlılığı (`trailing_atr` ile `trail_giveback_pct` aynı anda kullanılamaz). Ayrıca `validate_model`: model bayrak/limit bildiriminin kapısı (`ModelLimits` yalnızca `is_replica`, kaldıraç tavanı `REPLICA_LEVERAGE_CAP`), `strategies/registry.py` kurulumda çağırır. Geçersizde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
+| `core/validate.py` | Her `Signal`in motora girmeden geçtiği tek doğrulama kapısı: izinli yön, stop/TP geometrisi, sıfıra bölme, fraction toplamı, sembol evreni, çıkış yönetimi alanlarının tutarlılığı (`trailing_atr` ile `trail_giveback_pct` aynı anda kullanılamaz), **emir tipi** (post-only limit LEHTE tarafta olmalı, piyasa emri `limit_price` taşıyamaz) ve **boyut ölçeği** (`size_scale` ∈ (0, 1] — yalnızca küçültür). Ayrıca `validate_model`: model bayrak/limit bildiriminin kapısı (`ModelLimits` yalnızca `is_replica`, kaldıraç tavanı `REPLICA_LEVERAGE_CAP`), `strategies/registry.py` kurulumda çağırır. Geçersizde `ValueError`/`NotImplementedError` fırlatır, sessizce filtrelemez. |
 | `strategies/base.py` | Tüm stratejilerin uyacağı soyut arayüz (`Strategy`, `Signal`, `Position`, `ExitInstruction`, `MarketData`). Mantık içermez, yalnızca sözleşme. |
 | `strategies/scalp/arms.py` | Scalp katmanının **beş ortak kolu** (VWAP geri çekilme, açılış aralığı kırılımı, RSI(2) dönüşü, momentum patlaması, funding sıçraması fade'i). İki model de bu tek kopyayı görür. Stop mesafesi her kolda aynıdır (`stop_atr_multiple × ATR`) — kollar stop ölçeğinde ayrışsaydı kol tablosu bir sinyal değil maliyet karşılaştırması olurdu. Hedef ise projeksiyon (`target_reward_risk × stop`) ile kolun yapısal engelinin YAKIN olanıdır. |
 | `strategies/scalp/model.py` | Scalp modellerinin ortak gövdesi: stop tabanı (%1), hedef/stop kapısı (1.5R), zaman stop'u (16 bar), sinyal kurulumu, kol etiketi. Alt sınıfın değiştirebileceği noktalar SAYILIDIR ve **her biri ölçülen bir eksene karşılık gelmek zorundadır** — kural sayı değil, bu karşılıklılıktır: `choose_arm` (kol seçimi, 11 ↔ 12), `exit_management` (çıkış yönetimi, 12 ↔ 15), `rng_identity` (çekiliş kimliği), `time_stop_key` (zaman stop'unun SINIRI, 12 ↔ 16), `regime_filter` (ek rejim kapısı, 16 ↔ 17). Liste uzayabilir; uzatmanın bedeli şudur: **karşılığı bir eksen olmayan bir override noktası eklenemez.** Fark tek bir noktaya indirgenmezse modeller arası ortalama R farkı bir eksenin ölçüsü olmaktan çıkar. |
@@ -87,6 +87,7 @@ yapar.
 | `max_positions` | `5` | Bir stratejinin aynı anda taşıyabileceği toplam pozisyon sayısı. |
 | `max_short_positions` | `3` | Bunların en fazla kaçının short olabileceği. |
 | `fee_rate` | `0.00055` | Tek yön komisyon oranı; giriş ve çıkışta ayrı ayrı uygulanır. **İşlem yapılan borsanın** (Bybit) standart kademe **taker** oranıdır — veri çekilen borsanın (OKX) değil: maliyeti ödeyen taraf hesabın tutulduğu yerdir. Modeller `entry_type="market"` ile girip çıktığı için iki bacak da taker. |
+| `maker_fee_rate` | `0.0002` | Tek yön **PASİF** komisyon; yalnızca `entry_type="limit"` girişte uygulanır. Çıkışlar piyasa emridir ve her hâlükârda taker kalır — maker çıkış varsaymak, gerçekleşmeyeceği bilinen bir dolumu ölçüme sokardı. Emri kitaba koymanın bedeli DOLMAMA ihtimalidir ve simülasyonda gerçekten ödenir (`limit_not_filled`). |
 | `slippage_base` | `0.0005` | Yönden bağımsız olarak **her** dolumda (long/short giriş, çıkış, TP) uygulanan temel kayma. |
 | `slippage_short_stop` | `0.0015` | Short pozisyonların stop dolumunda `slippage_base` yerine geçen kayma (short stop'lar yukarı boşluklarda daha kötü dolar). |
 | `max_stop_atr_multiple` | `3.0` | Stop mesafesi tavanı: stop mesafesi ATR'nin 3 katını aşan sinyal açılmaz, işlem atlanır (kural 14). |
@@ -875,7 +876,9 @@ class Signal:
     stop_price: float | None = None    # sizing="risk" iken ZORUNLU, aksi hâlde None OLMALI
     sizing: SizingMode = "risk"        # "notional_fraction" yalnızca is_benchmark (kural 15)
     notional_fraction: float | None = None   # yalnızca sizing="notional_fraction" iken
-    entry_type: Literal["market", "limit"] = "market"   # v1'de yalnızca "market" işlenir
+    entry_type: Literal["market", "limit"] = "market"   # "limit" POST-ONLY'dir
+    limit_price: float | None = None   # entry_type="limit" iken ZORUNLU; LEHTE tarafta
+    size_scale: float = 1.0            # (0, 1] — yalnızca KÜÇÜLTÜR (kural 3/11)
     take_profits: tuple[TakeProfit, ...] = ()
     trailing_atr: float | None = None  # uygulaması core/engine.py'de, strateji yazmaz
     # Üç aşamalı çıkış yönetimi (kural 13b): hepsi OPSİYONEL, varsayılan KAPALI.
@@ -931,11 +934,24 @@ class MarketData:
 
 Tasarım kararları:
 
-- **`entry_type`**: sözleşmede `"limit"` de yazılabilir, ama v1'de yalnızca `"market"`
-  işlenir — `core/validate.py` `"limit"` gördüğünde `NotImplementedError` fırlatır. Limit
-  emri desteklemek "bekleyen emirler", geçerlilik süresi ve mum-içi dokunma kontrolü
-  gerektirir; bu da look-ahead hatası için yeni bir kapı açar. Alan sözleşmede duruyor,
-  uygulaması ileri bir karar.
+- **`entry_type` ve POST-ONLY limit (karar 47)**: `"limit"` artık işlenir ve tek bir amacı
+  vardır — dolumu AKTİF (taker) olmaktan çıkarıp PASİF (maker) yapmak. Bu yüzden üç kural
+  birden geçerlidir: (a) fiyat girişin LEHİNE tarafta olmalıdır (long'da referansın altı,
+  short'ta üstü), aksi hâlde emir kitabı geçer ve maker komisyonuyla ölçmek hiç
+  gerçekleşmemiş bir indirimi deftere yazardı (kapı `core/validate.py`); (b) emir YALNIZCA
+  bir bar geçerlidir — kural 13'ün "bir sonraki barın açılışı" tanımının limit karşılığı —
+  ve dolmazsa iptal edilip `limit_not_filled` ile sayılır; (c) dolum ölçütü mum İÇİ
+  aralıktır (stop/TP ile aynı sözleşme). **Dokunmanın dolum sayılması İYİMSER bir
+  varsayımdır** (gerçekte kuyruk vardır) ve kural 13'ün muhafazakâr yönünün tersidir; bu
+  yüzden `docs/backtest.md > 6f`de kabul edilmiş bir sapma olarak yazılıdır. Kuyruk
+  modellemek emir defteri derinliği ister, o veri bu projede yoktur ve uydurulmuş bir
+  dolum olasılığı ölçümü o uydurmaya bağlardı.
+- **`size_scale` (karar 47)**: model bir kurulumun ZAYIF olduğunu söyleyip boyutu
+  küçültebilir, ama BÜYÜTEMEZ. Büyütme, modelin kendi risk oranını seçmesi demekti ve
+  ortak risk birimi (1R) ortadan kalkardı (kural 3/11); küçültme ise 1R'nin tanımını
+  bozmaz, çünkü R'nin paydası GERÇEKLEŞEN `risk_amount`tır ve o da kırpılmış miktardan
+  hesaplanır. Uygulayan yine tek yetkili yerdir (`core/portfolio.py`) ve kırpma sessiz
+  olmaz: gerekçe pozisyonun `notes` alanına yazılır.
 - **`funding` tek oran değil, seri**: bazı modeller son N periyodun funding trendine bakar
   (funding'in yönü ve hızlanması bir kalabalıklık göstergesidir). Tek bir `float` bu bilgiyi
   taşıyamadığı için alan zaman indeksli `pd.Series`'e çevrildi. Seri de kural 12'ye tabidir:
