@@ -221,6 +221,103 @@ def average_true_range(frame: pd.DataFrame, period: int) -> float | None:
     return float(true_range.mean())
 
 
+def adx(frame: pd.DataFrame, period: int) -> float | None:
+    """Ortalama yön endeksi (ADX); yeterli bar yoksa None.
+
+    Rejim kapısının (`strategies/vwap/guarded_signal.py`) tek ADX tanımı. Modül
+    docstring'indeki kural burada da geçerli: **Wilder yumuşatması KULLANILMAZ.** Wilder
+    özyinelemelidir, yani sonuç çerçeveye kaç bar geçmiş verildiğine bağlıdır — önbellek
+    farklı ısındığında aynı bar için farklı bir ADX çıkardı ve "ADX 22'nin altında" kapısı
+    koşudan koşuya başka kurulumları elerdi. Basit ortalama yalnızca son barlara bakar:
+    aynı bar her zaman aynı sayıyı verir (ATR ve RSI ile aynı gerekçe).
+
+    Tanım: +DM/−DM ve TR'nin son `period` barlık basit ortalamalarından +DI/−DI, oradan
+    `DX = 100 × |+DI − −DI| / (+DI + −DI)`, ve ADX son `period` DX değerinin ortalaması.
+    Bu yüzden `2 × period + 1` bar gerekir; azı None döner (kısmi pencereyle üretilmiş bir
+    "trend gücü", kapıyı sessizce anlamsız kılardı).
+
+    +DI ile −DI'nin ikisi de sıfırsa (hareketsiz seri) DX 0 kabul edilir: sıfıra bölmek
+    yerine "yön yok" demek, tanımın kendisidir.
+    """
+    _require_positive(period, "period")
+    if len(frame) < 2 * period + 1:
+        return None
+    window = frame.tail(2 * period + 1)
+    high = window["high"].to_numpy(dtype="float64")
+    low = window["low"].to_numpy(dtype="float64")
+    close = window["close"].to_numpy(dtype="float64")
+
+    up_move = high[1:] - high[:-1]
+    down_move = low[:-1] - low[1:]
+    plus_dm = np.where((up_move > down_move) & (up_move > 0.0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0.0), down_move, 0.0)
+    previous_close = close[:-1]
+    true_range = np.maximum(
+        high[1:] - low[1:],
+        np.maximum(np.abs(high[1:] - previous_close), np.abs(low[1:] - previous_close)),
+    )
+
+    dx: list[float] = []
+    for end in range(period, len(true_range) + 1):
+        tr_mean = float(true_range[end - period:end].mean())
+        if tr_mean <= 0.0:
+            dx.append(0.0)
+            continue
+        plus_di = 100.0 * float(plus_dm[end - period:end].mean()) / tr_mean
+        minus_di = 100.0 * float(minus_dm[end - period:end].mean()) / tr_mean
+        total = plus_di + minus_di
+        dx.append(0.0 if total <= 0.0 else 100.0 * abs(plus_di - minus_di) / total)
+
+    if len(dx) < period:
+        return None
+    return float(np.mean(dx[-period:]))
+
+
+def resample_ohlcv(frame: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Kapanmış barları daha uzun bir bara toplar (ör. 15m -> 1h).
+
+    Üst zaman dilimi (HTF) trendini okumak isteyen bir kapı, ikinci bir veri çekimi
+    yapmak zorunda kalmamalıdır: aynı `MarketData` anlık görüntüsü hem 15m hem 1h
+    sorusunu cevaplayabilir ve ikinci bir çekim, iki modelin AYNI barda farklı veri
+    görmesine kapı açardı (kural 5).
+
+    **Eksik kova ATILIR.** Son 1h kovası yalnızca bir 15m barı taşıyorsa o kova "kapanmış
+    bir saat" değildir; onu tam bir bar saymak, 15 dakikalık bir hareketi saatlik trend
+    kanıtı gibi okumak olurdu. Beklenen alt bar sayısı kovanın kendi süresinden ve
+    çerçevenin bar aralığından türetilir — sabit bir sayı yazmak, kural 12'nin
+    "kapanmamış bar atılır" kuralını zaman diliminden bağımsız bir varsayıma bağlardı.
+
+    Look-ahead açısından temiz: yalnızca verilen çerçeve okunur ve çağıran taraf onu
+    `bars_until` ile `as_of`'ta kesmiştir.
+    """
+    if frame.empty:
+        return frame
+    aggregated = frame.resample(rule, label="left", closed="left").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    )
+    aggregated = aggregated.dropna(subset=["open", "high", "low", "close"])
+    if aggregated.empty:
+        return aggregated
+    counts = frame.resample(rule, label="left", closed="left").size()
+    expected = int(pd.Timedelta(rule) / _bar_step(frame))
+    if expected > 1:
+        aggregated = aggregated.loc[counts.reindex(aggregated.index).fillna(0) >= expected]
+    return aggregated
+
+
+def _bar_step(frame: pd.DataFrame) -> pd.Timedelta:
+    """Çerçevenin bar aralığı: ardışık damgaların EN KÜÇÜK farkı.
+
+    Medyan ya da ortalama değil en küçüğü: veri boşluğu olan bir sembolde (bir tur
+    düşmüş bar) ortalama, gerçek bar aralığından büyük çıkar ve `resample_ohlcv` eksik
+    kovaları tam sayardı — yani boşluğun bedeli sessizce yanlış bir HTF barı olurdu.
+    """
+    if len(frame.index) < 2:
+        raise ValueError("bar aralığı için en az iki bar gerekir")
+    deltas = frame.index.to_series().diff().dropna()
+    return pd.Timedelta(deltas.min())
+
+
 def _require_positive(value: int, name: str) -> None:
     if value <= 0:
         raise ValueError(f"{name} pozitif olmalı: {value}")

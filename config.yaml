@@ -429,3 +429,89 @@ vwap:
       - "ETHFI-USDT-SWAP"
       - "PENGU-USDT-SWAP"
       - "NEAR-USDT-SWAP"
+
+  # Model 18 — kopyanın CANLIYA HAZIRLANMIŞ uyarlaması (strategies/vwap_guarded.py).
+  # Model 13'ün kuralları DEĞİŞTİRİLMEDİ (kural 15b: değiştirilen kopya kopya olmaktan
+  # çıkar); uyarlama ayrı bir modeldir ve buradaki sayılar YALNIZCA onundur.
+  #
+  # Sayıların hiçbiri süpürülmedi (docs/backtest.md > 7.1): hepsi koşudan ÖNCE, ön-kayıt
+  # ile (docs/backtest.md > 6d) sabitlendi. Gerekçeleri tek tek aşağıdadır.
+  guarded:
+    # Stop = 2.5×ATR. Model 14 ile AYNI çarpan, çünkü kıyasın tek değişkeni kapılar
+    # olmalı, MALİYET ÖLÇEĞİ olmamalı (kural 14 / ⚠B uyarısı): 2.5 ölçülmüş olarak
+    # ~%2.05 stop mesafesi verir, beş kollu modeller ~%1.95 (karar 26).
+    atr_multiple: 2.5
+    target_reward_risk: 2.0   # hedef PROJEKSİYONU; gerçek hedef bununla VWAP'in yakın olanı
+    min_vwap_bars: 8          # seans çapasından bu kadar bar geçmeden sapma anlamlı değil
+
+    # Azami tutuş: 10 × 15m = 2.5 saat (istenen 8-12 bar aralığının ortası). Dolum bir
+    # SONRAKİ barın açılışındadır (kural 13), yani gerçek ömür 11 bardır. Kural
+    # strategies/time_stop.py'de TEK kopyadır; ayrışan yalnızca SINIR — ve o, modelin
+    # ölçülen ekseninin parçasıdır (scalp_fixed ↔ scalp_patient ile aynı desen).
+    time_stop_bars: 10
+
+    # Bant TABANI 2.5σ: 1.5σ bu geometride gürültüdür (15m barda fiyat gün içi VWAP'in
+    # 1.5σ dışına sürekli çıkar). LONG tarafı DAHA GENİŞ bant ister — düşen bir piyasada
+    # "ucuz" görünen her bar dönüş adayı değildir ve ölçülen defterde beklenti farkı tam
+    # olarak long tarafındaydı. 3.0 = taban + 0.5σ; süpürülmedi, koşudan önce sabitlendi.
+    band:
+      short: 2.5
+      long: 3.0
+
+    # Rejim kapısı: ortalamaya dönüş tezi TRENDDE geçersizdir. İki ölçü "veya" ile
+    # bağlanır çünkü aynı şeyi ölçmezler — ADX yönsüz hareket gücü, EMA eğimi yönlü
+    # sürüklenme (bkz. guarded_signal._trend_strength).
+    regime:
+      adx_period: 14          # ADX'in TEK tanımı core/indicators.py::adx (Wilder değil)
+      adx_max: 22.0           # üstü: trend; istenen 22-25 aralığının ALT ucu (daha seçici)
+      ema_period: 50
+      slope_bars: 10          # EMA50 10 barda kaç ATR yol aldı
+      max_slope_atr: 1.5      # üstü: yönlü sürüklenme var, fade edilmez
+
+    # Uçta tükenme ŞARTI: dönüş bir niyet beyanıdır, tükenme kanıtıdır. İkisinden BİRİ
+    # yeterlidir (ikisini birden istemek kurulum sayısını n=30 kapısının altına düşürürdü).
+    exhaustion:
+      lookback: 20            # klimaks karşılaştırmasının taban hacmi: son 20 bar
+      climax_mult: 1.5        # uç barın hacmi tabanın bu katı VE dönüş barında sönmüş
+      rejection_wick_ratio: 0.5  # red mumu: sapma yönündeki fitil, aralığın en az yarısı
+
+    # BTC'nin ÜST zaman dilimindeki yönü; altcoin'i BTC trendine KARŞI fade etmeyi keser.
+    # Toplama aynı anlık görüntüden yapılır (core/indicators.py::resample_ohlcv) — ikinci
+    # bir veri çekimi iki modelin aynı barda farklı veri görmesi demekti (kural 5).
+    btc_bias:
+      timeframe: "1h"         # 15m barlardan toplanır; eksik kova ATILIR
+      ema_period: 50
+      slope_bars: 4           # EMA50 4 saatte kaç ATR yol aldı
+      min_slope_atr: 0.5      # altı: "yatay" — kapı yanmaz
+
+    # Risk kesicileri. Model bakiyeyi göremez (kural 7) ve açık pozisyonun kâr/zararını
+    # okuyamaz (kural 16), bu yüzden İKİSİ DE R cinsindendir: 1R tanımı gereği sermayenin
+    # risk_per_trade'i kadardır (kural 11), yani %8 eşiği 8R'dir — yaklaşıklık değil,
+    # boyutlandırma kuralının doğrudan sonucu.
+    risk:
+      daily_loss_r: 2.0       # o UTC gününde gerçekleşen R toplamı ≤ -2R: gün biter
+      max_drawdown_pct: 0.08  # kümülatif R zirvesinden %8 (= 8R) düşüş: KILL-SWITCH
+      # Bu evrende altcoin'ler BTC ile yüksek korelasyonludur: aynı yönde N pozisyon,
+      # N katı büyüklükte TEK bir pozisyondur. Kota modelin KENDİ açık pozisyonlarını
+      # sayar (sözleşmenin manage_positions ile verdiği görünüm); portföy düzeyinde bir
+      # korelasyon tavanı DEĞİLDİR — o öneri CLAUDE.md'de gerekçesiyle reddedildi.
+      max_correlated_positions: 2
+
+    # Evren: katmanın 13 sembolünden PENGU ve ETHFI ÇIKARILDI (ince kitap; kayma
+    # varsayımı orada tutmuyor — bkz. breakdowns.symbol > cost_per_r). Bu bir SAPMADIR:
+    # docs/backtest.md > 7.2 sonuca bakıp sembol elemeyi yasaklar ve karar 40 bunu bir kez
+    # reddetti. Kullanıcının açık talimatıyla, modelin bir ÖNSELİ olarak ve koşudan ÖNCE
+    # ön-kayda yazılarak eklendi (docs/backtest.md > 6d); sonucu sembol seçimi açısından
+    # IN-SAMPLE'dır ve satırın yanında öyle durur.
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "SUI-USDT-SWAP"
+      - "NEAR-USDT-SWAP"

@@ -317,6 +317,82 @@ Sonuç raporlanırken bu sayı yazılacak.
 
 ---
 
+## 6d. ÖN-KAYIT — `vwap_guarded` (model 18)
+
+**Bu bölüm koşudan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.** Sonuç
+görüldükten sonra hiçbir satırı değiştirilmeyecek (§7).
+
+**Model ne.** `vwap_clone`un (model 13) CANLIYA HAZIRLANMIŞ uyarlaması: seans (UTC gün)
+çapalı VWAP, 2.5σ taban bant (LONG tarafında 3.0σ), rejim kapıları (ADX(14) > 22 **veya**
+EMA50 eğimi > 1.5×ATR **veya** BTC'nin saatlik trendine karşı fade), uçta tükenme şartı
+(klimaks hacmi ya da red mumu), risk boyutlandırma (kural 11; sabit teminat YOK), 10 barlık
+zaman stop'u, günlük −2R zarar limiti, %8 (= 8R) drawdown kill-switch'i ve aynı yönde en
+çok 2 pozisyonluk korelasyon kotası.
+
+**Kopyaya DOKUNULMADI** (kural 15b): model 13 kendi kurallarıyla koşmaya devam eder.
+
+**Bu bir EKSEN DEĞİL, bir toplam farktır** — 13 ↔ 14 satırının aynı durumu. Sekiz kalem
+birden ayrışır (çapa, bant, rejim, tükenme, boyutlandırma, zaman stop'u, evren, risk
+kesicileri), yani sonuç "kapıların katkısı" olarak OKUNAMAZ; okunabilen tek şey "iki
+sistemin toplam farkı"dır. Tek değişkenli bir eksen isteniyorsa yolu yeni bir model
+açmaktır.
+
+**Pencereler.** İkisi de 17 Ağustos 2026'dan ÖNCEDİR, çünkü model `atr_multiple=2.5`
+değerini karar 26'dan devralır ve o değer **17 Ağu – 16 Eyl 2026** verisinde seçilmiştir
+(§6): o pencere model 18 için de IN-SAMPLE'dır.
+
+| Koşu | Pencere | Derinlik |
+|---|---|---|
+| **A (birincil)** | 2026-06-25 → 2026-08-16 | `--history-bars 6000` |
+| **B (doğrulama)** | 2026-05-01 → 2026-06-24 | `--history-bars 6000` |
+
+İki pencere bitişiktir ve A'nın başı B'nin sonundan sonradır; B, A'nın sonucunu
+doğrulamak için vardır (C-5'in "başka bir pencerede de sağlanıyor" koşulu). Sonuca göre
+kaydırılmayacak (§7.3).
+
+**Kıyas kümesi:** `vwap_guarded`, `vwap_clone`, `vwap_managed`, `scalp_fixed`,
+`random_ctrl`. Kontrol olmadan C-2 değerlendirilemez; `scalp_fixed` katmanın kontrol
+geometrisidir.
+
+**ÖN-KAYITLI TAHMİNLER** (sonucu görmeden):
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | ortalama R (`vwap_guarded`) | **> 0** | ≤ 0 |
+| **P2** | ortalama R farkı | `vwap_guarded` > `vwap_clone` | ≤ 0 |
+| **P3** | örneklem | n ≥ 30 (B-1) | n < 30 → satır OKUNMAZ |
+| **P4** | stop bandı | ⚠B yanmaz (C-4) | yanarsa kıyas geçersiz |
+| **P5** | işlem sayısı | `vwap_guarded` < `vwap_clone` | tersi: kapılar elemiyor demektir |
+
+**P1 birincildir** ve canlıya alma eşiğinin C-1'i ile aynı sayıdır. P2 ikincildir ve tek
+başına bir başarı ölçütü DEĞİLDİR: kopya kendi boyutlandırmasıyla koşar, yani iki satırın
+R'si aynı paydadan gelmez (kural 15b). P5 bir SAĞLAMADIR: kapılar gerçekten eliyor mu?
+
+**P3 için beklenen zorluk yazılıdır:** altı kapının üst üste binmesi kurulum sayısını
+düşürür ve n=30 bu katmanda zaten zor geçiliyor. n < 30 çıkarsa sonuç "model kötü" değil,
+**"bu kapı kümesi bu pencerede ölçülemez"** demektir ve doğru hamle kapıyı gevşetmek
+DEĞİL (o, sonucu görüp parametre oynatmaktır — §7.1), daha uzun bir pencere ya da
+katmanı kapatmaktır.
+
+**SEMBOL ELEMESİ BİR SAPMADIR ve burada işaretlenir.** Model evreninden PENGU ve ETHFI
+çıkarıldı. §7.2 bunu ("şu sembolü çıkarsak") açıkça yasaklar ve karar 40 bir kez
+reddetti. Eleme kullanıcının açık talimatıdır, koşudan ÖNCE modelin bir ÖNSELİ olarak
+sabitlendi ve sonuç **sembol seçimi açısından IN-SAMPLE'dır**: geçmiş defterde o iki
+sembolün kötü olduğu BİLİNEREK çıkarıldılar. Dolayısıyla model 18'in ortalama R'si bu
+iki sembolün dışlanmasından gelen bir üstünlük taşır ve bu, C-5 bile geçilse iddia
+edilmeyecek bir paydır. Eleme etkisinin kendisi ancak aynı modeli TAM evrenle koşturan
+ayrı bir hipotezle ölçülebilir; o hipotez bu ön-kayıtta YOKTUR.
+
+**Canlıya alma.** Kullanıcı talimatı açıktır: model backtest'ten sonra kâğıt katmanında
+(`layers.scalp.models`) KOŞACAKTIR. Bu, §4'ün canlıya alma eşiğinin geçildiği anlamına
+GELMEZ ve o eşik burada ayrıca raporlanır — `scalp_patient`in (model 16) kâğıt katmanına
+alınırken kurulan aynı ayrım: kâğıtta koşmak ileriye dönük kanıt biriktirmektir, gerçek
+parayla işlem açma izni değildir.
+
+**Çoklu karşılaştırma (§7.5).** Bu, sicildeki **2.** hipotezdir.
+
+---
+
 ## 6c. ÖN-KAYIT SİCİLİ — her hipotez, sonucu ne olursa olsun, buraya yazılır
 
 **Bu tablo §7.5'in ("çoklu karşılaştırma açıkça raporlanır") tutulan hâlidir.** §7.5 bir
@@ -332,8 +408,9 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | # | Hipotez | Ön-kayıt | Pencere | Birincil tahmin | Sonuç |
 |---|---|---|---|---|---|
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
+| 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16, B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | _koşu bekliyor_ |
 
-**Araştırmadan çıkan öneri sayısı: 10.** Bunların 1'i test edildi (yukarıdaki), 4'ü
+**Araştırmadan çıkan öneri sayısı: 10.** Bunların 2'si test edildi (yukarıdaki), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
 hakkında bir iddia taşımaz), 2'si reddedildi (işlem sıklığı tavanı, sembol eleme), 3'ü

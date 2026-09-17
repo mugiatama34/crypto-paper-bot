@@ -33,6 +33,7 @@ from strategies.scalp_vol import ScalpVol
 from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
+from strategies.vwap_guarded import VwapGuarded
 from strategies.vwap_managed import VwapManaged
 
 StrategyFactory = Callable[[], Strategy]
@@ -67,6 +68,12 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     ScalpVol.name: ScalpVol,
     VwapClone.name: VwapClone,
     VwapManaged.name: VwapManaged,
+    # vwap_guarded — model 13'ün CANLIYA HAZIRLANMIŞ uyarlaması. Kopyanın üstüne
+    # yazılmaz (kural 15b: değiştirilen kopya kopya olmaktan çıkar), ayrı bir model
+    # olarak durur: seans çapalı VWAP, 2.5/3.0σ bant, rejim kapıları (ADX + EMA eğimi
+    # + BTC 1s yönü), tükenme şartı, risk boyutlandırma, zaman stop'u ve risk
+    # kesicileri (günlük zarar limiti, drawdown kill-switch, korelasyon kotası).
+    VwapGuarded.name: VwapGuarded,
 }
 
 
