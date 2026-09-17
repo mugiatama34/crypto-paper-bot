@@ -18,6 +18,7 @@ from core.ledger import TRADE_COLUMNS, Ledger
 from core.tags import TagError, format_tags
 from core.metrics import (
     acceptance_flags,
+    bootstrap_diff_ci,
     account_stats,
     annotate_loss_streak,
     arm_of,
@@ -34,6 +35,7 @@ from core.metrics import (
     periods_per_year,
     pooled_direction_stats,
     r_multiple,
+    r_series,
     return_correlation,
     stop_distance_pct,
     symbol_of,
@@ -625,14 +627,29 @@ def test_missing_control_is_warned_not_silently_passed(
     assert "yok" in caplog.text
 
 
-def test_control_with_no_trades_does_not_block_the_margin() -> None:
-    """Kontrolün ölçülebilir R'si yoksa marj uygulanamaz; koşul düşer ama sessizce değil."""
-    flags = _flags([
-        _winner("m"),
-        _competitor("ctrl", avg_r_trades=[]),
-    ])
+def test_control_with_no_trades_blocks_edge_and_says_so(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kontrol kümede AMA henüz ölçülmemişse edge verilmez — ve bu sessiz olmaz.
+
+    Bu, bilinçli bir davranış değişikliğidir. Eskiden kontrolün R'si yoksa marj koşulu
+    düşüyor ve edge veriliyordu; n=0 ile n=4 aynı durumun iki hâli olduğu için bu şu
+    tuhaflığı üretiyordu: bir model ilk günlerde (kontrolün hiç işlemi yokken) E rozetini
+    alıyor, kontrol İLK işlemini kapattığı anda rozeti kaybediyordu. Rozetin kontrolün
+    işlem yapmamasıyla kazanılması, kapının kendi amacının tersidir.
+
+    Kontrolün kümede HİÇ OLMAMASI ayrı bir durumdur ve koşulu düşürmeye devam eder
+    (bkz. `test_missing_control_is_not_the_same_as_an_unmeasured_one`).
+    """
+    with caplog.at_level("WARNING"):
+        flags = _flags([
+            _winner("m"),
+            _competitor("ctrl", avg_r_trades=[]),
+        ])
     assert math.isnan(flags["m"].control_avg_r)
-    assert flags["m"].edge
+    assert not flags["m"].edge
+    assert flags["m"].control_trades == 0
+    assert "örneklem kapısını geçmedi" in caplog.text
 
 
 def test_highest_benchmark_sets_the_floor() -> None:
@@ -1157,3 +1174,113 @@ def test_the_pnl_total_still_equals_the_balance_change_with_a_partial_exit() -> 
     assert stats.trades == 1
     assert stats.pnl == pytest.approx(portfolio.cash("m") - start)
     assert portfolio.positions("m") == ()
+
+
+# --------------------------------------------------------------------------- #
+# Kabul çıtası: kontrolün KENDİ örneklemi ve farkın güven aralığı
+# --------------------------------------------------------------------------- #
+def _loser(model: str, *, n: int, pnl: float = -10.0, final: float = 9_800.0) -> Any:
+    return _competitor(
+        model,
+        avg_r_trades=[
+            _trade(pnl=pnl, risk=100.0, entry_price=100.0, stop_price=97.0,
+                   closed_at=f"2026-02-{index % 28 + 1:02d}T00:00:00+00:00")
+            for index in range(n)
+        ],
+        final=final,
+    )
+
+
+def test_edge_is_not_granted_against_an_unmeasured_control() -> None:
+    """Kontrol kendi örneklem kapısını geçmediyse edge DEĞERLENDİRİLEMEZ.
+
+    Canlı base katmanında gerçekten oluşan durum: random_ctrl n=4 iken bir model ona
+    karşı 0.15R marjla "ölçülüyordu". Marj, kontrolün ORTALAMASINA göre tanımlı ve o
+    ortalama da bir örneklemden geliyor; dört işlemlik bir ortalamaya karşı marj ölçmek
+    gürültüyü gürültüyle kıyaslamaktır.
+    """
+    flags = _flags([_winner("good"), _loser("ctrl", n=4)])
+
+    assert flags["good"].sample          # modelin kendi örneklemi yeterli
+    assert not flags["good"].edge        # ama kontrolünki değil
+    assert not flags["good"].passed
+    assert flags["good"].control_trades == 4
+    assert flags["good"].control_min_trades == 30
+
+
+def test_a_measured_control_still_allows_edge() -> None:
+    """Kapı kontrolü cezalandırmaz, yalnızca ölçülmüş olmasını ister."""
+    flags = _flags([_winner("good"), _loser("ctrl", n=30)])
+    assert flags["good"].edge and flags["good"].passed
+
+
+def test_missing_control_is_not_the_same_as_an_unmeasured_one() -> None:
+    """Kümede HİÇ kontrol yoksa koşul düşer (CLAUDE.md); az örneklemliyse düşmez.
+
+    İkisini tek sayıya indirmek, kontrolü listeden çıkarmayı kapıyı geçmenin bir yolu
+    hâline getirirdi — oysa amaç tam tersi.
+    """
+    assert _flags([_winner("good")])["good"].edge            # kontrol yok -> koşul düşer
+    assert not _flags([_winner("good"), _loser("ctrl", n=1)])["good"].edge
+
+
+def test_control_sample_gate_defaults_to_the_model_gate() -> None:
+    """`control_min_trades` verilmezse kontrol de modellerle aynı çıtayı görür (kural 6)."""
+    flags = _flags([_winner("good"), _loser("ctrl", n=29)])
+    assert flags["good"].control_min_trades == 30
+    assert not flags["good"].edge
+
+
+def test_bootstrap_ci_blocks_an_edge_that_is_large_but_uncertain() -> None:
+    """Marj ETKİ BÜYÜKLÜĞÜ, aralık KESİNLİK sorar: biri diğerinin yerine geçmez.
+
+    Burada fark marjı rahatça geçiyor (model +0.5R, kontrol −0.1R) ama model yalnızca
+    birkaç işlemden geliyor ve dağılımı çok saçılmış: farkın güven aralığı sıfırı içerir.
+    """
+    scattered = [3.0, -2.0, 2.5, -2.2, 3.1, -2.4]
+    control = [-0.1] * 40
+    low, high = bootstrap_diff_ci(
+        scattered, control, alpha=0.05, iterations=1000, seed=11
+    )
+    assert low < 0.0 < high                       # aralık sıfırı içeriyor
+    assert sum(scattered) / len(scattered) - sum(control) / len(control) > 0.15  # marj geçildi
+
+
+def test_bootstrap_ci_is_deterministic_for_the_same_ledger() -> None:
+    """Aynı defter HER ZAMAN aynı aralığı vermeli: rozet bir ölçüdür, bir çekiliş değil."""
+    sample, control = [1.0, -1.0, 2.0, -1.0] * 10, [-1.0, 0.2] * 20
+    first = bootstrap_diff_ci(sample, control, alpha=0.05, iterations=400, seed=5)
+    second = bootstrap_diff_ci(sample, control, alpha=0.05, iterations=400, seed=5)
+    assert first == second
+
+
+def test_bootstrap_ci_is_nan_when_a_side_is_empty() -> None:
+    """Hesaplanamayan aralık `nan`dır; 0.0 olsaydı "ölçüldü ve sıfır çıktı" derdi."""
+    low, high = bootstrap_diff_ci([1.0], [], alpha=0.05, iterations=100, seed=1)
+    assert math.isnan(low) and math.isnan(high)
+
+
+def test_r_series_matches_the_table_average() -> None:
+    """Bootstrap ile tablo AYNI sayıların üstünde durmalı: ikinci bir hesap yolu yok."""
+    trades = [
+        _trade(pnl=value * 100.0, risk=100.0, entry_price=100.0, stop_price=97.0)
+        for value in (0.5, -1.0, 2.0)
+    ]
+    values = r_series(trades)
+    assert values == pytest.approx([0.5, -1.0, 2.0])
+    assert sum(values) / len(values) == pytest.approx(direction_stats(trades).avg_r)
+
+
+def test_report_does_not_rank_models_below_the_sample_gate() -> None:
+    """Kapıyı geçmeyen satır SIRALANMAZ ama GİZLENMEZ de (karar 33: ölçülebilirlik)."""
+    report = format_report([_winner("measured", n=40), _winner("tiny", n=3)], min_trades=30)
+
+    assert "YETERSİZ ÖRNEKLEM" in report
+    assert "tiny" in report
+    # Ayrı bölüm, sıralamanın ALTINDA: kapıyı geçen satır önce gelir.
+    assert report.index("measured") < report.index("YETERSİZ ÖRNEKLEM") < report.index("tiny")
+
+
+def test_report_without_a_gate_keeps_the_single_table() -> None:
+    """`min_trades` verilmezse davranış değişmez: kapı bir sunum kararı değil, bir ayardır."""
+    assert "YETERSİZ ÖRNEKLEM" not in format_report([_winner("tiny", n=3)])

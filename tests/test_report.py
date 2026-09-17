@@ -20,6 +20,7 @@ from core.metrics import compare
 from core.report import (
     activity,
     build_dashboard,
+    concentration,
     equity_series,
     marks_from_market,
     model_trades,
@@ -313,7 +314,8 @@ def test_build_dashboard_sections_are_all_present(tmp_path: Path) -> None:
     payload = build_dashboard(metrics, ledger=ledger, config=config, market=_market())
     assert set(payload) == {
         "pooled", "acceptance", "correlation", "equity",
-        "open_positions", "recent_trades", "model_trades", "activity", "breakdowns",
+        "open_positions", "concentration", "recent_trades", "model_trades",
+        "activity", "breakdowns",
     }
     # Kırılım bölümü katmana bağlıdır: `breakdowns` verilmediğinde (4 saatlik katman)
     # bölüm boştur ama VARDIR — sayfanın "eski JSON mu, kırılımsız katman mı" ayrımını
@@ -430,3 +432,36 @@ def test_partial_exit_rows_are_flagged() -> None:
     """Kısmi çıkış tamamlanmış bir işlem değildir; sayfa onu istatistikten çıkarabilsin."""
     rows = recent_trades({"m": [_trade(exit_reason="partial")]})
     assert rows[0]["is_partial"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Portföy yoğunlaşması (ÖLÇÜM, kural değil)
+# --------------------------------------------------------------------------- #
+def test_concentration_reports_net_and_gross_exposure(tmp_path: Path) -> None:
+    """Net yönlü maruziyet, brüt maruziyet ve en büyük sembol payı ayrı sorulardır.
+
+    Net, "yönlü ne kadar açığız" (kripto evreninde kabaca BTC betasının vekili); brüt,
+    "kaldıracın gerçekleşen hâli"; pay ise "risk tek sembolde mi toplanmış". Üçünü tek
+    sayıya indirmek, birbirini götüren iki pozisyonu risksiz göstermek olurdu.
+    """
+    ledger = _ledger(
+        tmp_path, "m",
+        positions=[
+            _position(symbol="BTC-USDT-SWAP", direction="long", qty=30.0, margin=1_000.0),
+            _position(symbol="ETH-USDT-SWAP", direction="short", qty=10.0, margin=1_000.0),
+        ],
+    )
+    marks = {"BTC-USDT-SWAP": 100.0, "ETH-USDT-SWAP": 100.0}
+    rows = concentration(["m"], ledger=ledger, config=load_config(), marks=marks)["m"]
+
+    # 3.000 long − 1.000 short = 2.000 net, 4.000 brüt; en büyük sembol brütün 3/4'ü.
+    assert rows["top_symbol_share"] == pytest.approx(0.75)
+    assert rows["gross_exposure"] == pytest.approx(2.0 * rows["net_exposure"])
+
+
+def test_concentration_is_zero_without_open_positions(tmp_path: Path) -> None:
+    """Pozisyon yoksa maruziyet SIFIRDIR, `nan` değil: "ölçüldü ve sıfır çıktı" doğrudur."""
+    ledger = Ledger(tmp_path)
+    ledger.reset_model("m", initial_capital=10_000.0)
+    rows = concentration(["m"], ledger=ledger, config=load_config(), marks={})["m"]
+    assert rows == {"net_exposure": 0.0, "gross_exposure": 0.0, "top_symbol_share": 0.0}

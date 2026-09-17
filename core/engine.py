@@ -250,6 +250,20 @@ class ModelReport:
     # tek bir sayıya çökerse "kurulum yoktu" ile "sinyal modülü bozuldu" ayırt edilemez.
     # Sayım tutmayan modelde boştur (varsayılan kanca None döner).
     survey: Mapping[str, int] = field(default_factory=dict)
+    # Kural 13'ün mum içi sıralama varsayımının ÖLÇÜSÜ. `stop_exits` bu turda stop'la
+    # kapanan pozisyon sayısı, `ambiguous_stop_exits` ise bunların kaçında aynı mumun
+    # aralığı hedefe (ya da kısmi çıkış seviyesine) DE değiyordu.
+    #
+    # Neden sayılıyor: kural 13 mum içi sıralama bilinemediği için kötü olanın
+    # gerçekleştiğini varsayar. Varsayım muhafazakârdır ve doğru taraftadır, ama
+    # BEDELİ hiç ölçülmemişti — "modeller kaybediyor" sonucunun ne kadarı sinyalden, ne
+    # kadarı bu varsayımdan geliyor bilinmiyordu. Oran küçükse tartışma biter; büyükse
+    # duyarlılık koşusu (backtest) gerekir.
+    #
+    # `rejections`/`survey`/`emitted` ile aynı statüde bir DENETİM İZİDİR: ölçüme girmez,
+    # hiçbir dolumu ya da sırayı değiştirmez.
+    stop_exits: int = 0
+    ambiguous_stop_exits: int = 0
     skipped: str = ""
 
 
@@ -295,6 +309,10 @@ class _ModelRun:
     # barın kendi taraması vardır. Son barınkini saklamak, telafi edilen barlarda kolun
     # ne gördüğünü kaydın dışında bırakırdı.
     survey: dict[str, int] = field(default_factory=dict)
+    # Kural 13'ün "aynı mumda kötü olan gerçekleşmiş varsayılır" kuralının ne sıklıkta
+    # BAĞLADIĞI (bkz. core/portfolio.py::_favourable_level_in_range).
+    stop_exits: int = 0
+    ambiguous_stop_exits: int = 0
     skipped: str = ""
 
     def reject(self, code: str) -> None:
@@ -303,6 +321,12 @@ class _ModelRun:
     def note_unchecked(self, symbol: str) -> None:
         """Barı olmadığı için bu barda kontrol edilemeyen bir açık pozisyon."""
         self.unchecked_position_bars += 1
+
+    def note_stop_exit(self, ambiguous: bool) -> None:
+        """Stop'la kapanan bir pozisyon; `ambiguous` = aynı mum hedefe de değiyordu."""
+        self.stop_exits += 1
+        if ambiguous:
+            self.ambiguous_stop_exits += 1
 
     def record_survey(self, counts: Mapping[str, int]) -> None:
         for reason, count in counts.items():
@@ -389,6 +413,8 @@ class Engine:
                     rejections=dict(sorted(run.rejections.items())),
                     emitted=tuple(run.emitted),
                     survey=dict(sorted(run.survey.items())),
+                    stop_exits=run.stop_exits,
+                    ambiguous_stop_exits=run.ambiguous_stop_exits,
                     skipped=run.skipped,
                 )
                 for run in runs
@@ -442,7 +468,8 @@ class Engine:
         run.filled += self._fill_pending(run, ts=ts, bars=bars, marks=opens)
         run.trades.extend(
             self._portfolio.process_bar(
-                model, ts=ts, bars=bars, on_unchecked=run.note_unchecked
+                model, ts=ts, bars=bars, on_unchecked=run.note_unchecked,
+                on_stop_exit=run.note_stop_exit,
             )
         )
         self._update_stops(run, market, ts=ts)

@@ -594,6 +594,54 @@ class Portfolio:
             if position.initial_stop_price is not None
         )
 
+    def concentration(self, model: str, marks: Mapping[str, float]) -> dict[str, float]:
+        """Açık pozisyonların YOĞUNLAŞMASI: net/brüt maruziyet ve en büyük sembol payı.
+
+        **Bu bir ÖLÇÜMDÜR, bir kural DEĞİL** — hiçbir sinyal bu sayılara göre elenmez ve
+        hiçbir pozisyon boyutu onlara göre değişmez (seans ve kayıp serisi kırılımlarıyla
+        aynı statü). Gerekçe: "sinyal ≠ emir; korelasyon ve net beta tavanı gerekir"
+        önerisi makul görünüyor ama bugün ölçülen bir şeye dayanmıyor — modellerin
+        gerçekten yoğunlaşıp yoğunlaşmadığını söyleyen bir sayı yok. Tavan koymak ise
+        BEDAVA değil: 13 sembollük bir kripto evreninde pozisyonlar birbirine yüksek
+        korelasyonludur, yani bir korelasyon tavanı `max_positions` kotasını (5) pratikte
+        1-2'ye indirir ve `acceptance.min_trades` (30) kapısına zaten zor ulaşan bir
+        katmanda ölçümü durdurur. Kural 11'in "atlamak işlem sayısını sessizce düşürür"
+        itirazının aynısı, daha sert hâli.
+
+        Kaba bir portföy katmanı zaten VAR (`max_positions`, `max_short_positions`,
+        kopyanın `max_portfolio_risk`i); eksik olan, o katmanın yetip yetmediğini
+        söyleyecek sayıydı.
+
+        Döndürülen alanlar (hepsi özsermayenin katı; pozisyon yoksa hepsi 0.0):
+
+        - `net_exposure`   — (long notional − short notional) / özsermaye. Yönlü
+          maruziyet: kripto evreninde bu sayı kabaca BTC betasının vekilidir.
+        - `gross_exposure` — (long + short) / özsermaye. Kaldıracın gerçekleşen hâli.
+        - `top_symbol_share` — en büyük tek sembolün brüt içindeki payı. 1.0 "tüm risk
+          tek sembolde", 1/n "eşit dağılmış" demektir.
+
+        Notional GÜNCEL fiyattan ölçülür, girişten değil: sorulan şey "şu an ne kadar
+        maruzuz", "ne kadar maruz kalmıştık" değil.
+        """
+        account = self.account(model)
+        equity = self.equity(model, marks)
+        if not account.positions or equity <= 0.0:
+            return {"net_exposure": 0.0, "gross_exposure": 0.0, "top_symbol_share": 0.0}
+
+        by_symbol: dict[str, float] = {}
+        net = 0.0
+        for position in account.positions:
+            notional = position.qty * _mark(position, marks)
+            by_symbol[position.symbol] = by_symbol.get(position.symbol, 0.0) + notional
+            net += notional if position.direction == "long" else -notional
+
+        gross = sum(by_symbol.values())
+        return {
+            "net_exposure": net / equity,
+            "gross_exposure": gross / equity,
+            "top_symbol_share": (max(by_symbol.values()) / gross) if gross > 0.0 else 0.0,
+        }
+
     def unrealized_pnl(self, model: str, marks: Mapping[str, float]) -> float:
         return sum(
             _gross_pnl(position, _mark(position, marks), position.qty)
@@ -844,11 +892,25 @@ class Portfolio:
         ts: pd.Timestamp,
         bars: Mapping[str, Bar],
         on_unchecked: Callable[[str], None] | None = None,
+        on_stop_exit: Callable[[bool], None] | None = None,
     ) -> list[Trade]:
         """Açık pozisyonları tek bir mum boyunca ilerletir ve kapananların kaydını döndürür.
 
         `on_unchecked`, barı olmayan her AÇIK POZİSYON için bir kez çağrılır (sembol adıyla).
         Çağıran bunu tur raporuna sayar; bkz. aşağıdaki dal.
+
+        `on_stop_exit`, stop'la kapanan her pozisyon için bir kez çağrılır ve argümanı
+        şudur: **aynı mumun aralığı lehte bir seviyeye (hedef ya da kısmi çıkış) DE
+        değiyor muydu?** Kural 13 böyle bir mumda kötü olanın (stop) gerçekleştiğini
+        VARSAYAR — mum içi sıralama bilinemez — ve bu varsayım muhafazakârdır, yani
+        sonuçları aşağı çeker. Varsayımın BEDELİ bugüne kadar hiç ölçülmedi: "modeller
+        kaybediyor" sonucunun ne kadarı sinyalden, ne kadarı bu varsayımdan geliyor
+        bilinmiyor. Sayaç tam olarak o payı ölçer.
+
+        **Bu bir DENETİM İZİDİR, bir kural değil** (`rejections` / `survey` ile aynı
+        statü): hiçbir dolumu, fiyatı ya da sırayı değiştirmez; yalnızca sayar. Varsayımın
+        kendisini oynatmak ayrı bir karardır ve canlı deftere DEĞİL, backtest'in duyarlılık
+        koşusuna aittir — defterin kuralı tek olmalıdır.
         """
         account = self.account(model)
         trades: list[Trade] = []
@@ -872,12 +934,20 @@ class Portfolio:
                 if on_unchecked is not None:
                     on_unchecked(position.symbol)
                 continue
-            trades.extend(self._process_position(account, position, bar=bar, ts=ts))
+            trades.extend(self._process_position(
+                account, position, bar=bar, ts=ts, on_stop_exit=on_stop_exit
+            ))
 
         return trades
 
     def _process_position(
-        self, account: Account, position: OpenPosition, *, bar: Bar, ts: pd.Timestamp
+        self,
+        account: Account,
+        position: OpenPosition,
+        *,
+        bar: Bar,
+        ts: pd.Timestamp,
+        on_stop_exit: Callable[[bool], None] | None = None,
     ) -> list[Trade]:
         long = position.direction == "long"
 
@@ -895,6 +965,10 @@ class Portfolio:
         #    Stop'suz referans pozisyonda (kural 15) bu adım tümden atlanır.
         stop = position.stop_price
         if stop is not None and ((long and bar.low <= stop) or (not long and bar.high >= stop)):
+            # Sayım dolumdan ÖNCE yapılır: `_close` pozisyonun hedeflerini tüketir ve
+            # sonrasında "bu mumda hedef de aralıktaydı" sorusu artık sorulamaz.
+            if on_stop_exit is not None:
+                on_stop_exit(_favourable_level_in_range(position, bar))
             reference = min(stop, bar.open) if long else max(stop, bar.open)
             exit_price = self.fill_price(
                 direction=position.direction, reference_price=reference, side="exit", is_stop=True
@@ -1154,6 +1228,34 @@ def _mark(position: OpenPosition, marks: Mapping[str, float]) -> float:
     # Fiyatı olmayan sembol için giriş fiyatı kullanılır: bilgi yokken pozisyonu kâr ya da
     # zararda göstermek, boyutlandırmanın dayandığı sermayeyi uydurmak olurdu.
     return float(marks.get(position.symbol, position.entry_price))
+
+
+def _favourable_level_in_range(position: OpenPosition, bar: Bar) -> bool:
+    """Bu mumun aralığı pozisyonun LEHİNE bir seviyeye değiyor mu (hedef ya da kısmi)?
+
+    Kural 13'ün "kötü olan gerçekleşmiş varsayılır" kuralının ne sıklıkta BAĞLADIĞINI
+    ölçmek için: stop'la kapanan bir pozisyonun mumu hedefe de değmişse, o işlemin sonucu
+    bir piyasa gerçeği değil bir SIRALAMA VARSAYIMIDIR.
+
+    Kısmi çıkış seviyesi de sayılır: o da lehte bir seviyedir ve aynı mumda stop'a
+    öncelik verilmesi onu da yutmuştur (bkz. `_process_position` 3. adım).
+
+    Zaten dolmuş kısmi (`partial_done`) sayılmaz: o seviye bu mumda değil daha önce
+    geçilmiştir ve burada ölçülen şey BU mumun belirsizliğidir.
+    """
+    long = position.direction == "long"
+    levels = [take_profit.price for take_profit in position.take_profits]
+
+    partial = position.partial_tp
+    if partial is not None and not position.partial_done:
+        trigger = position.price_at_r(partial.r)
+        if trigger is not None:
+            levels.append(trigger)
+
+    return any(
+        bar.high >= level if long else bar.low <= level
+        for level in levels
+    )
 
 
 def _tighten_stop(position: OpenPosition, stop_price: float, *, rule: str = "") -> bool:

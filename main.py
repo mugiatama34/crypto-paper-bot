@@ -104,7 +104,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             benchmarks=[s.name for s in strategies if s.is_benchmark],
             replicas=[s.name for s in strategies if s.is_replica],
         )
-        print(format_report(metrics))
+        # Örneklem kapısı tabloya da uygulanır: kapıyı geçmeyen satır SIRALANMAZ
+        # (bkz. core/metrics.py::format_report).
+        print(format_report(
+            metrics, min_trades=int(get_setting(config, "acceptance.min_trades"))
+        ))
 
         _compact_equity(ledger, [s.name for s in strategies], layer=layer, as_of=market.as_of)
 

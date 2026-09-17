@@ -1,8 +1,12 @@
 # crypto-paper-bot
 
-10 farklı strateji modelinin aynı kripto piyasa verisini görüp kendi izole sanal hesabıyla
+Strateji modellerinin aynı kripto piyasa verisini görüp kendi izole sanal hesabıyla
 paper-trading yaptığı bir **ölçüm projesi.** Amaç kâr etmek değil, stratejileri adil ve
 tekrarlanabilir koşullarda kıyaslamaktır. Kurallar ve mimari için bkz. [`CLAUDE.md`](./CLAUDE.md).
+
+Kaç modelin koştuğu sabit bir sayı DEĞİLDİR ve burada tekrar edilmez: **tek kaynak
+`config.yaml`'ın katman `models` listeleridir** (bkz. [Model listesi](#model-listesi)).
+Bir eksen kapandığında model emekli edilir, kodu ve defteri durur — kadro hareket eder.
 
 Ölçüm **iki katmanda** yürür ve ikisi de aynı çekirdeği kullanır: `base` 4 saatlik ana
 yarışma, `scalp` 15 dakikalık scalp katmanıdır (bkz. [Katmanlar](#katmanlar)). Katmanlar ayrı
@@ -41,18 +45,25 @@ bir model koşuyu ayrıca hata koduyla bitirir; sessizce eksik yarışan bir kü
 **Defter ve veri hataları izole EDİLMEZ:** bozuk defter ya da bayat anlık görüntü turu tümden
 düşürür — bunlar model hatası değil ölçüm hatasıdır.
 
-Scalp katmanı `.github/workflows/run-scalp.yml` ile 15 dakikada bir koşar (`3,18,33,48 * * * *`)
-ve yalnızca `ledgers_scalp/` + `docs/data/metrics_scalp.json` commit eder; `run.yml`e hiç
-dokunmaz. GitHub cron'u bu kadansta gecikebilir ya da bir tetiklemeyi atlayabilir — bu ölçümü
-bozmaz: motor son işlenmiş bardan `as_of`'a kadar aradaki tüm barları sırayla ilerletir,
-kaybedilen tek şey atlanan barlarda üretilmeyen sinyallerdir ve iki model de aynı turları
-kaçırır.
+Scalp katmanı `.github/workflows/run-scalp.yml` ile koşar ve yalnızca `ledgers_scalp/` +
+`docs/data/metrics_scalp.json` commit eder; `run.yml`e hiç dokunmaz. Dosyada **cron
+YOKTUR** — yalnızca `workflow_dispatch` — ve tetikleyici depo dışındadır (gözlenen kadans
+~15 dakika, tur başına bir 15m barı). GitHub'ın kendi cron'u bu sıklıkta ölçüldü ve
+tetiklemelerin ~%91'i düşüyordu; `schedule:` bloğu bu yüzden kaldırıldı. Bir tetikleme
+gecikse ya da düşse bile ölçüm bozulmaz: motor son işlenmiş bardan `as_of`'a kadar aradaki
+tüm barları sırayla ilerletir ve scalp'te `signals_per_bar: true` olduğu için her telafi
+barı kendi sinyalini de üretir.
 
-`.github/workflows/run.yml` bunu `5 0,4,8,12,16,20 * * *` cron'uyla çalıştırır: 4H barlar
-00/04/08/12/16/20 UTC'de kapanır, 5 dakikalık pay hem kapanmamış barı beklemeye hem GitHub
-cron gecikmesine yeter. Koşudan sonra `ledgers/` ve `docs/data/` commit edilir (değişiklik
-yoksa boş commit atılmaz). **Defter bu yüzden depoya girer:** runner her koşuda sıfırdan
-kurulur, commit edilmezse her tur boş bakiyeyle başlar ve ölçüm hiç birikmez.
+`.github/workflows/run.yml` base katmanını **saatlik** cron'la (`5 * * * *`) çalıştırır —
+4 saatlik değil. Gerekçe ölçüldü (docs/decisions.md > 39): `5 0,4,8,12,16,20` iken turların
+%35'i telafi yapıyor ve barların **%26'sı sinyalsiz** geçiyordu, üstelik kaybolan bar hep
+00:00 ya da 08:00 barıydı — yani kayıp gürültü değil YANLILIK. Saatlik kadans her 4H barına
+dört bağımsız şans verir ve ölçüm kuralına dokunmaz (`signals_per_bar` base'de KAPALI
+kalır). Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü commit
+edilseler HEAD'deki tur denetim izini boş bir turla ezerlerdi. Koşudan sonra `ledgers/` ve
+`docs/data/` commit edilir (değişiklik yoksa boş commit atılmaz). **Defter bu yüzden depoya
+girer:** runner her koşuda sıfırdan kurulur, commit edilmezse her tur boş bakiyeyle başlar
+ve ölçüm hiç birikmez.
 
 Her tur `docs/data/metrics.json`'a bir **tur raporu** da yazar: model başına işlenen bar,
 dolum, kapanan işlem, sinyal sayısı ve **doldurulamayan emirlerin sebep kodu dökümü**
@@ -71,12 +82,14 @@ ayrımı taşır: beklenen tekrar `INFO`, arıza `WARNING`.
 | | `base` | `scalp` |
 |---|---|---|
 | Bar | 4H | 15m |
-| Evren | hacme göre ilk 50, 30 günde bir yenilenir | **sabit 14 sembol** (BTC, ETH, SOL, XRP, DOGE, BNB, AVAX, LINK, ADA, SUI, NEAR, PENGU, TON, ETHFI) |
-| Modeller | 10 yarışmacı + `buyhold` çıpası | `scalp_bandit` (11), `scalp_fixed` (12) |
+| Evren | hacme göre ilk 50, 30 günde bir yenilenir | **sabit 13 sembol** (BTC, ETH, SOL, XRP, DOGE, BNB, AVAX, LINK, ADA, SUI, NEAR, PENGU, ETHFI) |
+| Modeller | bkz. [Model listesi](#model-listesi) — tek kaynak `config.yaml > models` | bkz. [Model listesi](#model-listesi) — tek kaynak `config.yaml > layers.scalp.models` |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
-| Cron | `run.yml` | `run-scalp.yml` (15 dakikada bir) |
+| Cron | `run.yml` — **saatlik** (`5 * * * *`), her 4H barına dört şans (karar 39) | `run-scalp.yml` — cron YOK, dış tetikleyici (~15 dk) |
+| Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı | 3×ATR | 8×ATR |
+| Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |
 
 **Maliyet ve risk sabitleri iki katmanda da birebir aynıdır** (`risk_per_trade`, `fee_rate`,
 `slippage_*`, `leverage_cap`, `initial_capital`, `maintenance_margin`): kök config tek
@@ -87,9 +100,11 @@ Evrenin **sabit** olması bir tercih değil bir kıyas koşuludur: evren zamanla
 performans başka bir sembol kümesine ait olur ve iki modelin sayıları aynı yarışın sayıları
 olmaktan çıkar.
 
-### Scalp modelleri (11 ve 12)
+### Scalp katmanının beş kollu modelleri
 
-İkisi de **beş ortak kolu** (`strategies/scalp/arms.py`) oynar:
+`scalp_bandit` (11), `scalp_fixed` (12), `scalp_managed` (15), `scalp_patient` (16) ve
+`scalp_vol` (17) **beş ortak kolu** (`strategies/scalp/arms.py`) oynar; hangilerinin canlı
+koştuğu [Model listesi](#model-listesi)ndedir. Kollar:
 
 1. **VWAP geri çekilme** — gün-çapalı VWAP'e trend yönünde dokunuş
 2. **Açılış aralığı kırılımı** — günün ilk 4 barının aralığı + hacim teyidi
@@ -97,11 +112,15 @@ olmaktan çıkar.
 4. **Momentum patlaması devamı** — 3 bar üst üste aynı yön + hacim
 5. **Funding sıçraması fade'i** — funding aniden yükseldiğinde short
 
-Tek farkları **kol seçimidir**: `scalp_bandit` Thompson sampling ile tahsisi öğrenir,
-`scalp_fixed` aynı kolları eşit ağırlıkla oynar. Aradaki ortalama R farkı **adaptasyonun
-katkısıdır** — başka hiçbir şey farklı olmadığı için.
+Modeller birbirinden **tek bir eksende** ayrışır ve her eksen bir soruyu ölçer
+(bkz. [Ölçüm eksenleri](#ölçüm-eksenleri)): `scalp_bandit` kol tahsisini öğrenir,
+`scalp_fixed` eşit ağırlık oynar (adaptasyonun katkısı); `scalp_managed` üç aşamalı çıkış
+yönetimi ekler (yönetimin katkısı); `scalp_patient` yalnızca zaman stop'unun sınırını
+değiştirir (sürenin katkısı); `scalp_vol` bir volatilite rejim kapısı ekler (rejimin
+katkısı). Tek değişkenli olmaları şart: fark başka bir yerde de varsa ortalama R farkı o
+eksenin ölçüsü olmaktan çıkar.
 
-Her iki modelde de aynı kısıtlar: stop mesafesi girişin **%1'inin altındaysa işlem alınmaz**
+Hepsinde aynı kısıtlar: stop mesafesi girişin **%1'inin altındaysa işlem alınmaz**
 (tur maliyeti ~%0.25; daha dar stop'ta maliyet 0.25R'yi aşar), **hedef/stop en az 1.5**,
 **16 bar (4 saat) sonra zaman stop'u**, long ve short açık, bütçe ve risk kuralları 4 saatlik
 modellerle aynı. Stop **genişletilmez**, kurulum atlanır ve her atlama loglanır.
@@ -111,6 +130,31 @@ Bandit'in durumu ayrı bir dosyada tutulmaz: posterior `ledgers_scalp/scalp_band
 işlemin `signal_reason` kuyruğunda o anki karar durur:
 `... | arm=vwap_pullback | post_r=0.31`. Kol etiketi olmayan bir satır sessizce atlanmaz,
 hata fırlatılır.
+
+### Ölçüm eksenleri
+
+Scalp katmanı bir "en iyi model" yarışı değil, bir **eksen tablosudur**: her eksende tam
+olarak TEK bir değişken ayrışır ve iki modelin ortalama R farkı o değişkenin ölçüsüdür.
+Bir eksen kapandığında satır silinmez — kapanışın kendisi bir ölçüm sonucudur.
+
+| Eksen | Çift | Ayrışan tek şey | Durum |
+|---|---|---|---|
+| Sürenin katkısı | `scalp_fixed` (12) ↔ `scalp_patient` (16) | zaman stop'u sınırı (16 ↔ 100 bar) | **AÇIK** — hareket eden tek eksen (−0.15 ↔ −0.01) |
+| İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_managed` (14) | **tek değişken DEĞİL** — altı eksende birden ayrışır | AÇIK |
+| Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi | KAPALI — iki kez "fark yok" (karar 33) |
+| Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış | KAPALI — iki kez "fark yok" (karar 33) |
+| Volatilite rejiminin katkısı | `scalp_patient` (16) ↔ `scalp_vol` (17) | kesitsel ATR% medyan kapısı | KAPALI — ön-kayıtlı P1 düştü (karar 36) |
+
+**13 ↔ 14 bir eksen DEĞİL, bir toplam farktır.** İki model sinyal kuralları, boyutlandırma,
+ev kapıları, seçim politikası, bar başına sinyal sayısı ve evren olmak üzere altı eksende
+birden ayrışır; böyle bir fark "ev kurallarının katkısı" olarak okunamaz. Tek değişkenli bir
+eksen isteniyorsa yolu yeni bir model açmaktır — mevcut ikisinden birini diğerine
+yaklaştırmak değil (bu, model 13'ü kopya olmaktan çıkarırdı).
+
+**Çekiliş, ölçülmeyen eksende PAYLAŞILIR, ölçülen eksende BAĞIMSIZDIR.** Model 11 ↔ 12'de
+ölçülen şey seçimin kendisidir; çekilişi paylaşsalardı fark adaptasyonun değil tesadüfün
+ölçüsü olurdu. Model 12 ↔ 15'te ise ölçülen şey seçim değil aynı seçimin nasıl
+yönetildiğidir — bu yüzden 15, 12'nin çekiliş kimliğini kullanır (eşleştirilmiş deney).
 
 ## Dashboard (GitHub Pages)
 
@@ -314,34 +358,74 @@ dışlanır ve loglanır; böylece tek bir gecikmiş sembol turun "şimdi"sini g
 
 ## Model listesi
 
-Aktif küme **katmanın** `models` listesidir (`config.yaml` kökü `base` için, `layers.scalp`
-scalp için); adlar `strategies/registry.py`'de çözülür. 4 saatlik yarışmanın tamamlanması
-için 10 model gerekir; 11 ve 12 ayrı bir katmanda koşar ve onlarla aynı tabloda yarışmaz.
+**Bu bölümün tek kaynağı `config.yaml`'dır ve bağ bir testle korunur**
+(`tests/test_docs_sync.py`): aşağıdaki AKTİF LİG tabloları katmanların `models` listeleriyle
+birebir eşleşmezse test kırmızıya döner. Bu koruma bir titizlik değil, ölçülmüş bir ihtiyaç:
+karar 33 kadroyu sadeleştirirken `config.yaml` ve `CLAUDE.md` güncellendi, README
+güncellenmedi ve belge aylarca "10 yarışmacı" demeye devam etti.
 
-| # | Strateji | Yön | Durum |
+Üç küme vardır ve karışmamaları önemlidir: **aktif lig** (katmanın `models` listesi — bugün
+defter yazan modeller), **katalog** (`strategies/registry.py`'de kayıtlı ama listede olmayan
+— emekli ya da aday), **yarışma dışı** (çıpa ve kopya; kural 15/15b).
+
+### Aktif lig — `base` (4H, `config.yaml > models`)
+
+| # | Strateji | Yön | Tez |
 |---|---|---|---|
 | — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
 | 1 | `trend` | long + short | Donchian kırılımı + EMA rejim filtresi |
 | 2 | `meanrev` | long + short | RSI + Bollinger ortalamaya dönüş (short'ta BTC rejim kapısı) |
-| 3 | `momentum` | long + short | kesitsel 7g getiri sıralaması, haftalık dengeleme |
-| 4 | `squeeze` | long + short | Bollinger sıkışması + hacim teyitli kırılım |
-| 5 | `confluence` | long + short | Fibonacci çakışması (retracement × extension), yön RSI'dan |
-| 6 | `failed_breakout` | short | 20 bar zirvesini süpürüp altına kapanan tuzak |
-| 7 | `downtrend_rally` | short | düşüş trendinde 0.382-0.618 / 20 EMA rallisinin satışı |
-| 8 | `avwap` | long + short | kesinleşmiş pivota çapalı VWAP'tan ±2σ sapma |
 | 9 | `random_ctrl` | long + short | **kontrol grubu**: bilgisiz çekiliş, edge'in referansı |
-| 10 | `ensemble` | long + short | **meta** (kural 4): akranların o turdaki sinyallerinden konsensüs |
-| 11 | `scalp_bandit` | long + short | **scalp katmanı (15m):** 5 kol arasında Thompson sampling ile tahsis |
-| 12 | `scalp_fixed` | long + short | **scalp katmanı (15m), KONTROL:** aynı 5 kol, eşit ağırlık, öğrenme yok |
+
+### Aktif lig — `scalp` (15m, `config.yaml > layers.scalp.models`)
+
+| # | Strateji | Yön | Tez |
+|---|---|---|---|
+| 12 | `scalp_fixed` | long + short | beş kol, eşit ağırlıklı çekiliş, öğrenme yok — eksenlerin KONTROLÜ |
+| 16 | `scalp_patient` | long + short | `scalp_fixed`in ikizi, tek farkı zaman stop'u sınırı (16 ↔ 100 bar) |
+| 13 | `vwap_clone` | long + short | **dış sistem kopyası** (kural 15b), yarışmacı değil |
+| 14 | `vwap_managed` | long + short | VWAP sapma-dönüş sinyali, ev kurallarıyla (risk boyutlandırma, %1 taban, 1.5R) |
+
+### Katalog — kayıtlı ama listede değil
+
+Emekli bir modelin **kodu ve defteri DURUR** (kural 1: defter append-only); listeye geri
+eklemek bir commit'tir. Backtest onları `--models` ile hâlâ çağırabilir.
+
+| # | Strateji | Durum | Gerekçe |
+|---|---|---|---|
+| 3 | `momentum` | emekli | 29 barlık geçmişte HİÇ sinyal üretmedi (karar 33) |
+| 4 | `squeeze` | emekli | aynı — ölçülemeyen satır tabloda yalnızca gürültü üretir |
+| 5 | `confluence` | emekli | örneklem kapısına (n=30) ~72 günde ulaşırdı |
+| 6 | `failed_breakout` | emekli | 29 barlık geçmişte HİÇ sinyal üretmedi |
+| 7 | `downtrend_rally` | emekli | aynı |
+| 8 | `avwap` | emekli | örneklem kapısına ~42 günde ulaşırdı |
+| 10 | `ensemble` | emekli | **meta** (kural 4); örneklem kapısına ~125 günde ulaşırdı |
+| 11 | `scalp_bandit` | emekli | adaptasyon ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
+| 15 | `scalp_managed` | emekli | çıkış yönetimi ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
+| 17 | `scalp_vol` | aday, canlıda koşmaz | ön-kayıtlı birincil tahmin P1 DÜŞTÜ (karar 36) |
+
+**Emekli ≠ silinmiş.** Ölçüt performans değil ÖLÇÜLEBİLİRLİKTİR: ne kadar iyi olduğunu asla
+öğrenemeyeceğimiz bir satır, tabloda bir bilgi değil bir gürültü kaynağıdır.
+
+### Yarışma dışı (kural 15 / 15b)
 
 `buyhold` sayıya dâhil değildir: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınıp hiç satılmaz.
 Tek işi yarışmacılara bir zemin vermektir.
 
-`ensemble` projedeki tek META modeldir (`is_meta = True`): kendi sinyal mantığı yoktur, o
-turda normal modellerin ürettiği sinyalleri salt okunur okur ve aynı sembolde aynı yönde en az
-2 modelin birleştiği yerde işlem açar. Oy veren havuz `random_ctrl` (kontrol grubu) ile
-`buyhold` (referans çıpası) DIŞINDADIR; oylar eşit ağırlıklıdır. Stop katılımcıların en
-genişi, hedef en yakını (tek TP, tamamı). Ölçtüğü tek şey: **üst üste binme işe yarıyor mu.**
+`vwap_clone` bir **dış sistem kopyasıdır** (`is_replica = True`, kural 15b): dış bir sistemin
+kurallarını bizim maliyet, kayma, funding ve likidasyon varsayımlarımız altında yeniden
+üretir. Sabit teminat × 10x ile koşar, kendi limitleri ve kendi 12 sembollük evreni vardır.
+Çıpa gibi yarışmacı değildir ama AYRI bir bayraktır, çünkü ölçtüğü soru farklıdır: çıpa
+"piyasa ne yaptı" der, kopya "dış sistem bizim varsayımlarımızla ne yapardı" der. Kabul
+çıtasının zemini yalnızca `is_benchmark` satırlarından gelir; kopyayı zemin saymak, çıtayı
+bir stratejinin performansına bağlamak olurdu.
+
+`ensemble` (emekli, katalogda) projedeki tek META modeldir (`is_meta = True`): kendi sinyal
+mantığı yoktur, o turda normal modellerin ürettiği sinyalleri salt okunur okur ve aynı
+sembolde aynı yönde en az 2 modelin birleştiği yerde işlem açar. Oy veren havuz
+`random_ctrl` (kontrol grubu) ile `buyhold` (referans çıpası) DIŞINDADIR; oylar eşit
+ağırlıklıdır. Stop katılımcıların en genişi, hedef en yakını (tek TP, tamamı). Ölçtüğü tek
+şey: **üst üste binme işe yarıyor mu.**
 
 `random_ctrl` ise sayıya dâhildir ve `is_benchmark` DEĞİLDİR: boyutlandırması, stop ölçeği ve
 limitleri yarışmacılarla birebir aynıdır, tek farkı sinyalin bilgisiz olmasıdır. Çıpa "piyasa
@@ -361,7 +445,7 @@ Bir model ancak **iki kapı da** yeşilken doğrulanmış sayılır.
 | Kapı | Soru | Geçme koşulu |
 |---|---|---|
 | **Ö** örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` (**30**) |
-| **E** edge | Sonuç sinyalden mi geliyor? | ort. R > 0 **ve** `random_ctrl`'ü **en az `edge_margin_r` = 0.15R marjla** aşıyor **ve** hesap getirisi `buyhold` çıpasını geçiyor |
+| **E** edge | Sonuç sinyalden mi geliyor? | ort. R > 0 **ve** `random_ctrl`'ü **en az `edge_margin_r` = 0.15R marjla** aşıyor **ve** farkın bootstrap güven aralığının **alt sınırı > 0** **ve** hesap getirisi `buyhold` çıpasını geçiyor. `random_ctrl`'ün KENDİ örneklemi `control_min_trades` (**30**) altındaysa kapı **değerlendirilemez** |
 
 Marj olmadan kontrolü 0.01R ile geçen bir model de "geçti" sayılırdı; oysa bilgisiz
 çekilişin kendi gürültüsü o kadar farkı tek başına üretir.

@@ -282,6 +282,86 @@ def test_stop_wins_when_stop_and_take_profit_share_a_bar() -> None:
     assert [trade.exit_reason for trade in trades] == ["stop"]
 
 
+def test_ambiguous_stop_is_counted_when_the_target_shared_the_bar() -> None:
+    """Kural 13'ün varsayımının BEDELİ sayılır (denetim izi, ölçüm değil).
+
+    Aynı mumda hem stop hem hedef aralığa giriyorsa sonuç bir piyasa gerçeği değil bir
+    SIRALAMA VARSAYIMIDIR. Varsayım muhafazakârdır ve doğru taraftadır, ama ne sıklıkta
+    bağladığı bilinmeden "modeller kaybediyor" sonucunun ne kadarının ona ait olduğu
+    okunamaz.
+    """
+    seen: list[bool] = []
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+        take_profits=(TakeProfit(price=110.0, fraction=1.0),),
+    )
+    portfolio.process_bar(
+        "m", ts=TS, bars={SYMBOL: _bar(100.0, 115.0, 94.0, 112.0)},
+        on_stop_exit=seen.append,
+    )
+    assert seen == [True]
+
+
+def test_an_unambiguous_stop_is_counted_but_not_flagged() -> None:
+    """Hedefe DEĞMEYEN bir mumda stop, varsayımın değil sinyalin sonucudur.
+
+    İkisi aynı sayaca düşerse oran anlamını yitirir: sorulan şey "kaç stop oldu" değil,
+    "kaç stop bir varsayıma dayandı".
+    """
+    seen: list[bool] = []
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position(
+        "m", symbol=SYMBOL, direction="long", stop_price=95.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+        take_profits=(TakeProfit(price=110.0, fraction=1.0),),
+    )
+    portfolio.process_bar(
+        "m", ts=TS, bars={SYMBOL: _bar(100.0, 101.0, 94.0, 96.0)},
+        on_stop_exit=seen.append,
+    )
+    assert seen == [False]
+
+
+def test_ambiguity_is_measured_on_the_short_side_too() -> None:
+    """Yön simetrisi: short'ta lehte seviye AŞAĞIDADIR (`low <= hedef`).
+
+    Bu ayrımı kaçırmak, projenin ana sorusunun (short'lar daha mı başarılı) tam olarak
+    bir tarafında sayacı kör bırakırdı.
+    """
+    seen: list[bool] = []
+    portfolio = Portfolio(_frictionless())
+    portfolio.open_position(
+        "m", symbol=SYMBOL, direction="short", stop_price=105.0,
+        reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+        take_profits=(TakeProfit(price=90.0, fraction=1.0),),
+    )
+    portfolio.process_bar(
+        "m", ts=TS, bars={SYMBOL: _bar(100.0, 106.0, 88.0, 92.0)},
+        on_stop_exit=seen.append,
+    )
+    assert seen == [True]
+
+
+def test_the_ambiguity_counter_changes_no_fill() -> None:
+    """Sayaç bir DENETİM İZİDİR: aynı bar, sayaçlı ve sayaçsız, aynı defteri üretmeli."""
+    def run(with_counter: bool) -> list[tuple[str, float]]:
+        portfolio = Portfolio(_frictionless())
+        portfolio.open_position(
+            "m", symbol=SYMBOL, direction="long", stop_price=95.0,
+            reference_price=100.0, ts=TS, marks={SYMBOL: 100.0},
+            take_profits=(TakeProfit(price=110.0, fraction=1.0),),
+        )
+        trades = portfolio.process_bar(
+            "m", ts=TS, bars={SYMBOL: _bar(100.0, 115.0, 94.0, 112.0)},
+            on_stop_exit=(lambda _: None) if with_counter else None,
+        )
+        return [(trade.exit_reason, trade.exit_price) for trade in trades]
+
+    assert run(True) == run(False)
+
+
 def test_stop_fills_at_the_open_when_the_bar_gaps_through_it() -> None:
     portfolio = Portfolio(_frictionless())
     portfolio.open_position(

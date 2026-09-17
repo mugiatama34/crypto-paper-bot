@@ -713,10 +713,16 @@ function renderSummary(d) {
 
   // Lider, ortalama R'ye göredir (birinci sınıf metrik) ve YALNIZCA yarışmacılar
   // arasındadır: çıpanın R'si yoktur, sıralamaya girmesi onu yarışmacı gibi gösterirdi.
+  //
+  // ÖRNEKLEM KAPISINI geçmeyen model lider OLAMAZ (kartlardaki rütbeyle aynı kural):
+  // iki işlemle +3R yapmış bir modeli "lider" diye yazmak, kapının var olma sebebini
+  // sayfanın en görünür kutusunda çiğnemek olurdu. Hiçbiri geçmediyse kutu bunu söyler.
   let leader = null;
+  let gated = 0;
   for (const model of names) {
     const value = num(((MODELS[model] || {}).total || {}).avg_r);
     if (value === null) continue;
+    if ((FLAGS[model] || {}).sample === false) { gated += 1; continue; }
     if (!leader || value > leader.value) leader = { model, value };
   }
 
@@ -746,7 +752,9 @@ function renderSummary(d) {
           (leaderFlags
             ? (leaderFlags.passed ? "iki kapı da geçildi" : "kapılar henüz geçilmedi (Ö/E)")
             : "kabul bayrağı yok")
-        : "R'ye giren kapanmış işlem yok.",
+        : (gated
+            ? gated + " yarışmacının hiçbiri örneklem kapısını geçmedi — lider YOK."
+            : "R'ye giren kapanmış işlem yok."),
     },
     {
       k: "long vs short",
@@ -836,13 +844,29 @@ const GATE_DEFS = [
       const margin = num(f.edge_margin_r);
       const gap = (num(f.avg_r) === null || num(f.control_avg_r) === null)
         ? DASH : fmtSigned(num(f.avg_r) - num(f.control_avg_r));
-      return "EDGE — üç koşul birden:" +
+      const ciLow = num(f.edge_diff_ci_low), ciHigh = num(f.edge_diff_ci_high);
+      const ci = (ciLow === null || ciHigh === null)
+        ? "hesaplanamadı (örneklem yok)"
+        : "[" + fmtSigned(ciLow) + ", " + fmtSigned(ciHigh) + "]R";
+      // Kontrol kümede yoksa ort. R'si de yoktur (null) ve koşul zaten düşmüştür;
+      // uyarı yalnızca kontrol VAR ama az işlemi varken anlamlıdır.
+      const controlReady = num(f.control_avg_r) === null ||
+        num(f.control_trades) >= (num(f.control_min_trades) ?? 0);
+      return "EDGE — dört koşul birden:" +
         "\n1) ort. R " + fmtSigned(f.avg_r) + " pozitif olmalı" +
         "\n2) kontrol grubunu (" + fmtSigned(f.control_avg_r) + "R) en az " +
         (margin === null ? DASH : margin.toFixed(2)) + "R marjla aşmalı — şu anki fark " + gap + "R" +
         "\n   (marj olmadan çekilişin kendi gürültüsü 'geçti' gibi okunurdu)" +
-        "\n3) hesap getirisi " + pct(f.total_return, 2) + ", referans çıpası " +
-        pct(f.benchmark_return, 2) + " aşılmalı.";
+        "\n3) farkın bootstrap güven aralığı " + ci + " SIFIRIN ÜSTÜNDE olmalı" +
+        "\n   (marj etki büyüklüğünü sorar, aralık kesinliği: 8 işlemle ölçülen 0.40R" +
+        "\n    marjı geçer ama aralığı sıfırı içerir)" +
+        "\n4) hesap getirisi " + pct(f.total_return, 2) + ", referans çıpası " +
+        pct(f.benchmark_return, 2) + " aşılmalı." +
+        (controlReady ? "" :
+          "\n\n⚠ KONTROL HENÜZ ÖLÇÜLMEDİ: " + f.control_trades + " / " + f.control_min_trades +
+          " işlem." +
+          "\nBu kadar işlemlik bir ortalamaya karşı marj ölçmek, gürültüyü gürültüyle" +
+          "\nkıyaslamaktır; edge DEĞERLENDİRİLEMEZ ve geçilmiş sayılmaz.");
     },
   },
 ];
@@ -909,7 +933,14 @@ function renderGroups(d) {
 
   // Yarışmacı sırası: ortalama R. Kart sıralaması gruba göre olduğu için rütbe
   // sayıyla taşınır — gruplama, "kim önde" sorusunun cevabını gizlememeli.
+  //
+  // ÖRNEKLEM KAPISINI (Ö) geçmeyen model RÜTBE ALMAZ. Rozet "kapı geçilmedi" derken
+  // kartın "#1" yazması, okuyucunun ikincisini okuması demekti; üstelik 4 işlemlik bir
+  // ortalamayı 200 işlemlik bir ortalamayla aynı sırada göstermek, kapının tam olarak
+  // reddettiği kıyastır. Kart GİZLENMEZ — base katmanının ölçütü (karar 33) "model
+  // n=30'a ulaşabiliyor mu"dur — yalnızca rütbe yerine kapıya uzaklığı gösterir.
   const ranked = competitors(d)
+    .filter((model) => (FLAGS[model] || {}).sample !== false)
     .map((model) => ({ model, value: num((MODELS[model].total || {}).avg_r) }))
     .filter((row) => row.value !== null)
     .sort((a, b) => b.value - a.value);
@@ -943,6 +974,20 @@ function renderGroups(d) {
       '<span class="group-note">' + esc(g.note) + "</span></div>" +
       '<div class="mcards">' + cards.join("") + "</div></div>";
   }).join("");
+
+  // Rütbesizliğin SEBEBİ görünür olmalı: "—" tek başına "ölçülemedi" ile "kapıya 4
+  // işlem kaldı"yı aynı işarete indirger.
+  function rankLabel(model) {
+    const f = FLAGS[model];
+    if (!f) return DASH;                       // çıpa/kopya: yarışmacı değil
+    return f.sample === false ? "n=" + f.measured_trades : DASH;
+  }
+  function rankHint(model) {
+    const f = FLAGS[model];
+    if (!f || f.sample !== false) return "";
+    return "Örneklem kapısı (Ö) geçilmedi: " + f.measured_trades + " / " + f.min_trades +
+      " işlem.\nSıralamaya girmez — bu kadar işlemle ortalama R bir ölçüm değil gürültüdür.";
+  }
 
   function card(model, isReferenceGroup) {
     const m = MODELS[model] || {};
@@ -987,7 +1032,8 @@ function renderGroups(d) {
       '<div class="mcard-top"><div class="mcard-name"><span class="swatch' + (st.dash ? " dashed" : "") +
         '" style="background:' + (st.color || "var(--ink-muted)") + ";color:" + (st.color || "var(--ink-muted)") +
         '"></span>' + esc(model) + tag + "</div>" +
-      '<div class="mcard-rank">' + (rank[model] ? "#" + rank[model] : DASH) + "</div></div>" +
+      '<div class="mcard-rank"' + (rankHint(model) ? ' title="' + esc(rankHint(model)) + '"' : "") + ">" +
+        (rank[model] ? "#" + rank[model] : rankLabel(model)) + "</div></div>" +
       '<div class="mcard-eq">' + hero + "</div>" +
       "<details><summary>detaylar</summary>" +
         '<div class="mcard-fold">' +

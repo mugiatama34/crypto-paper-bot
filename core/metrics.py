@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
@@ -753,10 +754,27 @@ class AcceptanceFlags:
       ortalama R bir ölçüm değil gürültüdür. Bu kapı olmadan iki işlemle +3R yapmış bir
       model tablonun başına oturur.
     - `edge` — **üstünlük**: ortalama R pozitif, bilgisiz kontrol grubunun ortalama
-      R'sini **en az `edge_margin_r` kadar** aşıyor ve hesap getirisi referans çıpasını
-      geçiyor. Üçü birlikte tek bir soruyu sorar: "bu sonuç sinyalden mi geliyor, yoksa
-      piyasadan ve şanstan mı?" Marj olmadan kontrolü 0.01R ile geçen bir model de
-      "geçti" sayılırdı; oysa çekilişin kendi gürültüsü o kadar farkı tek başına üretir.
+      R'sini **en az `edge_margin_r` kadar** aşıyor, farkın **bootstrap güven aralığının
+      alt sınırı sıfırın üstünde** ve hesap getirisi referans çıpasını geçiyor. Dördü
+      birlikte tek bir soruyu sorar: "bu sonuç sinyalden mi geliyor, yoksa piyasadan ve
+      şanstan mı?" Marj olmadan kontrolü 0.01R ile geçen bir model de "geçti" sayılırdı;
+      oysa çekilişin kendi gürültüsü o kadar farkı tek başına üretir.
+
+      **Marj ve güven aralığı birbirinin yerine geçmez, ikisi de gerekir.** Marj bir
+      ETKİ BÜYÜKLÜĞÜ eşiğidir ("fark yeterince büyük mü"), güven aralığı bir KESİNLİK
+      eşiğidir ("fark örneklem gürültüsünden ayırt edilebiliyor mu"). 8 işlemle ölçülen
+      0.40R'lik bir fark marjı rahatça geçer ama aralığı sıfırı fazlasıyla içerir;
+      300 işlemle ölçülen 0.03R'lik bir fark ise aralığı sıfırın üstünde tutabilir ama
+      karar verilecek bir büyüklük değildir. R dağılımı kalın kuyrukludur (stop'lu bir
+      sistemde kayıplar −1R'de kümelenir, kazançlar uzun kuyruk yapar), bu yüzden
+      aralık normal varsayımıyla değil YÜZDELİK BOOTSTRAP ile kurulur.
+
+      **Kontrolün kendi örneklemi de bir kapıdır** (`control_min_trades`). Marj,
+      kontrolün ortalamasına göre ölçülür; o ortalama dört işlemden geliyorsa kapı
+      çalışıyormuş gibi görünürken aslında gürültüyü gürültüyle kıyaslar. Kontrol kendi
+      kapısını geçmiyorsa `edge` DEĞERLENDİRİLEMEZ ve False kalır — eksik bir çıta,
+      geçilmiş bir çıta gibi görünmemelidir (`_benchmark_return`'ün eksik çıpa için
+      yaptığının aynısı).
 
     **Uyarı** (`band`, `passed`'ı ETKİLEMEZ):
 
@@ -789,6 +807,86 @@ class AcceptanceFlags:
     edge_margin_r: float
     total_return: float
     benchmark_return: float
+    # Kontrolün KENDİ örneklemi: marj, kontrolün ortalamasına göre ölçülür ve o ortalama
+    # da bir örneklemden gelir. Denetlenebilir olması için sayı bayrakla birlikte durur.
+    control_trades: int = 0
+    control_min_trades: int = 0
+    # Farkın (model − kontrol) bootstrap güven aralığı. `nan` = hesaplanamadı (örneklem
+    # verilmedi ya da bir taraf boş); o durumda `edge` yalnızca marja düşer ve bu
+    # logger.warning ile söylenir — eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
+    edge_diff_ci_low: float = _NAN
+    edge_diff_ci_high: float = _NAN
+    ci_alpha: float = _NAN
+
+
+def r_series(trades: Iterable[Mapping[str, Any]]) -> list[float]:
+    """Bir modelin POZİSYON başına R dizisi, kapanış sırasına göre.
+
+    `direction_stats` ile AYNI tanımdan gelir (`merge_fills` -> `r_multiple`) ve ayrı bir
+    hesap yolu açmaz: kabul çıtasının bootstrap'ı ile tablodaki ortalama R aynı sayıların
+    üstünde durmalıdır. İkinci bir yol bugün hizalansa bile yarın ayrışır ve aynı model
+    için "ortalama R" ile "farkın güven aralığı" birbiriyle çelişen iki örneklemden
+    hesaplanırdı.
+    """
+    return [
+        r for r in (r_multiple(row) for row in merge_fills(trades)) if r is not None
+    ]
+
+
+def bootstrap_diff_ci(
+    sample: Sequence[float],
+    control: Sequence[float],
+    *,
+    alpha: float,
+    iterations: int,
+    seed: int,
+) -> tuple[float, float]:
+    """`ort(sample) − ort(control)` farkının yüzdelik bootstrap güven aralığı.
+
+    **Neden bootstrap, neden t-testi değil:** R dağılımı stop'lu bir sistemde tanım
+    gereği çarpıktır — kayıplar −1R civarında kümelenir, kazançlar hedef ve trailing
+    yüzünden uzun kuyruk yapar. Normal varsayımına dayanan bir aralık, bu asimetride
+    alt sınırı sistematik olarak yanlış yere koyar.
+
+    **İki örneklem BAĞIMSIZ yeniden örneklenir** (eşleştirilmemiş): model ile kontrol
+    aynı barlarda aynı sembollerde işlem açmaz, yani eşleştirilecek bir çift yoktur.
+    Eşleştirme varsayımı, olmayan bir kovaryansı hesaba katıp aralığı yapay daraltırdı.
+
+    **Deterministiktir:** tohum `config.yaml > random_seed`'den gelir ve çağıran taşır.
+    Aynı defter aynı aralığı vermelidir; rozetin koşudan koşuya titremesi, çıtayı bir
+    ölçü olmaktan çıkarıp bir çekilişe çevirirdi.
+
+    Bir taraf boşsa ya da `iterations` sıfırsa `(nan, nan)` döner — çağıran bunu
+    "değerlendirilemedi" olarak okur ve kapıyı geçmiş saymaz.
+    """
+    if not sample or not control or iterations <= 0:
+        return (_NAN, _NAN)
+
+    rng = random.Random(seed)
+    sample_n = len(sample)
+    control_n = len(control)
+    diffs: list[float] = []
+    for _ in range(int(iterations)):
+        left = sum(sample[rng.randrange(sample_n)] for _ in range(sample_n)) / sample_n
+        right = (
+            sum(control[rng.randrange(control_n)] for _ in range(control_n)) / control_n
+        )
+        diffs.append(left - right)
+    diffs.sort()
+    return (_percentile(diffs, alpha / 2.0), _percentile(diffs, 1.0 - alpha / 2.0))
+
+
+def _percentile(ordered: Sequence[float], fraction: float) -> float:
+    """Sıralı dizinin `fraction` yüzdeliği (doğrusal ara değerleme)."""
+    if not ordered:
+        return _NAN
+    if len(ordered) == 1:
+        return ordered[0]
+    position = min(max(fraction, 0.0), 1.0) * (len(ordered) - 1)
+    lower = int(math.floor(position))
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
 
 
 def acceptance_flags(
@@ -798,6 +896,11 @@ def acceptance_flags(
     stop_band_ratio: float,
     control_model: str,
     edge_margin_r: float,
+    control_min_trades: int | None = None,
+    r_samples: Mapping[str, Sequence[float]] | None = None,
+    ci_alpha: float = 0.05,
+    bootstrap_samples: int = 0,
+    seed: int = 0,
 ) -> list[AcceptanceFlags]:
     """Her yarışmacı için iki kabul kapısı ve bir band uyarısı. Çıpalar listeye girmez.
 
@@ -821,6 +924,28 @@ def acceptance_flags(
     control_avg_r = _control_avg_r(metrics, control_model)
     benchmark_return = _benchmark_return(metrics)
 
+    control_gate = int(min_trades if control_min_trades is None else control_min_trades)
+    measured_control = _control_trades(metrics, control_model)
+    control_trades = measured_control or 0
+    # Kümede hiç olmayan kontrol (None) koşulu DÜŞÜRÜR, kapıyı düşürmez — bkz.
+    # `_control_trades`. `_control_avg_r` o durumu zaten ayrıca loglar.
+    control_ready = measured_control is None or measured_control >= control_gate
+    if not control_ready:
+        logger.warning(
+            "kontrol grubu %r kendi örneklem kapısını geçmedi (%d < %d): edge bayrağı "
+            "DEĞERLENDİRİLEMEZ — %d işlemlik bir ortalamaya karşı marj ölçmek, gürültüyü "
+            "gürültüyle kıyaslamaktır",
+            control_model, control_trades, control_gate, control_trades,
+        )
+
+    samples = dict(r_samples) if r_samples is not None else {}
+    control_sample = samples.get(control_model, ())
+    if r_samples is None or bootstrap_samples <= 0:
+        logger.warning(
+            "R örneklemi verilmedi (ya da bootstrap_samples=0): edge bayrağı güven "
+            "aralığı koşulunu değerlendiremiyor, yalnızca marja düşüyor",
+        )
+
     return [
         _flags_for(
             item,
@@ -830,9 +955,36 @@ def acceptance_flags(
             control_avg_r=control_avg_r,
             edge_margin_r=float(edge_margin_r),
             benchmark_return=benchmark_return,
+            control_trades=control_trades,
+            control_gate=control_gate,
+            control_ready=control_ready,
+            diff_ci=bootstrap_diff_ci(
+                samples.get(item.model, ()),
+                control_sample,
+                alpha=float(ci_alpha),
+                iterations=int(bootstrap_samples),
+                # Tohum model adına bağlanır: her model kendi yeniden örneklemesini alır
+                # ama aynı defterde aynı aralığı üretir. Tek bir tohumu paylaşmak,
+                # modellerin çekilişlerini birbirine kilitlerdi.
+                seed=int(seed) ^ (hash_name(item.model) if item.model else 0),
+            ),
+            ci_alpha=float(ci_alpha),
         )
         for item in competitors
     ]
+
+
+def hash_name(name: str) -> int:
+    """Model adından deterministik tohum eki.
+
+    `hash()` KULLANILMAZ: Python'un dize hash'i `PYTHONHASHSEED` ile koşudan koşuya
+    değişir ve aynı defter iki farklı güven aralığı üretirdi (`random_seed`in sabit
+    olmasının gerekçesiyle aynı).
+    """
+    value = 0
+    for char in name:
+        value = (value * 131 + ord(char)) & 0xFFFFFFFF
+    return value
 
 
 def _flags_for(
@@ -844,8 +996,13 @@ def _flags_for(
     control_avg_r: float,
     edge_margin_r: float,
     benchmark_return: float,
+    control_trades: int,
+    control_gate: int,
+    control_ready: bool,
+    diff_ci: tuple[float, float],
+    ci_alpha: float,
 ) -> AcceptanceFlags:
-    measured = item.total.trades - item.total.unmeasured
+    measured = _measured(item)
     avg_r = item.total.avg_r
     stop_distance = item.total.avg_stop_distance_pct
     total_return = item.account.total_return
@@ -858,12 +1015,22 @@ def _flags_for(
         if math.isnan(band_low) or math.isnan(stop_distance)
         else band_low <= stop_distance <= band_high
     )
+    ci_low, ci_high = diff_ci
+    # Kontrol kendi örneklem kapısını geçmediyse edge DEĞERLENDİRİLEMEZ. Marjı yine de
+    # hesaplayıp "geçti" demek, kapıyı kontrolün gürültüsü kadar aşağı indirirdi; kontrol
+    # kümede hiç yokken (control_avg_r = nan) koşulun düşmesiyle aynı statü değildir —
+    # orada kıyaslanacak bir şey yoktur, burada kıyaslanacak şey henüz ölçülmemiştir.
     edge = (
-        not math.isnan(avg_r)
+        control_ready
+        and not math.isnan(avg_r)
         and avg_r > 0.0
         # Marj, kontrolü ANLAMLI biçimde geçmiş modeli kıl payı önde olandan ayırır:
         # bilgisiz çekilişin kendi gürültüsü 0.01R'lik bir farkı tek başına üretebilir.
         and (math.isnan(control_avg_r) or avg_r - control_avg_r >= edge_margin_r)
+        # Güven aralığı marjın YERİNE değil YANINA: marj etki büyüklüğünü, aralık
+        # kesinliği sorar. Aralık hesaplanamadıysa (nan) koşul düşer ve bu çağıranda
+        # logger.warning ile söylenmiştir.
+        and (math.isnan(ci_low) or ci_low > 0.0)
         and (math.isnan(benchmark_return) or (
             not math.isnan(total_return) and total_return > benchmark_return
         ))
@@ -885,6 +1052,11 @@ def _flags_for(
         edge_margin_r=edge_margin_r,
         total_return=total_return,
         benchmark_return=benchmark_return,
+        control_trades=control_trades,
+        control_min_trades=control_gate,
+        edge_diff_ci_low=ci_low,
+        edge_diff_ci_high=ci_high,
+        ci_alpha=ci_alpha,
     )
 
 
@@ -910,6 +1082,25 @@ def _control_avg_r(metrics: Sequence[ModelMetrics], control_model: str) -> float
         "değerlendiremiyor", control_model,
     )
     return _NAN
+
+
+def _control_trades(metrics: Sequence[ModelMetrics], control_model: str) -> int | None:
+    """Kontrol grubunun R'ye GİREN pozisyon sayısı; kümede YOKSA None.
+
+    `_control_avg_r` ile aynı satırdan okunur ama ayrı bir soruyu cevaplar: ortalama
+    "ne kadar", bu "kaç işlemden". İkincisi olmadan birincisi bir kapıya dayanak olamaz.
+
+    **None ile 0 aynı şey DEĞİLDİR ve karışmamaları kuralın kendisidir.** Kontrol kümede
+    hiç yoksa kıyaslanacak bir şey yoktur ve CLAUDE.md'nin yazdığı davranış geçerlidir:
+    koşul düşer, `edge` geri kalanlara dayanır, durum `logger.warning` ile söylenir.
+    Kontrol VARSA ama az işlemi varsa kıyaslanacak şey vardır, yalnızca henüz
+    ölçülmemiştir — o zaman `edge` geçilmiş SAYILMAZ. İkisini tek sayıya indirmek,
+    kontrolü listeden çıkarmayı kapıyı geçmenin bir yolu hâline getirirdi.
+    """
+    for item in metrics:
+        if item.model == control_model:
+            return item.total.trades - item.total.unmeasured
+    return None
 
 
 def _benchmark_return(metrics: Sequence[ModelMetrics]) -> float:
@@ -1022,11 +1213,19 @@ _WIDTHS = (18, 6, 5, 8, 9, 8, 9, 9, 8, 7, 10, 10, 12, 7)
 _TABLE_WIDTH = sum(_WIDTHS) + 2 * (len(_WIDTHS) - 1)
 
 
-def format_report(metrics: Sequence[ModelMetrics]) -> str:
+def format_report(metrics: Sequence[ModelMetrics], *, min_trades: int | None = None) -> str:
     """Karşılaştırma tablosu. Kolon sırası bilinçlidir: önce R, sonra USDT getirisi.
 
     Sıralama ortalama R'ye göredir — tabloyu toplam getiriye göre sıralamak, tam da
     ayıklamaya çalıştığımız bileşiklenme etkisini geri sokardı.
+
+    **`min_trades` verilirse örneklem kapısını (Ö) geçemeyen yarışmacılar SIRALAMAYA
+    GİRMEZ** ve ayrı bir bölümde, işlem sayısına göre dizilir. Gerekçe, rozetle tablonun
+    aynı şeyi söylemesidir: kapının düştüğünü bir rozette yazıp satırı yine de "#1"
+    olarak göstermek, okuyucunun ikincisini okuması demektir — ve 4 işlemlik bir ortalama
+    ile 200 işlemlik bir ortalamayı aynı sütunda sıralamak zaten kapının reddettiği
+    kıyastır. Satır GİZLENMEZ, çünkü base katmanının ölçütü (karar 33) tam olarak
+    "model n=30'a ulaşabiliyor mu"dur; bu yüzden ayrı bölüm işlem sayısına göre sıralanır.
 
     Referans çıpası (kural 15) ve dış sistem kopyası sıralamaya girmez, tablonun altında
     AYRI İKİ bölümde durur: farklı boyutlandırma kuralıyla çalışan bir satırı
@@ -1038,13 +1237,30 @@ def format_report(metrics: Sequence[ModelMetrics]) -> str:
     benchmarks = [item for item in metrics if item.is_benchmark]
     replicas = [item for item in metrics if item.is_replica and not item.is_benchmark]
 
+    if min_trades is None:
+        ranked, unmeasured = competitors, []
+    else:
+        ranked = [item for item in competitors if _measured(item) >= min_trades]
+        unmeasured = [item for item in competitors if _measured(item) < min_trades]
+
     lines = [
         "  ".join(header.rjust(width) if index else header.ljust(width)
                   for index, (header, width) in enumerate(zip(_HEADERS, _WIDTHS))),
         "-" * _TABLE_WIDTH,
     ]
-    for item in sorted(competitors, key=_rank_key):
+    for item in sorted(ranked, key=_rank_key):
         lines.extend(_model_block(item))
+
+    if unmeasured:
+        lines.append(
+            f"YETERSİZ ÖRNEKLEM (Ö kapısı: n < {min_trades}) — sıralamaya girmez; "
+            "ortalama R henüz bir ölçüm değil gürültüdür"
+        )
+        lines.append("-" * _TABLE_WIDTH)
+        # Sıralama ölçütü R DEĞİL, işlem sayısıdır: bu bölümün cevapladığı soru
+        # "hangisi önde" değil, "hangisi kapıya ne kadar yakın".
+        for item in sorted(unmeasured, key=lambda entry: (-_measured(entry), entry.model)):
+            lines.extend(_model_block(item))
 
     for title, section in (
         (
@@ -1065,6 +1281,11 @@ def format_report(metrics: Sequence[ModelMetrics]) -> str:
             lines.extend(_model_block(item))
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _measured(item: ModelMetrics) -> int:
+    """R'ye GİREN pozisyon sayısı. Örneklem kapısının tek tanımı (bkz. `_flags_for`)."""
+    return item.total.trades - item.total.unmeasured
 
 
 def _rank_key(item: ModelMetrics) -> tuple[float, str]:
