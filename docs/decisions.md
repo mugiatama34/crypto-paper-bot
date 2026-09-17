@@ -3162,3 +3162,107 @@ yapısal boşluk kapanır. Karar 33'ün n=30 projeksiyonları yeniden geçerli o
 (`trend` ~10 gün, `meanrev` ~18 gün). Bu bir TAHMİNDİR; doğrulaması birkaç gün sonra
 `bars_processed` dağılımının 1'e yakınsamasıdır.
 
+
+---
+
+## 40. Ölçümü sağlamlaştırma turu: altı değişiklik, hiçbiri bir modelin davranışına dokunmuyor
+
+Araştırmadan çıkan 10 öneri (bkz. karar 36, "10 öneri") tek tek değerlendirildi. Bu karar
+**uygulanan altısını** ve **uygulanmayan dördünün gerekçesini** kaydeder. Ortak özellik:
+uygulananların hiçbiri bir sinyali, bir dolumu, bir boyutu ya da bir maliyet sabitini
+değiştirmez — yani **defteri tarihli olarak BÖLMEZLER.** Bu bir tesadüf değil, seçim
+ölçütüydü.
+
+### Ölçüt: kural katmanı mı, ölçüm katmanı mı
+
+On öneri iki sınıfa ayrılıyordu:
+
+- **Ölçüm katmanı** — defteri değiştirmez, hiçbir modelin davranışına dokunmaz, geriye
+  dönük kıyası bozmaz. Bedeli düşük, riski sıfıra yakın.
+- **Kural katmanı** — maliyet/dolum/sinyal kurallarını değiştirir. Her biri defteri
+  tarihli bir rejim kırığına böler (karar 25'te `fee_rate`in böldüğü gibi) ve bazıları
+  mevcut ölçüm eksenlerini yok eder.
+
+Sıra bu ölçüte göre kuruldu: **önce ölçümü sağlamlaştır, sonra modeli çoğalt.**
+
+### Uygulananlar
+
+**1. Kabul kapısının iki deliği.** `_control_avg_r` kontrolün ortalamasını döndürüyor,
+o ortalamanın KAÇ işlemden geldiğini sormuyordu. Canlı base defterinde `random_ctrl`
+**n=4** iken `trend` (n=17) ona karşı 0.15R marjla "ölçülüyordu" — kapı çalışıyormuş gibi
+görünürken gürültüyü gürültüyle kıyaslıyordu. İkinci delik: marj bir ETKİ BÜYÜKLÜĞÜ
+eşiğidir, kesinlik eşiği değil; 8 işlemle ölçülen 0.40R marjı geçer ama güven aralığı
+sıfırı fazlasıyla içerir.
+
+Eklenenler: `acceptance.control_min_trades` (kontrol kendi kapısını geçmeden edge
+DEĞERLENDİRİLEMEZ) ve farkın yüzdelik bootstrap aralığı (alt sınır > 0). Bootstrap,
+normal varsayımı değil: stop'lu bir sistemde R dağılımı çarpıktır (kayıplar −1R'de
+kümelenir, kazançlar uzun kuyruk yapar).
+
+Bilinçli davranış değişikliği: kontrol n=0 iken eskiden edge VERİLİYORDU, yani model
+rozeti kontrolün ilk işlemini kapattığı anda kaybediyordu. Kontrolün kümede HİÇ olmaması
+ise ayrı statü olarak kaldı (koşul düşer) — ikisini birleştirmek, kontrolü listeden
+çıkarmayı kapıyı geçmenin bir yolu hâline getirirdi.
+
+Üçüncü değişiklik sunumda: kapıyı geçmeyen satır artık SIRALANMIYOR (tabloda ayrı bölüm,
+dashboard'da rütbe yerine `n=<sayı>`). Rozette "kapı geçilmedi" yazarken kartın "#1"
+demesi, okuyucunun ikincisini okuması demekti. Satır gizlenmiyor: base'in ölçütü
+(karar 33) zaten "model n=30'a ulaşabiliyor mu"dur.
+
+**2. README ↔ config drifti.** Karar 33 kadroyu sadeleştirirken `config.yaml` ve
+`CLAUDE.md` güncellendi, README güncellenmedi; belge "10 farklı strateji modeli",
+`5 0,4,8,12,16,20` cron'u ve OKX'te var olmayan bir sembolü (TON) anlatmaya devam etti.
+README üçe ayrıldı (aktif lig / katalog / yarışma dışı) ve `tests/test_docs_sync.py`
+kümelerin eşitliğini kapıya bağladı. Belge artık bir hatırlatma değil, kırmızıya dönen
+bir test.
+
+**3. Kural 13'ün bedeli.** Aynı mumda hem stop hem hedef aralığa girdiğinde kural 13 kötü
+olanın gerçekleştiğini varsayar. Varsayım muhafazakâr ve doğru tarafta, ama ne sıklıkta
+BAĞLADIĞI hiç ölçülmemişti — yani "modeller kaybediyor" sonucunun ne kadarının ona ait
+olduğu bilinmiyordu. `ModelReport.stop_exits` / `ambiguous_stop_exits` bunu sayar
+(denetim izi; hiçbir dolumu değiştirmez, test bunu ayrıca sabitliyor). Kümülatif cevabı
+backtest verir. **Varsayımın kendisi oynatılmadı ve canlıda asla oynatılmayacak:**
+defterin kuralı tek olmalıdır.
+
+**4. Ön-kayıt sicili + Benjamini-Hochberg.** §7.5 "çoklu karşılaştırma raporlanır" diyordu
+ama sayıyı tutan bir yer yoktu; bu karar 36'da fark edildi ("10 önerinin 1.'si") ve sayaç
+hiçbir yerde durmuyordu. §6c sicili açtı: hipotez koşudan ÖNCE satır alır, sonucu ne
+olursa olsun kalır. Düşen satırı silmek paydayı küçültüp kalanları olduğundan anlamlı
+gösterirdi.
+
+Düzeltme BH (q=0.10), Bonferroni değil: Bonferroni 10 test için eşiği 0.005'e indirir ve
+bu geometride (n≈200, ort.R ≈ −0.01) gerçek bir edge bile geçemez — prosedür her şeyi
+eler. BH yanlış keşif ORANINI kontrol eder; kâğıt katmanında doğru denge budur.
+
+**5. Kayma varsayımının ölçüm aracı.** Karar 35/36'dan sonra açık kalan tek kaldıraç
+maliyettir ve maliyetin kayma parçası bir VARSAYIMDIR, hiç sınanmadı.
+`scripts/measure_slippage.py` onu sembol sembol ölçer: kitap **Bybit**'ten okunur (maliyeti
+ödeyen taraf; `fee_rate`in aynı ayrımı), emir boyu **defterden** gelir (sembol başına
+medyan notional), tek snapshot yerine N örneğin **medyanı** raporlanır. Script
+`config.yaml`a DOKUNMAZ — sembole bağlı kayma ayrı bir karardır ve bu ölçümü beklemek
+zorundadır.
+
+**6. Portföy yoğunlaşma ölçümü + veri önbelleği.** `Portfolio.concentration` net/brüt
+maruziyeti ve en büyük sembol payını raporlar — ÖLÇÜM, kural değil. `backtest.yml` mum
+önbelleğini koşular arasında taşır; "2-3 yıllık research backtest" ayrı bir motor değil
+bir DERİNLİK sorunudur ve sınır ağdadır (OKX istek başına 100 bar).
+
+### Uygulanmayanlar ve gerekçeleri
+
+| Öneri | Karar | Gerekçe |
+|---|---|---|
+| İşlem sıklığı tavanı (`cost_per_r` eşiğini aşan kol sussun) | **RED** | §7.2'nin yasakladığı post-hoc filtrenin otomatikleştirilmiş hâli. Ayrıca `min_allocation`ın gerekçesiyle ters çalışır ("susturulan kol ölçülemez") ve yanlış değişkeni hedefler: `cost_per_r = maliyet% / stop%`, yani yüksek değer dar stop demektir — kolun kötü olduğunu değil. Karar 35 R ölçeğine göre elemenin birinci mertebede BOŞ olduğunu özdeşlikle gösterdi. |
+| İnce sembolleri evrenden çıkar / notional küçült / kayma uyarısını kural yap | **RED** | Motivasyon sonuçtansa §7.2'nin adıyla yasakladığı şey ("şu sembolü çıkarsak"). Evreni değiştirmek biriken defteri kıyaslanamaz yapar. Notional'ı sembole bağlamak R'nin tanımını sembole bağlar ve `cost_per_r`'nin paydası modeller arası kıyaslanamaz hâle gelir. Uyarıyı kurala çevirmek ise bandın kendi gerekçesine aykırı: yüksek maliyet modelin kusuru değil, VARSAYIMIN o sembolde tutmadığının göstergesidir — cevabı satırı elemek değil, varsayımı ölçmektir (madde 5). |
+| Rejim filtresi (BTC realized vol + EMA eğimi ortak kapı) | **ERTELENDİ** | "Ortak kapı" olarak yasak: mevcut bir modele filtre eklemek o modelin ölçtüğü ekseni değiştirir ve biriken defteri anlamsız kılar. Yeni model olarak kabul edilebilir (`ScalpModel.regime_filter` noktası zaten var) ama prior'ı düşük: karar 36 bu ailenin bir üyesini (`scalp_vol`) ön-kayıtla çürüttü. Maliyet çalışmasının (madde 5) arkasında. |
+| Purged walk-forward makinesi | **ERTELENDİ** | Purging ağır biçimiyle belirsiz süreli etiket örtüşmesi ve çok sayıda süpürülmüş parametre için gerekir; burada tutuş süresi sınırlı ve BİLİNEN, süpürülmüş parametre pratikte tek. Eklenmesi gereken tek şey örtüşme boşluğuydu ve o eklendi (`--embargo-bars`, §6.1). Süpürülen parametre sayısı 1'i geçtiğinde karar yeniden açılır. |
+| Korelasyon / net beta tavanı | **ERTELENDİ** | Önce ölç (madde 6). Tavan bedava değil: 13 sembollük kripto evreninde `max_positions` kotasını pratikte 1-2'ye indirir ve n=30 kapısına zaten zor ulaşan katmanda ölçümü durdurur. |
+
+### Bu turda DEĞİŞTİRİLMEYEN şeyler
+
+Hiçbir maliyet sabiti, risk sabiti, stop geometrisi, kol tanımı, kapı eşiği (`min_stop_pct`,
+`min_reward_risk`, `time_stop_bars`) ya da evren değişmedi. `signals_per_bar` iki katmanda
+da olduğu gibi kaldı. Modellerin ürettiği sinyaller bu commit'ten önce ve sonra
+BİREBİR AYNIDIR — değişen yalnızca o sinyallerin nasıl RAPORLANDIĞI ve neyin sayıldığıdır.
+
+Tek davranış değişikliği kabul rozetindedir (madde 1) ve rozet defterin değil, defterin
+OKUNMASININ parçasıdır.
