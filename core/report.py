@@ -97,8 +97,21 @@ def build_dashboard(
     equity = {model: ledger.read_equity(model) for model in models}
     marks = marks_from_market(market)
 
-    pooled = pooled_direction_stats({model: trades[model] for model in competitors})
     control_model = str(get_setting(config_dict, "acceptance.control_model"))
+    ci_alpha = float(get_setting(config_dict, "acceptance.edge_ci_alpha"))
+    bootstrap_samples = int(get_setting(config_dict, "acceptance.bootstrap_samples"))
+    # Havuzun aralığı projenin ANA sorusunu okunur kılar: "short'lar long'lardan iyi"
+    # ancak iki aralık ayrıştığında söylenebilir. Tohum model adına değil havuza
+    # bağlanır (havuz tek bir kümedir), alfa ise model tablosuyla aynı anahtardan gelir.
+    pooled = pooled_direction_stats(
+        {model: trades[model] for model in competitors},
+        ci_alpha=ci_alpha,
+        bootstrap_samples=bootstrap_samples,
+        seed=int(get_setting(config_dict, "random_seed")),
+        # Havuz, ana sorunun okunduğu yer: long ↔ short farkının ne kadarının
+        # piyasadan geldiği tam burada görünmeli (bkz. core/metrics.py::_market_context).
+        reference=market.btc.get("close"),
+    )
     # R örneklemleri kabul çıtasının bootstrap'ı için: aynı `merge_fills` -> `r_multiple`
     # yolundan gelir (core/metrics.py::r_series), yani tablodaki ortalama R ile aralığın
     # altındaki sayılar AYNI kümedir. Kontrol yarışmacı listesinde olmasa bile eklenir:
@@ -113,8 +126,8 @@ def build_dashboard(
         edge_margin_r=float(get_setting(config_dict, "acceptance.edge_margin_r")),
         control_min_trades=int(get_setting(config_dict, "acceptance.control_min_trades")),
         r_samples=r_samples,
-        ci_alpha=float(get_setting(config_dict, "acceptance.edge_ci_alpha")),
-        bootstrap_samples=int(get_setting(config_dict, "acceptance.bootstrap_samples")),
+        ci_alpha=ci_alpha,
+        bootstrap_samples=bootstrap_samples,
         seed=int(get_setting(config_dict, "random_seed")),
     )
     positions = open_positions(models, ledger=ledger, marks=marks)
@@ -149,7 +162,15 @@ def build_dashboard(
         ),
         "recent_trades": recent_trades(trades, limit=RECENT_TRADE_LIMIT),
         "model_trades": model_trades(trades, limit=model_trade_limit),
-        "breakdowns": model_breakdowns(trades, kinds=breakdowns),
+        # Gruplar da aralık alır: bir kırılım grubunun ortalamasına örneklemi ve
+        # aralığı olmadan bakmak, karar 27/28'in iki kez düştüğü tuzaktır.
+        "breakdowns": model_breakdowns(
+            trades,
+            kinds=breakdowns,
+            ci_alpha=ci_alpha,
+            bootstrap_samples=bootstrap_samples,
+            seed=int(get_setting(config_dict, "random_seed")),
+        ),
         "activity": activity(
             trades, positions=positions, as_of=market.as_of, hours=ACTIVITY_HOURS
         ),
@@ -178,7 +199,12 @@ _BREAKDOWN_PREPARE: Mapping[str, Any] = {
 
 
 def model_breakdowns(
-    trades: Mapping[str, Sequence[Mapping[str, Any]]], *, kinds: Sequence[str]
+    trades: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    kinds: Sequence[str],
+    ci_alpha: float = float("nan"),
+    bootstrap_samples: int = 0,
+    seed: int = 0,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """Model başına kol ve/veya sembol kırılımı. `kinds` boşsa bölüm de boştur.
 
@@ -202,7 +228,11 @@ def model_breakdowns(
             model: {
                 group: asdict(stats)
                 for group, stats in breakdown(
-                    prepare(rows) if prepare is not None else rows, key=key
+                    prepare(rows) if prepare is not None else rows,
+                    key=key,
+                    ci_alpha=ci_alpha,
+                    bootstrap_samples=bootstrap_samples,
+                    seed=seed,
                 ).items()
             }
             for model, rows in trades.items()

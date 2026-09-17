@@ -26,6 +26,13 @@ const pctSigned = (v, d = 2) => { const n = num(v); return n === null ? DASH : (
 const pctRaw = (v, d = 2) => { const n = num(v); return n === null ? DASH : n.toFixed(d) + "%"; };
 const usd = (v, d = 2) => { const n = num(v); return n === null ? DASH : (n > 0 ? "+" : "") + n.toFixed(d); };
 const signClass = (v) => { const n = num(v); return n === null ? "" : (n > 0 ? "pos" : (n < 0 ? "neg" : "")); };
+/* Ortalama R'nin bootstrap aralığı. Tek bir sınır bile okunamıyorsa "—": yarım bir
+   aralık, tam bir aralık gibi okunurdu. Bir KAPI değildir (kabul çıtası bu sayıya
+   bakmaz), yalnızca "bu ortalama ne kadar konuşabiliyor" sorusunun cevabıdır. */
+const ciBand = (lo, hi, d = 2) => {
+  const a = num(lo), b = num(hi);
+  return (a === null || b === null) ? DASH : "[" + a.toFixed(d) + ", " + b.toFixed(d) + "]";
+};
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
 ));

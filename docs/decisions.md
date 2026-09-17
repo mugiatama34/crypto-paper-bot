@@ -3266,3 +3266,271 @@ BİREBİR AYNIDIR — değişen yalnızca o sinyallerin nasıl RAPORLANDIĞI ve 
 
 Tek davranış değişikliği kabul rozetindedir (madde 1) ve rozet defterin değil, defterin
 OKUNMASININ parçasıdır.
+
+---
+
+## 41. Friksiyon HIZI ölçülüyor: `cost_per_r` işlem başınaydı, hesabı eriten şey gün başına
+
+Araştırma listesinden gelen 11 önerinin **raporlama maddesi** uygulandı. Karar 40'ın
+ölçütü aynen geçerli: bu değişiklik bir sinyale, bir doluma, bir boyuta ya da bir maliyet
+sabitine dokunmaz — **defteri tarihli olarak bölmez.** Modellerin ürettiği sinyaller bu
+commit'ten önce ve sonra BİREBİR AYNIDIR; değişen yalnızca defterin nasıl OKUNDUĞUDUR.
+
+### Neden `cost_per_r` yetmiyordu
+
+`cost_per_r` maliyeti **işlem başına** ölçer ve işlem SIKLIĞINI görmez. Karar 35'in
+özdeşliği (`net R = (brüt sürüklenme% − maliyet%) / stop%`) tek bir pozisyonun içindedir;
+hesabın ne kadar hızlı eridiğini söyleyen şey ise o özdeşliğin **gün başına kaç kez**
+uygulandığıdır. İki model aynı `cost_per_r` ile koşup biri diğerinden on kat hızlı
+çevirebilir ve tabloda bu fark hiçbir yerde görünmüyordu.
+
+İkinci delik: `cost_per_r` kopya ve çıpa satırlarında `nan`dır (1R'leri başka bir
+birimden gelir, kural 15/15b). Yani **yarışma dışı satırların friksiyonu hiç ölçülmüyordu**
+— oysa ölçülmesi gereken tam olarak oydu.
+
+### Eklenenler (üçü de KAPI DEĞİL, okuma yardımı)
+
+| Kolon | Ne söyler |
+|---|---|
+| `avg_r_ci_low` / `avg_r_ci_high` | Ortalama R'nin yüzdelik bootstrap aralığı. Alfa ve örnekleme sayısı `acceptance.*`tan gelir (ikinci anahtar açılmadı), tohum `random_seed ^ model ^ yön` — aynı defter her zaman aynı aralığı verir. Havuzda (long ↔ short) da hesaplanır: projenin ana sorusu tam orada okunur. |
+| `cost_pct` | `Σ(komisyon+kayma) / Σnotional`. `cost_per_r`den farkı PAYDADIR ve fark önemlidir: notional **ortak bir birimdir**, yani kopya ve çıpa dâhil HER satırda hesaplanır. |
+| `turnover_per_day`, `cost_drag_pct_per_day` (`FrictionStats`) | Günde kaç kat sermaye çevrildi ve bu ne kadara mal oldu. Payda BAŞLANGIÇ sermayesi (güncel bakiyeye bölmek ciroyu modelin performansına bağlardı) ve özsermaye DAMGALARINDAN gelen takvim günü (bar sayısı değil: saklama penceresi eski satırları günlük özete indirir). |
+
+Ayrıca `beklenti` ayrışması rapora girdi. **Yeni bir metrik değildir**, bir özdeşliktir:
+R biriminde `WR × ort.kazanç + (1−WR) × ort.kayıp` tam olarak ortalama R'dir (test
+sabitliyor). Değeri sayının kendisinde değil, negatifliğin kazanma oranından mı ödeme
+oranından mı geldiğini göstermesinde.
+
+### İlk okuma: hipotez canlı defterde doğrulandı
+
+Öneri şunu iddia ediyordu: *"`vwap_clone` turnover'dan ölürdü, R'den önce."* Ölçüm
+(2026-09-17, canlı defterler):
+
+| model | ciro/gün | friksiyon/gün | tur maliyeti% | pencere | hesap getirisi | friksiyonun zarardaki payı |
+|---|---:|---:|---:|---:|---:|---:|
+| `vwap_clone` (kopya) | **24.9x** | **%6.94** | %0.278 | 3.2 gün | −%27.60 | **%78** (2226 $ / 2871 $) |
+| `scalp_fixed` | 4.3x | %1.13 | %0.264 | 3.8 gün | −%11.10 | %38 (429 $ / 1119 $) |
+| `trend` (base) | 0.6x | %0.17 | %0.302 | 5.5 gün | −%1.81 | — |
+
+**Tur maliyeti üçünde de aynı** (%0.26–0.30) — yani fark sinyalde ya da maliyet
+varsayımında değil, **sıklıkta.** `vwap_clone` günde 24.9 kat sermaye çeviriyor ve
+zararının dörtte üçü hiçbir sinyal kararından değil, kapıdan geçerken ödenen paradan
+geliyor. Bu sayı bugüne kadar hiçbir tabloda yoktu; `cost_per_r` onu tanım gereği
+gösteremezdi.
+
+`scalp_fixed`in ortalama R aralığı `[−0.48, −0.15]` (n=37): tamamı sıfırın altında, yani
+"−0.31 gürültü olabilir" savunması bu defterde artık yapılamaz.
+
+### Bu bir ÖLÇÜM, bir kural değil
+
+Hiçbir sinyal ciroya göre elenmez, hiçbir boyut ona göre değişmez. **İşlem sıklığı tavanı
+karar 40'ta açıkça REDDEDİLDİ** ve bu kolon o reddi geri almaz — tavanın yokluğunun
+bedelini ölçer. Seans, kayıp serisi ve portföy yoğunlaşması ölçümleriyle aynı statüdedir.
+
+Sicile (§6c) de girmez: bir modelin performansı hakkında bir İDDİA taşımıyor, bu yüzden
+hipotez değil. Çoklu karşılaştırma paydası 1'de kalır.
+
+---
+
+## 42. Geriye dönük değişiklik: hangi düzeltme meşru, hangisi sonuca bakıp geçmişi yazmak
+
+Soru şuydu: *"Çıktıya göre geçmişi düzeltmenin büyük hata olduğunu biliyorum — ama baştan
+bir şeyi atladıysak ya da daha iyi bir çözüm varsa, onu da görmezden gelmiş olmuyor
+muyuz?"*
+
+İkisi gerçekten farklı şeylerdir ve proje bugüne kadar ayrımı **örtük** yapıyordu.
+`docs/backtest.md > 7` yalnızca yasak olanı yazıyor; meşru olanın adı hiçbir yerde yoktu.
+Bu karar adı koyuyor.
+
+### Üç katman, üç ayrı cevap
+
+| Katman | Ne | Geriye dönük değişiklik |
+|---|---|---|
+| **1. Defter** | `trades.csv`, `equity.csv` | **ASLA.** Yanlış görünen bir satır bile düzeltilmez (kural 1). Defter ne olduğunun kaydıdır, ne olması gerektiğinin değil. |
+| **2. Ölçüm** | `core/metrics.py`, `core/report.py`, dashboard | **SERBEST, hatta zorunlu.** Metrik defterin saf bir fonksiyonudur; tanım düzeldiğinde TÜM geçmiş yeniden hesaplanır. Yeni tanım eski satırlara da uygulanmazsa defterin bir kısmı bir metrikle, kalanı başkasıyla okunur. |
+| **3. Kural** | sinyal, maliyet, dolum, boyutlandırma, evren | **HAYIR — ama yasak değil, İMKÂNSIZ.** Defter o kuralla üretilmedi. Meşru karşılığı vardır: aynı pencerede **backtest**. "Baştan bu kuralla koşsaydık ne olurdu" sorusunun cevabı odur ve yasak olan şey o değil, sonucu görüp pencereyi/parametreyi/metriği seçmektir. |
+
+Proje katman 2'de bunu zaten **yaptı**: `merge_fills` (dolum → pozisyon) geriye dönük bir
+ölçüm düzeltmesidir ve biriken tüm defteri yeniden okudu. Kimse buna "geçmişi düzeltmek"
+demedi, çünkü değildi — **yanlış olan ölçüydü, sonuç değil.**
+
+### Beş test: bir düzeltme meşru mu?
+
+Bir değişiklik aşağıdaki beşini de geçiyorsa geriye dönük uygulanır; birini bile
+geçmiyorsa ileri yönlüdür ve yeni bir hipotezdir (ön-kayıt + taze OOS).
+
+1. **Sonuç-körlüğü.** Düzeltme, sonucu HİÇ görmemiş biri tarafından da aynı cümleyle
+   savunulabiliyor mu? *"Aynı pozisyonu iki kez saymak yanlıştır"* hiçbir sonuca bakmaz.
+   *"Bu sembol çıkarılsa tablo düzelir"* yalnızca sonuca bakar.
+2. **Yön.** Düzeltme belirli bir modeli/satırı iyileştiriyor mu? Herkese aynı yönde
+   uygulanıp bazılarını KÖTÜLEŞTİRİYORSA temizdir. (`merge_fills` yönetimli modeli
+   kötüleştirebilirdi ve yine de uygulandı.)
+3. **Katman.** Defter mi, ölçüm mü, kural mı (yukarıdaki tablo).
+4. **Tekrarlanabilirlik.** Düzeltme geriye dönük uygulandığında aynı girdilerden aynı
+   çıktı üretilebiliyor mu? Anlık spread, order book derinliği ve sonradan düzenlenebilen
+   bir takvim **üretilemez** — bunlar ahlaki değil TEKNİK olarak geriye dönük
+   uygulanamazdır ve Kapı 0'ı (canlı ↔ backtest eşleşmesi) tanımsız kılarlar.
+5. **Ön-kayıt borcu.** Kural katmanındaysa hipotez sicile (§6c) girer ve çoklu
+   karşılaştırma paydasını büyütür. Ölçüm katmanındaysa girmez — bir performans iddiası
+   taşımaz.
+
+### Bu çerçeve neyi AÇAR
+
+Ayrım şunu görünür kılıyor: *"reddedildi"* demek *"içindeki gözlem yanlıştı"* demek
+değildir. Reddedilen bir KURAL önerisinin içinde, katman 2'ye ait meşru bir ÖLÇÜM
+eksikliği durabilir — ve o eksiklik reddedildiği için birlikte çöpe gider. Bu karar,
+reddedilen önerilerin ölçüm çekirdeğini ayrı ayrı değerlendirmeyi zorunlu kılar.
+
+---
+
+## 43. Piyasa kontrolü: ana sorunun cevabı, ölçüldüğü pencerenin yönüyle karışıyordu
+
+Karar 42'nin çerçevesi (üç katman, beş test) reddedilen önerilerin içindeki **ölçüm
+çekirdeğini** ayrı değerlendirmeyi zorunlu kıldı. İlk sonucu bu: "market-neutral kitap"
+önerisi bir KURAL olarak ertelendi (yeni bir boyutlandırma modu gerektirir, karar 40'ın
+"önce ölç" kaydı), ama içindeki gözlem katman 2'ye aitti ve **projenin ana sorusunu
+doğrudan vuruyordu.**
+
+### Eksiklik
+
+`CLAUDE.md`nin ilk satırı şunu söyler: *"Projenin cevaplamaya çalıştığı ana soru: short
+işlemler long işlemlerden daha mı başarılı?"* Tablo bu soruyu yön bazlı ortalama R ile
+cevaplıyordu — ama **piyasanın o pencerede ne yaptığı hiçbir yerde ölçülmüyordu.** Düşen
+bir pencerede her short daha iyi görünür; bu bir sinyal bulgusu değil, bir takvim
+bulgusudur. Kabul çıtasının "çıpayı geç" koşulu (kural 15) bunu HESAP düzeyinde soruyor,
+yön düzeyinde değil — oysa ayrışma tam olarak yön düzeyinde raporlanıyor.
+
+Beş testin hepsini geçiyor: sonuç-körü (cümle hiçbir sonuca bakmadan kurulur), yönsüz
+(her modele aynı uygulanır ve bazılarını kötüleştirir), katman 2, tekrarlanabilir (çıpa
+serisi + defter), ön-kayıt borcu yok (performans iddiası taşımaz).
+
+### Ölçü
+
+```
+tailwind% = (çıpa[kapanış] / çıpa[açılış] − 1) × 100 × (long: +1, short: −1)
+market_R  = tailwind% / stop_mesafesi%            (pozisyon bazında, sonra ortalama)
+```
+
+Çıpa **BTC**: projenin zaten seçilmiş referansı, iki katmanda da var ve bir sepet ağırlığı
+seçmek serbest parametre demekti. `beta = 1` varsayımı AÇIKTA durur — `market_r` ortalama
+R'den çıkarılmaz, yanında raporlanır (§7.4: birincil metrik değiştirilmez).
+
+### Uygulamadan ÖNCE koşuldu — iki katmanda da mantıklı çıktı
+
+Kural: bir değişiklik önce mevcut defter üzerinde koşulur, sayı mantıklıysa koda bağlanır.
+
+**Scalp** (çıpa: defterdeki gerçek BTC dolum fiyatları, 60 nokta, pencere −%1.54):
+
+| küme | yön | n | ort.R | tailwind% | market_R | R−market_R |
+|---|---|---:|---:|---:|---:|---:|
+| havuz (yarışmacı) | long | 17 | −0.201 | −0.100 | −0.074 | −0.127 |
+| havuz (yarışmacı) | short | 14 | −0.301 | −0.093 | −0.097 | −0.204 |
+| `vwap_clone` | toplam | 184 | −0.814 | −0.019 | −0.060 | −0.754 |
+
+İki bağımsız okuma:
+
+1. **Havuzda ham long ↔ short farkı 0.100R; piyasa çıkarıldığında 0.077R.** Yani farkın
+   kabaca dörtte biri sinyalden değil, iki yönün gördüğü FARKLI pencereden geliyor. Fark
+   yok olmuyor — ama "short'lar daha kötü" cümlesi artık bir büyüklükle nitelenebiliyor.
+2. **İki yönün de tailwind'i NEGATİF** (long −0.100, short −0.093): long'lar BTC düşerken,
+   short'lar BTC yükselirken tutulmuş. Bu, ortalama R'nin neden iki yönde de negatif
+   olduğuna dair kendi başına bir ipucu ve n=17/14 ile yorumlanmaz, kaydedilir.
+3. **`vwap_clone`un tailwind'i ≈ 0** (−0.019): 184 pozisyon pencereye yayıldığı için piyasa
+   ortalamada siliniyor. Yani onun −0.81R'si piyasadan GELMİYOR — ve bu, karar 41'in
+   friksiyon bulgusuyla (zararın %78'i komisyon+kayma) **bağımsız olarak örtüşüyor.** İki
+   ayrı ölçünün aynı cevaba varması, ölçünün kendisinin sağlaması oldu.
+
+**Base** (çıpa: `buyhold` 50/50 eğrisi, pencere −%1.38):
+
+| model | yön | n | ort.R | market_R | R−market_R |
+|---|---|---:|---:|---:|---:|
+| `meanrev` | long | 10 | −0.442 | −0.735 | **+0.293** |
+| `trend` | long | 11 | −0.241 | −0.064 | −0.177 |
+| `trend` | short | 6 | +0.075 | −0.028 | +0.104 |
+
+`meanrev`in **tüm zararı** (ve fazlası) beta=1 altında piyasa hareketiyle açıklanıyor:
+long-only bir kitap, düşen bir pencerede tutulmuş. Bu satırın "model kötü" diye okunması
+artık savunulamaz — n=10 ile "model iyi" diye okunması da savunulamaz, ama ölçü hangi
+sorunun sorulacağını değiştiriyor.
+
+### Sınırlar (iddia edilmeyecekler)
+
+- **beta = 1 bir varsayımdır**, ölçüm değil. Altcoin'lerin BTC'ye betası 1 değildir;
+  sayı bir ÜST SINIR sezgisi verir, bir düzeltme değildir.
+- Çıpa serisi `data.history_bars` kadar geriye gider; daha eski pozisyonlar
+  **fiyatlanamaz** ve `market_measured` bunu sayar (canlı doğrulamada 30/37).
+- Doğrulama koşusunda çıpa, ağ erişimi kapalı olduğu için defterdeki BTC dolum
+  fiyatlarından kuruldu (canlıda `MarketData.btc`). Fiyatlar gerçek, seri seyrek.
+
+### Değişmeyenler
+
+Hiçbir sinyal, dolum, boyut, maliyet sabiti ya da kabul kapısı değişmedi. `avg_r`
+dokunulmadan durdu. Modellerin ürettiği sinyaller bu commit'ten önce ve sonra BİREBİR
+AYNIDIR.
+
+---
+
+## 44. Kırılım grupları kapıya bağlandı; kümülatif R eğrisi ÖLÇÜLDÜ ve ERTELENDİ
+
+Karar 42'nin çerçevesinden çıkan iki ölçüm maddesi. İkisi de aynı kuralla ele alındı:
+**önce mevcut defter üzerinde koş, sayı mantıklıysa koda bağla.** Biri bağlandı, biri
+ölçümün kendisi tarafından reddedildi.
+
+### Bağlanan: kırılım gruplarına örneklem kapısı + aralık
+
+Kırılımlar (`arm`, `symbol`, `exit_rule`, `session`, `loss_streak`) grup başına ortalama R
+gösteriyordu — **örneklemsiz ve aralıksız.** Oysa model satırı için bu tam olarak yasak:
+`acceptance.min_trades` (30) altındaki bir ortalama sıralanmıyor bile (karar 40/1).
+
+Ölçüm (`scalp_fixed`, 37 pozisyon) sorunun büyüklüğünü verdi:
+
+| kırılım | grup | kapıyı geçen | en büyük grup |
+|---|---:|---:|---|
+| `symbol` | 11 | **0** | BNB n=9 |
+| `session` | 4 | **0** | 00-07 asya n=14 |
+| `arm` | 2 | 1 | rsi2_reversal n=33 |
+| `exit_rule` | 2 | 1 | signal:time_stop n=31 |
+
+**Dashboard 11 sembol satırını ortalama R'leriyle gösteriyordu ve hiçbiri bir ölçüm
+değildi.** En uç örnek XRP: n=3, ort. R −1.03. Karar 27 ve 28 tam olarak böyle bir
+satıra bakıp kural yazma denemeleriydi ve ikisi de daha uzun örneklemde çürüdü; yani bu,
+projenin iki kez düştüğü tuzağın arayüze yerleşmiş hâliydi.
+
+Artık her grup kendi bootstrap aralığını taşıyor (tohum grup adına bağlı, deterministik),
+kapı altındaki satır **solgun** çiziliyor ve `Ö` işareti taşıyor. Satır GİZLENMİYOR:
+base katmanının ölçütü zaten "n=30'a ulaşılabiliyor mu"dur.
+
+**Yan bulgu — bootstrap'ın tanım sınırı.** İlk koşuda n=1 olan grup `[+0.08, +0.08]`
+gibi DEJENERE bir aralık üretti: okuyucuya kıl payı kesinlik vaat ediyor, oysa yeniden
+örneklenecek dağılım yok. `bootstrap_mean_ci` artık iki gözlemden azında `nan` döndürüyor
+— `_stdev`in zaten uyguladığı sözleşmenin aynısı. Bu bir eşik SEÇİMİ değil, bootstrap'ın
+tanım sınırıdır.
+
+### Ertelenen: kümülatif R eğrisi
+
+Tez karar 36'dan geliyordu: boyut `risk_per_trade × GÜNCEL sermaye` ile kurulduğu için
+özsermaye eğrisi bileşiklenme yolunu taşır ve `|net R| ≈ 0` iken hesap getirisi bir edge
+ölçüsü DEĞİLDİR (orada iki model aynı toplam R ile −%4.04 ↔ +%6.06 getirmişti). Öneri:
+özsermaye eğrisinin yanına bileşiklenmesiz bir kümülatif R eğrisi koymak.
+
+Ölçüm (canlı scalp defteri) tezi bu pencerede **doğrulamadı:**
+
+| model | n | toplam R | maxDD(R) | getiri | maxDD |
+|---|---:|---:|---:|---:|---:|
+| `scalp_fixed` | 37 | −11.48 | −12.94 | −%11.10 | −%12.89 |
+| `scalp_bandit` | 32 | −9.42 | −9.44 | −%9.25 | −%9.64 |
+| `vwap_clone` | 184 | −149.72 | −150.03 | −%27.60 | −%27.84 |
+
+İki eğri **aynı hikâyeyi** anlatıyor. Sebep açık: hesap henüz yeterince hareket etmedi
+(10.000 → 8.890), yani bileşiklenme ayrışacak kadar birikmedi. Karar 36'nın ayrışması
+223 pozisyonluk bir backtest penceresinde ve iki mertebe daha büyük |R| akışıyla oluşmuştu.
+
+Üstelik o ayrışmayı yakalayan sayılar **zaten var:** `total_r` ve `max_drawdown_r` karar
+36'da tam olarak bu işi gördü. Eğri bilgi eklemiyor, görselleştirme ekliyor.
+
+**Karar: ERTELENDİ.** Tetikleyici yazılıdır — `|toplam R|` ile hesap getirisi (yüzde
+olarak) arasındaki fark %20'yi aştığında ya da bir backtest penceresi bunu gösterdiğinde
+karar yeniden açılır. O zamana kadar iki skaler yeterlidir.
+
+Bu, ölçüm katmanının kendi kuralını kendine uygulamasıdır: bir aracın eklenmesi de
+"ölçülmeden karar verilmez" ilkesine tabidir.

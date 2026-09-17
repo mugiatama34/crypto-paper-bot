@@ -19,6 +19,7 @@ from core.tags import TagError, format_tags
 from core.metrics import (
     acceptance_flags,
     bootstrap_diff_ci,
+    bootstrap_mean_ci,
     account_stats,
     annotate_loss_streak,
     arm_of,
@@ -1284,3 +1285,291 @@ def test_report_does_not_rank_models_below_the_sample_gate() -> None:
 def test_report_without_a_gate_keeps_the_single_table() -> None:
     """`min_trades` verilmezse davranış değişmez: kapı bir sunum kararı değil, bir ayardır."""
     assert "YETERSİZ ÖRNEKLEM" not in format_report([_winner("tiny", n=3)])
+
+
+# --------------------------------------------------------------------------- #
+# Okuma yardımları: beklenti ayrışması, ortalama R aralığı, friksiyon hızı
+# --------------------------------------------------------------------------- #
+def test_expectancy_is_an_identity_not_a_second_metric() -> None:
+    """`WR × ort.kazanç + (1−WR) × ort.kayıp` R biriminde ortalama R'nin TA KENDİSİDİR.
+
+    Bu yüzden tabloya yeni bir sayı olarak değil, mevcut sayının AYRIŞMASI olarak girer:
+    değeri "ortalama R negatif" bilgisinde değil, bunun kazanma oranından mı yoksa ödeme
+    oranından mı geldiğinde. İkisini iki ayrı metrik gibi raporlamak, aynı sayıyı iki kez
+    ölçüyormuş izlenimi verirdi.
+    """
+    trades = [
+        _trade(pnl=200.0), _trade(pnl=-100.0), _trade(pnl=-50.0), _trade(pnl=300.0),
+        _trade(direction="short", pnl=-100.0), _trade(direction="short", pnl=25.0),
+    ]
+    for stats in (
+        direction_stats(trades, direction="long"),
+        direction_stats(trades, direction="short"),
+        direction_stats(trades),
+    ):
+        expectancy = (
+            stats.win_rate * stats.avg_win_r + (1.0 - stats.win_rate) * stats.avg_loss_r
+        )
+        assert expectancy == pytest.approx(stats.avg_r)
+
+
+def test_cost_pct_divides_cost_by_notional_so_the_replica_stays_comparable() -> None:
+    """Friksiyon kolonları `cost_per_r` muafiyetinin DIŞINDADIR.
+
+    `cost_per_r` kopyada ve çıpada `nan`dır çünkü paydası (1R) onlarda başka bir birimden
+    gelir. `cost_pct`in paydası notional'dır — tek ve ortak bir birim — bu yüzden her
+    satırda hesaplanır. Kopyanın friksiyonunu görebilmenin tek yolu budur ve tam da
+    ölçülmek istenen şeydir: `vwap_clone` R'den önce cirodan ölüyor mu?
+    """
+    trades = [_trade(pnl=-100.0, notional=1000.0, fee=2.0, slippage_cost=1.0)]
+    for flags in ({}, {"is_replica": True}, {"is_benchmark": True}):
+        stats = direction_stats(trades, **flags)  # type: ignore[arg-type]
+        assert stats.notional == pytest.approx(1000.0)
+        assert stats.cost_pct == pytest.approx(0.3)
+
+    assert math.isnan(direction_stats(trades, is_replica=True).cost_per_r)
+
+
+def test_friction_rates_are_measured_against_the_starting_capital(tmp_path: Path) -> None:
+    """Payda BAŞLANGIÇ sermayesi ve TAKVİM günüdür, güncel bakiye ve bar sayısı değil.
+
+    Güncel bakiyeye bölmek ciroyu modelin kendi performansına bağlar: kaybeden modelin
+    cirosu yapay yükselir ve iki model aynı birimden konuşmayı bırakır.
+    """
+    ledger = Ledger(tmp_path)
+    ledger.initialize_model("alpha", initial_capital=10_000.0)
+    ledger.append_trades("alpha", [
+        _trade(pnl=-50.0, notional=5_000.0, fee=5.0, slippage_cost=5.0),
+        _trade(pnl=-50.0, notional=5_000.0, fee=5.0, slippage_cost=5.0),
+    ])
+    # İki satır, bir gün arayla: takvim aralığı 1 gün.
+    ledger.append_equity("alpha", _equity(10_000.0, 9_900.0))
+
+    (metrics,) = compare(["alpha"], ledger=ledger, config=load_config())
+
+    assert metrics.account.days == pytest.approx(1.0)
+    assert metrics.friction.trades_per_day == pytest.approx(2.0)
+    # Σnotional 10.000 / sermaye 10.000 / 1 gün
+    assert metrics.friction.turnover_per_day == pytest.approx(1.0)
+    # Σ(komisyon+kayma) 20 / sermaye 10.000 = %0.2, günde bir kez
+    assert metrics.friction.cost_drag_pct_per_day == pytest.approx(0.2)
+
+
+def test_span_days_comes_from_timestamps_so_compaction_cannot_shrink_it(
+    tmp_path: Path,
+) -> None:
+    """Saklama penceresi eski satırları günlük özete indirir; geçen zaman değişmez.
+
+    Günü bar SAYISINDAN türetseydik sıkıştırılmış bir defterde ciro yapay olarak
+    yükselirdi — aynı işlem sayısı daha az "gün"e bölünürdü.
+    """
+    ledger = Ledger(tmp_path)
+    ledger.initialize_model("alpha", initial_capital=10_000.0)
+    ledger.append_equity("alpha", [
+        {"ts": "2026-01-01T00:00:00+00:00", "cash": 10_000.0, "margin_used": 0.0,
+         "unrealized_pnl": 0.0, "equity": 10_000.0, "open_positions": 0},
+        {"ts": "2026-01-31T00:00:00+00:00", "cash": 10_000.0, "margin_used": 0.0,
+         "unrealized_pnl": 0.0, "equity": 10_000.0, "open_positions": 0},
+    ])
+
+    (metrics,) = compare(["alpha"], ledger=ledger, config=load_config())
+
+    assert metrics.account.bars == 2
+    assert metrics.account.days == pytest.approx(30.0)
+
+
+def test_average_r_interval_is_deterministic_and_brackets_the_average(
+    tmp_path: Path,
+) -> None:
+    """Aynı defter HER ZAMAN aynı aralığı verir ve aralık ortalamayı içerir.
+
+    Titreyen bir aralık, okuma yardımını bir çekilişe çevirirdi — `random_seed`in sabit
+    olmasının gerekçesiyle aynı (bkz. `bootstrap_diff_ci`).
+    """
+    ledger = Ledger(tmp_path)
+    ledger.initialize_model("alpha", initial_capital=10_000.0)
+    ledger.append_trades("alpha", [
+        _trade(pnl=150.0 if index % 3 else -100.0, risk=100.0)
+        for index in range(40)
+    ])
+    ledger.append_equity("alpha", _equity(10_000.0, 10_200.0))
+
+    (first,) = compare(["alpha"], ledger=ledger, config=load_config())
+    (second,) = compare(["alpha"], ledger=ledger, config=load_config())
+
+    assert first.total.avg_r_ci_low == second.total.avg_r_ci_low
+    assert first.total.avg_r_ci_high == second.total.avg_r_ci_high
+    assert first.total.avg_r_ci_low <= first.total.avg_r <= first.total.avg_r_ci_high
+
+
+def test_average_r_interval_is_undefined_when_bootstrap_is_not_requested() -> None:
+    """Varsayılan `nan`: aralık bir kapı değil, istendiğinde hesaplanan bir okuma yardımı."""
+    stats = direction_stats([_trade(pnl=100.0)])
+    assert math.isnan(stats.avg_r_ci_low) and math.isnan(stats.avg_r_ci_high)
+
+
+# --------------------------------------------------------------------------- #
+# Piyasa kontrolü (ana sorunun karıştırıcısı)
+# --------------------------------------------------------------------------- #
+def _reference(*prices: float) -> pd.Series:
+    return pd.Series(
+        list(prices),
+        index=pd.to_datetime(
+            [f"2026-01-0{i + 1}T00:00:00+00:00" for i in range(len(prices))]
+        ),
+    )
+
+
+def _window_trade(*, direction: str, pnl: float, opened: str, closed: str) -> dict[str, Any]:
+    return _trade(
+        direction=direction, pnl=pnl, risk=100.0,
+        entry_price=100.0, stop_price=99.0,  # stop mesafesi %1
+        opened_at=f"2026-01-0{opened}T00:00:00+00:00",
+        closed_at=f"2026-01-0{closed}T00:00:00+00:00",
+    )
+
+
+def test_market_tailwind_is_signed_by_the_position_direction() -> None:
+    """Yükselen bir pencerede long'un rüzgârı ARKADAN, short'un KARŞIDAN eser.
+
+    İşaret sözleşmesi projenin ana sorusunun kendisidir: "short'lar daha başarılı"
+    cümlesi, düşen bir pencerede ölçüldüğünde tanım gereği doğru çıkar. Ölçü, o
+    pencereyi görünür kılmak için vardır.
+    """
+    reference = _reference(100.0, 102.0)  # +%2
+    rows = [
+        _window_trade(direction="long", pnl=50.0, opened="1", closed="2"),
+        _window_trade(direction="short", pnl=50.0, opened="1", closed="2"),
+    ]
+
+    long_stats = direction_stats(rows, direction="long", reference=reference)
+    short_stats = direction_stats(rows, direction="short", reference=reference)
+
+    assert long_stats.market_tailwind_pct == pytest.approx(2.0)
+    assert short_stats.market_tailwind_pct == pytest.approx(-2.0)
+    # stop mesafesi %1 olduğu için market_R, tailwind'in tam katı
+    assert long_stats.market_r == pytest.approx(2.0)
+    assert short_stats.market_r == pytest.approx(-2.0)
+
+
+def test_market_control_never_touches_the_primary_metric() -> None:
+    """Ortalama R bir ÖLÇÜM, piyasa katkısı bir KONTROLDÜR; ikincisi birincisini bozmaz.
+
+    Düzeltilmiş bir "ort. R" üretmek beta=1 varsayımını birincil metriğin içine gömerdi
+    (docs/backtest.md > 7.4: metrik değiştirmek yasaktır). Varsayım açıkta durur.
+    """
+    rows = [_window_trade(direction="long", pnl=50.0, opened="1", closed="2")]
+    without = direction_stats(rows, direction="long")
+    with_reference = direction_stats(rows, direction="long", reference=_reference(100.0, 110.0))
+
+    assert without.avg_r == with_reference.avg_r
+    assert math.isnan(without.market_r) and without.market_measured == 0
+    assert with_reference.market_measured == 1
+
+
+def test_positions_the_anchor_cannot_price_are_counted_not_guessed() -> None:
+    """Çıpa serisinden ÖNCE açılmış pozisyon ölçülmez ve bu sayıyla söylenir.
+
+    Uydurma bir başlangıç fiyatı (serinin ilk değeri) o pozisyonun piyasa katkısını
+    sıfır gösterirdi — yani "ölçemedik" ile "piyasa hiç katkı vermedi" aynı hücreye
+    yazılırdı. `market_measured` farkı denetlenebilir kılar.
+    """
+    reference = pd.Series(
+        [100.0, 101.0],
+        index=pd.to_datetime(["2026-01-03T00:00:00+00:00", "2026-01-04T00:00:00+00:00"]),
+    )
+    rows = [
+        _window_trade(direction="long", pnl=10.0, opened="1", closed="2"),  # seriden ÖNCE
+        _window_trade(direction="long", pnl=10.0, opened="3", closed="4"),  # seri içinde
+    ]
+
+    stats = direction_stats(rows, direction="long", reference=reference)
+
+    assert stats.trades == 2
+    assert stats.market_measured == 1
+    assert stats.market_tailwind_pct == pytest.approx(1.0)
+
+
+def test_market_r_averages_per_position_ratios_like_cost_per_r() -> None:
+    """Önce her pozisyonun oranı, SONRA ortalama — `cost_per_r` ile aynı sözleşme.
+
+    Önce ortalamaları alıp bölmek dar stop'lu pozisyonların piyasa katkısını gizlerdi
+    ve iki kolon birbirinin dilinden konuşmayı bırakırdı.
+    """
+    reference = _reference(100.0, 101.0)  # +%1
+    rows = [
+        # stop %1 -> market_R = 1.0
+        _window_trade(direction="long", pnl=10.0, opened="1", closed="2"),
+        # stop %4 -> market_R = 0.25. Farklı SEMBOL: aynı sembol + aynı açılış damgası
+        # tek bir pozisyona indirgenirdi (merge_fills), yani iki oran hiç oluşmazdı.
+        _trade(direction="long", pnl=10.0, risk=100.0, symbol="ETH-USDT-SWAP",
+               entry_price=100.0, stop_price=96.0,
+               opened_at="2026-01-01T00:00:00+00:00", closed_at="2026-01-02T00:00:00+00:00"),
+    ]
+
+    stats = direction_stats(rows, direction="long", reference=reference)
+
+    assert stats.market_r == pytest.approx((1.0 + 0.25) / 2.0)
+
+
+def test_reference_timestamps_are_read_as_utc(tmp_path: Path) -> None:
+    """Zaman dilimsiz bir çıpa serisi UTC sayılır — defter UTC yazar (kural 12).
+
+    Yerel saate çevirmek, aynı defterin makineden makineye farklı piyasa kontrolü
+    üretmesi demekti; `random_seed`in sabit olmasıyla aynı statü.
+    """
+    naive = pd.Series([100.0, 102.0], index=pd.to_datetime(
+        ["2026-01-01T00:00:00", "2026-01-02T00:00:00"]
+    ))
+    rows = [_window_trade(direction="long", pnl=10.0, opened="1", closed="2")]
+
+    stats = direction_stats(rows, direction="long", reference=naive)
+
+    assert stats.market_measured == 1
+    assert stats.market_tailwind_pct == pytest.approx(2.0)
+
+
+def test_breakdown_groups_carry_their_own_interval() -> None:
+    """Grup ortalaması da örneklemiyle ve aralığıyla birlikte raporlanır.
+
+    Karar 27 (saat hipotezi) ve karar 28 (kayıp serisi cooldown'u) tam olarak bir
+    KIRILIM grubunun ortalamasına bakıp kural yazma denemeleriydi; ikisi de daha uzun
+    örneklemde çürüdü. Grup ortalamasını aralıksız göstermek, o hatayı ölçüm katmanının
+    içine yerleştirmek olurdu.
+    """
+    trades = [
+        _trade(pnl=100.0 if index % 2 else -100.0, risk=100.0,
+               signal_reason=format_tags("kurulum", arm="a" if index < 6 else "b"))
+        for index in range(12)
+    ]
+
+    groups = breakdown(trades, key=arm_of, ci_alpha=0.05, bootstrap_samples=200, seed=7)
+    again = breakdown(trades, key=arm_of, ci_alpha=0.05, bootstrap_samples=200, seed=7)
+
+    assert set(groups) == {"a", "b"}
+    for name, stats in groups.items():
+        assert not math.isnan(stats.avg_r_ci_low)
+        assert stats.avg_r_ci_low <= stats.avg_r <= stats.avg_r_ci_high
+        # Aynı defter, aynı aralık: tohum grup adına bağlıdır ve titremez.
+        assert stats.avg_r_ci_low == again[name].avg_r_ci_low
+
+
+def test_breakdown_reports_no_interval_when_bootstrap_is_off() -> None:
+    trades = [_trade(pnl=100.0, signal_reason=format_tags("kurulum", arm="a"))]
+    (stats,) = breakdown(trades, key=arm_of).values()
+    assert math.isnan(stats.avg_r_ci_low)
+
+
+def test_single_observation_has_no_interval_only_a_value() -> None:
+    """Tek gözlemde bootstrap dejenere bir aralık üretir; `_stdev` ile aynı sınır.
+
+    `[+0.08, +0.08]` okuyucuya kıl payı bir kesinlik vaat eder, oysa yeniden
+    örneklenecek bir dağılım yoktur. Eşik serbest bir parametre değil, bootstrap'ın
+    tanım sınırıdır.
+    """
+    assert bootstrap_mean_ci([0.08], alpha=0.05, iterations=500, seed=1) == (
+        pytest.approx(float("nan"), nan_ok=True),
+        pytest.approx(float("nan"), nan_ok=True),
+    )
+    low, high = bootstrap_mean_ci([0.08, -1.0], alpha=0.05, iterations=500, seed=1)
+    assert not math.isnan(low) and low < high

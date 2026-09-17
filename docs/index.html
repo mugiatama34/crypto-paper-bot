@@ -56,6 +56,11 @@
   .ls-col.short .ls-name { color: var(--short); }
   .ls-hero { font-size: clamp(27px, 9vw, 34px); font-weight: 650; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .ls-hero small { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 6px; letter-spacing: 0; }
+  .ls-ci { font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  /* Kapı altındaki kırılım satırı: gizlenmez, SOLGUN. Okuyucu satırı görür ama
+     ortalamasını model tablosundaki bir ortalamayla aynı ağırlıkta okumaz. */
+  tr.below-gate { opacity: 0.55; }
+  .gate-mark { font-size: 10px; border: 1px solid var(--ink-muted); border-radius: 4px; padding: 0 3px; color: var(--ink-muted); }
   .ls-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
   .ls-tiles > div { min-width: 0; }
   .verdict { margin-top: var(--gap); }
@@ -600,14 +605,24 @@ function renderScalp(d) {
       "</tbody></table></div>"
     : "";
 
-  renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol");
-  renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol");
-  renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı");
+  // Kapı, kırılımı ÜRETEN yükten okunur (base yükünün değil): iki katmanın eşiği
+  // bugün aynı olsa da birinden okuyup diğerine uygulamak sessiz bir bağ olurdu.
+  const gate = num((d.acceptance || {}).min_trades);
+  renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol", gate);
+  renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol", gate);
+  renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı", gate);
 }
 
-const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "kazanma", "toplam R", "cost/R"];
+const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "ort. R aralığı", "kazanma", "toplam R", "cost/R"];
 
-function renderBreakdown(hostId, byModel, label) {
+/* Kırılım grubu, örneklem kapısını (acceptance.min_trades) MODEL SATIRIYLA aynı
+   ölçütle geçmek zorundadır. Geçmeyen satır gizlenmez — base katmanının ölçütü zaten
+   "n=30'a ulaşılabiliyor mu" (karar 33) — ama SOLGUN çizilir ve işlem sayısının yanına
+   kapı işareti konur. Gerekçe projenin kendi geçmişidir: karar 27 (saat hipotezi) ve
+   karar 28 (kayıp serisi) tam olarak bir kırılım grubunun ortalamasına bakıp kural
+   yazma denemeleriydi; ikisi de daha uzun örneklemde çürüdü. Grup ortalamasını
+   örneklemsiz göstermek o hatayı arayüzün içine yerleştirmek olurdu. */
+function renderBreakdown(hostId, byModel, label, gate) {
   const host = el(hostId);
   if (!byModel || !Object.keys(byModel).length) {
     host.innerHTML = '<p class="empty">Henüz kırılım üretecek kapanmış işlem yok.</p>';
@@ -626,13 +641,18 @@ function renderBreakdown(hostId, byModel, label) {
       BREAKDOWN_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
       names.map((name) => {
         const g = groups[name] || {};
-        return '<tr class="data"><td>' + esc(name) + "</td>" +
-          "<td>" + (g.trades ?? DASH) + "</td>" +
+        const n = num(g.trades);
+        const short = gate !== null && gate !== undefined && n !== null && n < gate;
+        return '<tr class="data' + (short ? " below-gate" : "") + '"><td>' + esc(name) + "</td>" +
+          "<td>" + (g.trades ?? DASH) + (short ? ' <span class="gate-mark" title="örneklem kapısının altında: bu ortalama bir ölçüm değil">Ö</span>' : "") + "</td>" +
           '<td class="' + signClass(g.avg_r) + '">' + fmtSigned(g.avg_r) + "</td>" +
+          "<td>" + ciBand(g.avg_r_ci_low, g.avg_r_ci_high) + "</td>" +
           "<td>" + pct(g.win_rate) + "</td>" +
           '<td class="' + signClass(g.total_r) + '">' + fmtSigned(g.total_r, 1) + "</td>" +
           "<td>" + fmt(g.cost_per_r, 3) + "</td></tr>";
-      }).join("") + "</tbody></table></div></div>";
+      }).join("") + "</tbody></table></div></div>" +
+      (gate ? '<p class="note">Ö = örneklem kapısının altında (n &lt; ' + gate +
+        "): satır gizlenmez ama ortalaması bir ölçüm değil gürültüdür.</p>" : "");
   }).join("");
 }
 
@@ -771,6 +791,14 @@ function renderSummary(d) {
 }
 
 /* ------------------------- long vs short ------------------------- */
+/* Aralığın güven seviyesi config'ten gelir (`acceptance.edge_ci_alpha`), sayfaya
+   gömülmez: eşik bir gün değişirse etiketin sessizce yanlış kalması, çıtayı yanlış
+   anlatan bir rozetle aynı hatadır. */
+function ciLabel() {
+  const alpha = num(((DATA || {}).acceptance || {}).edge_ci_alpha);
+  return alpha === null ? "aralık" : "%" + Math.round((1 - alpha) * 100) + " aralık";
+}
+
 function dirColumn(label, cls, stats, extraTiles) {
   const tiles = [
     ["işlem", num(stats.trades) === null ? DASH : String(stats.trades)],
@@ -779,6 +807,11 @@ function dirColumn(label, cls, stats, extraTiles) {
     ["toplam R", fmtSigned(stats.total_r)],
     ["profit factor", fmt(stats.profit_factor)],
     ["PnL (USDT)", usd(stats.pnl)],
+    // Piyasa katkısı: bu yöndeki pozisyonlar çıpayla (BTC) birebir hareket etseydi
+    // kazanacakları R (beta=1). Ortalama R'den ÇIKARILMAZ — sayfa hesap yapmaz
+    // (kural 7) ve çıkarmak beta varsayımını birincil metriğin içine gömerdi.
+    // Okuyucu iki sayıyı yan yana görür: fark sinyalden mi, pencereden mi?
+    ["piyasa katkısı (R)", fmtSigned(stats.market_r)],
   ].concat(extraTiles || []);
   return '<div class="ls-col ' + cls + '">' +
     '<div class="ls-head"><span class="ls-name">' + esc(label) + '</span>' +
@@ -787,6 +820,10 @@ function dirColumn(label, cls, stats, extraTiles) {
     // yön rengine boyamak, SHORT panelindeki pozitif bir R'yi "negatif kırmızı" ile
     // aynı hücreye koyup iki farklı anlamı tek renge yığardı.
     '<div class="ls-hero">' + fmtSigned(stats.avg_r) + "<small>R</small></div>" +
+    // Projenin ANA sorusu burada cevaplanıyor: "short'lar long'lardan iyi" cümlesi
+    // ancak iki aralık ayrıştığında kurulabilir. Aralık hero sayının hemen altında
+    // durur ki iki sütun yan yana okunduğunda örtüşme görünür olsun.
+    '<div class="ls-ci">' + esc(ciLabel()) + " " + ciBand(stats.avg_r_ci_low, stats.avg_r_ci_high) + "</div>" +
     '<div class="ls-tiles">' +
     tiles.map(([k, v]) =>
       '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v">' + esc(v) + "</div></div>"
@@ -1322,9 +1359,13 @@ function renderDetail(model) {
 }
 
 function renderDetailStrip(model, m) {
-  const total = m.total || {}, account = m.account || {};
+  const total = m.total || {}, account = m.account || {}, friction = m.friction || {};
   const tiles = [
     ["ort. R", fmtSigned(total.avg_r) + "R", signClass(total.avg_r)],
+    // Aralık ort. R'nin HEMEN yanında durur: n=1 ile n=200 tabloda aynı yazı tipiyle
+    // yazılır ve okuyucunun örneklem büyüklüğünü ayrıca aramasını beklemek, iki satırı
+    // eşit güvenilirlikte göstermek demekti.
+    ["ort. R aralığı", ciBand(total.avg_r_ci_low, total.avg_r_ci_high), ""],
     ["getiri", pctSigned(account.total_return), signClass(account.total_return)],
     ["max drawdown", pct(account.max_drawdown, 2), signClass(account.max_drawdown)],
     ["kazanma", pct(total.win_rate), ""],
@@ -1332,6 +1373,13 @@ function renderDetailStrip(model, m) {
     ["işlem", String(num(total.trades) ?? 0), ""],
     ["maliyet / R", fmt(total.cost_per_r, 3), ""],
     ["stop mesafesi", pctRaw(total.avg_stop_distance_pct), ""],
+    // Friksiyon HIZI: `maliyet / R` işlem başına ölçer ve sıklığı görmez. İki model
+    // aynı maliyet/R ile koşup biri diğerinden on kat hızlı çevirebilir — hesabı eriten
+    // şey o hızdır. Bir ÖLÇÜMDÜR, kural değil: hiçbir sinyal ciroya göre elenmez.
+    ["ciro / gün", fmt(friction.turnover_per_day) + "x", ""],
+    ["friksiyon / gün", pctRaw(friction.cost_drag_pct_per_day, 2), signClass(-(num(friction.cost_drag_pct_per_day) || 0))],
+    ["tur maliyeti", pctRaw(total.cost_pct, 3), ""],
+    ["piyasa katkısı (R)", fmtSigned(total.market_r), ""],
   ];
   el("detail-strip").innerHTML = tiles.map(([k, v, cls]) =>
     '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v ' + cls + '">' + esc(v) + "</div></div>"
