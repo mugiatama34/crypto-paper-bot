@@ -3380,3 +3380,90 @@ Ayrım şunu görünür kılıyor: *"reddedildi"* demek *"içindeki gözlem yanl
 değildir. Reddedilen bir KURAL önerisinin içinde, katman 2'ye ait meşru bir ÖLÇÜM
 eksikliği durabilir — ve o eksiklik reddedildiği için birlikte çöpe gider. Bu karar,
 reddedilen önerilerin ölçüm çekirdeğini ayrı ayrı değerlendirmeyi zorunlu kılar.
+
+---
+
+## 43. Piyasa kontrolü: ana sorunun cevabı, ölçüldüğü pencerenin yönüyle karışıyordu
+
+Karar 42'nin çerçevesi (üç katman, beş test) reddedilen önerilerin içindeki **ölçüm
+çekirdeğini** ayrı değerlendirmeyi zorunlu kıldı. İlk sonucu bu: "market-neutral kitap"
+önerisi bir KURAL olarak ertelendi (yeni bir boyutlandırma modu gerektirir, karar 40'ın
+"önce ölç" kaydı), ama içindeki gözlem katman 2'ye aitti ve **projenin ana sorusunu
+doğrudan vuruyordu.**
+
+### Eksiklik
+
+`CLAUDE.md`nin ilk satırı şunu söyler: *"Projenin cevaplamaya çalıştığı ana soru: short
+işlemler long işlemlerden daha mı başarılı?"* Tablo bu soruyu yön bazlı ortalama R ile
+cevaplıyordu — ama **piyasanın o pencerede ne yaptığı hiçbir yerde ölçülmüyordu.** Düşen
+bir pencerede her short daha iyi görünür; bu bir sinyal bulgusu değil, bir takvim
+bulgusudur. Kabul çıtasının "çıpayı geç" koşulu (kural 15) bunu HESAP düzeyinde soruyor,
+yön düzeyinde değil — oysa ayrışma tam olarak yön düzeyinde raporlanıyor.
+
+Beş testin hepsini geçiyor: sonuç-körü (cümle hiçbir sonuca bakmadan kurulur), yönsüz
+(her modele aynı uygulanır ve bazılarını kötüleştirir), katman 2, tekrarlanabilir (çıpa
+serisi + defter), ön-kayıt borcu yok (performans iddiası taşımaz).
+
+### Ölçü
+
+```
+tailwind% = (çıpa[kapanış] / çıpa[açılış] − 1) × 100 × (long: +1, short: −1)
+market_R  = tailwind% / stop_mesafesi%            (pozisyon bazında, sonra ortalama)
+```
+
+Çıpa **BTC**: projenin zaten seçilmiş referansı, iki katmanda da var ve bir sepet ağırlığı
+seçmek serbest parametre demekti. `beta = 1` varsayımı AÇIKTA durur — `market_r` ortalama
+R'den çıkarılmaz, yanında raporlanır (§7.4: birincil metrik değiştirilmez).
+
+### Uygulamadan ÖNCE koşuldu — iki katmanda da mantıklı çıktı
+
+Kural: bir değişiklik önce mevcut defter üzerinde koşulur, sayı mantıklıysa koda bağlanır.
+
+**Scalp** (çıpa: defterdeki gerçek BTC dolum fiyatları, 60 nokta, pencere −%1.54):
+
+| küme | yön | n | ort.R | tailwind% | market_R | R−market_R |
+|---|---|---:|---:|---:|---:|---:|
+| havuz (yarışmacı) | long | 17 | −0.201 | −0.100 | −0.074 | −0.127 |
+| havuz (yarışmacı) | short | 14 | −0.301 | −0.093 | −0.097 | −0.204 |
+| `vwap_clone` | toplam | 184 | −0.814 | −0.019 | −0.060 | −0.754 |
+
+İki bağımsız okuma:
+
+1. **Havuzda ham long ↔ short farkı 0.100R; piyasa çıkarıldığında 0.077R.** Yani farkın
+   kabaca dörtte biri sinyalden değil, iki yönün gördüğü FARKLI pencereden geliyor. Fark
+   yok olmuyor — ama "short'lar daha kötü" cümlesi artık bir büyüklükle nitelenebiliyor.
+2. **İki yönün de tailwind'i NEGATİF** (long −0.100, short −0.093): long'lar BTC düşerken,
+   short'lar BTC yükselirken tutulmuş. Bu, ortalama R'nin neden iki yönde de negatif
+   olduğuna dair kendi başına bir ipucu ve n=17/14 ile yorumlanmaz, kaydedilir.
+3. **`vwap_clone`un tailwind'i ≈ 0** (−0.019): 184 pozisyon pencereye yayıldığı için piyasa
+   ortalamada siliniyor. Yani onun −0.81R'si piyasadan GELMİYOR — ve bu, karar 41'in
+   friksiyon bulgusuyla (zararın %78'i komisyon+kayma) **bağımsız olarak örtüşüyor.** İki
+   ayrı ölçünün aynı cevaba varması, ölçünün kendisinin sağlaması oldu.
+
+**Base** (çıpa: `buyhold` 50/50 eğrisi, pencere −%1.38):
+
+| model | yön | n | ort.R | market_R | R−market_R |
+|---|---|---:|---:|---:|---:|
+| `meanrev` | long | 10 | −0.442 | −0.735 | **+0.293** |
+| `trend` | long | 11 | −0.241 | −0.064 | −0.177 |
+| `trend` | short | 6 | +0.075 | −0.028 | +0.104 |
+
+`meanrev`in **tüm zararı** (ve fazlası) beta=1 altında piyasa hareketiyle açıklanıyor:
+long-only bir kitap, düşen bir pencerede tutulmuş. Bu satırın "model kötü" diye okunması
+artık savunulamaz — n=10 ile "model iyi" diye okunması da savunulamaz, ama ölçü hangi
+sorunun sorulacağını değiştiriyor.
+
+### Sınırlar (iddia edilmeyecekler)
+
+- **beta = 1 bir varsayımdır**, ölçüm değil. Altcoin'lerin BTC'ye betası 1 değildir;
+  sayı bir ÜST SINIR sezgisi verir, bir düzeltme değildir.
+- Çıpa serisi `data.history_bars` kadar geriye gider; daha eski pozisyonlar
+  **fiyatlanamaz** ve `market_measured` bunu sayar (canlı doğrulamada 30/37).
+- Doğrulama koşusunda çıpa, ağ erişimi kapalı olduğu için defterdeki BTC dolum
+  fiyatlarından kuruldu (canlıda `MarketData.btc`). Fiyatlar gerçek, seri seyrek.
+
+### Değişmeyenler
+
+Hiçbir sinyal, dolum, boyut, maliyet sabiti ya da kabul kapısı değişmedi. `avg_r`
+dokunulmadan durdu. Modellerin ürettiği sinyaller bu commit'ten önce ve sonra BİREBİR
+AYNIDIR.

@@ -1405,3 +1405,124 @@ def test_average_r_interval_is_undefined_when_bootstrap_is_not_requested() -> No
     """Varsayılan `nan`: aralık bir kapı değil, istendiğinde hesaplanan bir okuma yardımı."""
     stats = direction_stats([_trade(pnl=100.0)])
     assert math.isnan(stats.avg_r_ci_low) and math.isnan(stats.avg_r_ci_high)
+
+
+# --------------------------------------------------------------------------- #
+# Piyasa kontrolü (ana sorunun karıştırıcısı)
+# --------------------------------------------------------------------------- #
+def _reference(*prices: float) -> pd.Series:
+    return pd.Series(
+        list(prices),
+        index=pd.to_datetime(
+            [f"2026-01-0{i + 1}T00:00:00+00:00" for i in range(len(prices))]
+        ),
+    )
+
+
+def _window_trade(*, direction: str, pnl: float, opened: str, closed: str) -> dict[str, Any]:
+    return _trade(
+        direction=direction, pnl=pnl, risk=100.0,
+        entry_price=100.0, stop_price=99.0,  # stop mesafesi %1
+        opened_at=f"2026-01-0{opened}T00:00:00+00:00",
+        closed_at=f"2026-01-0{closed}T00:00:00+00:00",
+    )
+
+
+def test_market_tailwind_is_signed_by_the_position_direction() -> None:
+    """Yükselen bir pencerede long'un rüzgârı ARKADAN, short'un KARŞIDAN eser.
+
+    İşaret sözleşmesi projenin ana sorusunun kendisidir: "short'lar daha başarılı"
+    cümlesi, düşen bir pencerede ölçüldüğünde tanım gereği doğru çıkar. Ölçü, o
+    pencereyi görünür kılmak için vardır.
+    """
+    reference = _reference(100.0, 102.0)  # +%2
+    rows = [
+        _window_trade(direction="long", pnl=50.0, opened="1", closed="2"),
+        _window_trade(direction="short", pnl=50.0, opened="1", closed="2"),
+    ]
+
+    long_stats = direction_stats(rows, direction="long", reference=reference)
+    short_stats = direction_stats(rows, direction="short", reference=reference)
+
+    assert long_stats.market_tailwind_pct == pytest.approx(2.0)
+    assert short_stats.market_tailwind_pct == pytest.approx(-2.0)
+    # stop mesafesi %1 olduğu için market_R, tailwind'in tam katı
+    assert long_stats.market_r == pytest.approx(2.0)
+    assert short_stats.market_r == pytest.approx(-2.0)
+
+
+def test_market_control_never_touches_the_primary_metric() -> None:
+    """Ortalama R bir ÖLÇÜM, piyasa katkısı bir KONTROLDÜR; ikincisi birincisini bozmaz.
+
+    Düzeltilmiş bir "ort. R" üretmek beta=1 varsayımını birincil metriğin içine gömerdi
+    (docs/backtest.md > 7.4: metrik değiştirmek yasaktır). Varsayım açıkta durur.
+    """
+    rows = [_window_trade(direction="long", pnl=50.0, opened="1", closed="2")]
+    without = direction_stats(rows, direction="long")
+    with_reference = direction_stats(rows, direction="long", reference=_reference(100.0, 110.0))
+
+    assert without.avg_r == with_reference.avg_r
+    assert math.isnan(without.market_r) and without.market_measured == 0
+    assert with_reference.market_measured == 1
+
+
+def test_positions_the_anchor_cannot_price_are_counted_not_guessed() -> None:
+    """Çıpa serisinden ÖNCE açılmış pozisyon ölçülmez ve bu sayıyla söylenir.
+
+    Uydurma bir başlangıç fiyatı (serinin ilk değeri) o pozisyonun piyasa katkısını
+    sıfır gösterirdi — yani "ölçemedik" ile "piyasa hiç katkı vermedi" aynı hücreye
+    yazılırdı. `market_measured` farkı denetlenebilir kılar.
+    """
+    reference = pd.Series(
+        [100.0, 101.0],
+        index=pd.to_datetime(["2026-01-03T00:00:00+00:00", "2026-01-04T00:00:00+00:00"]),
+    )
+    rows = [
+        _window_trade(direction="long", pnl=10.0, opened="1", closed="2"),  # seriden ÖNCE
+        _window_trade(direction="long", pnl=10.0, opened="3", closed="4"),  # seri içinde
+    ]
+
+    stats = direction_stats(rows, direction="long", reference=reference)
+
+    assert stats.trades == 2
+    assert stats.market_measured == 1
+    assert stats.market_tailwind_pct == pytest.approx(1.0)
+
+
+def test_market_r_averages_per_position_ratios_like_cost_per_r() -> None:
+    """Önce her pozisyonun oranı, SONRA ortalama — `cost_per_r` ile aynı sözleşme.
+
+    Önce ortalamaları alıp bölmek dar stop'lu pozisyonların piyasa katkısını gizlerdi
+    ve iki kolon birbirinin dilinden konuşmayı bırakırdı.
+    """
+    reference = _reference(100.0, 101.0)  # +%1
+    rows = [
+        # stop %1 -> market_R = 1.0
+        _window_trade(direction="long", pnl=10.0, opened="1", closed="2"),
+        # stop %4 -> market_R = 0.25. Farklı SEMBOL: aynı sembol + aynı açılış damgası
+        # tek bir pozisyona indirgenirdi (merge_fills), yani iki oran hiç oluşmazdı.
+        _trade(direction="long", pnl=10.0, risk=100.0, symbol="ETH-USDT-SWAP",
+               entry_price=100.0, stop_price=96.0,
+               opened_at="2026-01-01T00:00:00+00:00", closed_at="2026-01-02T00:00:00+00:00"),
+    ]
+
+    stats = direction_stats(rows, direction="long", reference=reference)
+
+    assert stats.market_r == pytest.approx((1.0 + 0.25) / 2.0)
+
+
+def test_reference_timestamps_are_read_as_utc(tmp_path: Path) -> None:
+    """Zaman dilimsiz bir çıpa serisi UTC sayılır — defter UTC yazar (kural 12).
+
+    Yerel saate çevirmek, aynı defterin makineden makineye farklı piyasa kontrolü
+    üretmesi demekti; `random_seed`in sabit olmasıyla aynı statü.
+    """
+    naive = pd.Series([100.0, 102.0], index=pd.to_datetime(
+        ["2026-01-01T00:00:00", "2026-01-02T00:00:00"]
+    ))
+    rows = [_window_trade(direction="long", pnl=10.0, opened="1", closed="2")]
+
+    stats = direction_stats(rows, direction="long", reference=naive)
+
+    assert stats.market_measured == 1
+    assert stats.market_tailwind_pct == pytest.approx(2.0)

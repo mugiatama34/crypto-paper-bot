@@ -788,6 +788,11 @@ function dirColumn(label, cls, stats, extraTiles) {
     ["toplam R", fmtSigned(stats.total_r)],
     ["profit factor", fmt(stats.profit_factor)],
     ["PnL (USDT)", usd(stats.pnl)],
+    // Piyasa katkısı: bu yöndeki pozisyonlar çıpayla (BTC) birebir hareket etseydi
+    // kazanacakları R (beta=1). Ortalama R'den ÇIKARILMAZ — sayfa hesap yapmaz
+    // (kural 7) ve çıkarmak beta varsayımını birincil metriğin içine gömerdi.
+    // Okuyucu iki sayıyı yan yana görür: fark sinyalden mi, pencereden mi?
+    ["piyasa katkısı (R)", fmtSigned(stats.market_r)],
   ].concat(extraTiles || []);
   return '<div class="ls-col ' + cls + '">' +
     '<div class="ls-head"><span class="ls-name">' + esc(label) + '</span>' +
@@ -1355,6 +1360,7 @@ function renderDetailStrip(model, m) {
     ["ciro / gün", fmt(friction.turnover_per_day) + "x", ""],
     ["friksiyon / gün", pctRaw(friction.cost_drag_pct_per_day, 2), signClass(-(num(friction.cost_drag_pct_per_day) || 0))],
     ["tur maliyeti", pctRaw(total.cost_pct, 3), ""],
+    ["piyasa katkısı (R)", fmtSigned(total.market_r), ""],
   ];
   el("detail-strip").innerHTML = tiles.map(([k, v, cls]) =>
     '<div><div class="tile-k">' + esc(k) + '</div><div class="tile-v ' + cls + '">' + esc(v) + "</div></div>"

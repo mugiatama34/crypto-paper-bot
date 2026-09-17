@@ -578,6 +578,29 @@ kural DEĞİL** (seans, kayıp serisi ve yoğunlaşma ölçümleriyle aynı stat
 ciroya göre elenmez, hiçbir boyut ona göre değişmez — işlem sıklığı tavanı karar 40'ta
 açıkça reddedildi ve bu kolon o tavanın yokluğunun bedelini ölçer.
 
+**Piyasa kontrolü (ana sorunun karıştırıcısı).** Projenin ana sorusu *"short işlemler
+long işlemlerden daha mı başarılı"* ve bu soru, ölçüldüğü pencerede piyasanın hangi yöne
+gittiğiyle **tanım gereği** karışır: düşen bir pencerede her short daha iyi görünür.
+Tabloda bu karışımı okunur kılan iki kolon vardır:
+
+| Kolon | Tanım |
+|---|---|
+| `market_tailwind_pct` | Pozisyonun tutuş penceresinde ÇIPANIN getirisi, **pozisyonun yönüne çevrilmiş** (long: +hareket, short: −hareket), yüzde. Çıpa **BTC**'dir — projenin zaten seçilmiş referansı (`exchange.btc_reference`, `as_of` çapası) ve iki katmanda da var; bir sepet (ör. 50/50) ağırlık seçimi, yani serbest bir parametre demekti. |
+| `market_r` | `market_tailwind_pct / avg_stop_distance_pct`, pozisyon bazında hesaplanıp ORTALANIR (`cost_per_r` ile birebir aynı sözleşme: önce oran, sonra ortalama). Pozisyon çıpayla birebir hareket etseydi kazanacağı R'dir. |
+| `market_measured` | Çıpa penceresinde fiyatlanabilen pozisyon sayısı. Çıpa serisi `data.history_bars` kadar geriye gider; daha eski pozisyon **ölçülmez** ve bu sayıyla söylenir — uydurma bir başlangıç fiyatı, "ölçemedik" ile "piyasa katkı vermedi"yi aynı hücreye yazardı. |
+
+**`market_r` ortalama R'den ÇIKARILMAZ.** Ölçü `beta = 1` varsayımına dayanır (pozisyon
+çıpayla birebir hareket eder) ve bu varsayımı birincil metriğin İÇİNE gömmek,
+`docs/backtest.md > 7.4`ün yasakladığı metrik değiştirmedir — üstelik sembol bazlı bir beta
+tahmini serbest bir parametre açardı (pencere, yöntem, yenileme sıklığı). İki sayı **yan
+yana** durur; farkı okuyucu kurar ve varsayım görünür kalır. Sayfa da bu yüzden çıkarma
+yapmaz (kural 7): yalnızca `market_r`'yi ortalama R'nin yanında gösterir.
+
+**Bu da bir ÖLÇÜMDÜR, kural DEĞİL:** hiçbir sinyal piyasa yönüne göre elenmez, hiçbir
+boyut ona göre değişmez. Veri `core/metrics.py`ye ENJEKTE edilir (`compare(reference=...)`,
+canlıda `MarketData.btc["close"]`); modül borsaya hiç dokunmaz ve defterden başka bir
+şey okumaz.
+
 **Beklenti (`expectancy`) ayrı bir kolon DEĞİLDİR, bir AYRIŞMADIR.** R biriminde
 `WR × ort.kazanç + (1−WR) × ort.kayıp` tam olarak ortalama R'ye eşittir (test:
 `tests/test_metrics.py`), yani yeni bir sayı değil aynı sayının parçalarıdır. Değeri

@@ -113,6 +113,20 @@ class DirectionStats:
     # tek ve ortak bir birimdir. Kopyanın friksiyonunu görebilmenin tek yolu budur.
     notional: float
     cost_pct: float
+    # PİYASA KONTROLÜ (kural: bir ÖLÇÜ, bir düzeltme DEĞİL). Projenin ana sorusu
+    # "short'lar long'lardan daha mı başarılı" ve bu soru, ölçüldüğü pencerede
+    # piyasanın hangi yöne gittiğiyle TANIM GEREĞİ karışır: düşen bir pencerede her
+    # short daha iyi görünür. `market_tailwind_pct` pozisyonun tutuş penceresinde
+    # çıpanın (BTC) ne yaptığını POZİSYONUN YÖNÜNE çevirerek söyler (long: +hareket,
+    # short: −hareket); `market_r` onu aynı pozisyonun stop ölçeğine bölerek R
+    # birimine taşır ve `avg_r` ile YAN YANA okunur.
+    #
+    # `avg_r`den ÇIKARILMAZ: çıkarmak beta=1 varsayımını birincil metriğin içine
+    # gömerdi (§7.4'ün yasakladığı metrik değiştirme). Varsayım açıkta durur ve
+    # okuyucu farkı kendisi kurar.
+    market_tailwind_pct: float
+    market_r: float
+    market_measured: int  # çıpa penceresinde fiyatlanabilen POZİSYON sayısı
     pnl: float
     fees: float
     slippage_cost: float
@@ -333,6 +347,7 @@ def direction_stats(
     ci_alpha: float = _NAN,
     bootstrap_samples: int = 0,
     seed: int = 0,
+    reference: Any = None,
 ) -> DirectionStats:
     """`direction` ("long" | "short" | "total") için işlem metrikleri.
 
@@ -362,6 +377,10 @@ def direction_stats(
     hesaplanır. Aralık kabul çıtasının aralığıyla AYNI alfayı ve AYNI tohum türetmesini
     kullanır (çağıran taşır): iki sayı aynı tabloda yan yana durduğu için ikinci bir
     alfa, aynı modelin iki farklı kesinlik ölçüsünü göstermek olurdu.
+
+    `reference` verilirse (zaman indeksli çıpa kapanış serisi — canlıda `MarketData.btc`)
+    piyasa kontrolü de hesaplanır. Modül veriyi kendisi ÇEKMEZ; seri dışarıdan enjekte
+    edilir, çünkü `core/metrics.py` defteri okur ve borsaya hiç dokunmaz.
     """
     # Ölçümün birimi POZİSYONDUR, dolum değil: `merge_fills` aynı pozisyonun kısmi çıkış
     # ve fraksiyonel TP satırlarını tek satıra indirger (bkz. merge_fills). Kapanış sırası
@@ -378,6 +397,7 @@ def direction_stats(
     loss_total = abs(sum(losses))
     notional = _sum_column(rows, "notional")
     cost = _sum_column(rows, "fee") + _sum_column(rows, "slippage_cost")
+    tailwind, market_r, market_measured = _market_context(rows, reference=reference)
     # Tohuma yön karıştırılır: long, short ve toplam aynı tohumla yeniden örneklenseydi
     # üç aralık aynı çekiliş desenini paylaşır, bağımsız birer ölçü olmaktan çıkardı.
     ci_low, ci_high = bootstrap_mean_ci(
@@ -411,6 +431,9 @@ def direction_stats(
         avg_r_ci_high=ci_high,
         notional=notional,
         cost_pct=_pct(_ratio(cost, notional)),
+        market_tailwind_pct=tailwind,
+        market_r=market_r,
+        market_measured=market_measured,
         pnl=_sum_column(rows, "pnl"),
         fees=_sum_column(rows, "fee"),
         slippage_cost=_sum_column(rows, "slippage_cost"),
@@ -418,6 +441,76 @@ def direction_stats(
         liquidations=sum(1 for row in rows if row.get("exit_reason") == "liquidation"),
         unmeasured=len(rows) - len(r_values),
     )
+
+
+def normalize_reference(reference: Any) -> "pd.Series | None":
+    """Çıpa serisini UTC zaman indeksli, sıralı bir `pd.Series`e çevirir.
+
+    Damgaların UTC'ye çekilmesi `_utc_stamp` ile aynı gerekçedir: defter UTC yazar ve
+    zaman dilimsiz bir çıpa, ölçümü dosyayı okuyan makinenin ayarına bağlardı.
+    """
+    if reference is None:
+        return None
+    series = pd.Series(reference).dropna()
+    if series.empty:
+        return None
+    index = pd.DatetimeIndex(series.index)
+    index = index.tz_localize("UTC") if index.tz is None else index.tz_convert("UTC")
+    series.index = index
+    return series.sort_index()
+
+
+def _price_at_or_before(series: "pd.Series", when: pd.Timestamp) -> float | None:
+    """Çıpanın `when` anında ya da ÖNCESİNDE bilinen son kapanışı.
+
+    "Sonrasına" bakmak look-ahead olurdu (kural 12); tam eşleşme aramak ise 15 dakikalık
+    bir çıpa ile 4 saatlik bir defteri hiç eşleştiremezdi. Pozisyonun penceresi çıpa
+    serisinin BAŞLANGICINDAN önce açılmışsa fiyat yoktur ve pozisyon ÖLÇÜLMEZ — uydurma
+    bir başlangıç fiyatı, o pozisyonun piyasa katkısını sıfır göstermek olurdu.
+    """
+    position = series.index.searchsorted(when, side="right") - 1
+    if position < 0:
+        return None
+    return _to_float(series.iloc[position])
+
+
+def _market_context(
+    rows: Sequence[Mapping[str, Any]], *, reference: Any
+) -> tuple[float, float, int]:
+    """Pozisyonların tutuş penceresinde çıpanın katkısı: (tailwind%, market_R, sayı).
+
+    **Ortalama, ORANLARIN ortalamasıdır** — `cost_per_r` ile birebir aynı sözleşme:
+    önce her pozisyon için `tailwind% / stop%`, sonra ortalama. Önce ortalamaları alıp
+    bölmek dar stop'lu pozisyonların katkısını gizlerdi ve iki kolon birbirinin dilinden
+    konuşmayı bırakırdı.
+
+    **beta = 1 VARSAYIMI açıktır ve gizlenmez:** `market_r`, pozisyonun çıpayla birebir
+    hareket ettiği durumda kazanacağı R'dir. Bir sembol bazlı beta tahmini serbest bir
+    parametre açardı (pencere, yöntem, yeniden hesaplama sıklığı) ve ölçüyü o seçimlere
+    bağlardı; varsayımı sabit ve görünür tutmak, tahmin etmekten daha denetlenebilirdir.
+    """
+    series = normalize_reference(reference)
+    if series is None:
+        return (_NAN, _NAN, 0)
+
+    tailwinds: list[float] = []
+    market_r: list[float] = []
+    for row in rows:
+        opened = _utc_stamp(row.get("opened_at"))
+        closed = _utc_stamp(row.get("closed_at"))
+        if opened is None or closed is None:
+            continue
+        start = _price_at_or_before(series, opened)
+        end = _price_at_or_before(series, closed)
+        if start is None or end is None or start <= 0.0:
+            continue
+        sign = 1.0 if str(row.get("direction", "")) == "long" else -1.0
+        value = (end / start - 1.0) * 100.0 * sign
+        tailwinds.append(value)
+        stop = stop_distance_pct(row)
+        if stop:
+            market_r.append(value / stop)
+    return (_mean(tailwinds), _mean(market_r), len(tailwinds))
 
 
 def _max_drawdown_r(r_values: Sequence[float]) -> float:
@@ -551,6 +644,7 @@ def model_metrics(
     ci_alpha: float = _NAN,
     bootstrap_samples: int = 0,
     seed: int = 0,
+    reference: Any = None,
 ) -> ModelMetrics:
     flags = {"is_benchmark": is_benchmark, "is_replica": is_replica}
     # Tohum model adına bağlanır — kabul çıtasının farkı için yapılanın aynısı
@@ -560,6 +654,9 @@ def model_metrics(
         "ci_alpha": ci_alpha,
         "bootstrap_samples": bootstrap_samples,
         "seed": int(seed) ^ hash_name(model),
+        # Çıpa BİR KEZ normalize edilir: her yön için yeniden kurmak aynı seriyi üç kez
+        # sıralamak olurdu ve sonucu değiştirmezdi.
+        "reference": normalize_reference(reference),
     }
     total = direction_stats(trades, direction=TOTAL, **flags, **ci)
     account = account_stats(
@@ -585,6 +682,7 @@ def compare(
     config: Mapping[str, Any],
     benchmarks: Collection[str] = (),
     replicas: Collection[str] = (),
+    reference: Any = None,
 ) -> list[ModelMetrics]:
     """Defterleri okuyup her model için metrikleri üretir. Defter değiştirilmez.
 
@@ -605,6 +703,7 @@ def compare(
     ci_alpha = float(get_setting(config_dict, "acceptance.edge_ci_alpha"))
     bootstrap_samples = int(get_setting(config_dict, "acceptance.bootstrap_samples"))
     seed = int(get_setting(config_dict, "random_seed"))
+    normalized = normalize_reference(reference)
     return [
         model_metrics(
             model,
@@ -617,6 +716,7 @@ def compare(
             ci_alpha=ci_alpha,
             bootstrap_samples=bootstrap_samples,
             seed=seed,
+            reference=normalized,
         )
         for model in models
     ]
@@ -871,6 +971,7 @@ def pooled_direction_stats(
     ci_alpha: float = _NAN,
     bootstrap_samples: int = 0,
     seed: int = 0,
+    reference: Any = None,
 ) -> dict[str, DirectionStats]:
     """Birden çok modelin işlemlerini TEK havuzda birleştirip yön bazında ölçer.
 
@@ -889,6 +990,7 @@ def pooled_direction_stats(
     aralık ayrıştığında kurulabilir.
     """
     rows = [row for trades in trades_by_model.values() for row in trades]
+    normalized = normalize_reference(reference)
     return {
         direction: direction_stats(
             rows,
@@ -896,6 +998,7 @@ def pooled_direction_stats(
             ci_alpha=ci_alpha,
             bootstrap_samples=bootstrap_samples,
             seed=seed,
+            reference=normalized,
         )
         for direction in (*DIRECTIONS, TOTAL)
     }
@@ -1564,6 +1667,25 @@ def _reading_lines(item: ModelMetrics) -> list[str]:
             f"{pad}beklenti: %{_fmt(_pct(total.win_rate), digits=1)} × "
             f"{_fmt(total.avg_win_r)}R + %{_fmt(_pct(loss_rate), digits=1)} × "
             f"{_fmt(total.avg_loss_r)}R = {_fmt(total.avg_r)}R"
+        )
+
+    # Piyasa kontrolü YÖN BAZINDA yazılır, toplamda değil: projenin ana sorusu
+    # "short'lar long'lardan iyi mi" ve o soruyu kirleten şey tam olarak iki yönün
+    # FARKLI piyasa penceresi görmesidir. Tek bir toplam satır bunu gizlerdi.
+    for direction in (*DIRECTIONS, TOTAL):
+        stats = item.by_direction(direction)
+        if not stats.market_measured:
+            continue
+        label = ("TOPLAM" if direction == TOTAL else direction).ljust(6)
+        adjusted = (
+            stats.avg_r - stats.market_r
+            if not (math.isnan(stats.avg_r) or math.isnan(stats.market_r))
+            else _NAN
+        )
+        lines.append(
+            f"{pad}piyasa (beta=1) {label} tailwind %{_fmt(stats.market_tailwind_pct, digits=3)} | "
+            f"market_R {_fmt(stats.market_r)} | R−market_R {_fmt(adjusted)} | "
+            f"{stats.market_measured}/{stats.trades} fiyatlandı"
         )
 
     friction = item.friction

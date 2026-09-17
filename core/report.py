@@ -108,6 +108,9 @@ def build_dashboard(
         ci_alpha=ci_alpha,
         bootstrap_samples=bootstrap_samples,
         seed=int(get_setting(config_dict, "random_seed")),
+        # Havuz, ana sorunun okunduğu yer: long ↔ short farkının ne kadarının
+        # piyasadan geldiği tam burada görünmeli (bkz. core/metrics.py::_market_context).
+        reference=market.btc.get("close"),
     )
     # R örneklemleri kabul çıtasının bootstrap'ı için: aynı `merge_fills` -> `r_multiple`
     # yolundan gelir (core/metrics.py::r_series), yani tablodaki ortalama R ile aralığın

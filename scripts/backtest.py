@@ -240,6 +240,9 @@ def run_backtest(
         config=config,
         benchmarks=[s.name for s in strategies if s.is_benchmark],
         replicas=[s.name for s in strategies if s.is_replica],
+        # Canlıdaki çıpanın AYNISI (main.py): harness kendi referansını seçemez,
+        # yoksa aynı defter iki farklı piyasa kontrolüyle okunurdu.
+        reference=market.btc.get("close"),
     )
 
     _write_manifest(

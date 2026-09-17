@@ -103,6 +103,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             config=config,
             benchmarks=[s.name for s in strategies if s.is_benchmark],
             replicas=[s.name for s in strategies if s.is_replica],
+            # Piyasa kontrolünün çıpası BTC'dir — projenin zaten seçilmiş referansı
+            # (`exchange.btc_reference`, `as_of` çapası) ve iki katmanda da var. Bir
+            # sepet (ör. 50/50) ağırlık seçimi demekti, yani serbest bir parametre.
+            reference=market.btc.get("close"),
         )
         # Örneklem kapısı tabloya da uygulanır: kapıyı geçmeyen satır SIRALANMAZ
         # (bkz. core/metrics.py::format_report).
