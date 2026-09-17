@@ -198,6 +198,7 @@ class VwapGuarded(Strategy):
             band_long=float(get_setting(settings, f"{CONFIG_PREFIX}.band.long")),
             band_short=float(get_setting(settings, f"{CONFIG_PREFIX}.band.short")),
             min_vwap_bars=int(get_setting(settings, f"{CONFIG_PREFIX}.min_vwap_bars")),
+            std_window=int(get_setting(settings, f"{CONFIG_PREFIX}.std_window")),
             adx_period=int(get_setting(settings, f"{CONFIG_PREFIX}.regime.adx_period")),
             adx_max=float(get_setting(settings, f"{CONFIG_PREFIX}.regime.adx_max")),
             ema_period=int(get_setting(settings, f"{CONFIG_PREFIX}.regime.ema_period")),

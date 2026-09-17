@@ -221,6 +221,33 @@ def average_true_range(frame: pd.DataFrame, period: int) -> float | None:
     return float(true_range.mean())
 
 
+def session_vwap_series(frame: pd.DataFrame) -> pd.Series:
+    """Her barın KENDİ seansına (UTC gün) çapalı, o bara kadarki hacim ağırlıklı VWAP'i.
+
+    `anchored_vwap` tek bir çapadan tek bir SAYI verir; bu ise her bar için o seansın o
+    ana kadarki VWAP'ini verir, yani bir SERİ. İkisi son barda birebir aynı değeri
+    üretir (aynı toplam, aynı ağırlıklar) — fark, seriye ihtiyaç duyan tarafın
+    (VWAP'ten sapmanın KENDİ dağılımını ölçmek isteyen bir σ tahmincisi) geçmiş barların
+    sapmasını da okuyabilmesidir.
+
+    Çapa her UTC gününde sıfırlanır. Gün sınırını aşan bir pencere iki seansın
+    sapmalarını yan yana görür ve bu bilinçlidir: alternatif, günün ilk 20 barında σ'yı
+    hiç hesaplayamamak, yani modeli her gün beş saat kör bırakmaktı.
+
+    Hacmi sıfır olan bar tipik fiyata düşer (VWAP tanımsız değil, ağırlıksızdır):
+    bölme yapılmaz, o bara kadarki ağırlık toplamı sıfırsa değer NaN kalır ve çağıran
+    tarafta zaten σ NaN olur.
+    """
+    if frame.empty:
+        return pd.Series(dtype="float64", index=frame.index)
+    prices = typical_price(frame)
+    volumes = frame["volume"].astype("float64")
+    sessions = frame.index.normalize()
+    weighted = (prices * volumes).groupby(sessions).cumsum()
+    total = volumes.groupby(sessions).cumsum()
+    return weighted / total.where(total > 0.0)
+
+
 def adx(frame: pd.DataFrame, period: int) -> float | None:
     """Ortalama yön endeksi (ADX); yeterli bar yoksa None.
 

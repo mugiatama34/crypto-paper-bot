@@ -3534,3 +3534,119 @@ karar yeniden açılır. O zamana kadar iki skaler yeterlidir.
 
 Bu, ölçüm katmanının kendi kuralını kendine uygulamasıdır: bir aracın eklenmesi de
 "ölçülmeden karar verilmez" ilkesine tabidir.
+
+---
+
+## 45. Kopyanın canlıya hazırlanmış uyarlaması (model 18) — ve "2.5σ" sayısının hangi σ'ya ait olduğu
+
+**İstenen.** Mevcut `vwap_clone`un (model 13) canlı işleme uygun hâle getirilmesi: her
+işlemde taker ücreti + kayma, bir sonraki bar açılışından dolum, günlük zarar limiti ve
+kill-switch, kronik eksi sembollerin elenmesi, GitHub Actions yerine sürekli süreç; rejim
+filtresi (ADX / EMA eğimi / BTC trendi), seans VWAP'i, uçta tükenme şartı, yön asimetrisi,
+2.5σ bant tabanı, azami tutuş süresi, volatiliteye göre risk, korelasyon limiti; ve
+öğrenme tarafında maliyet + drawdown içeren ödül, ε 0.25 → 0.10, sembol eşiği → 30.
+
+### Kopyaya DOKUNULMADI; uyarlama YENİ BİR MODEL
+
+Kural 15b açıktır: değiştirilen bir kopya, kopya olmaktan çıkar ve *"dış sistem bizim
+varsayımlarımızla ne yapardı"* sorusunun cevabı kaybolur — üstelik `vwap_clone` 245
+satırlık bir defter biriktirmiş durumda ve o defterin kuralı geçmişe dönük değiştirilemez
+(kural 1). Bu yüzden uyarlama `strategies/vwap_guarded.py` olarak AYRI bir modeldir.
+13 ↔ 18 bir EKSEN DEĞİL, bir toplam farktır (13 ↔ 14 satırının aynı durumu).
+
+### Zaten yürürlükte olan iki madde: artık testle sabit
+
+İki istek bu depoda halihazırda geçerliydi ve bunu yalnızca `config.yaml`ın yorumları
+söylüyordu — yorum bir garanti değildir:
+
+- **Taker + kayma:** 5.000 notional gidiş-dönüş `2 × 0.00055 × 5000 = 5.50 USDT` ücret ve
+  her dolumda 5 bp kayma. Test: `tests/test_live_readiness.py`.
+- **Bir sonraki barın açılışından dolum:** kural 13, motorun kendi testlerinde sabit
+  (`test_engine.py::test_pending_order_fills_at_the_next_bar_open`). İkinci bir test
+  yazılmadı — kuralın tek yeri motordur.
+
+Ayrıca R'nin PAYININ net olduğu (ödül maliyeti zaten içeriyor) da artık testlidir:
+`test_realized_pnl_is_net_of_fee_and_slippage`.
+
+### Websocket YOK ve bu bir eksiklik değil, kural 12'nin sonucu
+
+Sürekli süreç yazıldı (`scripts/live_loop.py`, `docs/live_runner.md`): bar kapandıktan
+saniyeler sonra turu kendisi başlatır, düşecek bir cron kalmaz (karar 39'un ölçtüğü kayıp:
+tetiklemelerin ~%91'i düşüyordu, barların %26'sı sinyalsizdi). Websocket eklenmedi çünkü
+`MarketData` yalnızca KAPANMIŞ barları içerir (kural 12) ve dolum bir sonraki barın
+açılışındadır (kural 13): WS'in yapabileceği tek iş bar kapanışını birkaç saniye önce
+duyurmaktır, süreç onu zaten takvimden bilir. Karşılığında ikinci bir veri yolu (kural 5
+riski), yeni bir bağımlılık ve yeniden bağlanma durumu gelirdi. **Gerçek emir gönderen bir
+katman eklenirse karar yeniden açılır:** orada WS'in işi fiyat değil EMİR DURUMUDUR.
+
+### Koşu A DÜŞTÜ — ve düşme sebebi modelden önce HARNESS'tı
+
+`backtest.yml` #13 (`35225456103`), pencere 2026-06-25 → 08-16, `--history-bars 6000`,
+modeller `vwap_guarded,vwap_clone,vwap_managed,scalp_fixed,random_ctrl`.
+
+Koşu metrik aşamasında hata verdi:
+
+```
+backtest koşulamadı: 'arm' etiketi reason kuyruğunda yok:
+'KONTROL GRUBU: bilgisiz çekiliş — 13 uygun sembol arasından ETH-USDT-SWAP, yön short; ...'
+```
+
+**`random_ctrl` scalp katmanında KOŞTURULAMAZ** ve bu bir arıza değil, tasarımın sonucudur:
+katmanın kırılımları `arm` içerir (`layers.scalp.breakdowns`) ve `core/tags.py::parse_tag`
+etiketsiz satırda bilerek `TagError` fırlatır (etiketsizi atlamak kırılımı sessizce
+eksiltirdi). `random_ctrl` base katmanının modelidir ve kol etiketi yazmaz.
+
+**Bunun bir sonucu var ve kayda geçer:** scalp katmanında kabul çıtasının **E kapısı
+(edge) değerlendirilemez**, çünkü `acceptance.control_model` o katmanda hiç koşmaz —
+tıpkı C-3'ün (çıpayı geç) değerlendirilememesi gibi (`docs/backtest.md > 4`). Eksik bir
+çıta, geçilmiş bir çıta gibi gösterilmez.
+
+### Modelin kendisi hakkında koşudan okunan TEK şey: hiç kurulum üretmedi
+
+Tablo hiç üretilmedi, ama bar bar loglar tek bir cümleyi 5.000 kez tekrarladı:
+
+```
+vwap_guarded vwap_revert_guard 2026-07-30T20:15:00+00:00 -> 11 sembol; bant_ici=11
+vwap_guarded öğrenme durumu: band0_rr0(n=0) ... band2_rr2(n=0)
+```
+
+52 günlük pencerede **tek bir kurulum bile yok** — dolayısıyla tek bir kapanmış işlem, tek
+bir öğrenme örneği de yok. Sebep kapıların çokluğu DEĞİL; kapılara sıra bile gelmiyor,
+eleme en baştaki bant karşılaştırmasında oluyor.
+
+### Teşhis: "2.5σ" iki farklı σ'da iki farklı şeydir
+
+Ölçüm birimi hatası, aynı turda iki isteğin yan yana uygulanmasından doğdu:
+
+| | σ tahmincisi | Aynı barlarda ölçülen |
+|---|---|---|
+| Kaynak/kopya (model 13) | VWAP'ten sapmanın son **20 barlık örneklem sapması** | bant 1.5–2.5σ ile bar başına 12 sembolün **3–9'u** kurulum |
+| Seansın hacim ağırlıklı gün içi σ'su (model 14) | günün tamamının ağırlıklı dağılımı | bant **2.0σ** ile 13 sembolün **0–1'i**; canlı defterde 4 günde **1 işlem** |
+
+Kullanıcının "1.5σ gürültü, tabanı 2.5'e çek" cümlesi BİRİNCİ sütunun sayısıdır. Ben
+çapayı seansa taşırken (istek B2) σ'yı da seansın gün içi dağılımına taşıdım ve 2.5 sayısını
+olduğu gibi kullandım — ikinci sütunda 2.5σ, birinci sütundaki 2.5σ'dan kat kat seçicidir.
+Sonuç, sessizce ölen bir model.
+
+**Düzeltme, sayıyı değil BİRİMİ geri getirmektir:** çapa seans olarak KALIR (istek B2),
+σ ise kaynağın tahmincisine döner — seans VWAP'inden sapmanın son 20 barlık örneklem
+sapması (`core/indicators.py::session_vwap_series` + `rolling(20).std()`). Böylece "2.5σ"
+kullanıcının kastettiği ölçekte okunur ve bant tabanı bir SAYI olarak anlamlı kalır.
+
+**Bu düzeltme neden bir "sonuca bakıp parametre oynatma" DEĞİL** (karar 42'nin beş testi):
+düzeltmeyi savunan cümle — *"iki farklı σ tahmincisinin sayıları birbirinin yerine
+kullanılamaz"* — sonucu hiç görmemiş biri tarafından da aynen kurulabilir (test 1) ve
+modeli iyileştirmeyi değil ÖLÇÜLEBİLİR kılmayı hedefler (test 2). Yine de bir parametre
+değişikliğidir: **ileri yönlüdür**, yani yeni bir hipotezdir ve TAZE bir pencere gerektirir
+(`docs/backtest.md > 7.1`). Pencere A bu karar için artık IN-SAMPLE'dır — orada "2.5σ
+seans-ağırlıklı σ ile sıfır kurulum" GÖRÜLDÜ. Düzeltilmiş model ön-kayıtla
+(`docs/backtest.md > 6e`) ve DOKUNULMAMIŞ pencerede (B: 2026-05-01 → 06-24) koşar.
+
+### Ne değişmedi
+
+- Kopyanın (model 13) tek bir kuralı, evreni, bandı ya da defteri.
+- Maliyet, kayma, funding, likidasyon, dolum kuralı ve metrik tanımları.
+- `signals_per_bar`, katman evrenleri, kabul çıtası eşikleri.
+- Canlı cron'lar: sürekli süreç YAZILDI ama devreye ALINMADI — ikisi aynı anda koşarsa
+  aynı barı iki tetikleyici işlemeye çalışır (`docs/live_runner.md`). Cron'un kaldırılması,
+  sürecin gerçekten bir makinede koştuğu gün yapılacak bir commit'tir.

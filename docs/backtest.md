@@ -418,6 +418,56 @@ parayla işlem açma izni değildir.
 
 ---
 
+## 6e. ÖN-KAYIT — `vwap_guarded` (model 18), σ birimi düzeltildikten SONRA
+
+**Bu bölüm koşudan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.**
+
+**Neden ikinci bir ön-kayıt.** §6d'nin koşusu (#13) iki şey gösterdi: (a) `random_ctrl`
+scalp katmanında koşturulamaz (kol etiketi yazmaz, katmanın kırılımı `TagError` fırlatır);
+(b) model 52 günlük pencerede **tek bir kurulum bile üretmedi**, çünkü "2.5σ" sayısı
+kaynağın σ'suna aitken seansın hacim ağırlıklı gün içi σ'suyla uygulanmıştı — kat kat
+seçici bir eşik (karar 45). Düzeltme σ TAHMİNCİSİNİ kaynağınkine döndürür (seans
+VWAP'inden sapmanın son 20 barlık örneklem sapması); çapa SEANS olarak kalır.
+
+Bu bir parametre değişikliğidir, dolayısıyla **§7.1 gereği yeni bir hipotezdir ve TAZE bir
+pencere ister.** Pencere A (2026-06-25 → 08-16) bu karar için artık IN-SAMPLE'dır: orada
+"sıfır kurulum" görüldü. Koşu B'nin penceresi §6d'de zaten yazılıydı ve o güne kadar
+HİÇ KOŞULMADI.
+
+**Pencere (tek).** 2026-05-01 → 2026-06-24, `--history-bars 6000`. 17 Ağustos 2026'dan
+öncedir (§6: `atr_multiple` kalibrasyonunun IS penceresi dışında).
+
+**Kıyas kümesi:** `vwap_guarded`, `vwap_clone`, `vwap_managed`, `scalp_fixed`.
+`random_ctrl` ÇIKARILDI — katmanda koşamıyor. **Sonucu şudur: C-2 (edge, kontrolü marjla
+geç) bu katmanda DEĞERLENDİRİLEMEZ**, tıpkı C-3 (çıpayı geç) gibi. Eksik çıta, geçilmiş
+çıta sayılmaz; kıyasın kalan çıpası `scalp_fixed`tir ve o bir KONTROL DEĞİL, katmanın
+geometrisidir.
+
+**ÖN-KAYITLI TAHMİNLER** (sonucu görmeden; §6d'nin listesiyle aynı, P2 ve P5 kopyaya
+karşı okunur):
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | ortalama R (`vwap_guarded`) | **> 0** | ≤ 0 |
+| **P2** | ortalama R farkı | `vwap_guarded` > `vwap_clone` | ≤ 0 |
+| **P3** | örneklem | n ≥ 30 (B-1) | n < 30 → satır OKUNMAZ |
+| **P4** | stop bandı | ⚠B yanmaz (C-4) | yanarsa kıyas geçersiz |
+| **P5** | işlem sayısı | `vwap_guarded` < `vwap_clone` | tersi: kapılar elemiyor |
+| **P6** | öğrenmenin izi | `pick=exploit` ort. R > `pick=explore` | düşükse öğrenme gürültü seçiyor |
+
+**P1 birincildir.** P3 ayrı bir öneme sahiptir: §6d'de sıfır çıktı ve düzeltmenin
+ölçtüğü ilk şey modelin YAŞAYIP yaşamadığıdır. n yine 30'un altında kalırsa sonuç "model
+kötü" değil, **"bu kapı kümesi bu pencerede ölçülemez"**tir ve doğru hamle kapıyı
+gevşetmek DEĞİL (o, sonucu görüp parametre oynatmaktır), daha uzun bir pencere ya da
+tezden vazgeçmektir.
+
+**Sembol elemesi sapması §6d'deki gibi geçerlidir** (PENGU/ETHFI; sonuç o eksende
+IN-SAMPLE).
+
+**Çoklu karşılaştırma (§7.5).** Bu, sicildeki **3.** hipotezdir.
+
+---
+
 ## 6c. ÖN-KAYIT SİCİLİ — her hipotez, sonucu ne olursa olsun, buraya yazılır
 
 **Bu tablo §7.5'in ("çoklu karşılaştırma açıkça raporlanır") tutulan hâlidir.** §7.5 bir
@@ -433,9 +483,10 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | # | Hipotez | Ön-kayıt | Pencere | Birincil tahmin | Sonuç |
 |---|---|---|---|---|---|
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
-| 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16, B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | _koşu bekliyor_ |
+| 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16 | P1: ortalama R > 0 | **ÖLÇÜLEMEDİ** — σ birimi hatası: 52 günde 0 kurulum; koşu ayrıca `random_ctrl` yüzünden düştü (karar 45) |
+| 3 | `vwap_guarded` (σ birimi düzeltilmiş): aynı tahminler, taze pencere | §6e | B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | _koşu bekliyor_ |
 
-**Araştırmadan çıkan öneri sayısı: 10.** Bunların 2'si test edildi (yukarıdaki), 4'ü
+**Araştırmadan çıkan öneri sayısı: 10.** Bunların 3'ü test edildi (yukarıdakiler), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
 hakkında bir iddia taşımaz), 2'si reddedildi (işlem sıklığı tavanı, sembol eleme), 3'ü

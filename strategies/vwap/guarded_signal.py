@@ -11,12 +11,20 @@ YARDIMCILARIDIR: kural mantığı paylaşılmaz, aritmetik paylaşılır.
 
 1. **Çapa.** Kaynak sistem VWAP'i son 300 barın KÜMÜLATİFİ olarak kurar; çapa her barda
    kayar, yani "ortalama işlem maliyeti" hiçbir seansa ait değildir. Burada çapa GÜNÜN
-   (UTC) açılışıdır: VWAP o seansın hacim ağırlıklı ortalama maliyetidir ve sapma o
-   seansın kendi hacim ağırlıklı σ'sıyla ölçülür (`core/indicators.py::anchored_vwap`).
-2. **Bant.** 1.5σ bu geometride gürültüdür — 15 dakikalık barda fiyat gün içi VWAP'in
-   1.5σ dışına sürekli çıkar. Taban 2.5σ'dır ve LONG tarafı DAHA GENİŞ bir bant ister
-   (`band.long`): düşen bir piyasada "ucuz" görünen her bar bir dönüş adayı değildir ve
-   ölçülen defterde beklenti farkı tam olarak bu tarafta duruyordu.
+   (UTC) açılışıdır: VWAP o seansın hacim ağırlıklı ortalama maliyetidir
+   (`core/indicators.py::session_vwap_series`).
+2. **Bant.** 1.5σ bu geometride gürültüdür; taban 2.5σ'dır ve LONG tarafı DAHA GENİŞ bir
+   bant ister (`band.long`): düşen bir piyasada "ucuz" görünen her bar bir dönüş adayı
+   değildir ve ölçülen defterde beklenti farkı tam olarak bu tarafta duruyordu.
+
+   **σ TAHMİNCİSİ değişmez ve bu bir ayrıntı değil, sayının anlamıdır.** "2.5σ" ifadesi
+   kaynağın σ'suna aittir: VWAP'ten sapmanın son `std_window` (20) barlık ÖRNEKLEM
+   sapması. Çapayı değiştirirken σ'yı da değiştirmek (ör. seansın hacim ağırlıklı gün içi
+   dağılımına geçmek) aynı sayıyı BAŞKA bir birimde okumak olurdu — ölçüldü: o tanımda
+   2.5σ eşiği 52 günlük bir pencerede TEK BİR kurulum bile üretmiyor, yani model sessizce
+   ölür (docs/decisions.md > 45). Bu yüzden değişen tek şey ÇAPADIR: sapma artık kayan
+   bir pencereye değil, günün ortalama maliyetine göre ölçülür; dağılımı ise yine son 20
+   barın kendi sapmasıdır.
 3. **Rejim.** Ortalamaya dönüş tezinin geçersiz olduğu tek durum TRENDDİR. Üç kapı bunu
    keser: sembolün kendi ADX'i, sembolün EMA eğimi ve BTC'nin saatlik yönü. Üçü de
    "fiyat uzaklaştı" ile "fiyat gidiyor"u ayırmak içindir.
@@ -55,11 +63,12 @@ import pandas as pd
 
 from core.indicators import (
     adx,
-    anchored_vwap,
     average_true_range,
     bars_until,
     ema,
     resample_ohlcv,
+    session_vwap_series,
+    typical_price,
 )
 from strategies.base import Direction, MarketData
 from strategies.scalp.arms import SymbolView, symbol_views
@@ -105,6 +114,7 @@ class GuardParams:
     band_long: float
     band_short: float
     min_vwap_bars: int
+    std_window: int
     adx_period: int
     adx_max: float
     ema_period: int
@@ -302,15 +312,30 @@ def _evaluate(
     sembolü "trend güçlü" diye saymak olurdu.
     """
     frame = view.frame
-    if len(frame) < 2:
+    if len(frame) < max(2, params.std_window):
         return None, NO_VWAP
-    vwap = anchored_vwap(frame, anchor=view.as_of.normalize())
-    if vwap is None or vwap.bars < params.min_vwap_bars or vwap.deviation <= 0.0:
+    anchor = view.as_of.normalize()
+    session = session_vwap_series(frame)
+    # σ: seans VWAP'inden sapmanın son `std_window` barlık ÖRNEKLEM sapması (ddof=1,
+    # pandas varsayılanı) — kaynağın tahmincisiyle BİREBİR aynı, yalnızca çapa farklı.
+    deviation = typical_price(frame) - session
+    sigma = float(deviation.rolling(params.std_window).std().iloc[-1])
+    value = float(session.iloc[-1])
+    bars = int((frame.index >= anchor).sum())
+    if (
+        not math.isfinite(sigma)
+        or sigma <= 0.0
+        or not math.isfinite(value)
+        or bars < params.min_vwap_bars
+    ):
         return None, NO_VWAP
 
     previous = float(frame["close"].iloc[-2])
-    z_prev = (previous - vwap.value) / vwap.deviation
-    z_now = (view.close - vwap.value) / vwap.deviation
+    # z, `as_of` VWAP'ine göredir (model 14 ile aynı karar): soru "önceki bar ŞU ANKİ
+    # ortalama maliyetin ne kadar uzağındaydı"dır; her bar için o barın kendi VWAP'ini
+    # kullanmak iki farklı ölçeği karşılaştırmak olurdu.
+    z_prev = (previous - value) / sigma
+    z_now = (view.close - value) / sigma
 
     direction: Direction = "long" if z_prev < 0.0 else "short"
     band = params.band_for(direction)
@@ -350,11 +375,11 @@ def _evaluate(
             direction=direction,
             entry_price=view.close,
             atr=view.atr,
-            vwap=vwap.value,
-            deviation=vwap.deviation,
+            vwap=value,
+            deviation=sigma,
             z_prev=z_prev,
             z_now=z_now,
-            vwap_bars=vwap.bars,
+            vwap_bars=bars,
             adx=strength.adx,
             exhaustion=exhaustion,
             btc_bias=bias,

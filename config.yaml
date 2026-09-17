@@ -442,6 +442,12 @@ vwap:
     # ~%2.05 stop mesafesi verir, beş kollu modeller ~%1.95 (karar 26).
     atr_multiple: 2.5
     min_vwap_bars: 8          # seans çapasından bu kadar bar geçmeden sapma anlamlı değil
+    # σ TAHMİNCİSİ kaynağınkiyle (ve kopyanınkiyle) BİREBİR aynıdır: VWAP'ten sapmanın
+    # son 20 barlık ÖRNEKLEM sapması. Değişen tek şey ÇAPADIR (kayan 300 bar -> seans).
+    # Gerekçe ölçümdür: seansın hacim ağırlıklı gün içi σ'suna geçildiğinde "2.5σ" başka
+    # bir birim oluyor ve 52 günlük pencerede TEK bir kurulum bile çıkmıyordu
+    # (docs/decisions.md > 45). Bant sayısı ancak σ'nın tanımı sabitken anlamlıdır.
+    std_window: 20
 
     # Azami tutuş: 10 × 15m = 2.5 saat (istenen 8-12 bar aralığının ortası). Dolum bir
     # SONRAKİ barın açılışındadır (kural 13), yani gerçek ömür 11 bardır. Kural

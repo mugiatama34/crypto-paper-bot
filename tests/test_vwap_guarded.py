@@ -12,7 +12,9 @@ modeldir ve bu modelin varlığı onun kurallarını değiştirmez.
 
 from __future__ import annotations
 
+import copy
 import random
+from dataclasses import replace
 from typing import Any, Sequence
 
 import pandas as pd
@@ -39,8 +41,25 @@ SYMBOL = "SOL-USDT-SWAP"
 
 
 @pytest.fixture()
-def config() -> dict[str, Any]:
+def production() -> dict[str, Any]:
+    """Katmanın GERÇEK ayarları — sözleşmeyi (bant tabanı, epsilon, eşikler) ölçen testler."""
     return resolve_layer(load_config(), "scalp").config
+
+
+@pytest.fixture()
+def config(production: dict[str, Any]) -> dict[str, Any]:
+    """Davranış testleri için TEK KOLLU grid.
+
+    Üretim grid'i 9 kombinasyondur ve bandit kombinasyonu SEMBOL BAŞINA çeker; sentetik
+    bir kurulumun hangi bandı göreceği çekilişe bağlı olurdu ve test "kapı çalışıyor mu"
+    yerine "hangi kol çekildi" sorusunu ölçerdi. Grid'i tek kola indirmek kapıları
+    DEĞİŞTİRMEZ, yalnızca çekilişi sabitler; bant TABANININ kendisi ayrı ve açık bir
+    testte (`test_config_keeps_the_long_band_wider`) üretim config'inden okunur.
+    """
+    tuned = copy.deepcopy(production)
+    tuned["vwap"]["guarded"]["bandit"]["band_mults"] = [2.5]
+    tuned["vwap"]["guarded"]["bandit"]["target_reward_risks"] = [2.0]
+    return tuned
 
 
 def _closes(level: float = 100.0) -> list[float]:
@@ -184,18 +203,50 @@ def test_setup_without_a_turn_is_rejected(config: dict[str, Any]) -> None:
     assert model.take_survey()[guarded_signal.STILL_EXTENDING] == 1
 
 
-def test_trending_symbol_is_rejected(config: dict[str, Any]) -> None:
-    """Ortalamaya dönüş tezi trendde geçersizdir: ADX/EMA eğimi kapısı yanar."""
-    model = VwapGuarded(config=config)
-    trending = frame(
-        [100.0 + 0.5 * i for i in range(BARS)], spread=0.2, freq="15min", start=START
+def test_the_regime_gate_is_the_thing_that_eliminates(config: dict[str, Any]) -> None:
+    """AYNI çerçeve: eşik gevşekken kurulum, sıkıyken `trend_guclu`.
+
+    Kapı, sentetik bir trend çerçevesi kurarak değil EŞİK oynatılarak ölçülür: 15
+    dakikalık bir seride "hem geçerli sapma-dönüş hem güçlü trend" kurmak, σ'yı da
+    büyüttüğü için kurulumun kendisini yok eder — yani test kapıyı değil fixture'ı
+    ölçerdi. Eşiği oynatmak ise kapının TEK başına eleyip elemediğini gösterir.
+    """
+    bars = _deviating(direction="long")
+    snapshot = _market({SYMBOL: bars})
+    loose = guarded_signal.GuardParams(
+        band_long=3.0, band_short=2.5, min_vwap_bars=8, std_window=20, adx_period=14,
+        adx_max=100.0, ema_period=50, slope_bars=10, max_slope_atr=100.0,
+        exhaustion_lookback=20, climax_mult=1.5, rejection_wick_ratio=0.5,
+    )
+    strict = replace(loose, adx_max=0.0)
+
+    _, open_gate = guarded_signal.scan(
+        snapshot, atr_period=14, params_for=guarded_signal.fixed_params(loose),
+        bias="flat", symbols=[SYMBOL],
+    )
+    _, closed_gate = guarded_signal.scan(
+        snapshot, atr_period=14, params_for=guarded_signal.fixed_params(strict),
+        bias="flat", symbols=[SYMBOL],
     )
 
-    signals = model.generate_signals(_market({SYMBOL: trending}))
+    assert open_gate.counts[guarded_signal.SETUP] == 1
+    assert closed_gate.counts[guarded_signal.TRENDING] == 1
 
-    assert signals == []
-    survey = model.take_survey()
-    assert survey.get(guarded_signal.TRENDING, 0) + survey.get(guarded_signal.INSIDE_BAND, 0) == 1
+
+def test_a_steep_ema_slope_also_closes_the_gate(config: dict[str, Any]) -> None:
+    """İki ölçü "veya" ile bağlıdır: ADX sessizken EMA eğimi tek başına eleyebilmeli."""
+    params = guarded_signal.GuardParams(
+        band_long=3.0, band_short=2.5, min_vwap_bars=8, std_window=20, adx_period=14,
+        adx_max=100.0, ema_period=50, slope_bars=10, max_slope_atr=0.0,
+        exhaustion_lookback=20, climax_mult=1.5, rejection_wick_ratio=0.5,
+    )
+
+    _, survey = guarded_signal.scan(
+        _market({SYMBOL: _deviating(direction="long")}), atr_period=14,
+        params_for=guarded_signal.fixed_params(params), bias="flat", symbols=[SYMBOL],
+    )
+
+    assert survey.counts[guarded_signal.TRENDING] == 1
 
 
 def test_long_needs_a_wider_band_than_short() -> None:
@@ -205,7 +256,8 @@ def test_long_needs_a_wider_band_than_short() -> None:
     sayıdır ve `band_for` onu tek yerde taşır.
     """
     params = guarded_signal.GuardParams(
-        band_long=8.0, band_short=2.5, min_vwap_bars=8, adx_period=14, adx_max=22.0,
+        band_long=8.0, band_short=2.5, min_vwap_bars=8, std_window=20, adx_period=14,
+        adx_max=22.0,
         ema_period=50, slope_bars=10, max_slope_atr=1.5, exhaustion_lookback=20,
         climax_mult=1.5, rejection_wick_ratio=0.5,
     )
@@ -226,8 +278,8 @@ def test_long_needs_a_wider_band_than_short() -> None:
     assert up_candidates[0].direction == "short"
 
 
-def test_config_keeps_the_long_band_wider(config: dict[str, Any]) -> None:
-    band = config["vwap"]["guarded"]["band"]
+def test_config_keeps_the_long_band_wider(production: dict[str, Any]) -> None:
+    band = production["vwap"]["guarded"]["band"]
 
     assert float(band["long"]) > float(band["short"]) >= 2.5
 
@@ -272,9 +324,9 @@ def test_survey_counts_every_examined_symbol_exactly_once(config: dict[str, Any]
     assert counted == len(frames)
 
 
-def test_universe_excludes_the_thin_book_symbols(config: dict[str, Any]) -> None:
+def test_universe_excludes_the_thin_book_symbols(production: dict[str, Any]) -> None:
     """PENGU/ETHFI elemesi config'te AÇIKÇA durur — sessiz bir filtre değildir."""
-    universe = config["vwap"]["guarded"]["universe"]
+    universe = production["vwap"]["guarded"]["universe"]
 
     assert "PENGU-USDT-SWAP" not in universe
     assert "ETHFI-USDT-SWAP" not in universe
@@ -522,24 +574,24 @@ def test_first_loss_counts_as_drawdown_even_without_a_prior_peak() -> None:
     assert _summarize([-2.0], weight=1.0).max_drawdown_r == pytest.approx(2.0)
 
 
-def test_exploration_rate_is_one_tenth(config: dict[str, Any]) -> None:
-    bandit = config["vwap"]["guarded"]["bandit"]
+def test_exploration_rate_is_one_tenth(production: dict[str, Any]) -> None:
+    bandit = production["vwap"]["guarded"]["bandit"]
 
     assert float(bandit["epsilon"]) == pytest.approx(0.10)
     # Sıfıra İNMEZ: susturulan kombinasyon bir daha ölçülemez.
     assert float(bandit["epsilon"]) > 0.0
 
 
-def test_symbol_statistics_need_the_sample_gate(config: dict[str, Any]) -> None:
+def test_symbol_statistics_need_the_sample_gate(production: dict[str, Any]) -> None:
     """Sembol eşiği kabul çıtasının örneklem kapısıyla AYNI sayıdır."""
-    assert int(config["vwap"]["guarded"]["bandit"]["min_symbol_samples"]) >= int(
-        config["acceptance"]["min_trades"]
+    assert int(production["vwap"]["guarded"]["bandit"]["min_symbol_samples"]) >= int(
+        production["acceptance"]["min_trades"]
     )
 
 
-def test_a_thin_symbol_falls_back_to_the_global_average(config: dict[str, Any]) -> None:
+def test_a_thin_symbol_falls_back_to_the_global_average(production: dict[str, Any]) -> None:
     """5 örnekle parlayan bir hücre, 30 örneklik eşiği geçmeden seçimi belirleyemez."""
-    model = VwapGuarded(config=config)
+    model = VwapGuarded(config=production)
     day = pd.Timestamp("2026-01-02 00:00:00", tz="UTC")
     best, thin = model._combos[0].key, model._combos[1].key
     trades = [
@@ -619,11 +671,11 @@ def test_draws_are_reproducible_for_the_same_bar(config: dict[str, Any]) -> None
     assert [signal.reason for signal in first] == [signal.reason for signal in second]
 
 
-def test_the_stop_scale_is_not_a_learned_axis(config: dict[str, Any]) -> None:
+def test_the_stop_scale_is_not_a_learned_axis(production: dict[str, Any]) -> None:
     """`atr_multiple` grid'e girseydi model kendi ⚠B bandını koşu sırasında kaydırırdı."""
-    bandit = config["vwap"]["guarded"]["bandit"]
+    bandit = production["vwap"]["guarded"]["bandit"]
 
     assert "atr_multiple" not in bandit
-    assert all(float(band) >= float(config["vwap"]["guarded"]["band"]["short"])
+    assert all(float(band) >= float(production["vwap"]["guarded"]["band"]["short"])
                for band in bandit["band_mults"])
 
