@@ -181,35 +181,93 @@ def test_symbol_without_the_as_of_bar_is_skipped() -> None:
 # --------------------------------------------------------------------------- #
 # Geometri (ön-kayıtlı sayılar)
 # --------------------------------------------------------------------------- #
-def test_stop_sits_one_and_a_half_atr_below_the_close() -> None:
+def test_stop_sits_one_and_a_half_wilder_atr_below_the_close() -> None:
+    """Yumuşatma WILDER'dır ve bu bir spec uyumudur (docs/backtest.md > 6d > TADİLAT-1).
+
+    Test iki şeyi birden çiviler: doğru çarpan VE doğru yumuşatma. Yalnızca çarpanı
+    ölçen bir test, yumuşatma sessizce `simple`a dönse yeşil kalırdı — oysa stop ve
+    hedef mesafelerinin tamamı o değerden türüyor.
+    """
     closes = _cross_up()
     candles = frame(closes)
-    atr = average_true_range(candles, 14)
-    assert atr is not None
+    wilder = average_true_range(candles, 14, smoothing="wilder")
+    simple = average_true_range(candles, 14)
+    assert wilder is not None and simple is not None
+    assert wilder != pytest.approx(simple), "senaryo iki yumuşatmayı ayırmıyor: test bir şey ölçmez"
+
     signal = _signals(closes)[0]
-    assert signal.stop_price == pytest.approx(closes[-1] - 1.5 * atr)
+    assert signal.stop_price == pytest.approx(closes[-1] - 1.5 * wilder)
+    assert signal.stop_price != pytest.approx(closes[-1] - 1.5 * simple)
+
+
+def test_atr_smoothing_is_declared_in_config_not_hardcoded() -> None:
+    """Bildirim config'te durur: sessiz bir varsayılan, spec farkını görünmez kılardı."""
+    assert get_setting(_config(), "ema_trend.atr_smoothing") == "wilder"
+
+
+def test_the_project_default_smoothing_is_unchanged() -> None:
+    """KÜRESEL tanım DEĞİŞMEDİ: bu modelin bildirimi diğer modellere sızmaz.
+
+    Küresel bir değişiklik, canlı koşan her modelin stop ölçeğini o commit'ten itibaren
+    kaydırır ve biriken defteri ikiye bölerdi (docs/decisions.md > 25'in `fee_rate` hatası).
+    """
+    from strategies.trend import Trend
+
+    candles = frame(_cross_up())
+    assert average_true_range(candles, 14) == pytest.approx(
+        average_true_range(candles, 14, smoothing="simple")
+    )
+    # Kıyas hedefi `trend` hâlâ düz ortalamayı kullanıyor: stop'u 2×simple ATR'dir.
+    signals = Trend(config=_config()).generate_signals(
+        market({SYMBOL: frame([200.0 - 0.5 * i for i in range(220)] +
+                              [200.0 - 0.5 * 219 + 6.0 * (i + 1) for i in range(8)])})
+    )
+    simple = average_true_range(frame([200.0 - 0.5 * i for i in range(220)] +
+                                      [200.0 - 0.5 * 219 + 6.0 * (i + 1) for i in range(8)]), 14)
+    for signal in signals:
+        if signal.direction == "long":
+            assert abs(signal.stop_price - (
+                float(200.0 - 0.5 * 219 + 6.0 * 8) - 2.0 * simple)) < 1e-6
+
+
+def test_stop_stays_under_the_shared_atr_ceiling_despite_its_own_smoothing() -> None:
+    """Kural 14'ün tavanı ORTAK tanımla ölçülür (core/engine.py), modelinkiyle değil.
+
+    Tavanı modelin kendi yumuşatmasıyla ölçmek, her modele kendi tavanını genişletme
+    imkânı verirdi — tavan o zaman bir kural olmaktan çıkardı. Bu yüzden model, ORTAK
+    tanıma göre de tavanın altında kalmalıdır; kalmasaydı motor sinyali eler ve model
+    ölçülemeyen bir nedenle işlem kaybederdi.
+    """
+    ceiling = float(get_setting(_config(), "max_stop_atr_multiple"))
+    closes = _cross_up()
+    simple = average_true_range(frame(closes), 14)
+    assert simple is not None
+    signal = _signals(closes)[0]
+    assert (closes[-1] - signal.stop_price) / simple <= ceiling
 
 
 def test_target_is_exactly_two_r_in_a_single_slice() -> None:
     """Hedef 2.0R ve TEK dilim: fraction < 1.0 olsaydı pozisyon iki ölçüm satırı üretirdi."""
     closes = _cross_up()
     signal = _signals(closes)[0]
-    risk = closes[-1] - signal.stop_price
+    risk = closes[-1] - signal.stop_price  # R, modelin kendi ATR'sinden gelir
     assert len(signal.take_profits) == 1
     assert signal.take_profits[0].fraction == pytest.approx(1.0)
     assert signal.take_profits[0].price == pytest.approx(closes[-1] + 2.0 * risk)
 
 
 def test_stop_distance_stays_inside_the_cost_comparability_band() -> None:
-    """Kural 14: 1.5×ATR hem 1–2.5 bandının içinde hem katmanın tavanının altında."""
-    ceiling = float(get_setting(_config(), "max_stop_atr_multiple"))
+    """Kural 14: 1.5×ATR bandın (1–2.5) içinde — modelin KENDİ yumuşatmasıyla ölçülür.
+
+    Band bir MODEL kuralıdır ("bu model hangi ölçekte işlem yapıyor"), tavan ise bir
+    KATMAN kuralıdır; bu yüzden band modelin kendi tanımıyla, tavan ortak tanımla ölçülür.
+    """
     closes = _cross_up()
-    atr = average_true_range(frame(closes), 14)
+    atr = average_true_range(frame(closes), 14, smoothing="wilder")
     assert atr is not None
     signal = _signals(closes)[0]
     multiple = (closes[-1] - signal.stop_price) / atr
     assert 1.0 <= multiple <= 2.5
-    assert multiple <= ceiling
 
 
 def test_signal_uses_common_risk_sizing_and_no_exit_management() -> None:
@@ -239,7 +297,7 @@ def test_reason_records_both_emas_and_the_stop_multiple() -> None:
     """Defterin `reason` kuyruğu denetim izidir: hangi kesişim, hangi mesafe."""
     signal = _signals(_cross_up())[0]
     assert "EMA21" in signal.reason and "EMA55" in signal.reason
-    assert "1.5×ATR(14)" in signal.reason
+    assert "1.5×ATR(14,wilder)" in signal.reason
 
 
 # --------------------------------------------------------------------------- #
@@ -254,7 +312,10 @@ def test_zero_atr_skips_the_setup_and_says_so(
     ATR'yi sıfırlayan 15 düz bar, EMA'ları da birbirine yapıştırıp kesişimi öldürür.
     Senaryoyu zorlamak yerine göstergeyi değiştirmek, tam olarak bu dalı ölçer.
     """
-    monkeypatch.setattr("strategies.ema_trend.average_true_range", lambda frame, period: 0.0)
+    monkeypatch.setattr(
+        "strategies.ema_trend.average_true_range",
+        lambda frame, period, *, smoothing="simple": 0.0,
+    )
     with caplog.at_level(logging.INFO, logger="strategies.ema_trend"):
         signals = _signals(_cross_up())
 
@@ -272,7 +333,8 @@ def test_stop_below_zero_skips_the_setup_and_says_so(
     """
     closes = _cross_up()
     monkeypatch.setattr(
-        "strategies.ema_trend.average_true_range", lambda frame, period: closes[-1]
+        "strategies.ema_trend.average_true_range",
+        lambda frame, period, *, smoothing="simple": closes[-1],
     )
     with caplog.at_level(logging.INFO, logger="strategies.ema_trend"):
         signals = _signals(closes)

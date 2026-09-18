@@ -22,6 +22,17 @@ Neden stop 1.5×ATR: stop mesafesi aynı zamanda MALİYET ÖLÇEĞİDİR (kural 
 ile taşır ve R başına daha çok komisyon öder. 1.5, kuralın 1×–2.5×ATR bandının içindedir
 ve katmanın `max_stop_atr_multiple` tavanına (3.0) takılmaz.
 
+**ATR yumuşatması Wilder'dır (RMA), projenin varsayılanı `simple` değil.** Bu bir
+parametre tercihi değil SPEC uyumudur: kaynak sistem `ta.atr` (Wilder) ile geliştirildi ve
+doğrulandı, stop ve hedef mesafelerinin tamamı o değerden türüyor. Yumuşatmayı KÜRESEL
+olarak değiştirmek ise reddedildi — canlı koşan her modelin stop ölçeği o commit'ten
+itibaren değişir ve biriken defter iki ayrı ölçekten üretilmiş olurdu (docs/decisions.md >
+25'in `fee_rate` hatası). Periyot ORTAK kalır (`trailing.atr_period`); ayrışan yalnızca
+yumuşatmadır ve `config.yaml > ema_trend.atr_smoothing` ile BİLDİRİLİR. Bedeli:
+"1.5×ATR" artık modeller arası birebir kıyaslanabilir değildir — kıyas
+`avg_stop_distance_pct` kolonundan okunur (kural 14'ün zaten kullandığı ölçüt) ve motorun
+tavan kontrolü ortak tanımda kalır. Bkz. docs/backtest.md > 6d > TADİLAT-1.
+
 Neden zaman stop'u ve trailing YOK: ikisi de kaynak sistemde yok. Eklemek modeli
 ölçülmek istenen şeyden başka bir şeye çevirirdi. Bedeli ön-kayıtta yazılıdır: pozisyon
 ömrü sınırsızdır, bu yüzden OOS penceresinin embargosu VARSAYILMAZ, ÖLÇÜLÜR (dönem A'da
@@ -67,6 +78,10 @@ class EmaTrend(Strategy):
         self._slow_period = int(get_setting(settings, "ema_trend.slow_period"))
         self._stop_atr_multiple = float(get_setting(settings, "ema_trend.stop_atr_multiple"))
         self._target_reward_risk = float(get_setting(settings, "ema_trend.target_reward_risk"))
+        # Yumuşatma bu modelin BİLDİRİMİDİR (bkz. modül docstring'i): periyot ortak kalır,
+        # yumuşatma kaynak sistemin spec'inden gelir. `get_setting` eksik anahtarda patlar,
+        # yani sessiz bir varsayılana düşmek mümkün değildir.
+        self._atr_smoothing = str(get_setting(settings, "ema_trend.atr_smoothing"))
 
     def generate_signals(
         self,
@@ -106,14 +121,14 @@ class EmaTrend(Strategy):
         if not crossed_up:
             return None
 
-        atr = average_true_range(frame, self._atr_period)
+        atr = average_true_range(frame, self._atr_period, smoothing=self._atr_smoothing)
         if atr is None or atr <= 0.0:
             # Stop mesafesi üretilemiyor. Sessiz atlamak, bu modelin işlem sayısını
             # ölçülemeyen bir nedenle düşürürdü — kural 14'ün "atlama sessiz olamaz"
             # gerekçesi burada da geçerli.
             logger.info(
-                "%s %s: kesişim atlandı, ATR(%d) hesaplanamadı",
-                self.name, symbol, self._atr_period,
+                "%s %s: kesişim atlandı, ATR(%d, %s) hesaplanamadı",
+                self.name, symbol, self._atr_period, self._atr_smoothing,
             )
             return None
 
@@ -140,7 +155,8 @@ class EmaTrend(Strategy):
                 f"EMA{self._fast_period} ({fast:.6g}) EMA{self._slow_period}'i ({slow:.6g}) "
                 f"YUKARI kesti (önceki bar {fast_prev:.6g} <= {slow_prev:.6g}); "
                 f"kapanış {close:.6g}, stop {self._stop_atr_multiple:g}×ATR"
-                f"({self._atr_period})={distance:.6g} uzakta ({stop_price:.6g}), "
+                f"({self._atr_period},{self._atr_smoothing})={distance:.6g} uzakta "
+                f"({stop_price:.6g}), "
                 f"hedef {self._target_reward_risk:g}R ({target:.6g})"
             ),
         )

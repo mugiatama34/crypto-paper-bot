@@ -137,6 +137,12 @@ class BacktestResult:
     # ortalama R'sini, o sembolün o pencerede ne yaptığını bilmeden okumak yanıltıcıdır:
     # çöken bir sembolde long-only bir modelin kaybetmesi bir sinyal kusuru değildir.
     buy_hold: Mapping[str, float] = field(default_factory=dict)
+    # Sembol başına VERİ KAPSAMI: pencerenin içinde o sembolün kaç barı var ve hangi
+    # tarihte başlıyor. Sabit bir evren listesi, sembollerin o pencerede GERÇEKTEN
+    # işlem görebildiği anlamına gelmez — OKX'te 2022-01'de 13 sembolün yalnızca 9'u
+    # vardı. Kapsam yazılmazsa, iki yıllık veriye dayanan bir kâr faktörü ile iki
+    # aylık veriye dayanan biri tabloda aynı görünür.
+    coverage: Mapping[str, Any] = field(default_factory=dict)
     # Koşunun canlıdan sapan varsayımları; raporun başına basılır ki bir sayı, hangi
     # dünyada ölçüldüğü bilinmeden okunmasın.
     deviations: Mapping[str, Any] = field(default_factory=dict)
@@ -407,6 +413,17 @@ def run_backtest(
         symbol: buy_hold_return(frame["close"], start=start, end=market.as_of)
         for symbol, frame in sorted(market.ohlcv.items())
     }
+    # Kapsam PENCERENİN İÇİNDE ölçülür (`start` dışlanır, kural: `start` tohumlanan bardır
+    # ve işlenmez): anlık görüntü `history_bars` kadar daha geriye gider ama o barlar
+    # gösterge ısınması içindir, ölçümün penceresi değil.
+    coverage = {}
+    for symbol, frame in sorted(market.ohlcv.items()):
+        window = frame.loc[(frame.index > start) & (frame.index <= market.as_of)]
+        coverage[symbol] = {
+            "bars": int(len(window)),
+            "first_bar": window.index[0].isoformat() if len(window) else None,
+            "last_bar": window.index[-1].isoformat() if len(window) else None,
+        }
 
     # Kontrol modeli yarışmacı listesinde olmasa bile örnekleme girer: farkın öteki
     # tarafı odur (core/report.py ile aynı sözleşme).
@@ -430,6 +447,7 @@ def run_backtest(
         min_trades=int(get_setting(config, "acceptance.min_trades")),
         holding=holding,
         buy_hold=buy_hold,
+        coverage=coverage,
         deviations=deviations,
         acceptance=tuple(flags),
     )
@@ -899,6 +917,7 @@ def results_payload(result: BacktestResult) -> dict[str, Any]:
         "breakdowns": _jsonable(result.breakdowns),
         "holding": dict(result.holding),
         "buy_hold_pct": dict(result.buy_hold),
+        "coverage": dict(result.coverage),
     }
 
 

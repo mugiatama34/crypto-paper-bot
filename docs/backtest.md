@@ -465,6 +465,53 @@ gözlenen **azami tutuş süresi** embargo olarak uygulanır ve uygulanan değer
 cinsinden). Bu bir yan çıktı değil, ön-kayıtlı bir ölçümdür: uzun kuyruk, pozisyonların
 hedefe/stop'a varmadan beklediğini gösterir ve P2'nin bağımsız kontrolüdür.
 
+### TADİLAT-1 — ATR yumuşatması Wilder'a çevrildi (SPEC uyumu, sonuca bakılarak DEĞİL)
+
+**Bu tadilat tam koşudan ÖNCE yapıldı ve gerekçesi burada, karar anında yazıldı.** §7 bir
+ön-kaydın sonucu görüldükten sonra değiştirilmesini yasaklar; aşağıdaki kayıt o yasağın
+denetlenebilir kalması içindir — okuyucu değişikliğin ne zaman, neye bakılarak yapıldığını
+buradan görür.
+
+**Sorun bir parametre farkı değil, SPEC farkıydı.** Kaynak sistem (TradingView / Pine
+Script) `ta.atr` kullanır ve o Wilder yumuşatmasıdır (RMA); bu repo `simple` (TR'lerin düz
+ortalaması) kullanıyordu. Stop mesafesi ve hedefin TAMAMI bu değerden türüyor, yani iki
+sistem aynı kuralı koşmuyordu: "koşulan şey" ile "doğrulanan şey" ayrışmıştı.
+
+**Değişiklik:** `ema_trend` artık `config.yaml > ema_trend.atr_smoothing: "wilder"` okur.
+`core/indicators.py::average_true_range` iki yumuşatmayı da verir; **varsayılan `simple`
+olarak KALDI** ve başka hiçbir modelin sayısı değişmedi.
+
+**Küresel değişiklik REDDEDİLDİ.** Tanımı topyekûn Wilder'a çevirmek, bugün canlı koşan her
+modelin (`trend`, `meanrev`, beş kollu scalp modelleri, `vwap_managed`) stop ölçeğini o
+commit'ten itibaren kaydırırdı; biriken defterin bir kısmı bir ölçekle, kalanı başkasıyla
+üretilmiş olur ve iki dönem kıyaslanamazdı — `fee_rate`in defteri tarihli olarak böldüğü
+hatanın aynısı (docs/decisions.md > 25).
+
+**Bedeli açıkça yazılıdır:** "1.5×ATR" ifadesi artık modeller arasında birebir
+kıyaslanabilir DEĞİLDİR. Kural 14'ün kıyas ölçütü zaten ATR katı değil GERÇEKLEŞEN stop
+mesafesidir (`avg_stop_distance_pct` ve ⚠B bandı), yani kıyas o kolondan okunmaya devam
+eder. Motorun tavan kontrolü (`core/engine.py`) ORTAK tanımda kalır: her model kendi
+yumuşatmasını seçerek kendi tavanını genişletebilseydi tavan bir kural olmaktan çıkardı.
+
+**Bu tadilat bir kapıyı KURTARMIYOR.** Değişiklikten ÖNCE ölçülen BTC parite koşusu
+(`backtest.yml` run 35373017427, dönem A, tek sembollü, ön-kayıtlı maliyetle) şunu verdi:
+
+| | TradingView referansı | ölçülen (`simple` ATR) |
+|---|---|---|
+| kâr faktörü | 1.551 | **1.40** (sapma −0.151, tolerans ±0.2 → P1 GEÇTİ) |
+| kazanma oranı | %46.67 | %44.2 |
+| ödeme oranı | 1.79 | **1.76** |
+| n | — | 43 |
+
+Yani P1 kapısı `simple` ATR ile de GEÇİLMİŞTİ; tadilat düşen bir kapıyı geçirmek için
+değil, spec uyumu için yapıldı. Aynı pencerede `wilder` ile ölçülen değer de bu belgeye
+yazılacak ve **iki sayı birden durmaya devam edecek** — ilk koşuyu silmek, sonucu görüp
+geçmişi yazmak olurdu.
+
+Aynı koşudan gelen, tadilat ÖNCESİ portföy referansı (13 sembol, dönem A, `backtest.yml`
+run 35373248059): `ema_trend` n=359, ortalama R ≈ **−0.06**. Tek sembollü BTC koşusu
+(+0.24R) ile portföy koşusunun ayrışması ölçümün kendisidir, tadilatın konusu değil.
+
 ### Veri kapsamı — KOŞUDAN ÖNCE ölçüldü
 
 Bu bölüm bir sonuç değil, bir VERİ OLGUSUDUR ve ana koşudan önce ölçülmüştür (prob koşusu:

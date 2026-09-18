@@ -174,6 +174,10 @@ def coin_rows(
             rows.append({"period": period, "symbol": symbol, "failed": str(result)})
             continue
         buy_hold = result.buy_hold.get(symbol, float("nan"))
+        # Kapsam kolonları: hangi sonucun kaç yıllık veriye dayandığı satırın KENDİSİNDE
+        # görünmeli. Sabit evren listesi, sembolün o pencerede var olduğu anlamına gelmez.
+        coverage = result.coverage.get(symbol) or {}
+        bars = coverage.get("bars") or 0
         for metrics in result.metrics:
             total = metrics.total
             # `DirectionStats`i sözlüğe indirgemek yerine alan alan seçiyoruz: yükün
@@ -183,6 +187,12 @@ def coin_rows(
                     "period": period,
                     "symbol": symbol,
                     "model": metrics.model,
+                    "first_bar": coverage.get("first_bar"),
+                    "last_bar": coverage.get("last_bar"),
+                    "bars": bars,
+                    # Bar süresi katmanın ayarıdır (4H); yıl karşılığı okuyucunun
+                    # "bu sayı kaç yıllık veriye dayanıyor" sorusunun doğrudan cevabıdır.
+                    "years": round(bars * 4.0 / 24.0 / 365.0, 2) if bars else 0.0,
                     "trades": total.trades,
                     "win_rate_pct": _pct(total.win_rate),
                     "profit_factor": total.profit_factor,

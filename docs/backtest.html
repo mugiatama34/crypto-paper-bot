@@ -98,6 +98,10 @@
     <section id="sec-coins">
       <h2>Coin bazlı sonuçlar</h2>
       <p class="note">
+        <b>Kapsam kolonları önce gelir:</b> bir kâr faktörü, kaç yıllık veriye dayandığı
+        bilinmeden okunamaz — sabit evren listesi sembolün o pencerede var olduğu anlamına
+        gelmez (2022-01'de 13 sembolün yalnızca 9'u OKX'te vardı; kalanlar verileri
+        başladıkça girer).
         Her satır <b>tek sembollü</b> bir koşudur: portföy kotası (<code>max_positions</code>)
         burada bağlamaz, yani sayı kotanın değil sinyalin ölçüsüdür — dış bir referansla
         (TradingView) kıyasın tek geçerli biçimi de budur. <b>Drawdown</b> ön-kayıtlı
@@ -277,6 +281,11 @@ function renderGates() {
 const COIN_COLUMNS = [
   ["symbol", "sembol", (r) => esc(String(r.symbol || "").replace("-USDT-SWAP", "")), "symcell"],
   ["model", "model", (r) => esc(r.model), "model-cell"],
+  // Kapsam kolonları performans kolonlarından ÖNCE gelir: bir kâr faktörünü, kaç yıllık
+  // veriye dayandığını bilmeden okumak yanıltıcıdır — sabit evren listesi sembolün o
+  // pencerede var olduğu anlamına gelmez (2022-01'de 13 sembolün 9'u vardı).
+  ["first_bar", "veri başı", (r) => esc(shortTs(r.first_bar))],
+  ["years", "kapsam (yıl)", (r) => fmt(r.years, 2)],
   ["trades", "n", (r) => r.trades ?? DASH],
   ["win_rate_pct", "kazanç%", (r) => pctRaw(r.win_rate_pct, 1)],
   ["profit_factor", "KF", (r) => fmt(r.profit_factor)],

@@ -417,6 +417,20 @@ ema_trend:
   slow_period: 55           # yavaş EMA; sinyal fast'in slow'u YUKARI kesmesidir (olay, durum değil)
   stop_atr_multiple: 1.5    # stop = kapanış − 1.5×ATR(14); kural 14'ün 1–2.5 bandının içinde
   target_reward_risk: 2.0   # hedef = giriş + 2.0 × stop mesafesi, tek dilim (fraction=1.0)
+  # ATR YUMUŞATMASI — bu modelin BİLDİRİMİ, projenin varsayılanı değil.
+  #
+  # Ev modellerinin tamamı `simple` (TR'lerin düz ortalaması) kullanır ve o varsayılan
+  # DEĞİŞMEDİ. Bu model `wilder` (RMA) okur çünkü kuralları dış bir sistemde (TradingView,
+  # `ta.atr`) geliştirildi ve orada doğrulandı: stop ve hedef mesafelerinin TAMAMI bu
+  # değerden türüyor, yani yumuşatma bir parametre değil SPEC'in parçası. Başka bir
+  # yumuşatmayla koşmak, "koşulan şey" ile "doğrulanan şey"i ayrıştırırdı.
+  #
+  # Bedeli: "1.5×ATR" ifadesi artık modeller arasında birebir kıyaslanabilir değildir.
+  # Kural 14'ün kıyas ölçütü zaten GERÇEKLEŞEN stop mesafesidir (avg_stop_distance_pct,
+  # ⚠B bandı) ve motorun tavan kontrolü ORTAK tanımda kalır — her model kendi yumuşatmasını
+  # seçerek kendi tavanını genişletebilseydi tavan bir kural olmaktan çıkardı.
+  # Gerekçe ve zamanlama: docs/backtest.md > 6d > TADİLAT-1, docs/decisions.md > 46.
+  atr_smoothing: "wilder"
 
 # --- VWAP sapma-dönüş modelleri (13 ve 14) ---
 # İki modelin SİNYALİ AYRIDIR (karar 23): model 14 `strategies/vwap/signal.py`yi, model 13
