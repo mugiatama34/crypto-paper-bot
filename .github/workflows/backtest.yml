@@ -41,6 +41,30 @@ on:
         description: "KAPI 0: karşılaştırılacak rapor dosyası (boş = atla)"
         required: false
         default: ""
+      # Aşağıdakiler harness'ın KOŞUL bayraklarıdır (docs/backtest.md > 5g): sonucu
+      # doğrudan kaydırırlar ve yalnızca dış bir referansla parite ya da dönem ataması
+      # için vardır. Workflow'un onları geçememesi, o koşuların yalnızca elle (yerelde)
+      # yapılabilmesi demekti — oysa veriye erişen yer burası.
+      symbols:
+        description: "Virgülle sembol listesi; katmanın evrenini DARALTIR (boş = tamamı)"
+        required: false
+        default: ""
+      fee_rate:
+        description: "Komisyon override'ı (boş = canlı config). Sonucu KAYDIRIR."
+        required: false
+        default: ""
+      slippage_base:
+        description: "Kayma override'ı (boş = canlı config). Sonucu KAYDIRIR."
+        required: false
+        default: ""
+      funding_periods:
+        description: "Funding geçmişi derinliği (boş = config); yalnızca derinleştirir"
+        required: false
+        default: ""
+      signal_cutoff:
+        description: "Bu bardan sonra yeni sinyal yok (dönem ataması); boş = kesim yok"
+        required: false
+        default: ""
 
 # Ölçüm turlarıyla YARIŞMAZ: kendi grubu. `run.yml`/`run-scalp.yml`in grubuna girmek, bir
 # backtest'in bir ölçüm turunu bekletmesi (ya da tersi) demekti.
@@ -105,6 +129,12 @@ jobs:
             ${{ inputs.history_bars != '' && format('--history-bars {0}', inputs.history_bars) || '' }} \
             ${{ inputs.embargo_bars != '' && format('--embargo-bars {0}', inputs.embargo_bars) || '' }} \
             ${{ inputs.verify_live != '' && format('--verify-live "{0}"', inputs.verify_live) || '' }} \
+            ${{ inputs.symbols != '' && format('--symbols "{0}"', inputs.symbols) || '' }} \
+            ${{ inputs.fee_rate != '' && format('--fee-rate {0}', inputs.fee_rate) || '' }} \
+            ${{ inputs.slippage_base != '' && format('--slippage-base {0}', inputs.slippage_base) || '' }} \
+            ${{ inputs.funding_periods != '' && format('--funding-periods {0}', inputs.funding_periods) || '' }} \
+            ${{ inputs.signal_cutoff != '' && format('--signal-cutoff "{0}"', inputs.signal_cutoff) || '' }} \
+            --results-json "backtests/run/results.json" \
             --out "backtests/run" \
             --log-level INFO
 

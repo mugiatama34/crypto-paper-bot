@@ -3534,3 +3534,150 @@ karar yeniden açılır. O zamana kadar iki skaler yeterlidir.
 
 Bu, ölçüm katmanının kendi kuralını kendine uygulamasıdır: bir aracın eklenmesi de
 "ölçülmeden karar verilmez" ilkesine tabidir.
+
+---
+
+## 45. `ema_trend` (model 18) ve `ema` katmanı: dış bir sistemin tezi, evin kurallarıyla
+
+Öneri dışarıdan geldi: modelin sahibi EMA(21/55) kesişimine dayanan long-only bir trend
+modelini TradingView'de (Pine Script) geliştirmiş ve orada doğrulamış. İstek, onu bu
+projenin ölçüm koşullarında yeniden kurmak ve kadroya alıp almamaya **ölçüyle** karar
+vermekti.
+
+Bu kararın kaydettiği şey modelin sonucu DEĞİL (henüz koşmadı), koşudan önce sabitlenen
+üç seçimdir. Ön-kaydın tamamı `docs/backtest.md > 6d`dedir.
+
+### 1. Kopya değil, YARIŞMACI
+
+`vwap_clone` (kural 15b) dış bir sistemin kurallarını **boyutlandırması dâhil** yeniden
+üretir ve yarışmaz. `ema_trend` öyle değil: yalnızca SİNYAL kuralı dışarıdan geliyor,
+boyutlandırma (risk %1), kaldıraç tavanı, maliyet, funding ve likidasyon evin kuralları.
+Bu yüzden `is_replica` DEĞİLDİR, tam bir yarışmacıdır ve ortalama R sıralamasına girer.
+
+Ayrım önemli: kopyanın `nan` alan maliyet kolonları (1R'si sabit teminattan türediği için
+kıyaslanamaz) bu modelde `nan` DEĞİLDİR — 1R'si diğer yarışmacılarla aynı paydadan gelir,
+yani stop bandı (kural 14) ve `cost_per_r` onun için de anlamlıdır.
+
+### 2. Ayrı katman (`ema`), ve kıyas hedefi katmanın İÇİNE alınıyor
+
+Backtest 13 sabit coinde koşuyor. Base katmanının evreni hacme göre seçilen 50 coindir ve
+30 günde bir kayar; modeli oraya almak, backtest'in ölçtüğünden başka bir evrende
+koşturmak olurdu. Ayrı katman ikisini eşitler (`layers.ema`: 4H, sabit 13 sembol,
+`ledgers_ema/`, `docs/data/metrics_ema.json`).
+
+Bedeli, katmanlar arası kıyasın yapılamamasıdır (CLAUDE.md > Katmanlar) — model sahibinin
+asıl istediği şey ise tam olarak `trend` ile yan yana görmekti. Çözüm kıyası katmanın
+İÇİNE almak oldu: `ema` katmanı `trend` (kıyas hedefi), `random_ctrl` (kabul çıtasının
+kontrolü, `acceptance.control_model`) ve `buyhold` (çıpa, C-3) modellerini de koşar. Aynı
+evren, aynı barlar, aynı maliyet, aynı defter kuralları — yani kıyas katman İÇİ ve
+geçerli.
+
+Alternatif "base evrenini 13 coine sabitlemek"ti ve reddedildi: `trend`, `meanrev`,
+`random_ctrl` ve `buyhold` bugünden itibaren başka bir evren görürdü, yani mevcut
+defterlerinin geçmişi yeni dönemle kıyaslanamaz hâle gelirdi (karar 25'te `fee_rate`in
+defteri tarihli olarak bölmesiyle aynı hata).
+
+### 3. İki kapı da bağlayıcı — ve tek istisna sonuçtan ÖNCE yazıldı
+
+Model sahibinin kendi kabul kriteri var (6 coinde OOS kâr faktörü > 1.1, toplam > 300
+işlem, coin başına drawdown ≤ %25). Bu kriter repo'nun kapılarının (`docs/backtest.md`
+§3 ve §4) YERİNE geçmiyor, ÜSTÜNE geliyor. Gerekçeyi model sahibi kendisi koydu ve doğru:
+diğer modeller repo eşiğinden geçti; yeni bir modele daha gevşek kapı açmak onu iyi olduğu
+için değil **kapısı kolay olduğu için** önde gösterirdi — kural 6'nın kendisi.
+
+Tek istisna da sonuç görülmeden yazıldı: model YALNIZCA C-3'ten (hesap getirisi çıpayı
+geçer) kalıyorsa koşu **durur** ve karar insana gider; başka herhangi bir kapıdan kalırsa
+doğrudan bloke. İstisnanın gerekçesi, C-3'ün cevabının modelin verisinde değil pencerenin
+yönünde olmasıdır — model sahibinin TradingView ölçümünde 2022-2026 BTC penceresinde
+strateji +%4.89, al-tut +%110 yapmış, yani C-3'ün düşmesi BEKLENİYOR ve bu beklenti
+ön-kayda `P4` olarak yazıldı. İstisna kapıyı kaldırmıyor, kararı otomatikten insana
+taşıyor.
+
+### Zaman stop'unun yokluğu bir ölçüm sorunu üretti
+
+Model TP/SL dışında çıkış taşımıyor, yani pozisyon ömrü SINIRSIZ. §6.1'in embargo kuralı
+("doğru boşluk azami tutuş süresidir") bu modelde tanımsız kalıyordu. Çözüm sınırı
+ÖLÇMEK oldu: dönem A'da gözlenen azami tutuş süresi embargo olarak uygulanır, uygulanan
+değer ve tutuş süresi dağılımı (medyan / p90 / azami) raporlanır.
+
+Dağılım tek başına da bir ölçüm: uzun kuyruk, kurulumların hedefe varmadan beklediğini
+gösterir ve ön-kayıtlı P2 tahmininin (hedefe ulaşma oranı < %35) bağımsız kontrolüdür.
+**Zaman stop'u eklemek bu koşuda YAPILMAZ** — parametreler sabit (§7.1); sonuçlar
+görüldükten sonra ayrı bir varyant olarak değerlendirilebilir, ki o taze bir OOS penceresi
+ister.
+
+### Maliyet sapmasının YÖNÜ ölçüldü, varsayılmadı
+
+Model sahibi TradingView varsayımını istedi (komisyon %0.075 tek yön, kayma 2 tick);
+repo %0.055 + 5bp koşuyor. `config.yaml` DEĞİŞTİRİLMEDİ (kural 6 + karar 25); sapma
+harness bayraklarıyla uygulanır ve `manifest.json`a yazılır.
+
+Yönü hesaplamak gerekti, çünkü sezgi yanıltıyordu: dolum başına backtest 0.00075 + 0.0001
+= **0.00085**, canlı 0.00055 + 0.0005 = **0.00105**. Yani daha yüksek komisyona rağmen
+backtest canlıdan **UCUZ** koşuyor (kayma farkı komisyon farkını yutuyor). Sonuç: forward
+test backtest'in biraz ALTINDA kalmalıdır; üstünde çıkması bir sürpriz değil, bir
+uyarıdır. "2 tick" düz bir 1bp ile temsil edildi — sembole bağlı kayma ayrı bir karardır
+(CLAUDE.md > `scripts/measure_slippage.py`) ve defteri tarihli olarak bölerdi.
+
+### Belge onarımı (yan iş)
+
+`docs/backtest.md`'nin §7 BAŞLIĞI yoktu: metin "Bu liste bağlayıcıdır..." diye başlıyor ve
+belgenin başka yerlerinde §7.1/§7.3/§7.4/§7.5 diye atıf yapılıyordu. Başlık eklendi;
+içerik değişmedi.
+
+---
+
+## 46. ATR yumuşatması: modelin SPEC'i ile projenin varsayılanı çakıştığında
+
+`ema_trend`in kuralları TradingView'de geliştirildi ve orada doğrulandı. Pine'ın `ta.atr`ı
+**Wilder** yumuşatması (RMA) kullanır; bu repo ise `simple` (TR'lerin düz ortalaması)
+kullanıyordu. Model bir ATR katından stop kuruyor ve hedef o stop mesafesinin katı, yani
+**iki sistem aynı kuralı koşmuyordu** — fark bir parametre farkı değil, spec farkıydı.
+
+Bu, "sonucu görüp implementasyon değiştirme" kokusu taşıyan bir karardır ve kokunun
+farkındayız. Üç şeyle savunulabilir kılındı:
+
+1. **Zamanlama.** Değişiklik tam koşudan ÖNCE yapıldı; gerekçe ön-kayda (docs/backtest.md
+   > 6d > TADİLAT-1) karar anında yazıldı, sonuç görüldükten sonra değil.
+2. **Bir kapıyı kurtarmıyor.** Değişiklikten önce ölçülen P1 (BTC, dönem A) ZATEN GEÇMİŞTİ:
+   kâr faktörü 1.40 ↔ referans 1.551 (tolerans ±0.2), ödeme oranı 1.76 ↔ 1.79. Düşen bir
+   kapıyı geçirmek için yapılmış bir değişiklik olsaydı savunulamazdı.
+3. **Eski sayı silinmedi.** Tadilat öncesi ölçümler (tek sembollü ve 13 sembollü portföy)
+   ön-kayıtta duruyor ve orada kalacak. Silmek, paydayı küçültüp kalanı anlamlı göstermenin
+   ta kendisiydi (§6c'nin sicil kuralıyla aynı gerekçe).
+
+### Neden KÜRESEL değiştirilmedi
+
+Tanımı topyekûn Wilder'a çevirmek tek satırlık bir değişiklikti ve reddedildi: `trend`,
+`meanrev`, beş kollu scalp modelleri ve `vwap_managed` bugün canlı koşuyor ve stop
+mesafelerini aynı fonksiyondan alıyor. Değişiklik, o commit'ten itibaren hepsinin stop
+ölçeğini kaydırırdı; biriken defterin bir kısmı bir ölçekle, kalanı başkasıyla üretilmiş
+olur ve iki dönem kıyaslanamazdı — karar 25'te `fee_rate`in defteri tarihli olarak böldüğü
+hatanın aynısı. Üstelik bu, bir modelin spec'ini düzeltmek için ölçümün tamamını
+bozmak olurdu.
+
+Seçilen yol: `core/indicators.py::average_true_range` iki yumuşatmayı da verir,
+**varsayılan `simple` kalır** ve `ema_trend` kendi yumuşatmasını `config.yaml` üzerinden
+BİLDİRİR. TR dizisi tek tanımdan gelir (`true_range`), yani "fark yumuşatmada mı TR'de mi"
+sorusu sorulabilir kalır.
+
+### Bedeli ve nereye taşındığı
+
+**"1.5×ATR" artık modeller arasında birebir kıyaslanabilir değildir.** Bu gerçek bir kayıp
+ve gizlenmiyor. İki şey onu sınırlı tutuyor:
+
+- **Kural 14'ün kıyas ölçütü zaten ATR katı değildi:** band `avg_stop_distance_pct`
+  (GERÇEKLEŞEN stop mesafesi) üzerinden kurulur ve ⚠B uyarısı ona bakar. Defterde ATR
+  yoktur; kıyas hep yüzdeden okunuyordu.
+- **Motorun tavan kontrolü ORTAK tanımda kaldı.** Tavanı modelin kendi yumuşatmasıyla
+  ölçmek, her modele kendi tavanını genişletme imkânı verirdi ve tavan bir kural olmaktan
+  çıkardı. Bunun bir sonucu var ve ölçüldü: sentetik bir seride Wilder/simple oranı ~0.89,
+  yani model 1.5×Wilder ile ortak tanımda ~1.34× görünüyor — 3.0 tavanının çok altında,
+  dolayısıyla tavan bu modelde pratikte bağlamıyor. Bir test bunu çiviliyor.
+
+### Bu bir emsal değildir
+
+Yumuşatma bildirimi **kuralları dış bir sistemden gelen** modeller içindir. Ev modellerinden
+biri "benim tezim Wilder ister" derse cevap hayırdır: o bir spec uyumu değil, bir parametre
+tercihidir ve tercihler ortak tanımın içinde yapılır. Bugün bu bayrağı yalnızca `ema_trend`
+taşıyor ve config'te tek bir satır olarak duruyor — grep'lenebilir, denetlenebilir.

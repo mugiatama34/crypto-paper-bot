@@ -198,27 +198,78 @@ def donchian(frame: pd.DataFrame, period: int) -> DonchianChannel | None:
     )
 
 
-def average_true_range(frame: pd.DataFrame, period: int) -> float | None:
-    """Son `period` kapanmış barın ortalama gerçek aralığı; yeterli bar yoksa None.
+AtrSmoothing = Literal["simple", "wilder"]
 
-    Basit ortalama kullanılır (Wilder yumuşatması değil): trailing mesafesinin tek amacı
-    tüm modeller için AYNI ve denetlenebilir olması; yumuşatma seçimi ölçümü etkilemez
-    ama tanımın açık olması etkiler.
+
+def true_range(frame: pd.DataFrame) -> "np.ndarray":
+    """Her bar için gerçek aralık (ilk bar hariç: önceki kapanış gerekir).
+
+    Tek tanım: iki yumuşatma da bu diziyi okur. TR'yi iki kez yazmak, "aynı ATR ama farklı
+    yumuşatma" iddiasını doğrulanamaz kılardı — fark yumuşatmada mı TR'de mi bilinmezdi.
+    """
+    high = frame["high"].to_numpy(dtype="float64")
+    low = frame["low"].to_numpy(dtype="float64")
+    close = frame["close"].to_numpy(dtype="float64")
+    previous_close = close[:-1]
+    return np.maximum(
+        high[1:] - low[1:],
+        np.maximum(np.abs(high[1:] - previous_close), np.abs(low[1:] - previous_close)),
+    )
+
+
+def average_true_range(
+    frame: pd.DataFrame, period: int, *, smoothing: AtrSmoothing = "simple"
+) -> float | None:
+    """Ortalama gerçek aralık; yeterli bar yoksa None.
+
+    **Periyot projenin ORTAK ayarıdır** (`trailing.atr_period`), yumuşatma ise modelin
+    bildirdiği bir seçimdir ve varsayılanı `simple`dır — yani bu imza eklenmeden önceki
+    her çağrı birebir aynı sayıyı almaya devam eder.
+
+    - `simple`: son `period` TR'nin düz ortalaması. Projenin varsayılanı ve BÜTÜN ev
+      modellerinin kullandığı tanım.
+    - `wilder`: Wilder yumuşatması (RMA), ilk `period` TR'nin ortalamasıyla tohumlanır ve
+      sonrasında `atr = (atr × (period − 1) + tr) / period` ile ilerler. TradingView'in
+      `ta.atr`ı budur.
+
+    **Neden İKİ tanım duruyor ve neden `simple` küresel olarak DEĞİŞTİRİLMEDİ.** Kuralları
+    dış bir sistemden gelen bir model (bkz. `strategies/ema_trend.py`), orada hangi ATR ile
+    doğrulandıysa onunla koşmalıdır — yoksa "koşulan şey" ile "doğrulanan şey" ayrışır.
+    Ama tanımı KÜRESEL olarak Wilder'a çevirmek, bugün canlı koşan her modelin (trend,
+    meanrev, beş kollu scalp modelleri, vwap_managed) stop mesafesini o commit'ten itibaren
+    değiştirirdi; biriken defterin bir kısmı bir stop ölçeğiyle, kalanı başkasıyla
+    üretilmiş olurdu — `fee_rate`in defteri tarihli olarak böldüğü hatanın aynısı
+    (docs/decisions.md > 25).
+
+    **Bedeli açıkça yazılıdır:** "1.5×ATR" ile "2×ATR" artık modeller arasında birebir
+    kıyaslanabilir DEĞİLDİR. Kural 14'ün kıyas ölçütü zaten ATR katı değil GERÇEKLEŞEN
+    stop mesafesidir (`avg_stop_distance_pct` ve ⚠B bandı), yani kıyas o kolondan okunur.
+    Motorun tavan kontrolü (kural 14, `core/engine.py`) ORTAK tanımda kalır: tavan katmanın
+    kuralıdır ve her model kendi yumuşatmasını seçerek kendi tavanını genişletebilseydi
+    tavan bir kural olmaktan çıkardı.
     """
     if period <= 0:
         raise ValueError(f"atr_period pozitif olmalı: {period}")
     if len(frame) < period + 1:
         return None
-    window = frame.tail(period + 1)
-    high = window["high"].to_numpy(dtype="float64")
-    low = window["low"].to_numpy(dtype="float64")
-    close = window["close"].to_numpy(dtype="float64")
-    previous_close = close[:-1]
-    true_range = np.maximum(
-        high[1:] - low[1:],
-        np.maximum(np.abs(high[1:] - previous_close), np.abs(low[1:] - previous_close)),
-    )
-    return float(true_range.mean())
+    if smoothing not in ("simple", "wilder"):
+        raise ValueError(f"tanınmayan ATR yumuşatması: {smoothing!r}")
+
+    if smoothing == "simple":
+        return float(true_range(frame.tail(period + 1)).mean())
+
+    # Wilder: özyineleme ELDEKİ TÜM barlar üzerinde yürür, yalnızca son `period` üzerinde
+    # değil — RMA'nın tanımı budur ve kısa bir pencereye uygulamak onu düz ortalamaya
+    # yaklaştırırdı. Tohumun etkisi `(1 − 1/period)^n` ile söner: 12.000 barlık bir
+    # backtest penceresinde tohum tamamen unutulmuş olur, yani sayı pencere başlangıcına
+    # bağlı değildir.
+    values = true_range(frame)
+    if len(values) < period:
+        return None
+    current = float(values[:period].mean())
+    for value in values[period:]:
+        current = (current * (period - 1) + float(value)) / period
+    return current
 
 
 def _require_positive(value: int, name: str) -> None:

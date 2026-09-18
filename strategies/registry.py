@@ -20,6 +20,7 @@ from strategies.base import Strategy
 from strategies.buyhold import BuyHold
 from strategies.confluence import Confluence
 from strategies.downtrend_rally import DowntrendRally
+from strategies.ema_trend import EmaTrend
 from strategies.ensemble import Ensemble
 from strategies.failed_breakout import FailedBreakout
 from strategies.meanrev import MeanReversion
@@ -49,6 +50,10 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     Avwap.name: Avwap,
     Ensemble.name: Ensemble,
     RandomControl.name: RandomControl,
+    # ema_trend — `ema` katmanının (4H, sabit 13 sembol) ölçtüğü model. Kuralları dış bir
+    # sistemden gelir ama KOPYA değildir (kural 15b): dışarıdan gelen yalnızca sinyal,
+    # boyutlandırma ve maliyet evin. Ön-kayıt: docs/backtest.md > 6d.
+    EmaTrend.name: EmaTrend,
     # 15 dakikalık scalp katmanı (config.yaml > layers.scalp). Kayıt defteri katmandan
     # bağımsızdır: hangi modelin hangi turda koşacağını katmanın `models` listesi söyler.
     ScalpBandit.name: ScalpBandit,

@@ -196,6 +196,70 @@ layers:
       model_trade_limit: 100
     breakdowns: []            # 4 saatlik modellerde kol/sembol kırılımı yok
 
+  ema:
+    # EMA(21/55) kesişim katmanı (4H) — model 18'in ölçüldüğü yer.
+    #
+    # NEDEN AYRI BİR KATMAN. Modelin backtest'i SABİT 13 coinde koşuyor; base evreni ise
+    # hacme göre seçilen 50 coindir ve 30 günde bir kayar. Modeli base'e almak, backtest'in
+    # ölçtüğünden BAŞKA bir evrende koşturmak olurdu — yani forward test, backtest'in
+    # cevapladığı sorunun cevabını taşımazdı. Ayrı katman ikisini eşitler.
+    #
+    # NEDEN `trend` DE BURADA. Katmanlar arası kıyas yapılmaz (CLAUDE.md > Katmanlar), oysa
+    # sorulan soru tam olarak "bu model mevcut trend modelinden iyi mi". Bu yüzden kıyas
+    # hedefi katmanın İÇİNE alındı: `trend` aynı evreni, aynı barları, aynı maliyeti ve
+    # aynı defter kurallarını görür, yani kıyas katman İÇİ ve geçerlidir. `random_ctrl`
+    # kabul çıtasının kontrol grubudur (acceptance.control_model), `buyhold` ise çıpadır
+    # (C-3) — ikisi de olmadan kabul kapıları değerlendirilemezdi.
+    #
+    # TETİKLEYİCİSİ YOKTUR: tanım var, koşu yok. `run-ema.yml` ancak ön-kayıtlı kapılar
+    # (docs/backtest.md > 6d) geçilirse eklenir; o güne kadar bu katman yalnızca
+    # scripts/backtest.py tarafından okunur ve hiçbir deftere yazmaz.
+    models: ["buyhold", "trend", "random_ctrl", "ema_trend"]
+
+    # SABİT evren, hacimden otomatik seçim YOK — scalp katmanının evreninin aynısı.
+    # Aynı liste olmasının sebebi kolaylık değil: iki katman aynı sembolleri görürse,
+    # bir sembolün kayma/likidite sorunu iki katmanda da aynı biçimde görünür ve
+    # `breakdowns.symbol` kırılımı iki zaman diliminde karşılaştırılabilir olur.
+    # (Bu, KATMANLAR ARASI performans kıyası değildir; veri kalitesi denetimidir.)
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "SUI-USDT-SWAP"
+      - "NEAR-USDT-SWAP"
+      - "PENGU-USDT-SWAP"
+      - "ETHFI-USDT-SWAP"
+
+    ledger_dir: "ledgers_ema"
+    metrics_file: "docs/data/metrics_ema.json"
+
+    data:
+      # 4H barda 600 bar = 100 gün; bu katmanın modelleri EMA55 ve ATR14 okur, yani canlı
+      # için fazlasıyla yeterli. Backtest pencereyi `--history-bars` ile DERİNLEŞTİRİR
+      # (docs/backtest.md > 5b) — canlının o derinlikten faydalanmadığı, aynı override ile
+      # koşulan Kapı 0'da sınanır.
+      history_bars: 600
+
+    retention:
+      # Base ile aynı: 4 saatte bir tur, equity.csv yavaş büyür, sıkıştırma gereksiz.
+      equity_compaction_days: null
+      model_trade_limit: 100
+
+    # symbol: kayma varsayımının (slippage_base) sembol başına tutup tutmadığı ancak burada
+    # görünür — 13 sembollük sabit evrende PENGU/ETHFI gibi ince kitaplı satırların
+    # cost_per_r'si belirgin ayrışıyorsa, o satırın sonucu yorumlanmadan önce bilinmelidir.
+    # exit_rule: modelin çıkışlarının kaçı hedef, kaçı stop — ön-kayıtlı P2 tahmini
+    # (hedefe ulaşma oranı < %35) doğrudan bu kırılımdan okunur.
+    # session/loss_streak: scalp katmanındakiyle aynı statüde ÖLÇÜM (kural değil); hiçbir
+    # model bunlara bakmaz ve hiçbir sinyal bu etiketlere göre elenmez.
+    breakdowns: ["symbol", "exit_rule", "session", "loss_streak"]
+
   scalp:
     # 15 dakikalık scalp katmanı: iki model (model 11 adaptif, model 12 kontrol).
     timeframe: "15m"
@@ -339,6 +403,34 @@ exit_management:
     r: 1.5                  # 1.5R'da kısmi çıkış; stop AYNI ANDA bu seviyeye çekilir
     fraction: 0.5           # başlangıç boyutunun yarısı (1.0 olamaz — o tam çıkıştır)
   trail_giveback_pct: 0.5   # kısmi sonrası: en iyi kazancın en çok yarısı geri verilir
+
+# --- EMA kesişim modeli (18) ---
+# Dört sayı da docs/backtest.md > 6d'de ÖN-KAYITLI olarak sabitlendi: koşu sonucuna göre
+# değiştirilemezler (§7.1). Değiştirmek YENİ bir hipotezdir ve taze bir OOS penceresi ister.
+#
+# Blok kökte durur ama yalnızca `ema_trend` okur; diğer modeller bu anahtarları hiç sormaz
+# (scalp ve vwap bloklarıyla aynı desen). ATR PERİYODU BURADA YOKTUR: projenin tek ATR
+# tanımı `trailing.atr_period`tır ve modele özel bir periyot, aynı "1.5×ATR" ifadesinin
+# modelden modele farklı mesafe anlamına gelmesi demek olurdu.
+ema_trend:
+  fast_period: 21           # hızlı EMA
+  slow_period: 55           # yavaş EMA; sinyal fast'in slow'u YUKARI kesmesidir (olay, durum değil)
+  stop_atr_multiple: 1.5    # stop = kapanış − 1.5×ATR(14); kural 14'ün 1–2.5 bandının içinde
+  target_reward_risk: 2.0   # hedef = giriş + 2.0 × stop mesafesi, tek dilim (fraction=1.0)
+  # ATR YUMUŞATMASI — bu modelin BİLDİRİMİ, projenin varsayılanı değil.
+  #
+  # Ev modellerinin tamamı `simple` (TR'lerin düz ortalaması) kullanır ve o varsayılan
+  # DEĞİŞMEDİ. Bu model `wilder` (RMA) okur çünkü kuralları dış bir sistemde (TradingView,
+  # `ta.atr`) geliştirildi ve orada doğrulandı: stop ve hedef mesafelerinin TAMAMI bu
+  # değerden türüyor, yani yumuşatma bir parametre değil SPEC'in parçası. Başka bir
+  # yumuşatmayla koşmak, "koşulan şey" ile "doğrulanan şey"i ayrıştırırdı.
+  #
+  # Bedeli: "1.5×ATR" ifadesi artık modeller arasında birebir kıyaslanabilir değildir.
+  # Kural 14'ün kıyas ölçütü zaten GERÇEKLEŞEN stop mesafesidir (avg_stop_distance_pct,
+  # ⚠B bandı) ve motorun tavan kontrolü ORTAK tanımda kalır — her model kendi yumuşatmasını
+  # seçerek kendi tavanını genişletebilseydi tavan bir kural olmaktan çıkardı.
+  # Gerekçe ve zamanlama: docs/backtest.md > 6d > TADİLAT-1, docs/decisions.md > 46.
+  atr_smoothing: "wilder"
 
 # --- VWAP sapma-dönüş modelleri (13 ve 14) ---
 # İki modelin SİNYALİ AYRIDIR (karar 23): model 14 `strategies/vwap/signal.py`yi, model 13
