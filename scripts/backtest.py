@@ -73,7 +73,8 @@ from core.engine import Engine, RoundReport  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 from core.metrics import (  # noqa: E402
-    ModelMetrics, buy_hold_return, compare, format_report, holding_stats,
+    AcceptanceFlags, ModelMetrics, acceptance_flags, buy_hold_return, compare,
+    format_report, holding_stats, r_series,
 )
 from core.portfolio import Portfolio  # noqa: E402
 from core.report import model_breakdowns  # noqa: E402
@@ -127,6 +128,11 @@ class BacktestResult:
     # tutuş süresidir" kuralının dayandığı üst sınır orada tanım gereği yoktur ve
     # buradan ÖLÇÜLÜR.
     holding: Mapping[str, Any] = field(default_factory=dict)
+    # Kabul çıtası (CLAUDE.md > Kabul Çıtası), canlıyla AYNI fonksiyondan. Backtest bu
+    # kapıları zaten `docs/backtest.md > 4`te soruyordu (C-1..C-4) ama cevabı göz kararı
+    # okunuyordu: ortalama R'ye bak, kontrolle farkı zihinden çıkar, bandı tahmin et.
+    # Göz kararı bir kapı değildir — hesap tek yerde, canlıyla aynı kodda durmalı.
+    acceptance: tuple[AcceptanceFlags, ...] = ()
     # Sembol başına al-tut getirisi (yüzde), pencerenin kendisinden. Bir sembolün
     # ortalama R'sini, o sembolün o pencerede ne yaptığını bilmeden okumak yanıltıcıdır:
     # çöken bir sembolde long-only bir modelin kaybetmesi bir sinyal kusuru değildir.
@@ -402,6 +408,21 @@ def run_backtest(
         for symbol, frame in sorted(market.ohlcv.items())
     }
 
+    # Kontrol modeli yarışmacı listesinde olmasa bile örnekleme girer: farkın öteki
+    # tarafı odur (core/report.py ile aynı sözleşme).
+    flags = acceptance_flags(
+        metrics,
+        min_trades=int(get_setting(config, "acceptance.min_trades")),
+        stop_band_ratio=float(get_setting(config, "acceptance.stop_band_ratio")),
+        control_model=str(get_setting(config, "acceptance.control_model")),
+        edge_margin_r=float(get_setting(config, "acceptance.edge_margin_r")),
+        control_min_trades=int(get_setting(config, "acceptance.control_min_trades")),
+        r_samples={name: r_series(rows) for name, rows in trades.items()},
+        ci_alpha=float(get_setting(config, "acceptance.edge_ci_alpha")),
+        bootstrap_samples=int(get_setting(config, "acceptance.bootstrap_samples")),
+        seed=int(get_setting(config, "random_seed")),
+    )
+
     return BacktestResult(
         layer=layer.name, start=start, end=market.as_of, out_dir=out_dir,
         report=report, metrics=tuple(metrics), build_failures=build_failures,
@@ -410,6 +431,7 @@ def run_backtest(
         holding=holding,
         buy_hold=buy_hold,
         deviations=deviations,
+        acceptance=tuple(flags),
     )
 
 
@@ -839,6 +861,7 @@ def results_payload(result: BacktestResult) -> dict[str, Any]:
             for model in result.report.models
         },
         "models": [asdict(metrics) for metrics in result.metrics],
+        "acceptance": [asdict(flag) for flag in result.acceptance],
         "breakdowns": _jsonable(result.breakdowns),
         "holding": dict(result.holding),
         "buy_hold_pct": dict(result.buy_hold),
