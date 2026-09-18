@@ -12,12 +12,15 @@ reddedilir.
 Projenin cevaplamaya çalıştığı ana soru: **short işlemler long işlemlerden daha mı
 başarılı?** Bu yüzden long/short ayrımı raporlamanın merkezindedir (bkz. `core/metrics.py`).
 
-Ölçüm **iki KATMANDA** yürür ve ikisi de aynı çekirdeği kullanır (bkz. "Katmanlar"):
-`base` 4 saatlik ana yarışma, `scalp` 15 dakikalık scalp katmanıdır. Katman ölçümün
-koşullarını (bar, sembol evreni, model listesi, defter, rapor dosyası) değiştirir;
-kurallarını — maliyet, risk, likidasyon, dolum, metrik tanımları — DEĞİŞTİREMEZ. İki
-katmanın sonuçları aynı tabloda sıralanmaz: zaman dilimi farkı doğrudan kıyası yanıltıcı
-yapar.
+Ölçüm **ÜÇ KATMANDA** yürür ve üçü de aynı çekirdeği kullanır (bkz. "Katmanlar"):
+`base` 4 saatlik ana yarışma, `scalp` 15 dakikalık scalp katmanı, `ema` ise 4 saatlik ama
+SABİT evrenli ölçüm kadrosudur (bugün tetikleyicisi yoktur — tanım var, koşu yok). Katman
+ölçümün koşullarını (bar, sembol evreni, model listesi, defter, rapor dosyası) değiştirir;
+kurallarını — maliyet, risk, likidasyon, dolum, metrik tanımları — DEĞİŞTİREMEZ. Katmanların
+sonuçları aynı tabloda sıralanmaz: `base` ↔ `scalp` arasında zaman dilimi farkı, `base` ↔
+`ema` arasında evren farkı doğrudan kıyası yanıltıcı yapar. Kıyas katman İÇİNDE yapılır —
+bu yüzden `ema` katmanı kendi kıyas hedefini (`trend`), kontrolünü (`random_ctrl`) ve
+çıpasını (`buyhold`) İÇİNDE taşır.
 
 ## Klasör Yapısı ve Modül Sorumlulukları
 
@@ -49,6 +52,7 @@ yapar.
 | `strategies/scalp_managed.py` | **Model 15:** `scalp_fixed`in BİREBİR ikizi (aynı beş kol, aynı eşit ağırlıklı çekiliş — `choose_arm` miras alınır, kopyalanmaz), tek farkı üç aşamalı çıkış yönetimi. Çekiliş kimliği (`rng_identity`) bilinçli olarak `scalp_fixed` ile PAYLAŞILIR: iki model her turda aynı kolu ve aynı sembolü seçer, aradaki ortalama R farkı yalnızca yönetimden gelir (eşleştirilmiş deney). |
 | `strategies/scalp_patient.py` | **Model 16 (kâğıt katmanında KOŞAR, eşiği geçmiş DEĞİL):** `scalp_fixed`in ikizi, tek farkı zaman stop'unun SINIRI (16 ↔ 100 bar). Kol seçimi, kapılar, geometri ve çekiliş kimliği `ScalpFixed`ten MİRAS ALINIR. Cevapladığı soru: *kuruluma hedefine varacak süreyi vermek işe yarıyor mu?* Gerekçe karar 30'un ölçümüdür: 5×ATR stop + 10×ATR hedef, 16 barlık tipik yayılımın (√16 = 4×ATR) içinde ulaşılamaz ve `scalp_fixed`in 151 pozisyonundan 2'si hedefe vardı (%1.3 — sürüklenmesiz rastgele yürüyüşün öngördüğü %1.24). 100 sayısı TEORİDEN gelir (`N = (hedef/ATR)²`), veriden değil. Karar 33'te katmanın `models` listesine ALINDI — hareket eden tek eksenin diğer ucu odur ve ileriye dönük kanıt yalnızca kâğıtta birikir. Bu, `docs/backtest.md > 4`ün canlıya alma eşiğini geçtiği anlamına GELMEZ: C-1 (OOS ort. R > 0) sağlanmıyor (−0.01), yani gerçek parayla işlem açamaz. |
 | `strategies/scalp_vol.py` | **Model 17 (ADAY — tezi DÜŞTÜ, karar 36; canlıda KOŞMAZ):** `scalp_patient`in ikizi, tek farkı **kesitsel volatilite rejimi kapısı** — sembolün `ATR/close` değeri o bardaki evrenin MEDYANININ altındaysa kurulum atlanır. Tez karar 35'in özdeşliğinden gelir: friksiyon notional'ın sabit yüzdesi, sürüklenme volatiliteyle ölçekleniyor; `scalp_patient`in başabaş noktası tam olarak medyan volatilitede (brüt %0.261 ↔ maliyet %0.284). Eşik SERBEST PARAMETRE DEĞİLDİR (medyan, süpürülmez) ve EVRENDEN hesaplanır, adaylardan değil — adaylara göre olsaydı eşik "o barda kaç aday var"a bağlanırdı. `take_survey` UYGULAR (karar 34'ün dersi: sayım olmadan ölü kol iki backtest sonra fark edilir). Ön-kayıt: `docs/backtest.md > 6b`; **sonuç: ön-kayıtlı birincil tahmin P1 düştü** (brüt sürüklenme %0.263 → %0.253, yani artmadı) — bkz. docs/decisions.md > 36. Katmanın `models` listesinde YOKTUR; `REGISTRY`de durur ve backtest onu `--models` ile çağırır. |
+| `strategies/ema_trend.py` | **Model 18 (`ema` katmanı):** EMA(21) EMA(55)'i YUKARI kestiğinde long. Sinyal bir OLAYDIR, bir durum değil — "fast > slow" kuralı her barda tetiklenir ve modeli bir trend takipçisinden "yukarı rejimde sürekli alım"a çevirirdi. Kuralları dış bir sistemden (TradingView) gelir ama KOPYA DEĞİLDİR (kural 15b): kopya dış sistemin boyutlandırmasını da taşır ve yarışmaz; burada dışarıdan gelen yalnızca sinyaldir, boyut (risk %1), kaldıraç tavanı, maliyet, funding ve likidasyon evin kuralıdır — yani tam bir yarışmacıdır ve maliyet ölçeği kolonlarında `nan` ALMAZ. Stop 1.5×ATR (kural 14'ün bandının içinde), hedef tam 2.0R ve TEK dilim (`fraction=1.0`; kesirli hedef pozisyonu iki ölçüm satırına bölerdi). Trailing, üç aşamalı çıkış ve ZAMAN STOP'U yoktur — üçü de kaynak sistemde yok, eklemek modeli ölçülmek isteneni başka bir şeye çevirirdi. Zaman stop'unun yokluğunun bedeli ölçümdedir: pozisyon ömrü sınırsız olduğu için OOS embargosu (docs/backtest.md > 6.1) VARSAYILAMAZ, dönem A'da gözlenen azami tutuş süresinden ÖLÇÜLÜR. "Pozisyondayken sinyal yok sayılır" kuralı bu modülde DEĞİL `core/portfolio.py`dedir (kural 4: model kendi açık pozisyonunu göremez) ve ret bir sebep koduyla (`duplicate_position`) tur raporuna düşer. Parametreler `config.yaml > ema_trend` bloğunda ve ön-kayıtlıdır (docs/backtest.md > 6d): koşu sonucuna göre değiştirilemezler. |
 | `strategies/buyhold.py` | **Referans çıpası** (kural 15), yarışmacı değil: BTC %50 / ETH %50, 1x, stop'suz, bir kez alınır ve hiç satılmaz. `is_benchmark = True`. |
 | `strategies/registry.py` | Model adı -> strateji sınıfı eşlemesi. `config.yaml`'ın `models` listesi buradan çözülür; tanınmayan ad sessizce atlanmaz. |
 | `strategies/*.py` (ileride) | `Strategy`'den türeyen, yalnızca `generate_signals` uygulayan bağımsız, birbirinden habersiz modüller. |
@@ -70,6 +74,7 @@ yapar.
 | `tests/` | Her `core` modülü ve her strateji için bağımsız birim testleri. |
 | `state/` | Bildirim bookkeeping'i, ölçüm DEĞİL: `state/telegram_scalp.json` yalnızca "hangi kurulum en son hangi barda bildirildi" bilgisini tutar (susturma penceresi). Defterden ayrı durur çünkü defter denetim izidir (kural 1) ve bu dosya silinse ölçüm hiç değişmez — en kötü ihtimalle bir mesaj tekrar eder. Koşular arası commit edilir (runner her koşuda sıfırdan kurulur), ama KENDİ adımında: defter commit'ine katmak, ağ erişimi olan bildirim adımını turun kaydedilmesinin önüne koymayı gerektirirdi. |
 | `ledgers_scalp/` | Scalp katmanının defteri. İki katman asla aynı defteri paylaşmaz: paylaşsalardı 15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı. |
+| `ledgers_ema/` | `ema` katmanının defteri. Üç katman asla aynı defteri paylaşmaz: paylaşsalardı bir katmanın turu diğerinin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı (aynı gerekçe `ledgers_scalp/`). Bugün BOŞTUR — katmanın tetikleyicisi yok. |
 | `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`). Dosyada cron YOKTUR, yalnızca `workflow_dispatch`; gözlenen kadans ~15 dakikadır (her koşu bir 15m barı işler) ve tetikleyici depo dışındadır. Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. Defter commit'inden SONRA anlık sinyal bildirimi (`scripts/telegram_signals.py`) ve onun durum dosyasının kendi commit'i gelir; ikisi de `continue-on-error` — bildirim katmanı ölçümü düşüremez. 15 dakikalık cron ölçüldü ve tetiklemelerin ~%91'i düşüyordu; saatlik kadans `signals_per_bar` sayesinde sinyal kaybı üretmez (bkz. "Telafi edilen barlarda sinyal"). |
 | `.github/workflows/run.yml` | Base katmanının periyodik turu. Cron **SAATLİKTİR**, 4 saatlik değil: tek tetikleme başına tek bar, GitHub'ın düşen cron'uyla birleşince barların %26'sını sinyalsiz bırakıyordu (karar 39). Saatlik kadans her 4H barına dört şans verir ve ölçüm kuralına DOKUNMAZ — `signals_per_bar` kapalı kalır. Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü `main.py` her koşuda `generated_at`i tazeler ve commit edilseler HEAD'deki `round` denetim izini (`emitted`/`survey`/`rejections`) BOŞ bir turla ezerlerdi — ayrıca `as_of` dört tur sabit kaldığı için günlük Telegram özeti dört kez giderdi. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
 
@@ -106,6 +111,7 @@ yapar.
 | `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, `signals_per_bar`, …). Bkz. "Katmanlar". |
 | `scalp.*` | scalp kısıtları | Beş kollu modellerin (11, 12, 15) ve model 14'ün BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16; `patient.time_stop_bars` 100 — yalnızca model 16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
 | `exit_management.*` | üç aşamalı çıkış | Modeller 13, 14 ve 15'in TEK kaynağı: `breakeven_at_r` (1.0), `partial_tp.r` (1.5), `partial_tp.fraction` (0.5), `trail_giveback_pct` (0.5). Model başına ayrı bloklar, bir gün birinin sessizce ayrışması ve model 15 ↔ `scalp_fixed` farkının "iki ayrı yönetimin farkı"na dönüşmesi demekti. |
+| `ema_trend.*` | model 18 | `fast_period` (21), `slow_period` (55), `stop_atr_multiple` (1.5), `target_reward_risk` (2.0). Yalnızca `ema_trend` okur. ATR PERİYODU BURADA YOKTUR: projenin tek ATR tanımı `trailing.atr_period`tır ve modele özel bir periyot, aynı "1.5×ATR" ifadesinin modelden modele farklı mesafe anlamına gelmesi demekti. Dört sayı da docs/backtest.md > 6d'de ön-kayıtlıdır. |
 | `vwap.*` | modeller 13-14 | Model 14'ün sinyali (`band_mult` 2.0, `min_vwap_bars` 8 — YALNIZCA model 14'ün, kopya okumaz) ve sabit çarpanları (`managed.*`); kopyanın KENDİ kuralları (`clone.*`: sabit teminat oranı, kaldıraç, limitler, kaynağın sinyal sabitleri `vwap_window` 300 / `std_window` 20 / `min_bars` 25 / `sl_mult` 0.5, 3×3 = 9 kombinasyon, epsilon, 12 sembollük evren). İki blok ayrıdır ve `band_mult`i paylaşmaz: model 13 onu ÖĞRENİR, model 14 config'ten sabit okur. |
 
 ## Değişmez Kurallar
@@ -330,22 +336,36 @@ kolonlarında `nan` alır — ama AYRI bir bayraktır, çünkü:
 
 ## Katmanlar (`core/layers.py`)
 
-Ölçüm iki zaman diliminde yürür ve ikisi de **AYNI çekirdeği** koşar: `core/engine.py`,
+Ölçüm üç katmanda yürür ve üçü de **AYNI çekirdeği** koşar: `core/engine.py`,
 `core/portfolio.py`, `core/ledger.py`, `core/funding.py`, `core/metrics.py`, `core/report.py`
 ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 
-| | `base` | `scalp` |
-|---|---|---|
-| Bar | 4H | 15m |
-| Evren | hacme göre ilk 50 (30 günde bir yenilenir) | **SABİT 13 sembol**, otomatik seçim yok |
-| Modeller | 10 yarışmacı + 1 referans çıpası | 4 yarışmacı (11, 12, 14, 15) + 1 dış sistem kopyası (13) |
-| Defter | `ledgers/` | `ledgers_scalp/` |
-| Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
-| Cron | `run.yml` (SAATLİK; her 4H barına dört şans — karar 39. Bar ilerletmeyen turlar commit ve bildirim üretmez) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) |
-| Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
-| Stop tavanı (kural 14) | 3×ATR | 8×ATR |
-| Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |
-| Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) |
+| | `base` | `scalp` | `ema` |
+|---|---|---|---|
+| Bar | 4H | 15m | 4H |
+| Evren | hacme göre ilk 50 (30 günde bir yenilenir) | **SABİT 13 sembol**, otomatik seçim yok | **SABİT 13 sembol** (scalp'in aynısı) |
+| Modeller | 3 yarışmacı + 1 referans çıpası | 4 yarışmacı (12, 13, 14, 16) + 1 dış sistem kopyası (13) | 3 yarışmacı (18 + kıyas hedefi `trend` + kontrol) + 1 çıpa |
+| Defter | `ledgers/` | `ledgers_scalp/` | `ledgers_ema/` |
+| Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` | `docs/data/metrics_ema.json` |
+| Cron | `run.yml` (SAATLİK; her 4H barına dört şans — karar 39. Bar ilerletmeyen turlar commit ve bildirim üretmez) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) | **YOK** — tetikleyicisi yok, tanım var koşu yok (bkz. aşağısı) |
+| Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) | yok (`signals_per_bar: false`) |
+| Stop tavanı (kural 14) | 3×ATR | 8×ATR | 3×ATR |
+| Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi | sembol + çıkış kuralı + seans + kayıp serisi |
+| Yarışma dışı satır | `buyhold` (`is_benchmark`) | `vwap_clone` (`is_replica`) | `buyhold` (`is_benchmark`) |
+
+**`ema` katmanının tetikleyicisi YOKTUR ve bu bilinçlidir.** Katman bugün yalnızca
+`scripts/backtest.py` tarafından okunur; hiçbir deftere yazılmaz. Canlıya alınması
+(`run-ema.yml`), ön-kayıtlı kapıların geçilmesine bağlıdır (docs/backtest.md > 6d) —
+"tanımlı ama koşmuyor" hâli, `scalp_vol`un `REGISTRY`de durup `models` listesinde olmaması
+ile aynı statüdedir: kod ölçülmeden yarışmaz.
+
+**Neden `ema` ayrı bir katman.** Modelin backtest'i sabit 13 coinde koşuyor; `base` evreni
+hacme göre seçilir ve 30 günde bir kayar. Modeli `base`e almak, backtest'in ölçtüğünden
+BAŞKA bir evrende koşturmak, yani forward test ile backtest'i baştan ayrıştırmak olurdu.
+Alternatif ("base evrenini 13 coine sabitlemek") reddedildi: `trend`, `meanrev`,
+`random_ctrl` ve `buyhold` o günden itibaren başka bir evren görür ve mevcut defterlerinin
+geçmişi yeni dönemle kıyaslanamaz hâle gelirdi (karar 25'te `fee_rate`in defteri tarihli
+olarak bölmesiyle aynı hata). Bkz. docs/decisions.md > 45.
 
 **Neden ayrı bir `scalp_config.yaml` değil.** `risk_per_trade`, `fee_rate`, `slippage_*`,
 `leverage_cap`, `initial_capital`, `maintenance_margin` iki katmanda da BİREBİR aynıdır

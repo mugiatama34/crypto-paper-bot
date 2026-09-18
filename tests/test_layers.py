@@ -25,8 +25,8 @@ SHARED_KEYS = (
 )
 
 
-def test_repository_defines_both_layers() -> None:
-    assert layer_names(load_config()) == ["base", "scalp"]
+def test_repository_defines_its_layers() -> None:
+    assert layer_names(load_config()) == ["base", "ema", "scalp"]
 
 
 def test_base_layer_matches_the_root_config() -> None:
@@ -54,26 +54,51 @@ def test_scalp_layer_overrides_only_the_conditions() -> None:
     assert scalp.breakdowns == ("arm", "symbol", "exit_rule", "session", "loss_streak")
 
 
-def test_cost_and_risk_constants_are_identical_in_both_layers() -> None:
-    """Kural 6: iki katman da BİREBİR aynı maliyet/risk varsayımlarıyla koşar.
+def test_cost_and_risk_constants_are_identical_in_every_layer() -> None:
+    """Kural 6: HER katman BİREBİR aynı maliyet/risk varsayımlarıyla koşar.
 
     Bu test ayrı bir scalp_config.yaml yerine katman bloğu seçilmesinin gerekçesidir:
-    sabitler tek kaynaktan geldiği sürece sessizce ayrışamazlar.
+    sabitler tek kaynaktan geldiği sürece sessizce ayrışamazlar. Katman listesi config'ten
+    okunur, burada elle tutulmaz — elle tutulan bir liste, üçüncü katman eklendiği gün
+    kapıyı sessizce o katmanın dışında bırakırdı.
     """
     config = load_config()
-    base = resolve_layer(config, "base").config
-    scalp = resolve_layer(config, "scalp").config
+    root = resolve_layer(config, "base").config
 
-    for key in SHARED_KEYS:
-        assert base[key] == scalp[key], key
+    for name in layer_names(config):
+        layer = resolve_layer(config, name).config
+        for key in SHARED_KEYS:
+            assert layer[key] == root[key], f"{name}.{key}"
 
 
 def test_layers_never_share_a_ledger() -> None:
-    """Aynı defter, 15 dakikalık turların 4 saatlik modellerin durumunu ezmesi demekti."""
+    """Aynı defter, bir katmanın turunun diğerinin `last_processed_bar`ını ezmesi demekti."""
     config = load_config()
+    names = layer_names(config)
 
-    assert resolve_layer(config, "base").ledger_root != resolve_layer(config, "scalp").ledger_root
-    assert resolve_layer(config, "base").metrics_path != resolve_layer(config, "scalp").metrics_path
+    roots = [resolve_layer(config, name).ledger_root for name in names]
+    reports = [resolve_layer(config, name).metrics_path for name in names]
+    assert len(set(roots)) == len(names)
+    assert len(set(reports)) == len(names)
+
+
+def test_ema_layer_pins_its_universe_and_carries_its_own_comparison_rows() -> None:
+    """`ema` katmanı: sabit evren + kıyas hedefi/kontrol/çıpa İÇERİDE.
+
+    Evren sabitliği katmanın varlık sebebidir (backtest ile canlı aynı kümeyi görmeli);
+    kıyas satırlarının içeride olması ise katmanlar arası kıyas yapılmadığı içindir —
+    `trend` dışarıda kalsaydı "bu model trend'den iyi mi" sorusu hiçbir tabloda
+    cevaplanamazdı (bkz. docs/decisions.md > 45).
+    """
+    config = load_config()
+    ema = resolve_layer(config, "ema")
+
+    assert ema.timeframe == "4H"
+    assert ema.symbols == resolve_layer(config, "scalp").symbols
+    assert ema.ledger_root.name == "ledgers_ema"
+    assert ema.metrics_path.name == "metrics_ema.json"
+    assert {"ema_trend", "trend", "random_ctrl", "buyhold"} == set(ema.models)
+    assert ema.config["signals_per_bar"] is False
 
 
 def test_scalp_universe_is_fixed_and_complete() -> None:
