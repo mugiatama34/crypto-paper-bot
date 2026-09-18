@@ -48,6 +48,7 @@ from core.config import get_setting, load_config  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
 from core.metrics import format_report  # noqa: E402
 from scripts.backtest import BacktestResult, format_fill_ambiguity, run_backtest, results_payload  # noqa: E402
+from main import jsonable  # noqa: E402
 
 logger = logging.getLogger("backtest-ema")
 
@@ -520,7 +521,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     results = Path(args.results)
     results.parent.mkdir(parents=True, exist_ok=True)
     results.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        json.dumps(jsonable(payload), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
     _write_csv(Path(args.csv), payload["coins"])
     logger.info("yük: %s ve %s", results, args.csv)
@@ -529,7 +530,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         site = Path(args.site_json)
         site.parent.mkdir(parents=True, exist_ok=True)
         site.write_text(
-            json.dumps(site_payload(payload), ensure_ascii=False, indent=1, default=str),
+            json.dumps(jsonable(site_payload(payload)), ensure_ascii=False, indent=1, default=str),
             encoding="utf-8",
         )
         logger.info("site yükü: %s", site)
