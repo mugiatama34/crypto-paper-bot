@@ -58,7 +58,7 @@ import logging
 import subprocess
 import sys
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -72,11 +72,13 @@ from core.data import bar_duration, load_market_data  # noqa: E402
 from core.engine import Engine, RoundReport  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
-from core.metrics import ModelMetrics, compare, format_report  # noqa: E402
+from core.metrics import (  # noqa: E402
+    ModelMetrics, buy_hold_return, compare, format_report, holding_stats,
+)
 from core.portfolio import Portfolio  # noqa: E402
 from core.report import model_breakdowns  # noqa: E402
 from main import build_strategies  # noqa: E402
-from strategies.base import Strategy  # noqa: E402
+from strategies.base import MarketData, Signal, Strategy  # noqa: E402
 
 logger = logging.getLogger("backtest")
 
@@ -120,6 +122,18 @@ class BacktestResult:
     # (bkz. core/metrics.py::format_report). Koşunun config'inden okunur ki backtest ile
     # canlı tablo aynı çıtayı göstersin.
     min_trades: int = 0
+    # Tutuş süresi dağılımı (model -> HoldingStats alanları). Zaman stop'u olmayan bir
+    # modelde OOS embargosu (docs/backtest.md > 6.1) VARSAYILAMAZ: "doğru boşluk azami
+    # tutuş süresidir" kuralının dayandığı üst sınır orada tanım gereği yoktur ve
+    # buradan ÖLÇÜLÜR.
+    holding: Mapping[str, Any] = field(default_factory=dict)
+    # Sembol başına al-tut getirisi (yüzde), pencerenin kendisinden. Bir sembolün
+    # ortalama R'sini, o sembolün o pencerede ne yaptığını bilmeden okumak yanıltıcıdır:
+    # çöken bir sembolde long-only bir modelin kaybetmesi bir sinyal kusuru değildir.
+    buy_hold: Mapping[str, float] = field(default_factory=dict)
+    # Koşunun canlıdan sapan varsayımları; raporun başına basılır ki bir sayı, hangi
+    # dünyada ölçüldüğü bilinmeden okunmasın.
+    deviations: Mapping[str, Any] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -135,11 +149,43 @@ def run_backtest(
     config_path: str | None = None,
     history_bars: int | None = None,
     embargo_bars: int | None = None,
+    symbols: Sequence[str] | None = None,
+    fee_rate: float | None = None,
+    slippage_base: float | None = None,
+    funding_periods: int | None = None,
+    signal_cutoff: pd.Timestamp | None = None,
 ) -> BacktestResult:
     """Katmanı `start`..`end` penceresinde koşturur ve ayrı bir deftere yazar.
 
     `start` TOHUMLANAN bardır: motor ondan SONRAKİ ilk bardan başlar (`_timeline`
     `ts > last_bar` süzer). Yani pencere yarı açıktır — `start` işlenmez, `end` işlenir.
+
+    `symbols` katmanın evrenini DARALTIR (genişletemez): dış bir referansla (ör. tek
+    sembollü bir TradingView koşusu) kıyas ancak tek sembollü bir koşuyla kurulabilir,
+    çünkü portföy kotası (`max_positions`) çok sembollü bir koşuda sinyal REDDEDER ve
+    aradaki fark modelin değil kotanın ölçüsü olur. Genişletememesi kural 6'dır: evren
+    katmanın tanımıdır, harness onu büyütemez.
+
+    `fee_rate` / `slippage_base` maliyet varsayımını değiştirir ve bu bir ÖLÇÜM KURALI
+    değişikliğidir — `--history-bars`ın aksine sonucun kendisini kaydırır. Bu yüzden
+    yalnızca dış bir referansla parite kurmak için vardır, gürültüyle bağırır
+    (`logger.warning`) ve `manifest.json`ın config parmak izine düşer. Canlı `config.yaml`
+    hiçbir koşulda değişmez (kural 6 + karar 25: `fee_rate` defteri tarihli olarak böler).
+
+    `funding_periods` funding geçmişinin derinliğidir (`data.funding_history_periods`).
+    Varsayılan 180 periyot ≈ 60 gündür; yıllara uzanan bir pencerede kaydı olmayan anda
+    `core/funding.py::rate_at` None döner ve funding HİÇ işlenmez (uydurma yok) — yani
+    eski dönem sistematik olarak İYİMSER çıkar. Derinleştirmek bunu kapatır; borsanın
+    kendi sınırı `manifest.json`daki kapsama ile birlikte okunur.
+
+    `signal_cutoff` bu bardan SONRA yeni sinyal üretilmesini durdurur; barlar işlenmeye
+    devam eder (stop/TP/likidasyon/funding). Dönem atamasının karşılığıdır: bir işlem
+    GİRİŞ tarihine göre döneme aittir ve dönemin son kurulumları sınırı aşsa bile
+    kapanışına kadar o döneme sayılır. Kesim olmadan alternatif, sınırda açık olan
+    pozisyonları düşürmekti — bu, dönemin en uzun yaşayan kurulumlarını sistematik olarak
+    eleyip ortalamayı kısa işlemlere doğru çekerdi. Uygulaması modelin ÖRNEĞİNİ gölgeler
+    (sınıfını değil): `type(strategy).observe_closed_trades` ile kurulan uyarlanabilirlik
+    tespiti (Kapı 0) bozulmasın diye.
 
     `embargo_bars` bir OOS penceresinin başına konan boşluktur (docs/backtest.md > 6):
     parametresi `start`e kadarki veriyle seçilmiş bir model için, `start`ten hemen sonra
@@ -193,13 +239,92 @@ def run_backtest(
         config = {**config, "data": {**config["data"], "history_bars": history_bars}}
         logger.info("derinlik override: history_bars %d -> %d", history_bars_was, history_bars)
 
+    # Maliyet override'ı: `--history-bars`tan FARKLI bir şeydir ve farkı gizlenmez.
+    # O, anlık görüntünün derinliğini değiştirir ve sonucu değiştirmemesi SINANIR (Kapı 0);
+    # bu, doğrudan sonucun kendisini kaydırır. Bu yüzden yalnızca dış bir referansla parite
+    # için vardır ve her koşuda bağırır.
+    if fee_rate is not None or slippage_base is not None:
+        if fee_rate is not None and fee_rate < 0.0:
+            raise ValueError(f"--fee-rate negatif olamaz: {fee_rate}")
+        if slippage_base is not None and slippage_base < 0.0:
+            raise ValueError(f"--slippage-base negatif olamaz: {slippage_base}")
+        live_fee = float(get_setting(config, "fee_rate"))
+        live_slip = float(get_setting(config, "slippage_base"))
+        config = {
+            **config,
+            "fee_rate": live_fee if fee_rate is None else float(fee_rate),
+            "slippage_base": live_slip if slippage_base is None else float(slippage_base),
+        }
+        logger.warning(
+            "MALİYET OVERRIDE: bu koşu CANLI MALİYETLE KOŞMUYOR — "
+            "fee_rate %.5f -> %.5f, slippage_base %.5f -> %.5f (dolum başına %.5f -> %.5f). "
+            "Sonuçlar canlı defterle aynı varsayımı taşımaz.",
+            live_fee, config["fee_rate"], live_slip, config["slippage_base"],
+            live_fee + live_slip, config["fee_rate"] + config["slippage_base"],
+        )
+
+    if funding_periods is not None:
+        was = int(get_setting(config, "data.funding_history_periods"))
+        if funding_periods < was:
+            raise ValueError(
+                f"--funding-periods yalnızca DERİNLEŞTİRİR: {funding_periods} < {was}. "
+                "Sığlaştırmak, funding'i canlıda ödenenden AZ göstermek demekti."
+            )
+        config = {**config, "data": {**config["data"], "funding_history_periods": funding_periods}}
+        logger.info("funding derinliği: %d -> %d periyot", was, funding_periods)
+
     names = list(models) if models is not None else layer.models
     if not names:
         raise ValueError(f"{layer.name} katmanında model yok")
 
+    deviations: dict[str, Any] = {
+        "signals_per_bar": {"live": signals_per_bar_was, "run": True},
+        "history_bars": {
+            "config": history_bars_was, "used": int(get_setting(config, "data.history_bars"))
+        },
+    }
+    if fee_rate is not None or slippage_base is not None:
+        deviations["costs"] = {
+            "live_fee_rate": float(load_config(config_path)["fee_rate"]),
+            "live_slippage_base": float(load_config(config_path)["slippage_base"]),
+            "run_fee_rate": float(get_setting(config, "fee_rate")),
+            "run_slippage_base": float(get_setting(config, "slippage_base")),
+        }
+    if funding_periods is not None:
+        deviations["funding_history_periods"] = int(
+            get_setting(config, "data.funding_history_periods")
+        )
+    if signal_cutoff is not None:
+        deviations["signal_cutoff"] = signal_cutoff.isoformat()
+
+    universe = list(layer.symbols) if layer.symbols is not None else None
+    if symbols is not None:
+        requested = list(symbols)
+        if not requested:
+            raise ValueError("--symbols boş olamaz")
+        if universe is not None:
+            outside = [symbol for symbol in requested if symbol not in universe]
+            if outside:
+                raise ValueError(
+                    f"--symbols katmanın evrenini GENİŞLETEMEZ, yalnızca daraltır: {outside} "
+                    f"{layer.name} evreninde yok (kural 6: evren katmanın tanımıdır)"
+                )
+        universe = requested
+        logger.info("evren daraltıldı: %d sembol (%s)", len(universe), ", ".join(universe))
+
     strategies, build_failures = build_strategies(names, config)
     if not strategies:
         raise RuntimeError("hiçbir model kurulamadı")
+
+    if signal_cutoff is not None:
+        if signal_cutoff <= start:
+            raise ValueError(f"--signal-cutoff pencerenin içinde olmalı: {signal_cutoff} <= {start}")
+        for strategy in strategies:
+            _silence_signals_after(strategy, signal_cutoff)
+        logger.info(
+            "sinyal kesimi: %s sonrası YENİ sinyal yok; barlar pozisyon yönetimi için "
+            "işlenmeye devam eder (dönem ataması giriş tarihine göredir)", signal_cutoff,
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     ledger = Ledger(out_dir / "ledger")
@@ -219,7 +344,7 @@ def run_backtest(
     now = pd.Timestamp.now(tz="UTC")
     if end > now:
         logger.warning("istenen bitiş (%s) gelecekte; anlık görüntü şimdiye (%s) kadar kurulur", end, now)
-    market = load_market_data(config, symbols=layer.symbols, now=min(end, now))
+    market = load_market_data(config, symbols=universe, now=min(end, now))
     logger.info(
         "katman=%s pencere=(%s, %s] as_of=%s sembol=%d model=%d",
         layer.name, start, end, market.as_of, len(market.ohlcv), len(strategies),
@@ -257,19 +382,59 @@ def run_backtest(
         signals_per_bar_was=signals_per_bar_was,
         embargo=(requested_start, int(embargo_bars or 0)),
         history_bars=(history_bars_was, int(get_setting(config, "data.history_bars"))),
+        deviations=deviations,
+        universe=universe if universe is not None else sorted(market.ohlcv),
     )
     # Kırılımlar `core/report.py`den OKUNUR, burada yeniden yazılmaz: kırılımın tanımı
     # (kol etiketi, çıkış kuralı birleşimi, seans sınırları, kayıp serisi kesimi) ölçümün
     # parçasıdır ve ikinci bir kopya, backtest ile dashboard'un sessizce ayrışması demekti.
     trades = {s.name: ledger.read_trades(s.name) for s in strategies}
     breakdowns = model_breakdowns(trades, kinds=layer.breakdowns)
+    step = bar_duration(str(get_setting(config, "timeframe")))
+    holding = {
+        name: asdict(holding_stats(rows, bar_duration=step)) for name, rows in trades.items()
+    }
+    # Al-tut çıpası SEMBOL başınadır ve pencerenin kendisinden okunur; `buyhold` modeli
+    # (kural 15) hesap düzeyinde tek bir sayı verir ve "bu sembol ne yaptı" sorusuna
+    # cevap taşımaz.
+    buy_hold = {
+        symbol: buy_hold_return(frame["close"], start=start, end=market.as_of)
+        for symbol, frame in sorted(market.ohlcv.items())
+    }
 
     return BacktestResult(
         layer=layer.name, start=start, end=market.as_of, out_dir=out_dir,
         report=report, metrics=tuple(metrics), build_failures=build_failures,
         breakdowns=breakdowns,
         min_trades=int(get_setting(config, "acceptance.min_trades")),
+        holding=holding,
+        buy_hold=buy_hold,
+        deviations=deviations,
     )
+
+
+def _silence_signals_after(strategy: Strategy, cutoff: pd.Timestamp) -> None:
+    """`cutoff`tan sonraki barlarda modelin YENİ sinyal üretmesini durdurur.
+
+    Gölgeleme ÖRNEK düzeyindedir, sınıf düzeyinde değil: Kapı 0'ın uyarlanabilirlik
+    tespiti `type(strategy).observe_closed_trades`a bakar (docs/backtest.md > 1) ve
+    modeli bir sarmalayıcı sınıfa koymak o tespiti bozardı — harness, ölçtüğü modelin
+    kimliğini değiştiremez.
+
+    Pozisyon yönetimi (`manage_positions`) DOKUNULMAZ: kesimin anlamı "yeni kurulum
+    alma", "açık pozisyonu dondur" değil. Dondurmak, dönemin son kurulumlarını kendi
+    çıkış kurallarından mahrum bırakıp sonucu uydururdu.
+    """
+    original = strategy.generate_signals
+
+    def gated(
+        market: MarketData, peer_signals: Mapping[str, tuple[Signal, ...]] | None = None
+    ) -> list[Signal]:
+        if market.as_of > cutoff:
+            return []
+        return original(market, peer_signals)
+
+    strategy.generate_signals = gated  # type: ignore[method-assign]
 
 
 def _seed_start_bar(ledger: Ledger, model: str, *, start: pd.Timestamp) -> None:
@@ -303,6 +468,8 @@ def _write_manifest(
     signals_per_bar_was: bool,
     history_bars: tuple[int, int],
     embargo: tuple[pd.Timestamp, int] = (pd.NaT, 0),
+    deviations: Mapping[str, Any] | None = None,
+    universe: Sequence[str] | None = None,
 ) -> None:
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -322,6 +489,12 @@ def _write_manifest(
         # Sapmalar koşunun kendi kaydında durur: sonradan "hangi ayarla koşmuştu" diye
         # sorulduğunda cevap log'da değil, manifest'te olmalı (docs/backtest.md > 9).
         "history_bars": {"config": history_bars[0], "used": history_bars[1]},
+        # Canlıdan sapan HER varsayım tek bir yerde: maliyet override'ı, funding
+        # derinliği, sinyal kesimi. Maliyet sapması ayrıca `config_fingerprint`e de
+        # düşer (fee_rate/slippage_base orada), ama burada niyetiyle birlikte durur:
+        # parmak izi "hangi değerle koştu" der, bu "canlıdan farklı mı" der.
+        "deviations": dict(deviations or {}),
+        "universe": {"layer": list(layer.symbols or ()), "used": list(universe or ())},
         "models": [s.name for s in strategies],
         "adaptive_models": [s.name for s in strategies if is_adaptive(s)],
         "build_failures": dict(build_failures),
@@ -634,6 +807,55 @@ def _cell(value: Any) -> str:
     return "—" if number != number else f"{number:.2f}"
 
 
+def results_payload(result: BacktestResult) -> dict[str, Any]:
+    """Koşunun MAKİNE OKUNUR özeti: metrikler + kırılımlar + tutuş süresi + sapmalar.
+
+    Neden ayrı bir yük: `format_report` insan içindir ve hizalanmış bir tablo, iki koşuyu
+    (IS ↔ OOS) birleştirip sembol bazlı bir tablo üretmek için elle ayrıştırılmak zorunda
+    kalırdı — ayrıştırma, sayıların ikinci bir kopyası demek olurdu. Yük doğrudan
+    `core/metrics.py`nin dataclass'larından türer; burada hiçbir şey yeniden hesaplanmaz.
+
+    `deviations` yükün İÇİNDEDİR ve dışarıda bırakılamaz: bir sayının hangi dünyada
+    (hangi maliyet, hangi funding derinliği, hangi sinyal kesimi) ölçüldüğü, sayının
+    kendisi kadar ölçümün parçasıdır.
+    """
+    return {
+        "layer": result.layer,
+        "window": {"start": result.start.isoformat(), "end": result.end.isoformat()},
+        "min_trades": result.min_trades,
+        "deviations": dict(result.deviations),
+        "build_failures": dict(result.build_failures),
+        "validity": {
+            model.model: {
+                "bars_processed": model.bars_processed,
+                "missing_bars": model.missing_bars,
+                "unchecked_position_bars": model.unchecked_position_bars,
+                "signals": model.signals,
+                "filled": model.filled,
+                "rejections": dict(model.rejections),
+                "stop_exits": model.stop_exits,
+                "ambiguous_stop_exits": model.ambiguous_stop_exits,
+            }
+            for model in result.report.models
+        },
+        "models": [asdict(metrics) for metrics in result.metrics],
+        "breakdowns": _jsonable(result.breakdowns),
+        "holding": dict(result.holding),
+        "buy_hold_pct": dict(result.buy_hold),
+    }
+
+
+def _jsonable(value: Any) -> Any:
+    """Kırılım yükündeki dataclass'ları sözlüğe indirir (yapı korunur)."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
+
+
 def _git_log_shas(path: str) -> list[str]:
     result = subprocess.run(
         ["git", "log", "--format=%H", "--", path], capture_output=True, text=True
@@ -673,6 +895,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error("--start ve --end ISO zaman damgası olmalı")
         return 2
 
+    cutoff = _stamp(args.signal_cutoff)
+    if args.signal_cutoff and cutoff is None:
+        logger.error("--signal-cutoff ISO zaman damgası olmalı")
+        return 2
+
     run_id = args.run_id or f"{args.layer}-{start:%Y%m%dT%H%M}-{end:%Y%m%dT%H%M}"
     out_dir = Path(args.out) if args.out else BACKTEST_ROOT / run_id
 
@@ -683,6 +910,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             config_path=args.config,
             history_bars=args.history_bars,
             embargo_bars=args.embargo_bars,
+            symbols=args.symbols.split(",") if args.symbols else None,
+            fee_rate=args.fee_rate,
+            slippage_base=args.slippage_base,
+            funding_periods=args.funding_periods,
+            signal_cutoff=cutoff,
         )
     except Exception as exc:  # noqa: BLE001 — CLI sınırı; gerekçe kullanıcıya gider
         logger.error("backtest koşulamadı: %s", exc)
@@ -692,6 +924,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(format_drift(result.metrics))
     print(format_fill_ambiguity(result.report))
     print(format_breakdowns(result.breakdowns))
+
+    if args.results_json:
+        path = Path(args.results_json)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(results_payload(result), ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        logger.info("sonuç yükü: %s", path)
 
     violations = check_validity(result.report)
     if violations:
@@ -769,6 +1010,46 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "çözüldüğü barlar OOS'a girmesin diye. Doğru değer azami tutuş süresidir "
             "(katmanın time_stop_bars'ı)."
         ),
+    )
+    parser.add_argument(
+        "--symbols", default=None,
+        help=(
+            "virgülle sembol listesi; katmanın evrenini DARALTIR (genişletemez). Dış bir "
+            "referansla parite için tek sembollü koşu: çok sembollü koşuda portföy kotası "
+            "(max_positions) sinyal reddeder ve kıyas modelin değil kotanın ölçüsü olur."
+        ),
+    )
+    parser.add_argument(
+        "--fee-rate", type=float, default=None, metavar="ORAN",
+        help=(
+            "tek yön komisyon override'ı. ÖLÇÜM KURALINI değiştirir (--history-bars'ın "
+            "aksine sonucu kaydırır): yalnızca dış bir referansla parite için; koşu "
+            "bağırır ve manifest'e yazılır. Canlı config DEĞİŞMEZ."
+        ),
+    )
+    parser.add_argument(
+        "--slippage-base", type=float, default=None, metavar="ORAN",
+        help="temel kayma override'ı; --fee-rate ile aynı uyarılar geçerli",
+    )
+    parser.add_argument(
+        "--funding-periods", type=int, default=None, metavar="N",
+        help=(
+            "funding geçmişi derinliği; yalnızca DERİNLEŞTİRİR. Varsayılan 180 periyot "
+            "≈ 60 gündür: yıllara uzanan pencerede kaydı olmayan an funding ÖDEMEZ ve "
+            "eski dönem iyimser çıkar."
+        ),
+    )
+    parser.add_argument(
+        "--signal-cutoff", default=None, metavar="ISO",
+        help=(
+            "bu bardan sonra YENİ sinyal üretilmez; barlar pozisyon yönetimi için "
+            "işlenmeye devam eder. Dönem ataması giriş tarihine göredir: dönemin son "
+            "kurulumları sınırı aşsa bile kapanışına kadar o döneme sayılır."
+        ),
+    )
+    parser.add_argument(
+        "--results-json", default=None, metavar="PATH",
+        help="metrik + kırılım + tutuş süresi + sapmaları makine okunur biçimde yazar",
     )
     parser.add_argument(
         "--verify-live", default=None, metavar="METRICS_PATH",

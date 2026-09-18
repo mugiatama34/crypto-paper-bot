@@ -96,6 +96,27 @@ class DirectionStats:
     profit_factor: float
     avg_stop_distance_pct: float
     cost_per_r: float
+    # YÜZDE biriminde ödeme profili. R biriminde karşılıkları (`avg_win_r`, `avg_loss_r`)
+    # zaten var ve birincildir; bunlar onların YERİNE değil YANINA gelir, çünkü dışarıdan
+    # gelen bir referansla (TradingView, bir başka backtest aracı) kıyas ancak yüzde
+    # biriminde kurulabilir — R, boyutlandırma kuralımıza bağlıdır ve o kural dışarıda
+    # başkadır. Payda pozisyonun GİRİŞ notional'ıdır (`merge_fills` onu da toplar), yani
+    # ölçü kaldıraçtan bağımsızdır.
+    #
+    # `payoff` ikisinin oranıdır ve AYRI bir alan olmasının sebebi `nan` cebiridir: kayıp
+    # işlemi olmayan bir satırda oran tanımsızdır ve okuyucunun bölme yapması, o satırda
+    # sıfıra bölmesi demekti.
+    avg_win_pct: float
+    avg_loss_pct: float
+    payoff: float
+    # Kümülatif PnL eğrisinin (para birimi) en büyük tepe-dip düşüşü. `max_drawdown_r`ın
+    # yanında durur ve ondan farkı PAYDADIR: R eğrisi risk birimini, bu eğri parayı
+    # ölçer. Kırılım satırlarında (sembol, kol) hesap düzeyi `max_drawdown` yoktur —
+    # hesap tektir ve sembole bölünemez (ortak nakit, ortak margin) — ama "bu sembol
+    # hesabı ne kadar geriye çekti" sorusunun cevabı buradadır. Yüzdeye çevirmek için
+    # `pnl_drawdown_pct` kullanılır; oran, paydayı (başlangıç sermayesi) bilen tek yerde
+    # kurulur.
+    max_drawdown_pnl: float
     # Ortalama R'nin yüzdelik bootstrap aralığı. `cost_per_r`'nin yanında durur çünkü
     # ikisi de aynı soruya bakar: "bu satır okunabilir mi". `nan` = hesaplanmadı
     # (bootstrap kapalı ya da örneklem boş) — 0.0 DEĞİL, çünkü sıfır bir aralık sınırı
@@ -394,6 +415,12 @@ def direction_stats(
     r_values = [r for r in (r_multiple(row) for row in rows) if r is not None]
     wins = [r for r in r_values if r > 0.0]
     losses = [r for r in r_values if r < 0.0]
+    # Yüzde profili R'den BAĞIMSIZ toplanır: `r_multiple` `risk_amount`ı olmayan satırda
+    # None döner (çıpa) ama yüzde getirisi orada da tanımlıdır. İki listeyi tek döngüde
+    # türetmek, çıpanın ödeme profilini sessizce boşaltırdı.
+    pnl_pcts = _collect(rows, _pnl_pct)
+    win_pcts = [value for value in pnl_pcts if value > 0.0]
+    loss_pcts = [value for value in pnl_pcts if value < 0.0]
     loss_total = abs(sum(losses))
     notional = _sum_column(rows, "notional")
     cost = _sum_column(rows, "fee") + _sum_column(rows, "slippage_cost")
@@ -426,6 +453,12 @@ def direction_stats(
         ),
         cost_per_r=(
             _NAN if (is_benchmark or is_replica) else _mean(_collect(rows, cost_per_r))
+        ),
+        avg_win_pct=_mean(win_pcts),
+        avg_loss_pct=_mean(loss_pcts),
+        payoff=_ratio(_mean(win_pcts), abs(_mean(loss_pcts))),
+        max_drawdown_pnl=_max_drawdown_series(
+            _collect(rows, lambda row: _to_float(row.get("pnl")))
         ),
         avg_r_ci_low=ci_low,
         avg_r_ci_high=ci_high,
@@ -511,6 +544,153 @@ def _market_context(
         if stop:
             market_r.append(value / stop)
     return (_mean(tailwinds), _mean(market_r), len(tailwinds))
+
+
+def _pnl_pct(row: Mapping[str, Any]) -> float | None:
+    """Pozisyonun GİRİŞ notional'ına oranla net sonucu (yüzde).
+
+    Net: komisyon, kayma ve funding `pnl`in içindedir (defterin `pnl` kolonu kapanışta
+    yazılan nakit değişimidir). Brüt bir yüzde, maliyeti ölçüme sokmayan bir sayı olurdu
+    ve tam da kıyaslanmak istenen friksiyon görünmez kalırdı.
+    """
+    pnl = _to_float(row.get("pnl"))
+    notional = _to_float(row.get("notional"))
+    if pnl is None or notional is None or notional <= 0.0:
+        return None
+    return pnl / notional * 100.0
+
+
+def _max_drawdown_series(values: Sequence[float]) -> float:
+    """Sıralı bir nakit akışının kümülatif eğrisindeki en büyük tepe-dip düşüş (<= 0)."""
+    if not values:
+        return _NAN
+    cumulative = peak = worst = 0.0
+    for value in values:
+        cumulative += value
+        peak = max(peak, cumulative)
+        worst = min(worst, cumulative - peak)
+    return worst
+
+
+@dataclass(frozen=True, kw_only=True)
+class HoldingStats:
+    """Pozisyonların TUTUŞ SÜRESİ dağılımı. Bir ÖLÇÜMDÜR, bir kural değil.
+
+    Neden ayrı bir ölçü: zaman stop'u olmayan bir modelde (ör. `ema_trend`) pozisyon
+    ömrü sınırsızdır ve OOS penceresinin embargosu (docs/backtest.md > 6.1) bu yüzden
+    VARSAYILAMAZ — "doğru boşluk azami tutuş süresidir" kuralının dayandığı üst sınır
+    o modelde tanım gereği yoktur. Sınır burada ÖLÇÜLÜR.
+
+    Dağılımın kendisi de bir bulgudur: uzun bir kuyruk, kurulumların hedefe ya da stop'a
+    varmadan beklediğini söyler — yani "hedefe ulaşma oranı düşük" iddiasının bağımsız
+    kontrolüdür.
+
+    `bars` ve `days` birlikte tutulur çünkü ikisi farklı soruya cevap verir: bar sayısı
+    modelin geometrisiyle (zaman stop'u, hedef mesafesi) kıyaslanabilir, gün ise funding
+    maliyetiyle ve embargo takvimiyle.
+    """
+
+    positions: int
+    median_bars: float
+    p90_bars: float
+    max_bars: float
+    median_days: float
+    p90_days: float
+    max_days: float
+
+
+def holding_stats(
+    trades: Iterable[Mapping[str, Any]], *, bar_duration: pd.Timedelta
+) -> HoldingStats:
+    """Kapanmış POZİSYONLARIN açılış-kapanış süresi dağılımı.
+
+    Birim pozisyondur (`merge_fills`): kısmi çıkışlı bir pozisyonun her dilimini ayrı
+    saymak, erken kapanan dilim yüzünden dağılımı kısa tarafa çekerdi. Süre, pozisyonu
+    KAPATAN dilimin `closed_at`ine göre ölçülür — pozisyon o ana kadar taşınmıştır.
+
+    Bar süresi dışarıdan gelir (`core/data.py::bar_duration`): bu modül katmanın zaman
+    dilimini bilmez ve bilmemelidir.
+    """
+    if bar_duration <= pd.Timedelta(0):
+        raise ValueError(f"bar süresi pozitif olmalı: {bar_duration}")
+
+    spans: list[float] = []
+    for row in merge_fills(trades):
+        opened, closed = _utc_stamp(row.get("opened_at")), _utc_stamp(row.get("closed_at"))
+        if opened is None or closed is None:
+            continue
+        seconds = (closed - opened).total_seconds()
+        if seconds < 0.0:
+            continue
+        spans.append(seconds)
+
+    bars = [span / bar_duration.total_seconds() for span in spans]
+    days = [span / 86400.0 for span in spans]
+    return HoldingStats(
+        positions=len(spans),
+        median_bars=_median(bars),
+        p90_bars=_percentile(bars, 0.90),
+        max_bars=max(bars) if bars else _NAN,
+        median_days=_median(days),
+        p90_days=_percentile(days, 0.90),
+        max_days=max(days) if days else _NAN,
+    )
+
+
+def _percentile(values: Sequence[float], q: float) -> float:
+    """Doğrusal enterpolasyonlu yüzdelik; boş dizide `nan` (0.0 değil).
+
+    `numpy.percentile` ile aynı tanım (linear), ama bootstrap aralıklarının kullandığı
+    `_quantile` gibi bu da modülün kendi içinde durur: tek bir yüzdelik tanımı, aynı
+    defterin iki farklı sayı vermemesini garanti eder.
+    """
+    if not values:
+        return _NAN
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = q * (len(ordered) - 1)
+    low = int(position)
+    high = min(low + 1, len(ordered) - 1)
+    weight = position - low
+    return ordered[low] * (1.0 - weight) + ordered[high] * weight
+
+
+def buy_hold_return(series: "pd.Series", *, start: pd.Timestamp, end: pd.Timestamp) -> float:
+    """Bir sembolün pencere boyunca al-tut getirisi (yüzde); fiyat yoksa `nan`.
+
+    Neden burada: `buyhold` çıpası (kural 15) BTC %50 / ETH %50 taşır ve hesap düzeyinde
+    tek bir sayı verir — "bu SEMBOL ne yaptı" sorusunun cevabı onda yoktur. Kırılım
+    tablosunda bir sembolün ortalama R'sini okumak, o sembolün o pencerede ne yaptığını
+    bilmeden yanıltıcıdır (çöken bir sembolde long-only bir modelin kaybetmesi bir sinyal
+    kusuru değildir).
+
+    Seri DIŞARIDAN enjekte edilir (`compare(reference=...)` ile aynı sözleşme): bu modül
+    defteri okur, borsaya hiç dokunmaz. Fiyat çapaları `_price_at_or_before` ile
+    bulunur, yani pencerenin ucunda barı olmayan sembol uydurma bir fiyat almaz.
+    """
+    first = _price_at_or_before(series, start)
+    last = _price_at_or_before(series, end)
+    if first is None or last is None or first <= 0.0:
+        return _NAN
+    return (last / first - 1.0) * 100.0
+
+
+def pnl_drawdown_pct(stats: DirectionStats, *, initial_capital: float) -> float:
+    """`max_drawdown_pnl`i başlangıç sermayesinin yüzdesine çevirir (<= 0).
+
+    Payda GÜNCEL bakiye DEĞİLDİR ve sebebi `FrictionStats`inkiyle aynı: güncel bakiyeye
+    bölmek ölçüyü modelin kendi performansına bağlar, yani kaybeden bir modelin
+    drawdown'ı yapay büyür. Sabit payda, aynı sayıyı iki model arasında kıyaslanabilir
+    kılar.
+
+    Ayrı bir fonksiyon olmasının sebebi `friction_stats`inkiyle aynı: `direction_stats`
+    defteri okur, config'i değil; başlangıç sermayesi bir AYAR'dır ve onu okuyan taraf
+    çağırandır.
+    """
+    if initial_capital <= 0.0 or stats.max_drawdown_pnl != stats.max_drawdown_pnl:
+        return _NAN
+    return stats.max_drawdown_pnl / initial_capital * 100.0
 
 
 def _max_drawdown_r(r_values: Sequence[float]) -> float:

@@ -422,3 +422,183 @@ def test_embargo_rejects_a_negative_gap() -> None:
             layer_name="scalp", start=start, end=start + pd.Timedelta(days=5),
             out_dir=Path(tempfile.mkdtemp()), embargo_bars=-4,
         )
+
+
+# --------------------------------------------------------------------------- #
+# Evren daraltma, maliyet override'ı, funding derinliği, sinyal kesimi
+#
+# Dördü de `--history-bars`tan FARKLI bir sınıfta: o, sonucu değiştirmemesi SINANAN bir
+# derinlik ayarıdır; bunlar ölçümün koşullarını (hangi semboller, hangi maliyet, hangi
+# funding, hangi barlarda sinyal) doğrudan kaydırır. Bu yüzden hepsi manifest'e yazılır
+# ve hiçbiri sessizce uygulanmaz.
+# --------------------------------------------------------------------------- #
+def test_symbols_can_narrow_the_universe_but_never_widen_it() -> None:
+    """Evren katmanın TANIMIDIR (kural 6); harness onu büyütemez, yalnızca daraltır."""
+    with pytest.raises(ValueError, match="GENİŞLETEMEZ"):
+        backtest.run_backtest(
+            layer_name="scalp",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=Path(tempfile.mkdtemp()),
+            symbols=["BTC-USDT-SWAP", "DOGEDOGE-USDT-SWAP"],
+        )
+
+
+def test_narrowed_universe_reaches_the_data_layer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Daraltmanın KANITI, `core/data.py`ye giden sembol listesidir."""
+    seen: dict[str, Any] = {}
+
+    def _capture(config: Any, **kwargs: Any) -> Any:
+        seen["symbols"] = kwargs.get("symbols")
+        raise RuntimeError("dur")
+
+    monkeypatch.setattr("scripts.backtest.load_market_data", _capture)
+
+    with pytest.raises(RuntimeError, match="dur"):
+        backtest.run_backtest(
+            layer_name="scalp",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=Path(tempfile.mkdtemp()),
+            symbols=["BTC-USDT-SWAP"],
+        )
+    assert seen["symbols"] == ["BTC-USDT-SWAP"]
+
+
+def test_cost_override_reaches_the_engine_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Maliyet override'ı config'e GERÇEKTEN işler; manifest'e yazılan sayı bir iddia değil."""
+    seen: dict[str, Any] = {}
+
+    def _capture(config: Any, **kwargs: Any) -> Any:
+        seen["fee_rate"] = config["fee_rate"]
+        seen["slippage_base"] = config["slippage_base"]
+        raise RuntimeError("dur")
+
+    monkeypatch.setattr("scripts.backtest.load_market_data", _capture)
+
+    with pytest.raises(RuntimeError, match="dur"):
+        backtest.run_backtest(
+            layer_name="ema",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=Path(tempfile.mkdtemp()),
+            fee_rate=0.00075,
+            slippage_base=0.0001,
+        )
+    assert seen["fee_rate"] == pytest.approx(0.00075)
+    assert seen["slippage_base"] == pytest.approx(0.0001)
+
+
+def test_cost_override_never_touches_the_live_config() -> None:
+    """Kural 6: canlı `config.yaml` bir backtest tarafından değiştirilemez."""
+    from core.config import load_config
+
+    before = load_config()["fee_rate"]
+    with pytest.raises(RuntimeError):
+        backtest.run_backtest(
+            layer_name="ema",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=Path(tempfile.mkdtemp()),
+            fee_rate=0.00075,
+            models=["yok-boyle-bir-model"],
+        )
+    assert load_config()["fee_rate"] == before
+
+
+def test_negative_costs_are_rejected() -> None:
+    for kwargs in ({"fee_rate": -0.001}, {"slippage_base": -0.001}):
+        with pytest.raises(ValueError, match="negatif olamaz"):
+            backtest.run_backtest(
+                layer_name="ema",
+                start=START,
+                end=START + pd.Timedelta("1D"),
+                out_dir=Path(tempfile.mkdtemp()),
+                **kwargs,
+            )
+
+
+def test_funding_depth_only_deepens() -> None:
+    """Sığlaştırmak, funding'i canlıda ödenenden AZ göstermek demekti."""
+    with pytest.raises(ValueError, match="DERİNLEŞTİRİR"):
+        backtest.run_backtest(
+            layer_name="ema",
+            start=START,
+            end=START + pd.Timedelta("1D"),
+            out_dir=Path(tempfile.mkdtemp()),
+            funding_periods=1,
+        )
+
+
+def test_signal_cutoff_stops_new_signals_but_not_position_management() -> None:
+    """Kesimin anlamı "yeni kurulum alma", "açık pozisyonu dondur" DEĞİL.
+
+    Dondurmak, dönemin son kurulumlarını kendi çıkış kurallarından mahrum bırakıp
+    sonucu uydururdu — oysa dönem ataması giriş tarihine göredir ve o kurulumlar
+    kapanışına kadar döneme aittir.
+    """
+    from strategies.base import MarketData, Signal, Strategy
+    from tests.helpers_market import frame, market as snapshot
+
+    calls: list[pd.Timestamp] = []
+
+    class _Spy(Strategy):
+        name = "spy"
+        allowed_directions = ["long"]
+
+        def generate_signals(self, market: MarketData, peer_signals: Any = None) -> list[Signal]:
+            calls.append(market.as_of)
+            return [Signal(symbol="BTC-USDT-SWAP", direction="long", stop_price=1.0)]
+
+        def manage_positions(self, market: MarketData, positions: Any) -> list[Any]:
+            return []
+
+    strategy = _Spy()
+    cutoff = pd.Timestamp("2026-01-02T00:00:00+00:00")
+    backtest._silence_signals_after(strategy, cutoff)
+
+    candles = frame(
+        [100.0, 101.0, 102.0], start=pd.Timestamp("2026-01-01T00:00:00+00:00"), freq="1D"
+    )
+    before = snapshot({"BTC-USDT-SWAP": candles.iloc[:1]})
+    on_cutoff = snapshot({"BTC-USDT-SWAP": candles.iloc[:2]})   # as_of == kesim barı
+    after = snapshot({"BTC-USDT-SWAP": candles})
+
+    assert len(strategy.generate_signals(before)) == 1      # kesimden önce: sinyal var
+    # Kesim barının KENDİSİ hâlâ sinyal üretir: kural "bu bardan SONRA" der. Dışlayıcı
+    # olsaydı dönemin son barı sessizce ölçüm dışı kalırdı.
+    assert len(strategy.generate_signals(on_cutoff)) == 1
+    assert strategy.generate_signals(after) == []           # kesimden sonra: sinyal yok
+    assert calls == [before.as_of, on_cutoff.as_of]          # çağrı bile gitmedi
+    # Pozisyon yönetimi gölgelenmedi: kesim çıkışları durdurmaz.
+    assert strategy.manage_positions(after, []) == []
+
+
+def test_signal_cutoff_keeps_the_adaptivity_probe_intact() -> None:
+    """Gölgeleme ÖRNEK düzeyindedir: Kapı 0'ın uyarlanabilirlik tespiti sınıfa bakar.
+
+    Modeli bir sarmalayıcı SINIFA koymak, `type(strategy).observe_closed_trades`
+    kontrolünü bozar ve harness ölçtüğü modelin kimliğini değiştirmiş olurdu.
+    """
+    from strategies.registry import build
+
+    adaptive = build("vwap_clone")
+    plain = build("ema_trend")
+    cutoff = pd.Timestamp("2026-01-02T00:00:00+00:00")
+
+    backtest._silence_signals_after(adaptive, cutoff)
+    backtest._silence_signals_after(plain, cutoff)
+
+    assert backtest.is_adaptive(adaptive) is True
+    assert backtest.is_adaptive(plain) is False
+
+
+def test_signal_cutoff_must_sit_inside_the_window() -> None:
+    with pytest.raises(ValueError, match="pencerenin içinde"):
+        backtest.run_backtest(
+            layer_name="ema",
+            start=START,
+            end=START + pd.Timedelta("5D"),
+            out_dir=Path(tempfile.mkdtemp()),
+            signal_cutoff=START - pd.Timedelta("1D"),
+        )

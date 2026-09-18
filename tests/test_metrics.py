@@ -20,6 +20,7 @@ from core.metrics import (
     acceptance_flags,
     bootstrap_diff_ci,
     bootstrap_mean_ci,
+    buy_hold_return,
     account_stats,
     annotate_loss_streak,
     arm_of,
@@ -31,9 +32,11 @@ from core.metrics import (
     loss_streak_of,
     session_of,
     format_report,
+    holding_stats,
     merge_fills,
     model_metrics,
     periods_per_year,
+    pnl_drawdown_pct,
     pooled_direction_stats,
     r_multiple,
     r_series,
@@ -1573,3 +1576,116 @@ def test_single_observation_has_no_interval_only_a_value() -> None:
     )
     low, high = bootstrap_mean_ci([0.08, -1.0], alpha=0.05, iterations=500, seed=1)
     assert not math.isnan(low) and low < high
+
+
+# --------------------------------------------------------------------------- #
+# Yüzde ödeme profili, PnL drawdown'ı, tutuş süresi ve sembol al-tut
+#
+# Dördü de dışarıdan gelen bir referansla (TradingView, başka bir backtest aracı) kıyas
+# kurmak için var: R bizim boyutlandırma kuralımıza bağlıdır ve o kural dışarıda
+# başkadır — ortak birim yüzde ve gündür.
+# --------------------------------------------------------------------------- #
+def test_percent_payoff_is_measured_on_entry_notional() -> None:
+    """Ort. kazanç% / ort. kayıp% ve ödeme oranı, R'den BAĞIMSIZ hesaplanır."""
+    trades = [
+        _trade(pnl=6.0, notional=100.0),    # +%6
+        _trade(pnl=4.0, notional=100.0),    # +%4
+        _trade(pnl=-2.0, notional=100.0),   # −%2
+        _trade(pnl=-4.0, notional=200.0),   # −%2
+    ]
+    stats = direction_stats(trades)
+
+    assert stats.avg_win_pct == pytest.approx(5.0)
+    assert stats.avg_loss_pct == pytest.approx(-2.0)
+    assert stats.payoff == pytest.approx(2.5)
+
+
+def test_payoff_is_nan_without_a_losing_trade_instead_of_dividing_by_zero() -> None:
+    """Kayıp yoksa oran TANIMSIZDIR; 0.0 yazmak "ödeme oranı sıfır" demek olurdu."""
+    stats = direction_stats([_trade(pnl=5.0)])
+    assert math.isnan(stats.payoff)
+    assert math.isnan(stats.avg_loss_pct)
+
+
+def test_percent_profile_is_measured_even_when_r_cannot_be() -> None:
+    """Çıpanın (kural 15) `risk_amount`ı yoktur: R yok, ama yüzde getirisi VAR.
+
+    İkisini tek döngüde türetmek, çıpanın ödeme profilini sessizce boşaltırdı.
+    """
+    stats = direction_stats([_trade(pnl=10.0, risk="", notional=100.0)])
+    assert math.isnan(stats.avg_r)
+    assert stats.avg_win_pct == pytest.approx(10.0)
+
+
+def test_pnl_drawdown_follows_the_order_of_closes_not_the_worst_trade() -> None:
+    """Drawdown bir SIRA ölçüsüdür: tek bir kaybın büyüklüğü değil, tepe-dip mesafesi."""
+    trades = [
+        _trade(pnl=100.0, closed_at="2026-01-01T00:00:00+00:00", opened_at="2026-01-01T00:00:00+00:00"),
+        _trade(pnl=-60.0, closed_at="2026-01-02T00:00:00+00:00", opened_at="2026-01-02T00:00:00+00:00"),
+        _trade(pnl=-40.0, closed_at="2026-01-03T00:00:00+00:00", opened_at="2026-01-03T00:00:00+00:00"),
+        _trade(pnl=30.0, closed_at="2026-01-04T00:00:00+00:00", opened_at="2026-01-04T00:00:00+00:00"),
+    ]
+    stats = direction_stats(trades)
+    assert stats.max_drawdown_pnl == pytest.approx(-100.0)
+    assert pnl_drawdown_pct(stats, initial_capital=10_000.0) == pytest.approx(-1.0)
+
+
+def test_pnl_drawdown_pct_uses_initial_capital_not_the_current_balance() -> None:
+    """Payda SABİTTİR: güncel bakiyeye bölmek, kaybeden modelin drawdown'ını şişirirdi."""
+    stats = direction_stats([_trade(pnl=-500.0)])
+    assert pnl_drawdown_pct(stats, initial_capital=10_000.0) == pytest.approx(-5.0)
+    assert math.isnan(pnl_drawdown_pct(stats, initial_capital=0.0))
+
+
+def test_holding_stats_measure_the_distribution_in_bars_and_days() -> None:
+    """Zaman stop'u olmayan modelde embargo VARSAYILAMAZ, ölçülür (docs/backtest.md > 6.1)."""
+    spans_hours = [4, 8, 40]  # 4H barda 1, 2, 10 bar
+    trades = [
+        _trade(
+            pnl=1.0,
+            opened_at="2026-01-01T00:00:00+00:00",
+            closed_at=(pd.Timestamp("2026-01-01T00:00:00+00:00") + pd.Timedelta(hours=hours)).isoformat(),
+            symbol=f"S{index}-USDT-SWAP",
+        )
+        for index, hours in enumerate(spans_hours)
+    ]
+    stats = holding_stats(trades, bar_duration=pd.Timedelta(hours=4))
+
+    assert stats.positions == 3
+    assert stats.median_bars == pytest.approx(2.0)
+    assert stats.max_bars == pytest.approx(10.0)
+    assert stats.max_days == pytest.approx(40.0 / 24.0)
+    assert stats.p90_bars == pytest.approx(2.0 + 0.8 * 8.0)
+
+
+def test_holding_stats_count_positions_not_fills() -> None:
+    """Kısmi çıkışın her dilimini saymak, dağılımı kısa tarafa çekerdi."""
+    common = dict(
+        strategy="m", symbol="BTC-USDT-SWAP", direction="long",
+        opened_at="2026-01-01T00:00:00+00:00",
+    )
+    trades = [
+        _trade(pnl=5.0, exit_reason="partial", closed_at="2026-01-01T04:00:00+00:00", **common),
+        _trade(pnl=5.0, exit_reason="tp", closed_at="2026-01-02T00:00:00+00:00", **common),
+    ]
+    stats = holding_stats(trades, bar_duration=pd.Timedelta(hours=4))
+
+    assert stats.positions == 1
+    assert stats.max_bars == pytest.approx(6.0)  # pozisyonu KAPATAN dilime kadar
+
+
+def test_holding_stats_reject_a_non_positive_bar_duration() -> None:
+    with pytest.raises(ValueError):
+        holding_stats([], bar_duration=pd.Timedelta(0))
+
+
+def test_buy_hold_return_reads_the_injected_series_only() -> None:
+    index = pd.date_range("2026-01-01", periods=5, freq="4h", tz="UTC")
+    series = pd.Series([100.0, 110.0, 120.0, 130.0, 140.0], index=index)
+
+    assert buy_hold_return(series, start=index[0], end=index[-1]) == pytest.approx(40.0)
+    # Pencerenin ucunda barı olmayan sembol uydurma fiyat almaz: çapa "o ana kadarki son
+    # kapanış"tır, ondan öncesi yoksa `nan`.
+    assert math.isnan(
+        buy_hold_return(series, start=pd.Timestamp("2025-01-01", tz="UTC"), end=index[-1])
+    )

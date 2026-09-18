@@ -206,6 +206,36 @@ bir modeli ölçerdi.
 Kullanılan değer her koşuda `manifest.json > history_bars` altında (`config` ve `used`)
 yazılı durur.
 
+### 5g. Harness override'ları İKİ SINIFA ayrılır ve karıştırılmazlar
+
+Bayrakların hepsi "koşuyu değiştiren ayar" değildir; ikisi arasındaki fark, sonucun nasıl
+okunacağını belirler.
+
+**Sınıf 1 — sonucu DEĞİŞTİRMEMESİ beklenen (ve sınanan) ayarlar.** `--history-bars`
+(§5b) ve `--funding-periods`: ikisi de anlık görüntünün derinliğini artırır. İddia
+"modelin gördüğü sinyal değişmez"dir ve bu bir varsayım değil, Kapı 0'da SINANAN bir
+iddiadır. İkisi de yalnızca DERİNLEŞTİRİR; sığlaştırma `ValueError`dır, çünkü sığ veri
+modeli canlıda olmadığı bir şeye çevirir. `--funding-periods`in ayrıca bir yönü vardır:
+varsayılan 180 periyot ≈ 60 gündür ve yıllara uzanan bir pencerede kaydı olmayan anda
+`core/funding.py::rate_at` None döner — funding HİÇ işlenmez (uydurma yok), yani eski
+dönem sistematik olarak İYİMSER çıkar. Derinleştirmek bu yanlılığı kapatır.
+
+**Sınıf 2 — sonucu DOĞRUDAN kaydıran ayarlar.** `--fee-rate`, `--slippage-base`,
+`--symbols`, `--signal-cutoff`. Bunlar ölçümün koşullarını değiştirir ve sonucu canlı
+defterle aynı dünyada bırakmaz:
+
+| Bayrak | Ne için | Neden canlıya girmez |
+|---|---|---|
+| `--fee-rate`, `--slippage-base` | dış bir referansla (başka bir backtest aracı) parite | kural 6: maliyet tüm modeller için tek kaynaktır; `fee_rate` bir kez değiştiğinde defteri tarihli olarak böler (karar 25) |
+| `--symbols` | tek sembollü parite koşusu | çok sembollü koşuda portföy kotası (`max_positions`) sinyal REDDEDER ve dışarıdaki tek sembollü bir koşuyla kıyas, modelin değil kotanın ölçüsü olur. Evreni yalnızca DARALTIR: genişletmek katmanın tanımını (kural 6) harness'a devretmek olurdu |
+| `--signal-cutoff` | dönem ataması | bir işlem GİRİŞ tarihine göre döneme aittir; dönemin son kurulumları sınırı aşsa bile kapanışına kadar o döneme sayılır. Kesim YENİ sinyali durdurur, pozisyon yönetimini DURDURMAZ — dondurmak, o kurulumları kendi çıkış kurallarından mahrum bırakıp sonucu uydururdu |
+
+Sınıf 2'nin her kullanımı `manifest.json > deviations` altında durur ve maliyet override'ı
+ayrıca `logger.warning` ile bağırır: **bir sayının hangi dünyada ölçüldüğü, sayının kendisi
+kadar ölçümün parçasıdır.**
+
+---
+
 ### 5f. Uzun pencere bir DERİNLİK sorunudur, bir niyet değil
 
 "2-3 yıllık araştırma backtest'i" ayrı bir motor ya da ayrı bir mimari gerektirmez —
