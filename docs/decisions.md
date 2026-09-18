@@ -3681,3 +3681,60 @@ Yumuşatma bildirimi **kuralları dış bir sistemden gelen** modeller içindir.
 biri "benim tezim Wilder ister" derse cevap hayırdır: o bir spec uyumu değil, bir parametre
 tercihidir ve tercihler ortak tanımın içinde yapılır. Bugün bu bayrağı yalnızca `ema_trend`
 taşıyor ve config'te tek bir satır olarak duruyor — grep'lenebilir, denetlenebilir.
+
+---
+
+## 47. `ema_trend` koşuldu: P1 tuttu, hipotez düştü — model canlıya ALINMADI
+
+**Karar:** `ema_trend` (model 18) ön-kayıtlı backtest'i koşuldu ve **BLOKE** edildi.
+`.github/workflows/run-ema.yml` açılmadı; `ema` katmanı tetikleyicisiz kalıyor. Kod,
+katman tanımı ve defter kökü DURUYOR — `scalp_vol`un `REGISTRY`de durup `models`
+listesinde olmaması ile aynı statü (kod ölçülmeden yarışmaz).
+
+**Sonuç iki parçadır ve karıştırılmamalı.**
+
+**(1) Harness doğrulandı.** P1 — TradingView paritesi — bir tahmin değil KAPIYDI ve
+geçti: BTC tek-sembollü kâr faktörü dönem A'da 1.549 (referans 1.551, sapma 0.002),
+dönem B'de 1.206 (referans 1.299, sapma 0.093); tolerans ±0.2. Yani "model kötü" ile
+"ölçüm bozuk" ayrımı yapılabiliyor ve okunan sayılar kaynak sistemin sayıları.
+Dönem A'daki binde iki sapma, karar 46'nın (Wilder ATR) doğru tadilat olduğunu
+gösteriyor — tadilat koşudan ÖNCE yapıldı ve gerekçesi o zaman yazıldı, bu yüzden
+sonuç onu doğrulayabilir.
+
+**(2) Tez düştü.** Ortalama R iki dönemde de negatif: A −0.0015 (n=369), B −0.0165
+(n=389). Hesap getirisi çıpanın altında: A −%8.6 ↔ `buyhold` +%43.4, B −%20.4 ↔ −%7.3.
+Yani repo kabul kapılarının **E** kapısı iki dönemde de düştü (**Ö** ve band uyarısı
+geçti).
+
+**Neden "yalnızca çıpadan kaldı" istisnası işletilmedi.** Ön-kayıt (docs/backtest.md >
+6d) tek bir istisna tanımlıyordu: model YALNIZCA C-3'ten (çıpayı geçme) kalıyor ve
+diğer her şeyi geçiyorsa koşu durur ve karar model sahibine gider. Model C-3'ün yanında
+**C-1'den de** (ortalama R > 0) kalıyor, yani istisnanın şartı sağlanmıyor. İstisnanın
+kapsamı sonucu görmeden bir kapıyla sınırlandırılmıştı ve sonucu gördükten sonra
+genişletilmedi — genişletmek, istisnayı "kalan her modelin geçtiği kapı" hâline
+getirirdi.
+
+**Model sahibinin kapıları geçti, ama yerine geçmiyor.** K-1 (≥6 coinde dönem B
+PF > 1.1) tam 6 ile, K-2 (>300 işlem) 978 ile, K-3 (coin DD < %25) azami %21.3 ile
+geçti. İki kapı kümesinin de bağlayıcı olması tam olarak bunun içindi: gevşek kapı
+modeli iyi olduğu için değil kapısı kolay olduğu için önde gösterirdi (kural 6). K-1'in
+kıl payı geçmesi (sınırdaki satır LINK 1.101, eşik 1.1) ayrıca not edildi — eşik
+sonuçtan sonra ne aşağı ne yukarı oynatıldı.
+
+**Ölçülen şey bir başarısızlık değil, bir sayıdır.** Dönem B'de ödeme oranı 1.61 ve
+kazanma oranı %34.7 — 2R hedefli bir sistemde başabaşın sınırı. `cost_per_r` 0.057
+işareti negatife çeviriyor. Bu bir GÖZLEMDİR ve bir sonraki adımın gerekçesi DEĞİLDİR:
+parametre oynatmak, maliyeti yeniden varsaymak ya da modele zaman stop'u eklemek
+docs/backtest.md > 7'nin yasakladığı şeydir. Yeni bir tez ancak yeni bir ön-kayıt
+satırıyla, yeni bir model olarak gelir.
+
+**Ön-kayıtlı tahminlerin tamamı sicile yazıldı, düşenler dâhil** (docs/backtest.md >
+6c, satır 2): P1 tuttu, P2 dönem A'da kıl payı düştü (%35.23 ↔ eşik %35) ve B'de tuttu,
+P3 düştü, P4 tuttu. Düşen tahmini silmek, paydayı küçültüp kalan sonuçları olduğundan
+anlamlı göstermek olurdu — sicilin var oluş sebebi budur.
+
+**Sonuçlar depoda:** `docs/data/backtest_ema_trend.json` (site yükü) ve
+`docs/data/backtest_ema_trend.csv` (coin tablosu; her sembolün kendi başlangıç tarihi ve
+işlem sayısı kolonlarda, çünkü dönem A'da evren 13 değil 9 sembolle başlıyor).
+`docs/backtest.html` ikisini de çizer ve HİÇBİRİNİ yeniden hesaplamaz (kural 7):
+verdikt de yükten okunur.
