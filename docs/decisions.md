@@ -3624,3 +3624,60 @@ uyarıdır. "2 tick" düz bir 1bp ile temsil edildi — sembole bağlı kayma ay
 `docs/backtest.md`'nin §7 BAŞLIĞI yoktu: metin "Bu liste bağlayıcıdır..." diye başlıyor ve
 belgenin başka yerlerinde §7.1/§7.3/§7.4/§7.5 diye atıf yapılıyordu. Başlık eklendi;
 içerik değişmedi.
+
+---
+
+## 46. ATR yumuşatması: modelin SPEC'i ile projenin varsayılanı çakıştığında
+
+`ema_trend`in kuralları TradingView'de geliştirildi ve orada doğrulandı. Pine'ın `ta.atr`ı
+**Wilder** yumuşatması (RMA) kullanır; bu repo ise `simple` (TR'lerin düz ortalaması)
+kullanıyordu. Model bir ATR katından stop kuruyor ve hedef o stop mesafesinin katı, yani
+**iki sistem aynı kuralı koşmuyordu** — fark bir parametre farkı değil, spec farkıydı.
+
+Bu, "sonucu görüp implementasyon değiştirme" kokusu taşıyan bir karardır ve kokunun
+farkındayız. Üç şeyle savunulabilir kılındı:
+
+1. **Zamanlama.** Değişiklik tam koşudan ÖNCE yapıldı; gerekçe ön-kayda (docs/backtest.md
+   > 6d > TADİLAT-1) karar anında yazıldı, sonuç görüldükten sonra değil.
+2. **Bir kapıyı kurtarmıyor.** Değişiklikten önce ölçülen P1 (BTC, dönem A) ZATEN GEÇMİŞTİ:
+   kâr faktörü 1.40 ↔ referans 1.551 (tolerans ±0.2), ödeme oranı 1.76 ↔ 1.79. Düşen bir
+   kapıyı geçirmek için yapılmış bir değişiklik olsaydı savunulamazdı.
+3. **Eski sayı silinmedi.** Tadilat öncesi ölçümler (tek sembollü ve 13 sembollü portföy)
+   ön-kayıtta duruyor ve orada kalacak. Silmek, paydayı küçültüp kalanı anlamlı göstermenin
+   ta kendisiydi (§6c'nin sicil kuralıyla aynı gerekçe).
+
+### Neden KÜRESEL değiştirilmedi
+
+Tanımı topyekûn Wilder'a çevirmek tek satırlık bir değişiklikti ve reddedildi: `trend`,
+`meanrev`, beş kollu scalp modelleri ve `vwap_managed` bugün canlı koşuyor ve stop
+mesafelerini aynı fonksiyondan alıyor. Değişiklik, o commit'ten itibaren hepsinin stop
+ölçeğini kaydırırdı; biriken defterin bir kısmı bir ölçekle, kalanı başkasıyla üretilmiş
+olur ve iki dönem kıyaslanamazdı — karar 25'te `fee_rate`in defteri tarihli olarak böldüğü
+hatanın aynısı. Üstelik bu, bir modelin spec'ini düzeltmek için ölçümün tamamını
+bozmak olurdu.
+
+Seçilen yol: `core/indicators.py::average_true_range` iki yumuşatmayı da verir,
+**varsayılan `simple` kalır** ve `ema_trend` kendi yumuşatmasını `config.yaml` üzerinden
+BİLDİRİR. TR dizisi tek tanımdan gelir (`true_range`), yani "fark yumuşatmada mı TR'de mi"
+sorusu sorulabilir kalır.
+
+### Bedeli ve nereye taşındığı
+
+**"1.5×ATR" artık modeller arasında birebir kıyaslanabilir değildir.** Bu gerçek bir kayıp
+ve gizlenmiyor. İki şey onu sınırlı tutuyor:
+
+- **Kural 14'ün kıyas ölçütü zaten ATR katı değildi:** band `avg_stop_distance_pct`
+  (GERÇEKLEŞEN stop mesafesi) üzerinden kurulur ve ⚠B uyarısı ona bakar. Defterde ATR
+  yoktur; kıyas hep yüzdeden okunuyordu.
+- **Motorun tavan kontrolü ORTAK tanımda kaldı.** Tavanı modelin kendi yumuşatmasıyla
+  ölçmek, her modele kendi tavanını genişletme imkânı verirdi ve tavan bir kural olmaktan
+  çıkardı. Bunun bir sonucu var ve ölçüldü: sentetik bir seride Wilder/simple oranı ~0.89,
+  yani model 1.5×Wilder ile ortak tanımda ~1.34× görünüyor — 3.0 tavanının çok altında,
+  dolayısıyla tavan bu modelde pratikte bağlamıyor. Bir test bunu çiviliyor.
+
+### Bu bir emsal değildir
+
+Yumuşatma bildirimi **kuralları dış bir sistemden gelen** modeller içindir. Ev modellerinden
+biri "benim tezim Wilder ister" derse cevap hayırdır: o bir spec uyumu değil, bir parametre
+tercihidir ve tercihler ortak tanımın içinde yapılır. Bugün bu bayrağı yalnızca `ema_trend`
+taşıyor ve config'te tek bir satır olarak duruyor — grep'lenebilir, denetlenebilir.
