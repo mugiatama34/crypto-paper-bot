@@ -243,6 +243,7 @@ Bir modelin parametresi hangi veride seçildiyse o veri onun için **in-sample**
 | `vwap_clone` | Kaynak sistemin parametreleri; bizim veriyle seçilmedi -> **OOS** |
 | **`vwap_managed`** | `atr_multiple=2.5`, **17 Ağu – 16 Eyl 2026** verisinde seçildi (karar 26) -> o pencere **IN-SAMPLE** |
 | **`vwap_fast`** (henüz kurulmadı) | `band_mult` aynı pencerede ölçüldü -> o pencere **IN-SAMPLE** |
+| **`ema_trend`** | Parametreleri dış bir sistemde (TradingView), **2022-01 – 2024-06** BTC verisinde doğrulandı -> o pencere **IN-SAMPLE**; 2024-07 sonrası OOS (§6d) |
 
 **Kural:** `vwap_managed` ve `vwap_fast` için C-1..C-3, **17 Ağu 2026'dan ÖNCEKİ** bir
 pencerede de sağlanmalıdır (C-5). O pencerede sağlanmıyorsa kalibrasyon o 30 güne
@@ -332,6 +333,9 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | # | Hipotez | Ön-kayıt | Pencere | Birincil tahmin | Sonuç |
 |---|---|---|---|---|---|
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
+| 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, bu commit | A: 2022-01-01 → 2024-06-30, B: embargo sonrası → koşu günü | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | _koşulmadı_ |
+
+**Sicildeki 2. satır bu paydaya AİT DEĞİLDİR:** `ema_trend` hipotezi dış bir sistemden geldi, ev içi arama uzayından seçilmedi (bkz. §6d > Çoklu karşılaştırma). İki payda ayrı tutulur.
 
 **Araştırmadan çıkan öneri sayısı: 10.** Bunların 1'i test edildi (yukarıdaki), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
@@ -360,6 +364,183 @@ modelin kendi verisiyle cevaplanabilen soruyu sorar ("bu satır okunabilir mi");
 "kaç hipotez denendi" sorusunu sorar ve cevabı tek bir modelin defterinde yoktur. Bir
 model iki kapıyı geçip BH'de düşebilir; o zaman sonuç "edge yok" değil, **"bu kadar
 denemeden sonra bu kadar farkı görmek beklenirdi"** demektir.
+
+## 6d. ÖN-KAYIT — `ema_trend` (model 18) ve `ema` katmanı
+
+**Bu bölüm koşudan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.** Sonuç
+görüldükten sonra hiçbir satırı değiştirilmeyecek (§7).
+
+**Kökeni dışarıdır.** Hipotez bu projenin araştırma listesinden (§6c) çıkmadı: modelin
+kuralları dış bir sistemde (TradingView / Pine Script) geliştirildi ve orada doğrulandı.
+Bu, kopyalardan (kural 15b) farklıdır — kopya dış sistemin BOYUTLANDIRMASINI da taşır,
+bu model ise evin kurallarıyla (risk %1, `leverage_cap`, ev maliyetleri) koşan tam bir
+YARIŞMACIDIR. Dışarıdan gelmesi ön-kaydı gereksiz kılmaz, tersine zorunlu kılar: dış
+sistemin doğruladığı pencere bizim için de IN-SAMPLE'dır (§6).
+
+### Sabitlenen kurallar — koşudan sonra DEĞİŞMEZ
+
+| | |
+|---|---|
+| Yön | **yalnızca long** (`allowed_directions=["long"]`); short kaynak sistemde denendi ve sistematik kaybettiriyordu |
+| Giriş | EMA(21), EMA(55)'i YUKARI keser (önceki bar `fast <= slow`, bu bar `fast > slow`) |
+| Stop | giriş barının kapanışı − `1.5 × ATR(14)` |
+| Hedef | giriş + (giriş − stop) × `2.0`, tek dilim (`fraction=1.0`) |
+| Trailing | **yok** |
+| Zaman stop'u | **yok** (bkz. embargo notu) |
+| Pozisyon | sembol başına tek; tekrar sinyal `core/portfolio.py`'de `duplicate_position` ile reddedilir (model kendi pozisyonunu göremez — kural 4/16) |
+| Dolum | kural 13: sinyal bar kapanışında, emir bir SONRAKİ barın açılışında |
+
+**Parametreler bu koşu için SABİTTİR.** Sonuç kötü çıkarsa ayar aranmaz (§7.1); zaman
+stop'u eklemek dâhil her değişiklik YENİ bir hipotezdir ve taze bir OOS penceresi ister.
+
+### Katman
+
+Model `ema` katmanında koşar (4H, `config.yaml > layers.ema`): sabit 13 sembol (scalp
+katmanının evreni), `ledgers_ema/`, `docs/data/metrics_ema.json`. Katmanın model listesi
+`ema_trend` ile birlikte `trend` (kıyas hedefi), `random_ctrl` (kabul çıtasının kontrolü)
+ve `buyhold` (çıpa, C-3) içerir.
+
+**Neden base katmanına değil.** Backtest 13 sabit coinde koşuyor; base evreni hacme göre
+seçilen 50 coindir ve zamanla kayar. Modeli base'e almak, backtest'in ölçtüğü evrenden
+başka bir evrende koşturmak olurdu. Ayrı katman ikisini eşitler. Bedeli katmanlar arası
+kıyasın yapılamamasıdır (CLAUDE.md > Katmanlar) — bu yüzden kıyas hedefi `trend` KATMANIN
+İÇİNE alınır: aynı evren, aynı barlar, aynı maliyet, aynı defter kuralları.
+
+### Pencereler ve dönem atama
+
+| Dönem | Aralık | Durum |
+|---|---|---|
+| **A** | 2022-01-01 → 2024-06-30 (sinyal kesimi) | **IN-SAMPLE** — kaynak sistem parametrelerini bu veride doğruladı |
+| **B** | 2024-06-30 + embargo → koşu günü | **OOS** |
+
+**Dönem atama ölçütü GİRİŞ tarihidir.** Dönem A'da açılan bir işlem sınırı aşsa bile
+kapanışına kadar A'ya sayılır. Uygulaması harness'ta `--signal-cutoff`tur: kesimden
+sonraki barlar pozisyon yönetimi için işlenir (stop/TP/likidasyon/funding) ama YENİ sinyal
+üretilmez. Kuyruk 2024-12-31'de biter; o tarihte hâlâ açık olan pozisyonların SAYISI
+raporlanır ve kapanmış işlem istatistiğine girmez (girseydi gerçekleşmemiş bir sonuç
+ölçüme girerdi).
+
+Kesim olmadan alternatif, sınırda açık olan pozisyonları düşürmekti; bu, dönem A'nın en
+uzun yaşayan kurulumlarını sistematik olarak eleyip ortalamayı kısa işlemlere doğru
+çekerdi.
+
+### Embargo
+
+Modelin zaman stop'u YOKTUR, yani §6.1'in "doğru boşluk azami tutuş süresidir" kuralının
+dayandığı üst sınır bu modelde tanım gereği yok. Bu yüzden sınır ÖLÇÜLÜR: dönem A'da
+gözlenen **azami tutuş süresi** embargo olarak uygulanır ve uygulanan değer
+(`manifest.json > window.embargo_bars`) raporlanır.
+
+**Tutuş süresi dağılımı ayrıca raporlanır** (medyan, 90. yüzdelik, azami — bar ve gün
+cinsinden). Bu bir yan çıktı değil, ön-kayıtlı bir ölçümdür: uzun kuyruk, pozisyonların
+hedefe/stop'a varmadan beklediğini gösterir ve P2'nin bağımsız kontrolüdür.
+
+### Maliyet — bu koşu canlı config ile AYNI DEĞİLDİR
+
+| | backtest | canlı (`config.yaml`) |
+|---|---|---|
+| `fee_rate` | **0.00075** (tek yön) | 0.00055 |
+| `slippage_base` | **0.0001** | 0.0005 |
+
+Talep eden taraf modelin sahibidir (TradingView koşusunun varsayımı). `config.yaml`
+DEĞİŞTİRİLMEZ: kural 6 maliyeti tüm modeller için tek kaynağa bağlar ve `fee_rate` bir kez
+değiştiğinde defteri tarihli olarak böler (karar 25). Bu yüzden sapma harness'ta,
+`--fee-rate` / `--slippage-base` bayraklarıyla ve `manifest.json`'a yazılarak uygulanır.
+
+**"2 tick" oransal kayma modeline birebir çevrilmez:** tick boyu sembole göre değişir ve
+sembole bağlı kayma AYRI bir karardır (CLAUDE.md > `scripts/measure_slippage.py`). 0.0001
+(1bp) bunun düz bir temsilidir ve seçim sonuçtan önce yapılmıştır.
+
+**Yön bilinmektedir:** backtest komisyonda canlıdan pahalı (+0.0002 × 2 bacak), kaymada
+ucuzdur (−0.0004 × 2 bacak); net etki tipik bir kurulumda kaymanın lehinedir, yani bu
+koşu canlı maliyetten **daha ucuz** bir dünyayı ölçer. Forward test bu yüzden backtest'in
+biraz ALTINDA kalmalıdır; tersi bir sürpriz değil, bir uyarıdır.
+
+### Kapılar — İKİSİ DE bağlayıcı
+
+**Repo kapıları birincildir** (§3 B-0/B-1/B-2 ve §4 C-1..C-5). Gerekçe ölçümün kendisidir:
+diğer modeller bu eşikten geçti; yeni bir modele daha gevşek kapı açmak, onu iyi olduğu
+için değil kapısı kolay olduğu için önde gösterirdi (kural 6).
+
+**Model sahibinin kapısı EK filtredir**, yerine geçmez:
+
+| # | Koşul |
+|---|---|
+| **K-1** | En az **6 coinde** dönem B kâr faktörü **> 1.1** (tek-sembollü koşulardan) |
+| **K-2** | Toplam işlem sayısı (tüm coinler, dönem A+B) **> 300** |
+| **K-3** | Hiçbir coinde max drawdown **%25'i geçmiyor** |
+
+**K-3'ün tanımı** (sonuçtan önce sabitlenir): hesap tektir ve coin başına bölünemez
+(ortak nakit, ortak margin — CLAUDE.md > Rapor Kolonları'nın yön bazlı Sharpe için verdiği
+aynı gerekçe). Bu yüzden coin bazlı drawdown, o coinin **kümülatif PnL eğrisinin** en
+büyük tepe-dip düşüşünün BAŞLANGIÇ SERMAYESİNE oranıdır (`initial_capital`, 10.000).
+Hesap düzeyi `max_drawdown` ayrıca ve ayrı olarak raporlanır.
+
+### Tek istisna — ve o da sonuçtan ÖNCE yazılıyor
+
+Model **YALNIZCA C-3'ten** (hesap getirisi `buyhold` çıpasını geçer) kalıyor ve diğer tüm
+kapıları (B-0..B-2, C-1, C-2, C-4, C-5, K-1..K-3) geçiyorsa: koşu **DURUR**, karar model
+sahibine gider, otomatik geçiş YOKTUR. Başka herhangi bir kapıdan kalırsa doğrudan
+**BLOKE** — istisna tek bir kapı içindir ve genişletilemez.
+
+Gerekçe: C-3 diğer kapılardan farklı bir soru sorar ("piyasayı yendi mi") ve cevabı
+modelin kendi verisiyle değil, ölçüldüğü pencerenin yönüyle belirlenir — 2022-2026
+penceresinde BTC yaklaşık %110 yükseldi. Bu, kapıyı yumuşatmak için gerekçe DEĞİLDİR;
+istisna kapıyı kaldırmıyor, kararı otomatikten insana taşıyor.
+
+### ÖN-KAYITLI TAHMİNLER (sonucu görmeden)
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | BTC tek-sembollü PF | A: **1.551 ± 0.2**, B: **1.299 ± 0.2** (TradingView referansı) | dışına çıkması → harness ↔ TV ayrışması araştırılır, sonuç YORUMLANMAZ |
+| **P2** | hedefe ulaşma oranı | `tp` ile kapanan pozisyon payı **< %35** | ≥ %35 |
+| **P3** | ortalama R | **> 0** (C-1) | ≤ 0 |
+| **P4** | çıpa | hesap getirisi `buyhold`un **ALTINDA** (C-3 DÜŞER) | çıpayı geçerse |
+
+**P1 birincildir ve bir KAPIDIR, bir tahmin değil.** Tutmazsa hiçbir sayı yorumlanmaz ve
+paper trading'e geçilmez — modelin iyi ya da kötü olduğu değil, harness'ın kaynak sistemi
+yeniden üretmediği anlaşılır. Tek-sembollü koşu şart: portföy kotası (`max_positions: 5`)
+13 coinlik koşuda BTC sinyallerinin bir kısmını reddeder ve tek sembollü bir TradingView
+koşusuyla kıyas geçersiz olurdu.
+
+**P4 modelin sahibinin açık beklentisidir** (TradingView'de BTC 2022-2026: strateji
++%4.89, al-tut +%110) ve tam da bu yüzden ön-kayda yazılıyor: sonucu görüp "zaten
+biliyorduk" demek ile önceden yazmak arasındaki fark, ölçümün kendisidir.
+
+### Bu koşuya özgü, KABUL EDİLEN sapmalar (§5'in üstüne)
+
+Kaynak sistemle birebir eşleşme beklenmez; sebepler sonuçtan önce yazılıdır:
+
+1. **ATR tanımı.** Repo `core/indicators.py` TR'lerin DÜZ ortalamasını kullanır;
+   TradingView `ta.atr` Wilder (RMA) yumuşatmasını. Projenin tek ATR tanımı vardır
+   (`trailing.atr_period`) ve modele özel bir ATR, aynı "1.5×ATR" ifadesinin modelden
+   modele farklı mesafe anlamına gelmesi demekti. P1 düşerse ilk sınanacak ayrışma budur.
+2. **Veri kaynağı.** Repo OKX perpetual (`BTC-USDT-SWAP`); kaynak sistemin grafiği başka
+   bir borsa olabilir. Kesişim barları sınırda ayrışır.
+3. **Funding.** Repo açık pozisyona funding işletir, kaynak sistem işletmez. Ayrıca
+   `data.funding_history_periods` (180 ≈ 60 gün) 4 yıllık pencereyi kapsamaz: kaydı
+   olmayan anda `core/funding.py::rate_at` None döner ve maliyet İŞLENMEZ (uydurma yok).
+   Bu, dönem A'yı İYİMSER yapar. Harness `--funding-periods` ile derinliği artırır; OKX'in
+   kendi sınırı ilk koşuda ölçülür ve raporlanır.
+4. **Dolum belirsizliği** (§5e): aynı mumda hem stop hem hedef varsa repo STOP varsayar.
+   Bu geometride (stop 1.5×ATR, hedef 3×ATR) payın küçük olması beklenir; AYNI-BAR
+   BELİRSİZLİĞİ tablosu bunu sayar.
+5. **Portföy kotası.** 13 coinlik koşuda `max_positions: 5` sinyal reddeder; tek-sembollü
+   koşularda bağlamaz. İki koşu AYRI raporlanır ve karıştırılmaz.
+6. **Stop'un çapası.** `Signal.stop_price` mutlak bir fiyattır ve sinyal barının
+   kapanışından kurulur; dolum bir sonraki barın açılışındadır (kural 13). Kaynak sistem
+   stop'u gerçekleşen giriş fiyatından kuruyorsa aradaki fark bir bar boşluğu kadardır.
+
+### Çoklu karşılaştırma
+
+Bu, sicilin (**§6c**) **2.** satırıdır ve §6c'deki "araştırmadan çıkan 10 öneri"
+paydasına AİT DEĞİLDİR: hipotez dışarıdan geldi, o listeden seçilmedi. BH düzeltmesinde
+iki payda ayrı tutulur; aksi hâlde dışarıdan gelen her hipotez, ev içi arama uzayının
+cezasını ödemiş gibi görünürdü.
+
+---
+
+## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
 
