@@ -3886,3 +3886,121 @@ durumu görünüyordu, o da F0'ın değil model 13'ün). Pencere, sonuca göre d
 tamamlayabildiği boya göre** yeniden seçildi ve bu, §7.3'ün ("pencereyi sonuca göre
 kaydırmak yok") yasakladığı şey değildir: görülen bir sonuç yoktur. Yine de sessiz
 olmaz — ön-kayıt bir TADİLAT notuyla güncellendi ve eski pencere orada yazılı kaldı.
+
+## 49. F0 ÖLÇÜLDÜ ve DÜŞTÜ: birim yarısını kurtardı, işareti değiştirmedi
+
+**Koşu.** `backtest.yml` #16, katman `scalp`, pencere **2026-05-20 → 2026-08-16**
+(88 gün, 8.447 bar), modeller `vwap_session,vwap_clone`, `--history-bars 10000`.
+Ön-kayıt: `docs/backtest.md > 6f` (TADİLAT notuyla birlikte). Bellek düzeltmesinden
+(karar 48) sonraki ilk tamamlanan koşu; 20 dakikada bitti.
+
+### Sayılar
+
+| | `vwap_session` (F0, 19) | `vwap_clone` (13) |
+|---|---|---|
+| n (pozisyon) | **647** (long 313 / short 334) | 5.228 (2.701 / 2.527) |
+| ort. R | **−0.48** (−0.45 / −0.51) | −0.76 (−0.67 / −0.87) |
+| ort. R aralığı | [−0.57, −0.39] | [−0.80, −0.73] |
+| **R − market_R** | **−0.47 [−0.56, −0.40]** | −0.76 [−0.79, −0.73] |
+| market_R | −0.01 | −0.00 |
+| kazanç% | 33.7 (ortKaz +1.03R / ortKay −1.25R) | 28.7 (+0.97R / −1.46R) |
+| PF | 0.42 | 0.27 |
+| hesap getirisi | **−54.24%** (maxDD −54.39%) | −99.91% (maxDD −99.91%) |
+| ciro | 2.51x/gün | 4.53x/gün |
+| tur maliyeti | %0.243 | %0.243 |
+| sürüklenme | %0.609/gün | %1.103/gün |
+| işlem/gün | 7.4 | 59.4 |
+| aynı-bar belirsizliği | 10/434 stop (%2.3) | 161/4.604 (%3.5) |
+
+### Ön-kayıtlı tahminler
+
+| # | Tahmin | Sonuç |
+|---|---|---|
+| **P1** (birincil) | `R−market_R` aralığının ALT SINIRI > 0 | **DÜŞTÜ** — aralığın TAMAMI sıfırın altında: [−0.56, −0.40] |
+| P2 | ort. R > kopyanın −0.70'i | **TUTTU** — −0.48 > −0.76 (bu pencerede kopya −0.76) |
+| P3 | n ≥ 80 **ve** ≥ 0.5 işlem/gün | **TUTTU** — n=647, 7.4 işlem/gün |
+| P4 | işlem sayısı kopyanın %40–80'i | **DÜŞTÜ** — %12.4 (647/5.228) |
+| P5 | `cost_pct` ve ciro kopyadan düşük | **YARIM** — ciro 2.51 ↔ 4.53 ve sürüklenme %0.609 ↔ %1.103 düşük; `cost_pct` AYNI (%0.243 ↔ %0.243) |
+
+**P3 tuttu, yani bu satır OKUNUR.** Model 18'in (karar 45) düştüğü yer tam olarak
+burasıydı: n=8 ile hiçbir sayı okunamadı. F0 aynı kapıdan 647 pozisyonla geçti —
+kademeli programın kendisi işini gördü.
+
+**P5'in `cost_pct` yarısı YANLIŞ KURULMUŞTU.** `cost_pct = Σ(komisyon+kayma)/Σnotional`
+ve iki model de piyasa emriyle girip çıkıyor; oran bu durumda maliyet MODELİNİN sabiti
+(`fee_rate` + `slippage_base`), birimin değil. İki modeli ayırt etmesi mümkün değildi.
+Bu bir tahminin çürümesi değil, tahminin ölçemeyeceği bir şeyi sormasıydı; sonucu
+gördükten sonra eşiği oynatmıyoruz, yalnızca kolonun ne ölçtüğünü kaydediyoruz.
+Birimin friksiyona etkisi **ciro ve gün başına sürüklenmede** okunur ve orada tuttu:
+ikisi de yarıya indi.
+
+### P4 düştü: "birimin katkısı" temiz okunamaz
+
+Ön-kayıt bunu önceden yazmıştı: *"P4 bir SAĞLAMADIR ... tutmazsa P1'in sonucu
+yorumlanamaz — çünkü o zaman ölçülen şey birim değil, başka bir şeydir."* Beklenen
+%40–80 yerine %12.4 geldi. Sebep loglarda görünüyor: F0'ın taramalarının ezici
+çoğunluğu `bant_ici=13`, yani **hiçbir sembol 2.0σ'yı geçmiyor.** Kopyanın σ'su
+sapma serisinin 20 barlık örneklem sd'sidir (dar); seansın hacim ağırlıklı σ'su
+geniştir ve aynı "2.0σ" sayısı bambaşka bir mesafeyi anlatır. Bu, karar 45'te model
+18'i sıfır kuruluma düşüren etkinin aynısıdır — ama bu kez ölçüldü ve sayıldı.
+
+Yani 13 ↔ 19 farkı **ölçek olarak da ayrıştı** ve "birimin katkısı" tek değişkenli bir
+eksen gibi okunamaz. Okunabilen şey şudur: kopyanın kurallarını geniş bir birimde
+uygulamak kaybı yarıya indirir (−0.76 → −0.48, hesap −%99.91 → −%54.24, ciro yarı) ama
+**işaretini değiştirmez.**
+
+### Eksende kayıtlı OLMAYAN iki sapma (dürüstlük kaydı)
+
+CLAUDE.md'nin eksen tablosu 13 ↔ 19 için "çapa + σ, başka hiçbir şey" diyordu; bu
+YANLIŞ. İki kalem daha ayrışıyor ve ikisi de ön-kayıttan önce oradaydı:
+
+1. **Evren 13 ↔ 12.** F0 katmanın evrenini tarar, kopyanın kendi 12 sembollük listesi
+   var; fark SUI'dir. SUI F0'ın 647 pozisyonunun 36'sı (%5.6) ve ort. R'si −0.28 —
+   sonucu taşıyan satır değil. **SUI çıkarılıp yeniden okunmadı** (§7.2: post-hoc
+   sembol elemesi yok); payı buraya sayı olarak yazıldı, o kadar.
+2. **Parametre öğrenimi.** Kopya bant/hedef çarpanını sembol bazında ÖĞRENİR
+   (ε=0.25), F0 grid'in ortasında SABİT tutar. Bu ön-kayıtta açıkça yazılıydı
+   ("öğrenme KALDIRILDI, çünkü keşif payı birim değişikliğinin etkisiyle karışırdı"),
+   ama eksen tablosuna geçmemişti.
+
+Eksen tablosu düzeltildi: 13 ↔ 19 bir EKSEN değil, üç kalemlik bir farktır.
+
+### Ön-kayıtlı ölüm şartı işledi
+
+§6f'in son satırı koşudan önce yazılmıştı: **"F0 bile `market_R`siz artı değilse model
+ölür. Ön-kayıt bunu şimdi yazıyor: o durumda doğru hamle F1'e geçmek DEĞİL, VWAP fade
+tezini bırakmaktır."**
+
+Ham ortalama R = **−0.48**, aralığı [−0.57, −0.39] — sıfırın yanına bile gelmiyor ve
+`market_R` −0.01, yani piyasa rüzgârı bu pencerede ne veriyor ne alıyor. Şart tuttu.
+
+**Sonuç: F1 (`vwap_scored`) ve F2'nin Mod A'sı KOŞULMADI.** Kodları ve config blokları
+duruyor (kural 1'in aynı gerekçesi: bir eksenin kapanması satırı silmez), katmanın
+`models` listesinde değiller ve ön-kayıtlı bir pencerede koşulmadılar.
+
+**Neden F1'e geçmemek doğru.** F1'in kalemleri (maker dolum, skorla boyut, zaman
+stop'u, 5x) maliyeti düşürür. F0'ın açığı 0.48R ve tur maliyeti notional'ın %0.243'ü;
+maker'a geçmek tek bacakta %0.055 → %0.02, yani turun yaklaşık %0.035'i — 1R'ye
+çevrildiğinde açığın küçük bir kesri. Maliyet tarafını sonuna kadar iyileştirmek bu
+işareti döndürmez, çünkü açık maliyette değil **kurulumun kendisinde**: stop dilimi
+354 pozisyonda ortalama −1.44R yazıyor (kopyada −1.66R), yani "1R" stop gerçekte
+1.44R ödetiyor, ve kazanan taraf +1.03R ile bunu kapatmıyor. Geometriyi (hedef = VWAP
+mesafesinin %75'i) düzeltmek ise artık F0 değil, yeni bir hipotezdir ve TAZE bir
+pencere ister (§7.1).
+
+### Mod B (bounce) ayrı bir tezdir, bu kararla ölmez
+
+Kullanıcının kendi ifadesi: *"bounce da kurtarmayabilir"* — "kurtarmaz" değil.
+`vwap_bounce` (model 21) fade DEĞİL, trend gününde VWAP'e dönüşte trend YÖNÜNDE
+giriştir; F0'ın düşmesi onun tahminini çürütmez çünkü aynı kurulumu ölçmüyor. Ama
+§6f'te F2, F1'in ÜSTÜNE yazılmıştı; F1 koşulmadığına göre o ön-kayıt geçersizdir.
+Bounce koşulacaksa KENDİ ön-kaydıyla, kendi penceresiyle ve sicilde kendi satırıyla
+gelir — F0'ın enkazına eklenmiş bir devam değil. Bu karar onu koşmaz; karar
+kullanıcınındır.
+
+### Ne öğrenildi (tek cümle)
+
+Kopyanın −%99.91'lik hesabının yarısı BİRİMDENDİ ve birim düzeltilince gerçekten de
+yarısı geri geldi — ama VWAP sapma-dönüş fade'i, ev kuralları olmadan ve maliyet
+tarafına hiç dokunmadan, 647 pozisyonluk bir örneklemde **piyasadan bağımsız olarak
+kaybediyor.** Ölçüm bunu söyleyebildi çünkü bu kez kapı tek tek takıldı.

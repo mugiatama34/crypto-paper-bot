@@ -541,6 +541,44 @@ P1'in sonucu yorumlanamaz — çünkü o zaman ölçülen şey birim değil, ba�
 **F0 bile `market_R`siz artı değilse model ölür.** Ön-kayıt bunu şimdi yazıyor: o durumda
 doğru hamle F1'e geçmek DEĞİL, VWAP fade tezini bırakmaktır.
 
+#### SONUÇ (koşu #16, 2026-09-17) — **P1 DÜŞTÜ, ölüm şartı İŞLEDİ**
+
+Pencere 2026-05-20 → 08-16 (88 gün, 8.447 bar), `--history-bars 10000`.
+Tam kayıt: `docs/decisions.md > 49`.
+
+| | `vwap_session` (19) | `vwap_clone` (13) |
+|---|---|---|
+| n | 647 | 5.228 |
+| ort. R | −0.48 [−0.57, −0.39] | −0.76 [−0.80, −0.73] |
+| **R − market_R** | **−0.47 [−0.56, −0.40]** | −0.76 [−0.79, −0.73] |
+| hesap getirisi | −54.24% | −99.91% |
+| ciro / sürüklenme | 2.51x/gün · %0.609/gün | 4.53x/gün · %1.103/gün |
+| işlem/gün | 7.4 | 59.4 |
+
+| # | Tahmin | Sonuç |
+|---|---|---|
+| **P1** | `R−market_R` alt sınırı > 0 | **DÜŞTÜ** — aralığın TAMAMI negatif |
+| P2 | ort. R > −0.70 | TUTTU (−0.48) |
+| P3 | n ≥ 80 **ve** ≥ 0.5 işlem/gün | TUTTU (647 · 7.4) → satır OKUNUR |
+| P4 | işlem sayısı kopyanın %40–80'i | **DÜŞTÜ** (%12.4) → "birimin katkısı" temiz okunamaz |
+| P5 | `cost_pct` ve ciro daha düşük | YARIM — ciro/sürüklenme yarıya indi; `cost_pct` aynı (%0.243), çünkü o kolon piyasa emrinde maliyet MODELİNİN sabitidir ve iki modeli ayırt edemez |
+
+**Ölüm şartı tuttu:** ham ortalama R = −0.48 ve `market_R` = −0.01. Bu yüzden
+**F1 ve F2'nin Mod A'sı KOŞULMADI** — ön-kayıt bunu koşudan önce yazmıştı.
+Kodları (`strategies/vwap_scored.py`, `strategies/vwap_bounce.py`) ve config blokları
+duruyor; hiçbiri katmanın `models` listesinde değil ve hiçbiri ön-kayıtlı bir
+pencerede koşulmadı.
+
+**Eksende kayıtlı olmayan iki sapma** (karar 49'da ayrıntısı): evren 13 ↔ 12 (fark SUI:
+F0'ın 647 pozisyonunun 36'sı, ort. R −0.28 — çıkarılıp yeniden OKUNMADI, §7.2) ve
+parametre öğrenimi (kopya öğrenir, F0 sabit — ön-kayıtta yazılıydı, eksen tablosunda
+değildi).
+
+**Mod B (`vwap_bounce`) bu sonuçla ölmez ama bu ön-kayıtla da koşamaz:** §6f'te F2,
+F1'in ÜSTÜNE tanımlıydı ve F1 koşulmadı. Bounce ayrı bir tezdir (fade değil, trend
+yönünde giriş) ve koşulacaksa KENDİ ön-kaydı, kendi penceresi ve kendi sicil satırıyla
+gelir.
+
 ---
 
 ### F1 ve F2 — parametreleri KENDİ ön-kayıt commit'lerinde sabitlenir
@@ -586,9 +624,10 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16 | P1: ortalama R > 0 | **ÖLÇÜLEMEDİ** — σ birimi hatası: 52 günde 0 kurulum; koşu ayrıca `random_ctrl` yüzünden düştü (karar 45) |
 | 3 | `vwap_guarded` (σ birimi düzeltilmiş): aynı tahminler, taze pencere | §6e | B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | **P3 DÜŞTÜ** (n=8 < 30) → P1 değerlendirilemez (+0.30R, aralık [−0.19, +0.69]); 0.1 işlem/gün — karar 45 |
-| 4 | **F0** `vwap_session`: kopyanın kaybı sinyalden değil BİRİMDEN geliyor | §6f | 2026-05-20 → 08-16 (168 günlük ilk pencere bellek yüzünden düştü, karar 48) | P1: `R−market_R` aralığının alt sınırı > 0 | _koşu bekliyor_ |
+| 4 | **F0** `vwap_session`: kopyanın kaybı sinyalden değil BİRİMDEN geliyor | §6f | 2026-05-20 → 08-16 (168 günlük ilk pencere bellek yüzünden düştü, karar 48) | P1: `R−market_R` aralığının alt sınırı > 0 | **DÜŞTÜ** — −0.47 [−0.56, −0.40], aralığın tamamı negatif (n=647, 7.4 işlem/gün). P4 de düştü (%12.4), yani birimin katkısı temiz okunamaz. Ön-kayıtlı ölüm şartı işledi: F1/F2 koşulmadı — karar 49 |
 
-**Araştırmadan çıkan öneri sayısı: 10.** Bunların 4'ü test edildi/edilmekte (yukarıdakiler), 4'ü
+**Araştırmadan çıkan öneri sayısı: 10.** Bunların 4'ü test edildi ve DÖRDÜ DE sonuçlandı
+(yukarıdakiler; hiçbiri birincil tahminini geçemedi — bu sayı BH düzeltmesinin paydasıdır), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
 hakkında bir iddia taşımaz), 2'si reddedildi (işlem sıklığı tavanı, sembol eleme), 3'ü
