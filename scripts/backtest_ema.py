@@ -48,6 +48,7 @@ from core.config import get_setting, load_config  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
 from core.metrics import format_report  # noqa: E402
 from scripts.backtest import BacktestResult, format_fill_ambiguity, run_backtest, results_payload  # noqa: E402
+from main import jsonable  # noqa: E402
 
 logger = logging.getLogger("backtest-ema")
 
@@ -520,10 +521,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     results = Path(args.results)
     results.parent.mkdir(parents=True, exist_ok=True)
     results.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        json.dumps(jsonable(payload), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
     _write_csv(Path(args.csv), payload["coins"])
     logger.info("yük: %s ve %s", results, args.csv)
+
+    if args.site_json:
+        site = Path(args.site_json)
+        site.parent.mkdir(parents=True, exist_ok=True)
+        site.write_text(
+            json.dumps(jsonable(site_payload(payload)), ensure_ascii=False, indent=1, default=str),
+            encoding="utf-8",
+        )
+        logger.info("site yükü: %s", site)
 
     for name, runs in (("A", period_a), ("B", period_b)):
         if runs is None:
@@ -535,6 +545,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(format_gates(payload["gates"]))
 
     return 0
+
+
+def site_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Tam yükün SAYFANIN OKUDUĞU kısmı — kırılımlar çıkarılmış hâli.
+
+    **Neden ayrı bir dosya.** İş salt okunur (`permissions: contents: read`) ve sonuçlar
+    runner'dan yalnızca artifact ile ya da LOG ile çıkabilir. Artifact her ortamdan
+    indirilemiyor (blob deposuna erişim ağ politikasına bağlı), yani sonucun depoya
+    girmesi pratikte log'dan okunmasına bağlı — ve o zaman da yükün okunabilir bir boyda
+    olması gerekir.
+
+    Çıkarılan tek şey `breakdowns`tır ve gerekçesi şudur: `docs/backtest.html` onu HİÇ
+    okumaz (sembol kırılımının sayıları zaten `coins` satırlarında, tek sembollü
+    koşulardan gelir), ama yükün en büyük parçasıdır. Kırılımlar TAM yükte ve
+    artifact'te durmaya devam eder — bu bir silme değil, sayfanın okumadığı bir bölümün
+    sayfanın dosyasına konmaması.
+
+    Sayı KOPYALANMAZ, seçilir: aynı `payload` sözlüğünün alt kümesidir.
+    """
+    return {
+        key: value for key, value in payload.items() if key != "periods"
+    } | {
+        "periods": {
+            name: {k: v for k, v in period.items() if k != "breakdowns"}
+            for name, period in (payload.get("periods") or {}).items()
+        },
+    }
 
 
 def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
@@ -571,6 +608,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--out", default="backtests/ema", help="ham defterlerin kökü")
     parser.add_argument("--results", default="docs/data/backtest_ema_trend.json")
     parser.add_argument("--csv", default="docs/data/backtest_ema_trend.csv")
+    parser.add_argument(
+        "--site-json", default=None, metavar="PATH",
+        help=(
+            "sayfanın okuduğu yük (kırılımlar hariç). Sonuç runner'dan yalnızca artifact "
+            "ya da log ile çıkar; artifact her ortamdan indirilemediği için yükün log'a "
+            "sığacak boyda bir sürümü gerekir."
+        ),
+    )
     parser.add_argument("--config", default=None)
     parser.add_argument(
         "--only", choices=["A", "B"], default=None,

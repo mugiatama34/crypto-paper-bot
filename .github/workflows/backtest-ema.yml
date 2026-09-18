@@ -91,17 +91,21 @@ jobs:
             --out "backtests/ema" \
             --results "backtests/ema/backtest_ema_trend.json" \
             --csv "backtests/ema/backtest_ema_trend.csv" \
+            --site-json "backtests/ema/site.json" \
             --log-level INFO
 
-      # Sonuç dosyaları log'a da basılır: artifact indirmeden okunabilmeleri, sayıların
-      # depoya girerken elle aktarılmasını (ve aktarım hatasını) gereksiz kılar.
+      # Sonuç dosyaları log'a da BASILIR ve bu bir kolaylık değil, tek çıkış yolu:
+      # iş salt okunurdur (contents: read), yani sonuç runner'dan ya artifact ya da log
+      # ile çıkar — ve artifact'in blob deposu her ağ politikasından indirilemiyor.
+      # Log'a basılan iki dosya, depoya elle kopyalama olmadan girebilen tam kayıttır;
+      # kırılımlar (yükün en büyük parçası) yalnızca artifact'te kalır.
       - name: Print result files
         if: always()
         run: |
           echo "=== COIN TABLOSU (CSV) ==="
           cat backtests/ema/backtest_ema_trend.csv || echo "(yok)"
-          echo "=== KAPILAR (JSON) ==="
-          python -c "import json,sys; d=json.load(open('backtests/ema/backtest_ema_trend.json')); print(json.dumps(d['gates'], ensure_ascii=False, indent=2))" || echo "(yok)"
+          echo "=== SITE YÜKÜ (JSON, kırılımlar hariç) ==="
+          cat backtests/ema/site.json || echo "(yok)"
 
       - name: Upload results and ledgers
         if: always()

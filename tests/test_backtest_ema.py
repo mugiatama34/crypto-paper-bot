@@ -16,12 +16,14 @@ kuralın üç yerini sabitler:
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from main import jsonable
 from scripts import backtest_ema
 
 
@@ -338,3 +340,58 @@ def test_preregistered_constants_match_the_document() -> None:
     assert backtest_ema.K3_MAX_DRAWDOWN_PCT == 25.0
     assert (backtest_ema.FEE_RATE, backtest_ema.SLIPPAGE_BASE) == (0.00075, 0.0001)
     assert math.isclose(backtest_ema.FEE_RATE + backtest_ema.SLIPPAGE_BASE, 0.00085)
+
+
+def _strict_loads(text: str) -> Any:
+    """`NaN`/`Infinity`ye izin VERMEYEN bir okuma — tarayıcının `JSON.parse`ı gibi.
+
+    `json.loads` bu üç sabiti varsayılan olarak kabul eder, tarayıcı etmez; varsayılanla
+    sınamak, sayfanın hiç ayrıştıramadığı bir dosyayı "geçerli" göstermek olurdu.
+    """
+
+    def reject(constant: str) -> Any:
+        raise ValueError(f"geçersiz JSON sabiti: {constant}")
+
+    return json.loads(text, parse_constant=reject)
+
+
+def test_site_payload_is_valid_json_for_a_browser() -> None:
+    """Tanımsız metrik `null` olarak yazılır, `NaN` olarak DEĞİL.
+
+    Yükün her dalı tanımsız sayı taşır (hiç short açmamış bir modelin kolonları, listede
+    olmayan bir sembolün al-tut getirisi — bkz. core/metrics.py "veri yoksa nan"). `NaN`
+    geçerli JSON değildir: dosya `docs/backtest.html` tarafından hiç ayrıştırılamaz ve
+    sayfa tek bir sayı çizemeden ölür. Bu yüzden yazma yolu `main.jsonable`dan geçer —
+    ölçümün kendisi değişmez, yalnızca "ölçülemedi"nin JSON'daki karşılığı yazılır.
+    """
+    payload = {
+        "model": backtest_ema.MODEL,
+        "gates": {"P1": {"measured": float("nan"), "passed": False}},
+        "periods": {
+            "A": {
+                "breakdowns": {"symbol": {"BTC": {"avg_r": float("nan")}}},
+                "models": [{"short": {"avg_r": float("nan"), "payoff": math.inf}}],
+                "buy_hold_pct": {"PENGU-USDT-SWAP": float("nan")},
+            },
+        },
+    }
+
+    text = json.dumps(jsonable(backtest_ema.site_payload(payload)), ensure_ascii=False)
+
+    assert "NaN" not in text
+    restored = _strict_loads(text)
+    assert restored["gates"]["P1"]["measured"] is None
+    assert restored["periods"]["A"]["models"][0]["short"]["payoff"] is None
+    assert restored["periods"]["A"]["buy_hold_pct"]["PENGU-USDT-SWAP"] is None
+
+
+def test_unsanitised_payload_would_not_parse() -> None:
+    """Yukarıdaki testin neyi yakaladığını sabitler: çağrı kaldırılırsa dosya bozulur.
+
+    Sanitasyon olmadan `json.dumps` `NaN` yazar ve tarayıcının okuması patlar. Bu test
+    olmadan `jsonable(...)` çağrısı "gereksiz sarmalayıcı" diye kaldırılabilirdi.
+    """
+    text = json.dumps({"avg_r": float("nan")})
+
+    with pytest.raises(ValueError):
+        _strict_loads(text)

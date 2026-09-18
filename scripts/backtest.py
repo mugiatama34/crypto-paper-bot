@@ -78,7 +78,7 @@ from core.metrics import (  # noqa: E402
 )
 from core.portfolio import Portfolio  # noqa: E402
 from core.report import model_breakdowns  # noqa: E402
-from main import build_strategies  # noqa: E402
+from main import build_strategies, jsonable  # noqa: E402
 from strategies.base import MarketData, Signal, Strategy  # noqa: E402
 
 logger = logging.getLogger("backtest")
@@ -914,22 +914,11 @@ def results_payload(result: BacktestResult) -> dict[str, Any]:
         },
         "models": [asdict(metrics) for metrics in result.metrics],
         "acceptance": [asdict(flag) for flag in result.acceptance],
-        "breakdowns": _jsonable(result.breakdowns),
+        "breakdowns": jsonable(result.breakdowns),
         "holding": dict(result.holding),
         "buy_hold_pct": dict(result.buy_hold),
         "coverage": dict(result.coverage),
     }
-
-
-def _jsonable(value: Any) -> Any:
-    """Kırılım yükündeki dataclass'ları sözlüğe indirir (yapı korunur)."""
-    if is_dataclass(value) and not isinstance(value, type):
-        return asdict(value)
-    if isinstance(value, Mapping):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    return value
 
 
 def _git_log_shas(path: str) -> list[str]:
@@ -1006,7 +995,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         path = Path(args.results_json)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps(results_payload(result), ensure_ascii=False, indent=2, default=str),
+            json.dumps(jsonable(results_payload(result)), ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
         )
         logger.info("sonuç yükü: %s", path)
