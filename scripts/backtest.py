@@ -818,6 +818,40 @@ def format_breakdowns(breakdowns: Mapping[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
+def format_holding(result: BacktestResult) -> str:
+    """Tutuş süresi dağılımı. Zaman stop'u OLMAYAN modellerde bir zorunluluktur.
+
+    `docs/backtest.md > 6.1`in embargo kuralı "doğru boşluk azami tutuş süresidir" der ve
+    bu, zaman stop'u olan modellerde config'ten OKUNUR. Olmayanlarda üst sınır tanım
+    gereği yoktur, yani embargo ancak ÖLÇÜLEREK bulunur — ve ölçüm basılmazsa koşuyu
+    yapan kişi onu uydurmak zorunda kalır.
+
+    Dağılımın kendisi de bir bulgudur: uzun bir kuyruk, kurulumların hedefe ya da stop'a
+    varmadan beklediğini söyler.
+    """
+    if not result.holding:
+        return ""
+    out = [
+        "",
+        "TUTUŞ SÜRESİ (kapanmış POZİSYON başına; embargo bundan ölçülür)",
+        "-" * 78,
+        f"{'model':16s}{'n':>6}{'medyan':>10}{'p90':>10}{'azami':>10}{'azami gün':>12}",
+    ]
+    for model, stats in sorted(result.holding.items()):
+        if not stats.get("positions"):
+            continue
+        out.append(
+            f"{model:16s}{stats['positions']:6d}"
+            f"{_cell(stats.get('median_bars')):>10}"
+            f"{_cell(stats.get('p90_bars')):>10}"
+            f"{_cell(stats.get('max_bars')):>10}"
+            f"{_cell(stats.get('max_days')):>12}"
+        )
+    out.append("")
+    out.append("Bar cinsindendir; OOS embargosu için AZAMİ değer yukarı yuvarlanır.")
+    return "\n".join(out) + "\n"
+
+
 def _cell(value: Any) -> str:
     """Tanımsız metrik `—` olur, `0` DEĞİL (docs/shared.js ile aynı söz)."""
     if value is None:
@@ -946,6 +980,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(format_report(list(result.metrics), min_trades=result.min_trades or None))
     print(format_drift(result.metrics))
     print(format_fill_ambiguity(result.report))
+    print(format_holding(result))
     print(format_breakdowns(result.breakdowns))
 
     if args.results_json:
