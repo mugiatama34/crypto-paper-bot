@@ -1658,6 +1658,32 @@ def test_holding_stats_measure_the_distribution_in_bars_and_days() -> None:
     assert stats.p90_bars == pytest.approx(2.0 + 0.8 * 8.0)
 
 
+def test_holding_percentiles_are_monotonic_whatever_the_input_order() -> None:
+    """medyan ≤ p90 ≤ azami — SIRA bir varsayım değil, sağlanması gereken bir şey.
+
+    İlk hâlinde değildi: modüle ikinci bir `_percentile` eklenmişti ve sonraki tanım
+    (bootstrap'ınki, SIRALI girdi bekleyen) kazanıyordu. Sonuç, gerçek bir koşuda
+    medyanı 9.00 iken p90'ı 8.40 raporlanan bir dağılımdı — yani hiç kimsenin
+    inanmaması gereken bir sayı, sessizce basıldı.
+    """
+    stamp = pd.Timestamp("2026-01-01T00:00:00+00:00")
+    spans = [40, 4, 184, 8, 12, 60, 16, 36, 20]  # bilinçli olarak SIRASIZ
+    trades = [
+        _trade(
+            pnl=1.0,
+            symbol=f"S{index}-USDT-SWAP",
+            opened_at=stamp.isoformat(),
+            closed_at=(stamp + pd.Timedelta(hours=hours)).isoformat(),
+        )
+        for index, hours in enumerate(spans)
+    ]
+    stats = holding_stats(trades, bar_duration=pd.Timedelta(hours=4))
+
+    assert stats.median_bars <= stats.p90_bars <= stats.max_bars
+    assert stats.median_days <= stats.p90_days <= stats.max_days
+    assert stats.max_bars == pytest.approx(46.0)
+
+
 def test_holding_stats_count_positions_not_fills() -> None:
     """Kısmi çıkışın her dilimini saymak, dağılımı kısa tarafa çekerdi."""
     common = dict(

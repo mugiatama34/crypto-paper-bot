@@ -624,36 +624,21 @@ def holding_stats(
             continue
         spans.append(seconds)
 
-    bars = [span / bar_duration.total_seconds() for span in spans]
-    days = [span / 86400.0 for span in spans]
+    # `_percentile` SIRALI dizi bekler (bootstrap aralıkları da onu öyle çağırır) ve bu
+    # modülde TEK tanımdır. Buraya ikinci bir yüzdelik fonksiyonu yazmak, aynı defterin
+    # iki farklı yüzdelik verebilmesi demekti — nitekim ilk hâlinde tam olarak bu oldu:
+    # sıralanmamış girdiyle p90, medyandan KÜÇÜK çıktı.
+    bars = sorted(span / bar_duration.total_seconds() for span in spans)
+    days = sorted(span / 86400.0 for span in spans)
     return HoldingStats(
         positions=len(spans),
         median_bars=_median(bars),
         p90_bars=_percentile(bars, 0.90),
-        max_bars=max(bars) if bars else _NAN,
+        max_bars=bars[-1] if bars else _NAN,
         median_days=_median(days),
         p90_days=_percentile(days, 0.90),
-        max_days=max(days) if days else _NAN,
+        max_days=days[-1] if days else _NAN,
     )
-
-
-def _percentile(values: Sequence[float], q: float) -> float:
-    """Doğrusal enterpolasyonlu yüzdelik; boş dizide `nan` (0.0 değil).
-
-    `numpy.percentile` ile aynı tanım (linear), ama bootstrap aralıklarının kullandığı
-    `_quantile` gibi bu da modülün kendi içinde durur: tek bir yüzdelik tanımı, aynı
-    defterin iki farklı sayı vermemesini garanti eder.
-    """
-    if not values:
-        return _NAN
-    ordered = sorted(values)
-    if len(ordered) == 1:
-        return ordered[0]
-    position = q * (len(ordered) - 1)
-    low = int(position)
-    high = min(low + 1, len(ordered) - 1)
-    weight = position - low
-    return ordered[low] * (1.0 - weight) + ordered[high] * weight
 
 
 def buy_hold_return(series: "pd.Series", *, start: pd.Timestamp, end: pd.Timestamp) -> float:

@@ -504,9 +504,25 @@ yumuşatmasını seçerek kendi tavanını genişletebilseydi tavan bir kural ol
 | n | — | 43 |
 
 Yani P1 kapısı `simple` ATR ile de GEÇİLMİŞTİ; tadilat düşen bir kapıyı geçirmek için
-değil, spec uyumu için yapıldı. Aynı pencerede `wilder` ile ölçülen değer de bu belgeye
-yazılacak ve **iki sayı birden durmaya devam edecek** — ilk koşuyu silmek, sonucu görüp
-geçmişi yazmak olurdu.
+değil, spec uyumu için yapıldı.
+
+**Tadilat SONRASI aynı pencere** (`backtest.yml` run 35382583335, `wilder` ATR):
+
+| | TradingView referansı | `simple` (tadilat öncesi) | `wilder` (tadilat sonrası) |
+|---|---|---|---|
+| kâr faktörü | 1.551 | 1.40 (−0.151) | **1.55 (−0.001)** |
+| kazanma oranı | %46.67 | %44.2 | **%47.0** |
+| ödeme oranı | 1.79 | 1.76 | **1.77** |
+| ortalama R | — | +0.24 | +0.32 |
+| n | — | 43 | 45 |
+
+**İki sayı da burada duruyor ve duracak** — ilk koşuyu silmek, sonucu görüp geçmişi
+yazmak olurdu. Sonuç, tadilatın gerekçesini de doğruluyor: kalan sapmanın neredeyse
+tamamı ATR yumuşatmasındanmış (kâr faktörü farkı −0.151 → −0.001). Veri kaynağı farkı
+(OKX perp ↔ kaynak sistemin borsası) beklenenden küçük çıktı.
+
+**Tutuş süresi (dönem A, BTC):** medyan 9 bar, azami **46 bar** (7.7 gün). Portföy
+koşusundan ölçülecek embargo bu mertebede beklenir.
 
 Aynı koşudan gelen, tadilat ÖNCESİ portföy referansı (13 sembol, dönem A, `backtest.yml`
 run 35373248059): `ema_trend` n=359, ortalama R ≈ **−0.06**. Tek sembollü BTC koşusu
