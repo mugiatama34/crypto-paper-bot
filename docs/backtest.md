@@ -465,6 +465,27 @@ gözlenen **azami tutuş süresi** embargo olarak uygulanır ve uygulanan değer
 cinsinden). Bu bir yan çıktı değil, ön-kayıtlı bir ölçümdür: uzun kuyruk, pozisyonların
 hedefe/stop'a varmadan beklediğini gösterir ve P2'nin bağımsız kontrolüdür.
 
+### Veri kapsamı — KOŞUDAN ÖNCE ölçüldü
+
+Bu bölüm bir sonuç değil, bir VERİ OLGUSUDUR ve ana koşudan önce ölçülmüştür (prob koşusu:
+`backtest.yml`, run 35372230431, 2026-09-18; pencere 2022-01-01 → 2022-02-01). Sonuca göre
+yazılmadığı için §7'nin kapsamına girmez; buraya yazılmasının sebebi tersidir — sonucu
+görünce "zaten biliyorduk" denmesin.
+
+- **OKX 4H verisi 2022-01'e uzanıyor**, yani dönem A'nın başlangıcı veri tarafından
+  destekleniyor.
+- **Dönem A'nın başında evren 13 değil 9 semboldür.** 2022-01'de OKX'te kapanmış barı
+  olmayanlar: **BNB, SUI, PENGU, ETHFI**. (SUI/PENGU/ETHFI beklenen listelenme
+  tarihleriyle uyumlu; BNB'nin de o tarihte OKX perpetual'i yok.) Semboller verileri
+  başladığı anda evrene girer — `core/data.py` `as_of` barını taşımayan sembolü zaten o
+  tur dışlar (kural 12), yani bu bir sessiz kayıp değil, loglanan bir kapsam sınırıdır.
+- **Sonuç okunurken:** dönem A'nın erken kısmı daha DAR bir evrende ölçülür; coin başına
+  tabloda o semboller `—` ile durur. Bu, K-1 kapısının (dönem B) birimini etkilemez —
+  dört sembolün de dönem B'de verisi vardır.
+- **Funding kayıtları 2022'de seyrek**: `core/funding.py::rate_at` kaydı olmayan anda None
+  döner ve maliyet işlenmez (uydurma yok). Bu, dönem A'yı İYİMSER yapar ve §6d'nin
+  "kabul edilen sapmalar" listesindeki 3. maddenin ölçülmüş hâlidir.
+
 ### Maliyet — bu koşu canlı config ile AYNI DEĞİLDİR
 
 | | backtest | canlı (`config.yaml`) |
