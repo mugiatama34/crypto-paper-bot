@@ -4004,3 +4004,101 @@ Kopyanın −%99.91'lik hesabının yarısı BİRİMDENDİ ve birim düzeltilinc
 yarısı geri geldi — ama VWAP sapma-dönüş fade'i, ev kuralları olmadan ve maliyet
 tarafına hiç dokunmadan, 647 pozisyonluk bir örneklemde **piyasadan bağımsız olarak
 kaybediyor.** Ölçüm bunu söyleyebildi çünkü bu kez kapı tek tek takıldı.
+
+## 50. TERS İŞLEM ÖLÇÜLDÜ: VWAP fade'inin brüt beklentisi SIFIR, kayıp %100 friksiyon
+
+**Koşu.** `backtest.yml` #17, katman `scalp`, pencere **2026-05-20 → 2026-08-16**
+(88 gün, 8.447 bar), modeller `vwap_inverse,vwap_clone`, `--history-bars 10000`.
+Ön-kayıt: `docs/backtest.md > 6g` (koşudan önce commit edildi).
+
+### Sayılar
+
+| | `vwap_inverse` (22, TERS) | `vwap_clone` (13) |
+|---|---|---|
+| n (pozisyon) | **5.652** (long 2.793 / short 2.859) | 5.228 (2.701 / 2.527) |
+| ort. R | **−0.74** (−0.66 / −0.81) | −0.76 (−0.67 / −0.87) |
+| ort. R aralığı | [−0.77, −0.71] | [−0.80, −0.73] |
+| R − market_R | −0.74 [−0.77, −0.71] | −0.76 [−0.79, −0.73] |
+| kazanç% | 29.3 (+0.97R / −1.45R) | 28.7 (+0.97R / −1.46R) |
+| PF | 0.28 | 0.27 |
+| hesap getirisi | **−%99.90** | −%99.91 |
+| ciro / tur maliyeti | 4.86x/gün · %0.251 | 4.53x/gün · %0.243 |
+| sürüklenme | %1.220/gün | %1.103/gün |
+| işlem/gün | 64.2 | 59.4 |
+| stop dilimi (ort. R) | **−1.66** | **−1.66** |
+
+### Ön-kayıtlı tahminler
+
+| # | Tahmin | Sonuç |
+|---|---|---|
+| **P1** | ters modelin ort. R'si NEGATİF kalır (−0.30 ile 0.00 arası) | **YÖNÜ TUTTU, BANDI DÜŞTÜ** — −0.74 negatif ama bandın çok dışında |
+| P2 | `R−market_R` alt sınırı ≤ 0 | TUTTU (−0.77) |
+| P3 | n ≥ 80 **ve** ≥ 0.5 işlem/gün | TUTTU (5.652 · 64.2) |
+| **P4** | iki tarafın ort. R toplamı < 0 | **TUTTU ve ASIL BULGU BU** — −0.74 + −0.76 = **−1.50** |
+| P5 | işlem sayısı kopyanın %70–130'u | TUTTU (%108) |
+
+### Cevap: kayıp SİNYALDEN değil, FRİKSİYONDAN
+
+`net R = brüt R − friksiyon` ve yön çevrilince brüt işaret değiştirir, friksiyon
+değiştirmez. İki denklem, iki bilinmeyen:
+
+    kopya:  G − F = −0.76
+    ters:  −G − F = −0.74
+    ------------------------------
+    toplam:   −2F = −1.50   ->   **F = 0.75R**
+    fark:      2G = −0.02   ->   **G = −0.01R**
+
+**VWAP sapma-dönüş sinyalinin brüt beklentisi sıfırdır.** Ne doğru tarafta ne ters
+tarafta bilgi taşıyor: kurulum, hangi yöne açarsanız açın, maliyetten önce başabaş.
+Kaybın **tamamı** pozisyon başına 0.75R'lik friksiyondur (komisyon + kayma + funding +
+kural 13'ün aynı-bar stop varsayımı).
+
+Simetri her dağılım istatistiğinde görünüyor ve tesadüf değil: stop dilimi iki modelde
+de tam **−1.66R** (nominal −1.00R olmalıydı — aradaki 0.66R doğrudan maliyettir),
+`stop:breakeven` iki modelde de −0.58R, kazanan dilim ikisinde de +0.97R, kazanma oranı
+%28.7 ↔ %29.3.
+
+### Tahminimin bandı neden düştü (0.45R ↔ gerçek 0.75R)
+
+Ön-kayıtta friksiyonu yalnızca stop diliminin nominalden sapmasından tahmin etmiştim
+(−1.66R vs −1.00R ⇒ 0.66R, pozisyonlara yayılınca ~0.45R). Eksik olan şuydu: maliyet
+yalnızca stop'lanan dilimde değil, **kazanan dilimlerde ve kısmi dolumlarda da** ödenir —
+her kısmi çıkış fazladan bir taker bacağıdır ve kopya 5.228 pozisyonda 1.390 kısmi + 870
+kısmi-stop dilimi üretiyor. Doğrudan ölçüm (toplamın yarısı) 0.75R veriyor. Tahminin
+bandı düştü, yönü tuttu; **band sonradan gevşetilmedi**, düştüğü yazıldı (§7.1).
+
+### Ters model kopyadan neden BİRAZ daha çok friksiyon ödüyor
+
+Ciro 4.86 ↔ 4.53, tur maliyeti %0.251 ↔ %0.243, sürüklenme %1.220 ↔ %1.103. Sebep
+ön-kayıtta yazılıydı: `slippage_short_stop` (%0.15) `slippage_base`in (%0.05) üç katıdır
+ve ters model daha çok short açıyor (2.859 ↔ 2.527). Yön çevrildiğinde maliyet de taraf
+değiştirir — "friksiyon yön değiştirmez" ifadesi BÜYÜKLÜK için doğrudur, tam simetri için
+değil. Fark küçüktür (0.02R) ve sonucu değiştirmez.
+
+### F0 ile tutarlılık (tek açıklama iki sonucu birden veriyor)
+
+Karar 49'da F0 (`vwap_session`) kopyanın kaybını yarıya indirmişti (−0.76 → −0.48) ve
+"birim yarısını kurtardı ama işareti çevirmedi" demiştik. Şimdi neden olduğu belli:
+`G ≈ 0` olduğu için F0'ın tüm kazancı friksiyondandır. Seans σ'su stop'u genişletti,
+notional düştü, friksiyon 0.75R'den ~0.48R'ye indi — ve geri kazanılacak bir sinyal
+olmadığı için orada durdu. F0'ın cirosu da tam bu oranda düşmüştü (2.51 ↔ 4.53).
+
+Üç koşu, tek açıklama: **bu kolda maliyet tek değişkendir ve sinyal yoktur.**
+
+### Sonuç
+
+- **VWAP fade hattı KAPANDI** (karar 49'un kapanışı pekişti). Ters çevirmek kurtarmıyor,
+  çünkü kurtarılacak bir işaret yok.
+- **`vwap_inverse` katmanın `models` listesine GİRMEZ.** Ön-kayıt bunu koşudan önce
+  yazmıştı ve sonuç zaten aday olmadığını gösteriyor.
+- **Kopya (model 13) kâğıtta KALIR.** O bir yarışmacı değil, dış bir sistemin kopyası;
+  ölçtüğü şey hâlâ geçerli ve şimdi cevabı daha da net: kaynak sistem bizim maliyet
+  varsayımlarımız altında sinyalden değil friksiyondan kaybediyor.
+- **Bu bir model sonucu DEĞİL, bir kol sonucudur.** "VWAP'ten sapan fiyat döner"
+  kurulumunun 15 dakikalık barda, bu evrende, bu maliyetlerle brüt beklentisi sıfırdır.
+  Aynı kurulumu daha iyi filtrelemek (rejim, tükenme, skor) sıfırın içinden pozitif bir
+  alt küme çıkarmak zorundadır — model 18 tam olarak bunu denedi ve ölçülemedi (karar 45).
+- **Açık kalan tek kaldıraç maliyettir** ve büyüklüğü artık biliniyor: 0.75R/pozisyon.
+  Maker dolum tek bacakta %0.035 kazandırır, yani bu rakamın yanında küçüktür. Asıl
+  çarpan stop mesafesidir (`F ≈ maliyet% / stop%`) — ama stop'u genişletmek F0'da
+  denendi ve sinyal olmadığı için başabaşa bile götürmedi.

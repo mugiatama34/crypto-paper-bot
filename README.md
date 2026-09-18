@@ -407,7 +407,7 @@ eklemek bir commit'tir. Backtest onları `--models` ile hâlâ çağırabilir.
 | 19 | `vwap_session` | **F0 — ÖLÇÜLDÜ, P1 düştü** | kopyanın BİRİMİ düzeltilmiş hâli; 88 günde n=647, ort. R −0.48, `R−market_R` −0.47 [−0.56, −0.40]. Birim kaybı yarıya indirdi, işareti çevirmedi (karar 49) |
 | 20 | `vwap_scored` | F1 — **KOŞULMADI** | F0 + skorla boyut, post-only maker giriş, ilerleme koşullu zaman stop'u, 5x ve likidite kuralı. F0'ın ham ort. R'si negatif çıktı, ön-kayıtlı ölüm şartı işledi (karar 49) |
 | 21 | `vwap_bounce` | F2 / Mod B — **KOŞULMADI** | trend gününde VWAP'e dönüşte TREND yönünde giriş; gövdeyi `vwap_scored`tan miras alır. F1 koşulmadığı için §6f'teki F2 ön-kaydı geçersiz; koşulacaksa kendi ön-kaydıyla gelir |
-| 22 | `vwap_inverse` | **ölçüm bekliyor** | kopyanın TERSİ: aynı kurulum, girişe göre aynalanmış seviyeler, ters yön. Kopyanın kaybı sinyalden mi friksiyondan mı — ön-kayıt `docs/backtest.md > 6g` |
+| 22 | `vwap_inverse` | **ÖLÇÜLDÜ — hipotez doğrulandı** | kopyanın TERSİ (aynı kurulum, aynalanmış seviyeler, ters yön). n=5.652, ort. R −0.74 ↔ kopya −0.76; toplam −1.50 ⇒ friksiyon 0.75R/pozisyon, brüt beklenti −0.01R: sinyal sıfır bilgi taşıyor (karar 50) |
 
 **Emekli ≠ silinmiş.** Ölçüt performans değil ÖLÇÜLEBİLİRLİKTİR: ne kadar iyi olduğunu asla
 öğrenemeyeceğimiz bir satır, tabloda bir bilgi değil bir gürültü kaynağıdır.

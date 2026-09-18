@@ -704,6 +704,39 @@ kopyanın kaybı gerçekten sinyaldendir.
 
 ---
 
+#### SONUÇ (koşu #17, 2026-09-18) — **P4 TUTTU: brüt beklenti SIFIR, kayıp %100 friksiyon**
+
+Tam kayıt: `docs/decisions.md > 50`.
+
+| | `vwap_inverse` (22) | `vwap_clone` (13) |
+|---|---|---|
+| n | 5.652 | 5.228 |
+| ort. R | **−0.74** [−0.77, −0.71] | −0.76 [−0.80, −0.73] |
+| R − market_R | −0.74 [−0.77, −0.71] | −0.76 [−0.79, −0.73] |
+| hesap | −%99.90 | −%99.91 |
+| stop dilimi | −1.66R | −1.66R |
+
+| # | Tahmin | Sonuç |
+|---|---|---|
+| **P1** | ort. R negatif kalır (−0.30..0.00) | **YÖNÜ TUTTU, BANDI DÜŞTÜ** (−0.74) |
+| P2 | `R−market_R` alt sınırı ≤ 0 | TUTTU |
+| P3 | n ≥ 80 ve ≥ 0.5 işlem/gün | TUTTU (5.652 · 64.2) |
+| **P4** | iki tarafın toplamı < 0 | **TUTTU: −1.50 ⇒ F = 0.75R, G = −0.01R** |
+| P5 | işlem sayısı %70–130 | TUTTU (%108) |
+
+**Cevap:** `G − F = −0.76` ve `−G − F = −0.74` ⇒ **friksiyon 0.75R/pozisyon, brüt
+beklenti −0.01R.** VWAP sapma-dönüş kurulumu hangi yöne açılırsa açılsın maliyetten önce
+başabaş; kaybın tamamı friksiyondur. P1'in bandı düştü (0.45R tahmin etmiştim, gerçek
+0.75R) çünkü maliyeti yalnızca stop diliminden saymıştım — kazanan dilimler ve kısmi
+dolumlar da taker bacağı ödüyor. **Band sonradan gevşetilmedi, düştüğü yazıldı.**
+
+`vwap_inverse` katmanın `models` listesine girmez; ön-kayıt bunu koşudan önce yazmıştı.
+
+---
+
+
+---
+
 ## 6c. ÖN-KAYIT SİCİLİ — her hipotez, sonucu ne olursa olsun, buraya yazılır
 
 **Bu tablo §7.5'in ("çoklu karşılaştırma açıkça raporlanır") tutulan hâlidir.** §7.5 bir
@@ -722,9 +755,9 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16 | P1: ortalama R > 0 | **ÖLÇÜLEMEDİ** — σ birimi hatası: 52 günde 0 kurulum; koşu ayrıca `random_ctrl` yüzünden düştü (karar 45) |
 | 3 | `vwap_guarded` (σ birimi düzeltilmiş): aynı tahminler, taze pencere | §6e | B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | **P3 DÜŞTÜ** (n=8 < 30) → P1 değerlendirilemez (+0.30R, aralık [−0.19, +0.69]); 0.1 işlem/gün — karar 45 |
 | 4 | **F0** `vwap_session`: kopyanın kaybı sinyalden değil BİRİMDEN geliyor | §6f | 2026-05-20 → 08-16 (168 günlük ilk pencere bellek yüzünden düştü, karar 48) | P1: `R−market_R` aralığının alt sınırı > 0 | **DÜŞTÜ** — −0.47 [−0.56, −0.40], aralığın tamamı negatif (n=647, 7.4 işlem/gün). P4 de düştü (%12.4), yani birimin katkısı temiz okunamaz. Ön-kayıtlı ölüm şartı işledi: F1/F2 koşulmadı — karar 49 |
-| 5 | **TERS** `vwap_inverse`: kopyanın kaybı sinyalden DEĞİL friksiyondandır | §6g | 2026-05-20 → 08-16 (F0/kopya ile aynı pencere; kopya tarafı IN-SAMPLE) | P1: ters modelin ort. R'si NEGATİF kalır (−0.30..0.00) | _koşu bekliyor_ |
+| 5 | **TERS** `vwap_inverse`: kopyanın kaybı sinyalden DEĞİL friksiyondandır | §6g | 2026-05-20 → 08-16 (F0/kopya ile aynı pencere; kopya tarafı IN-SAMPLE) | P1: ters modelin ort. R'si NEGATİF kalır (−0.30..0.00) | **HİPOTEZ DOĞRULANDI, P1'in BANDI düştü** — ters ort. R −0.74 (negatif ama −0.30..0.00 dışında). P4 toplamı −1.50 ⇒ friksiyon 0.75R/pozisyon, brüt beklenti −0.01R: sinyal sıfır bilgi taşıyor — karar 50 |
 
-**Araştırmadan çıkan öneri sayısı: 11.** Bunların 4'ü test edildi ve DÖRDÜ DE sonuçlandı, 1'i koşuyor
+**Araştırmadan çıkan öneri sayısı: 11.** Bunların 5'i test edildi ve BEŞİ DE sonuçlandı
 (yukarıdakiler; hiçbiri birincil tahminini geçemedi — bu sayı BH düzeltmesinin paydasıdır), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
