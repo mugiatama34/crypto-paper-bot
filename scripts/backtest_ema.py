@@ -267,7 +267,7 @@ def evaluate_gates(payload: Mapping[str, Any]) -> dict[str, Any]:
         for period, data in payload["periods"].items()
     }
 
-    return {
+    gates: dict[str, Any] = {
         "P1_tradingview_parity": {
             "tolerance": TV_TOLERANCE,
             "periods": p1,
@@ -291,6 +291,12 @@ def evaluate_gates(payload: Mapping[str, Any]) -> dict[str, Any]:
         },
         "repo_acceptance": repo,
     }
+    # Karar METNİ de yükün içindedir: sayfanın (docs/backtest.html) kapı sonuçlarına
+    # bakıp kendi kararını türetmesi, kural 7'nin ölçüm için koyduğu sınırın aynısını
+    # karar kuralı için delerdi — iki yol bugün hizalansa bile yarın ayrışır ve aynı
+    # koşu iki yerde iki farklı sonuç gösterirdi.
+    gates["verdict"] = _verdict(gates)
+    return gates
 
 
 def _finite(value: Any) -> bool:
@@ -433,25 +439,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         float(get_setting(layer.config, "slippage_base")),
     )
 
-    period_a = run_period(
-        name="A", start=a_start, end=a_end, out_root=out_root, symbols=symbols,
-        models=list(layer.models), history_bars=args.history_bars,
-        funding_periods=args.funding_periods, signal_cutoff=a_cutoff,
-        singles=not args.skip_singles, config_path=args.config,
-    )
+    # Koşu tek işe sığmazsa ikiye bölünebilir (--only). Bölünme ölçümü DEĞİŞTİRMEZ ama
+    # bir şartı vardır: dönem B'nin embargosu A'da ÖLÇÜLÜR ve uydurulamaz. Bu yüzden
+    # `--only B` embargoyu dışarıdan İSTER; varsayılan bir değere düşmek, A'nın ölçtüğü
+    # sayıyı sessizce bir tahminle değiştirmek olurdu.
+    if args.only == "B" and args.embargo_bars is None:
+        logger.error(
+            "--only B için --embargo-bars zorunlu: embargo dönem A'da ÖLÇÜLÜR "
+            "(docs/backtest.md > 6d) ve varsayılamaz."
+        )
+        return 2
 
-    embargo = measured_embargo_bars(period_a["portfolio"])
-    logger.info(
-        "embargo ÖLÇÜLDÜ: dönem A'da azami tutuş %d bar -> dönem B o kadar ileriden başlar",
-        embargo,
-    )
+    period_a: dict[str, Any] | None = None
+    if args.only != "B":
+        period_a = run_period(
+            name="A", start=a_start, end=a_end, out_root=out_root, symbols=symbols,
+            models=list(layer.models), history_bars=args.history_bars,
+            funding_periods=args.funding_periods, signal_cutoff=a_cutoff,
+            singles=not args.skip_singles, config_path=args.config,
+        )
+        embargo = measured_embargo_bars(period_a["portfolio"])
+        logger.info(
+            "embargo ÖLÇÜLDÜ: dönem A'da azami tutuş %d bar -> dönem B o kadar ileriden "
+            "başlar. İkinci iş `--only B --embargo-bars %d` ile koşulur.", embargo, embargo,
+        )
+    else:
+        embargo = int(args.embargo_bars or 0)
+        logger.info("embargo DIŞARIDAN verildi (dönem A koşusundan): %d bar", embargo)
 
-    period_b = run_period(
-        name="B", start=a_cutoff, end=b_end, out_root=out_root, symbols=symbols,
-        models=list(layer.models), history_bars=args.history_bars,
-        funding_periods=args.funding_periods, embargo_bars=embargo,
-        singles=not args.skip_singles, config_path=args.config,
-    )
+    period_b: dict[str, Any] | None = None
+    if args.only != "A":
+        period_b = run_period(
+            name="B", start=a_cutoff, end=b_end, out_root=out_root, symbols=symbols,
+            models=list(layer.models), history_bars=args.history_bars,
+            funding_periods=args.funding_periods, embargo_bars=embargo,
+            singles=not args.skip_singles, config_path=args.config,
+        )
 
     payload: dict[str, Any] = {
         "model": MODEL,
@@ -461,15 +484,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         "embargo_bars": embargo,
         "symbols": symbols,
         "periods": {
-            "A": results_payload(period_a["portfolio"]),
-            "B": results_payload(period_b["portfolio"]),
+            name: results_payload(runs["portfolio"])
+            for name, runs in (("A", period_a), ("B", period_b))
+            if runs is not None
         },
-        "coins": (
-            coin_rows("A", period_a, initial_capital=initial_capital)
-            + coin_rows("B", period_b, initial_capital=initial_capital)
-        ),
+        "coins": [
+            row
+            for name, runs in (("A", period_a), ("B", period_b))
+            if runs is not None
+            for row in coin_rows(name, runs, initial_capital=initial_capital)
+        ],
     }
-    payload["gates"] = evaluate_gates(payload)
+    # Kapılar yalnızca İKİ dönem de elde olduğunda değerlendirilir: K-1 dönem B'nin,
+    # K-2 ikisinin toplamının kapısıdır. Yarım bir yükten "geçti" çıkarmak, kapının
+    # kendisini yarıya indirmek olurdu.
+    if period_a is not None and period_b is not None:
+        payload["gates"] = evaluate_gates(payload)
+    else:
+        payload["gates"] = None
+        logger.warning(
+            "koşu bölündü (--only %s): KAPILAR DEĞERLENDİRİLMEDİ. İki dönemin yükü "
+            "birleştirilmeden kapı okunamaz.", args.only,
+        )
 
     results = Path(args.results)
     results.parent.mkdir(parents=True, exist_ok=True)
@@ -480,10 +516,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     logger.info("yük: %s ve %s", results, args.csv)
 
     for name, runs in (("A", period_a), ("B", period_b)):
+        if runs is None:
+            continue
         print(f"\n{'=' * 78}\nDÖNEM {name} — PORTFÖY KOŞUSU\n{'=' * 78}")
         print(format_report(list(runs["portfolio"].metrics), min_trades=runs["portfolio"].min_trades))
         print(format_fill_ambiguity(runs["portfolio"].report))
-    print(format_gates(payload["gates"]))
+    if payload["gates"] is not None:
+        print(format_gates(payload["gates"]))
 
     return 0
 
@@ -523,6 +562,20 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--results", default="docs/data/backtest_ema_trend.json")
     parser.add_argument("--csv", default="docs/data/backtest_ema_trend.csv")
     parser.add_argument("--config", default=None)
+    parser.add_argument(
+        "--only", choices=["A", "B"], default=None,
+        help=(
+            "yalnızca bu dönemi koş. B'yi tek başına koşmak --embargo-bars GEREKTİRİR: "
+            "embargo A'dan ölçülür ve uydurulamaz (docs/backtest.md > 6d)."
+        ),
+    )
+    parser.add_argument(
+        "--embargo-bars", type=int, default=None, metavar="N",
+        help=(
+            "A'da ÖLÇÜLMÜŞ embargoyu dışarıdan verir; yalnızca koşu iki işe bölündüğünde "
+            "(--only B) kullanılır. Değer A'nın çıktısından gelir, seçilmez."
+        ),
+    )
     parser.add_argument(
         "--skip-singles", action="store_true",
         help="yalnızca portföy koşusu (hata ayıklama; coin tablosu ÜRETİLMEZ)",
