@@ -404,9 +404,10 @@ eklemek bir commit'tir. Backtest onları `--models` ile hâlâ çağırabilir.
 | 15 | `scalp_managed` | emekli | çıkış yönetimi ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
 | 17 | `scalp_vol` | aday, canlıda koşmaz | ön-kayıtlı birincil tahmin P1 DÜŞTÜ (karar 36) |
 | 18 | `vwap_guarded` | aday, canlıda koşmaz | altı kapı birden: 54 günde 8 kurulum, 0.1 işlem/gün — ölçülemez (karar 45/46) |
-| 19 | `vwap_session` | **F0 — ölçüm bekliyor** | kopyanın BİRİMİ düzeltilmiş hâli (seans çapası + seans σ), başka filtre yok; ön-kayıt `docs/backtest.md > 6f` |
-| 20 | `vwap_scored` | **F1 — F0'dan sonra ölçülür** | F0 + skorla boyut, post-only maker giriş, ilerleme koşullu zaman stop'u, risk boyutlandırma (5x) ve likidite kuralı |
-| 21 | `vwap_bounce` | **F2 — Mod B, F1'den sonra** | trend gününde VWAP'e dönüşte TREND yönünde giriş; gövdeyi `vwap_scored`tan miras alır, ayrı defter ayrı R |
+| 19 | `vwap_session` | **F0 — ÖLÇÜLDÜ, P1 düştü** | kopyanın BİRİMİ düzeltilmiş hâli; 88 günde n=647, ort. R −0.48, `R−market_R` −0.47 [−0.56, −0.40]. Birim kaybı yarıya indirdi, işareti çevirmedi (karar 49) |
+| 20 | `vwap_scored` | F1 — **KOŞULMADI** | F0 + skorla boyut, post-only maker giriş, ilerleme koşullu zaman stop'u, 5x ve likidite kuralı. F0'ın ham ort. R'si negatif çıktı, ön-kayıtlı ölüm şartı işledi (karar 49) |
+| 21 | `vwap_bounce` | F2 / Mod B — **KOŞULMADI** | trend gününde VWAP'e dönüşte TREND yönünde giriş; gövdeyi `vwap_scored`tan miras alır. F1 koşulmadığı için §6f'teki F2 ön-kaydı geçersiz; koşulacaksa kendi ön-kaydıyla gelir |
+| 22 | `vwap_inverse` | **ölçüm bekliyor** | kopyanın TERSİ: aynı kurulum, girişe göre aynalanmış seviyeler, ters yön. Kopyanın kaybı sinyalden mi friksiyondan mı — ön-kayıt `docs/backtest.md > 6g` |
 
 **Emekli ≠ silinmiş.** Ölçüt performans değil ÖLÇÜLEBİLİRLİKTİR: ne kadar iyi olduğunu asla
 öğrenemeyeceğimiz bir satır, tabloda bir bilgi değil bir gürültü kaynağıdır.

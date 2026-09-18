@@ -125,6 +125,12 @@ class VwapClone(Strategy):
     name = "vwap_clone"
     allowed_directions: list[Direction] = ["long", "short"]
     is_replica = True
+    # Kol etiketi ve ÇEKİLİŞ KİMLİĞİ sınıf niteliğidir, sabit değil: alt sınıf (model 22,
+    # ters) kolunu ayırmak ZORUNDADIR (iki zıt kural kümesi tek satırda toplanamaz) ama
+    # çekilişi bilinçli olarak PAYLAŞIR (ölçülmeyen eksen — model 15'in `rng_identity`
+    # kuralının aynısı). İkisi ayrı alan olmasaydı biri diğerini zorlardı.
+    arm_name = clone_signal.ARM_NAME
+    rng_identity = "vwap_clone"
 
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:
         settings = dict(config) if config is not None else load_config()
@@ -294,7 +300,7 @@ class VwapClone(Strategy):
         self._survey = survey
         logger.info(
             "%s %s %s -> %s",
-            self.name, clone_signal.ARM_NAME, market.as_of.isoformat(), survey.describe(),
+            self.name, self.arm_name, market.as_of.isoformat(), survey.describe(),
         )
 
         limit = self.limits.max_positions if self.limits.max_positions else len(signals)
@@ -326,7 +332,7 @@ class VwapClone(Strategy):
                 f"({candidate.stop_price:.6g}), hedef VWAP mesafesinin "
                 f"%{combo.tp_mult * 100:g}'i ({candidate.target_price:.6g}); "
                 f"{self._exit.describe()}",
-                arm=clone_signal.ARM_NAME,
+                arm=self.arm_name,
                 combo=combo.key,
                 combo_r=stats.mean_r,
                 combo_n=stats.trades,
@@ -419,8 +425,13 @@ class VwapClone(Strategy):
         return resolved
 
     def _round_rng(self, market: MarketData) -> random.Random:
-        """Tur ve model başına bağımsız RNG; tohum sabit, seçim tekrarlanabilir."""
-        return random.Random(f"{self._seed}:{market.as_of.isoformat()}:{self.name}")
+        """Tur ve ÇEKİLİŞ KİMLİĞİ başına bağımsız RNG; tohum sabit, seçim tekrarlanabilir.
+
+        Kimlik `self.name` DEĞİL `self.rng_identity`dir: model 22 (ters) kopyayla aynı
+        çekilişi görmek zorundadır, yoksa aradaki fark yönün değil tesadüfün de ölçüsü
+        olurdu (model 12 ↔ 15'in eşleştirilmiş deney gerekçesi).
+        """
+        return random.Random(f"{self._seed}:{market.as_of.isoformat()}:{self.rng_identity}")
 
 
 # --------------------------------------------------------------------------- #

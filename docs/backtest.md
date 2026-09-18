@@ -607,6 +607,103 @@ kendi koşularından ÖNCE commit edilir:
 
 ---
 
+## 6g. ÖN-KAYIT — TERS İŞLEM: kopyanın kaybı sinyalden mi, friksiyondan mı?
+
+**Bu bölüm koşudan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.**
+
+**Soru.** Model 13 (`vwap_clone`) ölçüldü ve kaybediyor: 88 günde 5.228 pozisyon,
+ort. −0.76R, hesap −%99.91. İki açıklama var ve defterden ayırt edilemiyorlar:
+
+1. **Sinyal ters tarafta.** VWAP'ten sapan fiyat dönmüyor, devam ediyor.
+2. **Friksiyon yiyor.** Sabit teminat × 10x, dar σ stop'u, 59 işlem/gün.
+
+`vwap_inverse` (model 22) tam olarak bunu ayırır: **aynı kurulum, aynı seviyeler
+(girişe göre aynalanmış), TERS yön.**
+
+**Ayrışan TEK şey yönün işaretidir.** Sinyal modülü kopyanınkidir (`clone_signal.py`),
+config bloğu kopyanınkidir (`vwap.clone.*` — ayrı bir blok parametrelerin ayrışmasına ve
+eksenin ikinci bir değişkenle kirlenmesine kapı açardı, F0'ın P4 dersi), boyutlandırma,
+limitler, çıkış yönetimi ve evren aynıdır. Stop ve hedef MESAFESİ korunur (yalnızca taraf
+döner), yani R:R ve maliyet ölçeği birebir aynıdır — stop ile hedefi TAKAS etmek başka
+bir model olurdu.
+
+**Bilinen ve kabul edilen iki ayrışma** (sessiz kalmasınlar diye burada):
+- **Öğrenme.** Ters model aynı bandit MEKANİZMASINI kullanır ama yalnızca KENDİ kapanmış
+  işlemlerini görebilir (kural 16), yani posterior'ı farklıdır ve zamanla farklı
+  kombinasyonları sömürür. **13 ↔ 22 bar bar bir AYNA DEĞİLDİR**; tek değişikliğin ardıl
+  sonucudur (model 12 ↔ 15'in "ayrışan şey dolumlardır" statüsü). Çekiliş kimliği
+  bilinçli olarak paylaşılır, böylece ilk turlarda keşif çekilişleri hizalanır.
+- **Maliyet asimetrisi.** `slippage_short_stop` (%0.15) `slippage_base`ten (%0.05) yüksektir:
+  short stop'lar daha pahalı dolar. Yön çevrilince bu maliyet de taraf değiştirir, yani
+  ters model kopyanın ödediğinin AYNISINI ödemez. Bu bir kusur değil, gerçek bir borsa
+  asimetrisidir ve tam da ölçülmek istenen "maliyet yön değiştirmez" iddiasının parçasıdır.
+
+### Neden bu test simetrik DEĞİLDİR (ve tahmini bu belirler)
+
+Kopyanın ortalama R'si iki parçadır: `net R = brüt R − friksiyon`. Yön çevrildiğinde
+**brüt işaret değiştirir, friksiyon DEĞİŞTİRMEZ** — komisyon, kayma, funding ve kural
+13'ün aynı-bar stop varsayımı her iki tarafta da aleyhe işler. Yani:
+
+    kopya:  net = G − F = −0.76
+    ters:   net = −G − F
+
+Friksiyon `F` defterden kabaca okunabiliyor: kopyanın stop dilimi ortalama **−1.66R**
+yazıyor (nominal −1.00R olmalıydı), yani stop'lanan pozisyonda ~0.66R maliyet var;
+kazanan dilim +0.97R. Pozisyon başına ağırlıklı friksiyon kabaca **F ≈ 0.45R**.
+Buradan `G ≈ −0.31R` ve **ters modelin beklentisi `−G − F ≈ +0.31 − 0.45 ≈ −0.14R`**.
+
+Bu, ön-kayıtlı tahminin kendisidir ve **"ters işlem kazanır" beklentisini REDDEDER:**
+kopyanın kaybının büyük kısmı friksiyondan geliyorsa ters model de kaybeder, yalnızca
+daha az. Tahmin yanlış çıkarsa (ters model açıkça pozitif) bu bir bulgudur ve friksiyon
+tahminimin yanlış olduğu anlamına gelir.
+
+### Pencere
+
+**2026-05-20 → 2026-08-16 (88 gün), `--history-bars 10000`.** F0 ile AYNI pencere ve bu
+bilinçlidir: kopyanın bu penceredeki sayıları zaten okunmuştur, yani `vwap_clone`
+tarafı **IN-SAMPLE**tir ve karşılaştırma satırı olarak kullanılır, bir kapı olarak değil.
+`vwap_inverse` bu pencerede hiç koşmadı ve hiçbir parametresi hiçbir pencereden seçilmedi
+(hepsi kopyanınkiler), dolayısıyla ters modelin kendi ölçümü OOS'tur.
+
+Pencereyi değiştirmek burada YANLIŞ olurdu: test tam olarak "aynı barlarda ters tarafta ne
+olurdu" sorusudur ve başka bir pencere o eşleştirmeyi bozardı.
+
+**Kıyas kümesi:** `vwap_inverse`, `vwap_clone`. `random_ctrl` YOKTUR (katmanda koşamıyor,
+karar 45), yani C-2 bu katmanda yine değerlendirilemez.
+
+### Ön-kayıtlı tahminler
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** (birincil) | ters modelin ort. R'si | **negatif KALIR** (−0.30 ile 0.00 arası), yani friksiyon açıklaması | ort. R > 0 ve aralığın ALT SINIRI > 0 → sinyal gerçekten ters taraftaymış |
+| P2 | `R − market_R` aralığı | alt sınır ≤ 0 | alt sınır > 0 |
+| P3 | örneklem | n ≥ 80 **ve** ≥ 0.5 işlem/gün | altında → satır OKUNMAZ |
+| P4 | simetri sağlaması | `ort.R(ters) + ort.R(kopya) < 0` — iki tarafın toplamı friksiyonun İKİ KATIDIR ve negatif olmalı | toplam ≥ 0 → friksiyon modeli yanlış, iki taraf sıfır toplamlı |
+| P5 | işlem sayısı | kopyanınkine YAKIN (%70–130) — aynı kurulumlar | dışındaysa öğrenme ayrışması beklenenden büyük, P1 zayıflar |
+
+**P1 birincildir ve tahmin AÇIKÇA "ters işlem de kaybeder" yönündedir.** Bu bilinçlidir:
+kendi hipotezimin lehine tahmin yazmak, ön-kaydı bir formaliteye çevirirdi.
+
+**P4 bu koşunun asıl bilgisidir.** İki tarafın ortalama R'lerinin toplamı, sinyalden
+bağımsız olarak ödenen friksiyonun iki katını verir. Toplam −0.9R civarındaysa
+(tahmin: `−2F ≈ −0.90`) kopyanın kaybının neredeyse tamamı maliyettir ve VWAP fade'i
+üzerine söylenecek başka bir şey kalmaz. Toplam sıfıra yakınsa maliyet küçüktür ve
+kopyanın kaybı gerçekten sinyaldendir.
+
+### Sonucun ne anlama GELECEĞİ (koşudan önce yazıldı)
+
+- **Ters model pozitif ve aralığı sıfırın üstünde çıkarsa:** bulgu gerçektir ama
+  **doğrudan canlıya alınmaz.** Aynı pencerede kopyanın sayıları zaten okunmuştu; ters
+  model TAZE bir pencerede doğrulanmadan bir sonraki adım atılmaz (§7.1).
+- **Ters model de negatif çıkarsa:** kopyanın kaybı büyük ölçüde friksiyondur ve
+  bu, VWAP fade hattının kapanışını (karar 49) PEKİŞTİRİR — ters çevirmek kurtarmıyor.
+- **Ne olursa olsun:** `vwap_inverse` katmanın `models` listesine girmez, kâğıtta
+  koşmaz. Bu bir backtest hipotezidir, bir model adaylığı değil.
+
+**Çoklu karşılaştırma (§7.5).** Bu sicildeki **5.** hipotezdir.
+
+---
+
 ## 6c. ÖN-KAYIT SİCİLİ — her hipotez, sonucu ne olursa olsun, buraya yazılır
 
 **Bu tablo §7.5'in ("çoklu karşılaştırma açıkça raporlanır") tutulan hâlidir.** §7.5 bir
@@ -625,8 +722,9 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 2 | `vwap_guarded`: canlıya hazırlık kapıları kopyanın beklentisini pozitife çevirir | §6d | A: 2026-06-25 → 08-16 | P1: ortalama R > 0 | **ÖLÇÜLEMEDİ** — σ birimi hatası: 52 günde 0 kurulum; koşu ayrıca `random_ctrl` yüzünden düştü (karar 45) |
 | 3 | `vwap_guarded` (σ birimi düzeltilmiş): aynı tahminler, taze pencere | §6e | B: 2026-05-01 → 06-24 | P1: ortalama R > 0 | **P3 DÜŞTÜ** (n=8 < 30) → P1 değerlendirilemez (+0.30R, aralık [−0.19, +0.69]); 0.1 işlem/gün — karar 45 |
 | 4 | **F0** `vwap_session`: kopyanın kaybı sinyalden değil BİRİMDEN geliyor | §6f | 2026-05-20 → 08-16 (168 günlük ilk pencere bellek yüzünden düştü, karar 48) | P1: `R−market_R` aralığının alt sınırı > 0 | **DÜŞTÜ** — −0.47 [−0.56, −0.40], aralığın tamamı negatif (n=647, 7.4 işlem/gün). P4 de düştü (%12.4), yani birimin katkısı temiz okunamaz. Ön-kayıtlı ölüm şartı işledi: F1/F2 koşulmadı — karar 49 |
+| 5 | **TERS** `vwap_inverse`: kopyanın kaybı sinyalden DEĞİL friksiyondandır | §6g | 2026-05-20 → 08-16 (F0/kopya ile aynı pencere; kopya tarafı IN-SAMPLE) | P1: ters modelin ort. R'si NEGATİF kalır (−0.30..0.00) | _koşu bekliyor_ |
 
-**Araştırmadan çıkan öneri sayısı: 10.** Bunların 4'ü test edildi ve DÖRDÜ DE sonuçlandı
+**Araştırmadan çıkan öneri sayısı: 11.** Bunların 4'ü test edildi ve DÖRDÜ DE sonuçlandı, 1'i koşuyor
 (yukarıdakiler; hiçbiri birincil tahminini geçemedi — bu sayı BH düzeltmesinin paydasıdır), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı

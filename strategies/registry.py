@@ -34,6 +34,7 @@ from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_guarded import VwapGuarded
+from strategies.vwap_inverse import VwapInverse
 from strategies.vwap_managed import VwapManaged
 from strategies.vwap_bounce import VwapBounce
 from strategies.vwap_scored import VwapScored
@@ -70,6 +71,12 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # Katmanın `models` listesinde YOKTUR: önce taze bir OOS penceresinde ölçülür.
     ScalpVol.name: ScalpVol,
     VwapClone.name: VwapClone,
+    # vwap_inverse — kopyanın TERSİ: aynı kurulum, aynı seviyeler (girişe göre
+    # aynalanmış), TERS yön. Ayrışan tek şey yönün işaretidir; config'i bile kopyanın
+    # bloğudur (`vwap.clone.*`) ki parametreler ayrışıp ekseni ikinci bir değişkenle
+    # kirletmesin. Cevapladığı soru: kopyanın kaybı sinyalden mi, friksiyondan mı?
+    # Katmanın `models` listesinde YOKTUR; ön-kayıt docs/backtest.md > 6g.
+    VwapInverse.name: VwapInverse,
     VwapManaged.name: VwapManaged,
     # vwap_guarded — model 13'ün CANLIYA HAZIRLANMIŞ uyarlaması. Kopyanın üstüne
     # yazılmaz (kural 15b: değiştirilen kopya kopya olmaktan çıkar), ayrı bir model
