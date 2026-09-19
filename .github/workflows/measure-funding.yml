@@ -1,0 +1,69 @@
+# Fonlama dağılımı ölçümü — ELLE tetiklenen, SALT OKUNUR iş.
+#
+# Cevapladığı soru tek: 4 saatlik barda bir fonlama-ekstremi tezi bu veriyle ÖLÇÜLEBİLİR
+# Mİ? Yani hangi eşikte kaç olay var. Getiri, R, PnL hesaplanmaz — bu bir strateji koşusu
+# DEĞİLDİR ve öyle olmaması kasıtlıdır: dağılımı görmek eşik seçimini kirletmez, sonucu
+# görmek kirletirdi (docs/backtest.md > 7).
+#
+# Neden ayrı bir workflow: `run.yml` ve `run-scalp.yml` ölçümün kendisini koşar ve deftere
+# YAZAR. Bu iş hiçbir şeye yazmaz — defter, metrics, config, state, commit, push: hiçbiri
+# yok. `permissions: contents: read` bunu niyetle değil YETKİYLE garanti eder (aynı
+# gerekçe `backtest.yml`de).
+#
+# `backtest-ema.yml`den de ayrıdır: o ön-kayıtlı bir SIRAYI koşar (dönem A → embargo →
+# dönem B) ve karara giren sayıları üretir. Bu iş karar üretmez ve dönem B'ye HİÇ
+# dokunmaz — betiğin kendisi `--end` dönem A kesimini aşarsa hata koduyla biter. İkisini
+# tek workflow'a koymak, bir dağılım sorusunun yanlışlıkla OOS penceresini de okuması
+# demekti.
+#
+# `cron` YOKTUR ve bilinçli olarak yoktur (docs/backtest.md > 7): periyodik bir dağılım
+# koşusu, "sonucu görüp tekrar koşma"yı otomatikleştirirdi.
+#
+# Çıktı YALNIZCA adımın log'udur. Depoya hiçbir dosya girmez.
+name: measure-funding
+
+on:
+  workflow_dispatch:
+    inputs:
+      window_periods:
+        description: "Göreli eşiğin kayan penceresi (periyot; 270 = 90 gün)"
+        required: false
+        default: "270"
+      symbols:
+        description: "Evrenin alt kümesi (boşlukla ayrılmış; boş = ema katmanının 13 sembolü)"
+        required: false
+        default: ""
+
+# Ölçüm turlarıyla YARIŞMAZ: kendi grubu, kendi kuyruğu.
+concurrency:
+  group: measure-funding
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Dönem A sınırları betikte KAPIDIR (scripts/backtest_ema.py'den ithal edilir);
+      # workflow girdisi olarak açılmazlar. Açılsalardı dönem B'ye bakmak bir yazım
+      # hatası kadar kolay olurdu.
+      - name: Measure funding distribution (period A only)
+        run: |
+          python scripts/measure_funding.py \
+            --window-periods "${{ inputs.window_periods }}" \
+            ${{ inputs.symbols != '' && format('--symbols {0}', inputs.symbols) || '' }}
