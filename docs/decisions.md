@@ -3883,3 +3883,61 @@ ekseniyle birlikte oynatılsaydı aradaki fark iki değişkenin toplamı olurdu 
 çiftinin düştüğü hata). Kaynak sistemde SL 2.5 denemesi çökmüştü ama orada hedef de
 stop'la birlikte kaymıştı — stop ile hedefin AYRIŞTIRILMASI hiç test edilmedi. Sırası
 gelirse kendi ön-kaydıyla gelir (docs/backtest.md > 6e > KAYIT).
+
+## 50. Fonlama tezi BIRAKILMADI, ENGELLENDİ — engel veri yolu, tezin kendisi değil
+
+**Ayrım kaydın sebebidir.** Bir tez ölçülüp düştüğünde (karar 36, karar 49) sonucu sicile
+girer ve kapanır. Bu tez ÖLÇÜLEMEDİ: `scripts/measure_funding.py` dönem A'nın dağılımını
+soruyordu ve soruyu soramadan **veri yolunda** durdu. İkisini aynı rafa koymak — "denendi,
+olmadı" — yanlış olurdu: düşmüş bir tezi yeniden açmak yeni kanıt ister, engellenmiş bir
+tezi açmaksa yalnızca yolun onarılmasını.
+
+**Tez duruyor:** fonlama oranı kalabalıklaşmanın ölçülebilir bir işaretidir ve ekstremleri
+bir kenar taşıyabilir. Bu kayıt o iddia hakkında hiçbir şey söylemiyor — ne lehte ne
+aleyhte. Söylediği tek şey, iddianın bugünkü veri yoluyla SINANAMADIĞIdır.
+
+**Açık iş, iki parçalı ve sırası bağlayıcı:**
+
+1. **Dönem A için fonlama arşivi.** Ölçümün istediği pencere yıllarla ölçülür; canlı
+   yolun verdiği pencere 60 gündür (aşağısı). Arşiv ayrı bir depo alanıdır ve
+   `data/cache/`e YAZILMAZ — `core/data.py::fetch_funding` o önbelleği
+   `data.funding_history_periods` ile budar, yani aynı dosyaya iki saklama kuralıyla
+   yazmak canlı turun okuduğu seriyi bu aracın penceresine bağlardı
+   (`scripts/measure_funding.py`nin zaten uyguladığı ayrım).
+2. **Damga bazlı tutarlılık kanıtı, 60 günlük ÖRTÜŞMEDE.** Arşiv ile canlı serinin
+   kesiştiği pencerede her damga birebir eşleşmelidir: aynı zaman damgası, aynı oran.
+   **Kanıt geçmeden arşiv KULLANILMAZ** — ne bir dağılım raporunda, ne bir eşik
+   seçiminde, ne bir backtest'te. Gerekçe kural 5'in aynısıdır: iki kaynaktan beslenen
+   bir seri, ölçümün hangi veriyi gördüğünü belirsiz bırakır; ve sessizce ayrışan bir
+   arşiv, sonucu veriye değil indirme tarihine bağlardı.
+
+Sıra bir tercih değil: örtüşme kanıtı olmadan arşivin doğruluğu hakkında söylenebilecek
+tek şey "başka bir kaynaktan geldi"dir.
+
+**`data.funding_history_periods = 180` (≈60 gün) artık BİLİNÇLİ BİR KISITTIR.** Bugüne
+kadar bir uygulama ayrıntısı gibi duruyordu; bundan sonra öyle okunmayacak. Tavanın
+bağladığı yerler:
+
+- **Backtest:** kaydı olmayan anda `core/funding.py::rate_at` None döner ve maliyet
+  İŞLENMEZ (uydurma yok). 4 yıllık bir pencerede bu, eski dönemi sistematik olarak
+  İYİMSER yapar — `ema_trend` koşusunda gerçekten böyle oldu ve
+  docs/backtest.md > 6d'nin kabul edilen sapmalar listesinde 3. madde olarak duruyor.
+- **Her türlü fonlama-persentili tezi:** göreli bir eşik (p99 gibi) sembolün kendi
+  geçmiş dağılımını ister; 180 periyot o dağılımı tanımlamaya yetmez. Açık işin 1.
+  parçası tam olarak budur.
+- **`funding_spike_fade` kolu bu sığ pencereyle BESLENDİ** — katmanın tüm ömrü boyunca,
+  istisnasız. Kol `MarketData.funding[sembol]` serisini okur ve o seri hiçbir zaman 180
+  periyottan derin olmadı.
+
+⚠ **Bu, kolun neden hiç tetiklemediğinin AÇIKLAMASI DEĞİLDİR** ve öyle okunmamalıdır.
+Kolun kendi geriye bakışı `FUNDING_LOOKBACK = 8` periyottur (≈2.7 gün): taban oranı son
+8 damganın ortalamasıdır, yani kol 9 kayıtla çalışabilir ve 180'lik tavan onu susturmaz.
+Karar 48'in tespiti yerinde duruyor: **`funding_spike_fade`in sessizliğinin sebebi hâlâ
+BİLİNMİYOR** (`ScalpModel` `take_survey` uygulamıyor, yani hangi kapıda elendiği hiçbir
+yere yazılmıyor) ve bu açık bir iştir. Sığ pencereyi o boşluğa cevap diye koymak, karar
+34'ün dersinin tersini yapmak olurdu: ölçülmemiş bir sebebi ölçülmüş gibi kaydetmek.
+
+**Ölçüm aracının çıktısı YALNIZCA log'dur** (`.github/workflows/measure-funding.yml`
+artifact bile üretmez), yani koşunun kendisi kalıcı bir iz bırakmaz. Engelin tam
+mekanizması — hangi uç noktanın nereye kadar sayfalayabildiği — bu kayda girmiyor;
+girmesi gereken yer arşiv işinin ön-kaydıdır ve o iş başladığında oraya yazılacak.
