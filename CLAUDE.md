@@ -113,7 +113,7 @@ bu yüzden `ema` katmanı kendi kıyas hedefini (`trend`), kontrolünü (`random
 | `acceptance.stop_band_ratio` | `2.5` | **Uyarı** — band (kural 14). Defterde ATR olmadığı için band yarışmacıların `avg_stop_distance_pct` medyanına göre kurulur: `medyan/√oran .. medyan×√oran`, uçtan uca tam bu oran kadar geniş. Bandın dışında kalmak doğrulamayı ENGELLEMEZ; raporda uyarı ikonudur. |
 | `funding.*` | `enabled`, `interval_hours` | Funding simülasyonunun açık/kapalı olması ve periyodu. |
 | `exchange.*` | OKX erişimi | `rest_base`, `inst_type`, `quote_ccy`, `btc_reference`, istek limitleri, timeout, throttle ve retry/backoff sabitleri. |
-| `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). |
+| `data.*` | yerel depo | `cache_dir`, `universe_file`, `history_bars`, `funding_history_periods`, `max_staleness_bars` (BTC çıpasının azami bayatlığı). **`funding_history_periods` (180 ≈ 60 gün) bilinçli bir KISITTIR** (karar 50): canlı turun ihtiyacı kadar derindir ama yıllara uzanan bir pencereyi kapatmaz — backtest'te kaydı olmayan anda `core/funding.py::rate_at` None döner ve maliyet işlenmez (eski dönem İYİMSER çıkar, docs/backtest.md > 6d'nin 3. sapması), fonlama-persentili tezleri ise bu derinlikle hiç ölçülemez. Derinleştirmenin yolu tavanı büyütmek DEĞİL, ayrı bir arşiv + 60 günlük örtüşmede damga bazlı tutarlılık kanıtıdır (karar 50); kanıt geçmeden arşiv kullanılmaz. |
 | `layers.*` | katmanlar | Her katmanın FARKI: `ledger_dir`, `metrics_file`, `universe` (sabit liste ya da `null`), `retention.equity_compaction_days`, `retention.model_trade_limit`, `breakdowns` ve kökü ezen ayarlar (`timeframe`, `models`, `signals_per_bar`, …). Bkz. "Katmanlar". |
 | `scalp.*` | scalp kısıtları | Beş kollu modellerin (11, 12, 15; canlıda üç kol tetikliyor — karar 48) ve model 14'ün BİREBİR aynı okuduğu değerler: `min_stop_pct` (0.01), `min_reward_risk` (1.5), `time_stop_bars` (16; `patient.time_stop_bars` 100 — yalnızca model 16), `stop_atr_multiple` (5.0), `target_reward_risk` (2.0) ve `bandit.*` (`warmup_trades` 20, `min_allocation` 0.05, `window_trades` 100, `prior_r_sigma` 1.0). |
 | `exit_management.*` | üç aşamalı çıkış | Modeller 13, 14 ve 15'in TEK kaynağı: `breakeven_at_r` (1.0), `partial_tp.r` (1.5), `partial_tp.fraction` (0.5), `trail_giveback_pct` (0.5). Model başına ayrı bloklar, bir gün birinin sessizce ayrışması ve model 15 ↔ `scalp_fixed` farkının "iki ayrı yönetimin farkı"na dönüşmesi demekti. |
@@ -364,6 +364,16 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 (`run-ema.yml`), ön-kayıtlı kapıların geçilmesine bağlıdır (docs/backtest.md > 6d) —
 "tanımlı ama koşmuyor" hâli, `scalp_vol`un `REGISTRY`de durup `models` listesinde olmaması
 ile aynı statüdedir: kod ölçülmeden yarışmaz.
+
+**`ema_trend`in ÇIKIŞ EKSENİ ölçüldü ve KAPANDI** (karar 49; docs/backtest.md > 6e >
+SONUÇ). "Kenar giriş sinyalinde, çıkış geometrisi yiyor" tezi bir varyant ailesine
+dönüşmeden düştü: modelin ters sinyal çıkışı zaten yoktur (`manage_positions`
+uygulanmaz, çıkış evreni `{tp, stop, liquidation}`) ve dönem A'nın yol ölçümünde
+ön-kayıtlı seçim kuralının üç dalı da tetiklemedi — kaybedenler kazananlardan daha
+HIZLI ölüyor (medyan 6 ↔ 9 bar), kaybedenlerin yarısı hiç kâra geçmiyor (medyan MFE
++0.55R) ve hedef sonrası işaretli hareket sıfır etrafında salınıyor. Ekseni yeniden
+açmanın yolu yeni bir ön-kayıttır; açık kalan tek kaldıraç çıkış değil **stop mesafesi**
+eksenidir (docs/backtest.md > 6e > KAYIT) ve o da kendi ön-kaydıyla gelir.
 
 **Neden `ema` ayrı bir katman.** Modelin backtest'i sabit 13 coinde koşuyor; `base` evreni
 hacme göre seçilir ve 30 günde bir kayar. Modeli `base`e almak, backtest'in ölçtüğünden
