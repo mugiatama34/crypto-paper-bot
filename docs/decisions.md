@@ -3738,3 +3738,73 @@ anlamlı göstermek olurdu — sicilin var oluş sebebi budur.
 işlem sayısı kolonlarda, çünkü dönem A'da evren 13 değil 9 sembolle başlıyor).
 `docs/backtest.html` ikisini de çizer ve HİÇBİRİNİ yeniden hesaplamaz (kural 7):
 verdikt de yükten okunur.
+---
+
+## 39-DOĞRULAMA: tahmin kıl payı tuttu, ama onarımın DAYANDIĞI MEKANİZMA çürüdü
+
+Karar 39'un ön-kayıtlı tahmini: *`bars_processed` dağılımı 1'e yakınsamalı, sinyalsiz bar
+oranı belirgin düşmeli, 00:00/08:00 yanlılığı kaybolmalı.* Onarım 2026-09-16T20:26'da
+canlıya indi; ölçüm penceresi 2026-09-17T00:00 → 09-19T00:00 (elle tetiklenen 16:00 turu
+DIŞLANDI — karışık kadans).
+
+| | ÖNCE | SONRA |
+|---|---:|---:|
+| tur | 20 | 12 |
+| işlenen bar | 27 | 14 |
+| telafi barı (sinyalsiz) | 7 | 2 |
+| **sinyalsiz bar oranı** | **%25.9** | **%14.3** |
+| telafi yapan tur oranı | %35 | %16.7 |
+| `missing_bars` | 0 | 0 |
+| kaybolan saatler | 00:00 (4×), 08:00 (3×) | 20:00 (1×), 04:00 (1×) |
+
+**Nokta tahmini iyileşti ama n=14 ile bu fark KANITLANMIŞ DEĞİLDİR** — 2/14 ile 7/27
+arasındaki farkı ayırt edecek örneklem yok. Yanlılık iddiası ise önceki veride güçlüydü
+(7 kaybın 7'si tam iki saatte; kayıplar altı bar-saatine düzgün dağılsaydı olasılık
+≈ (2/6)⁷ ≈ 0.0005) ve o desen artık YOK — ama n=2 ile yokluğu da kanıtlanmaz.
+
+### Asıl bulgu: "bara dört şans" diye bir şey olmadı
+
+Karar 39-UYGULAMA şunu yazmıştı: *"Saatlik cron her 4H barına DÖRT bağımsız şans verir."*
+Ölçüldü ve **yanlış:**
+
+| | |
+|---|---|
+| zamanlanmış koşu | 14 (2026-09-16T23:37 → 09-19T07:16) |
+| pencere | 55.6 saat |
+| beklenen (saatlik cron) | ~56 |
+| **teslim oranı** | **%23** |
+| tetiklemeler arası aralık | medyan **4.1 saat** (min 2.5, max 6.2) |
+| **4H bar başına düşen tetikleme** | **0.97** — varsayılan: 4 |
+
+GitHub, cron ne yazarsa yazsın bu depoya kabaca **4 saatte bir** zamanlanmış olay
+teslim ediyor. Saatlik cron, tetikleme SAYISINI artırmadı.
+
+### O hâlde iyileşme nereden geldi
+
+Eski cron (`5 0,4,8,12,16,20`) de bar başına ~1 tetikleme veriyordu, ama o tetiklemeler
+bar kapanışına **ÇİVİLİYDİ** (:05). Düşen tetikleme her zaman aynı bar-saatini vuruyordu
+— yanlılığın kaynağı buydu. Saatlik cron'da teslim edilen ~1 tetikleme **serbest fazda**
+geziniyor; hangi bar penceresine düşeceği turdan tura değişiyor.
+
+Yani onarım **oranı değil, KAYBIN CİNSİNİ** değiştirdi: sistematik (yanlı) kayıp,
+rastgele (yansız) kayba döndü. Bu ölçüm için gerçek bir kazanımdır — yanlı kayıp seans
+kırılımını kalıcı olarak bozar, yansız kayıp yalnızca örneklemi seyreltir — ama
+karar 39-UYGULAMA'nın vaat ettiği şey bu değildi ve o cümle yanlıştı.
+
+İki kaybın ikisi de bu mekanizmayla birebir açıklanıyor: 09-16T20:00 barı (kapanış 00:00)
+23:37 ile 04:43 tetiklemeleri arasında kaldı; 09-18T04:00 barı (kapanış 08:00) 07:20 ile
+12:55 arasında kaldı. İkisinde de aradaki boşluk bir bar penceresini tamamen yuttu.
+
+### Ne yapılmadı ve neden
+
+Hiçbir ayar değiştirilmedi. Kanıtlanmış alternatif ortada duruyor: **`run-scalp.yml`in
+cron'u YOKTUR** ve depo dışı bir tetikleyiciyle ~15 dakikada bir koşuyor, hiç aksamadan
+(bu ölçüm penceresinde scalp katmanı tek bar kaçırmadı). `run.yml`i de aynı yola almak
+sinyalsiz bar oranını sıfıra yaklaştırır.
+
+Ama bu bir **KADANS KARARIDIR ve kullanıcınındır:** dış tetikleyici depo dışında bir
+bağımlılık demektir ve onun da düşmesi mümkündür — fark, düştüğünde görünür olmasıdır.
+Öneri sunulmuştur, tek taraflı uygulanmamıştır.
+
+**Ön-kayıt sicili (§6c) DEĞİŞMEDİ:** bu bir kural hipotezi değil, bir altyapı ölçümüdür ve
+bir modelin performansı hakkında iddia taşımaz (karar 40'ın ölçütü).
