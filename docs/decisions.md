@@ -3940,4 +3940,30 @@ yere yazılmıyor) ve bu açık bir iştir. Sığ pencereyi o boşluğa cevap di
 **Ölçüm aracının çıktısı YALNIZCA log'dur** (`.github/workflows/measure-funding.yml`
 artifact bile üretmez), yani koşunun kendisi kalıcı bir iz bırakmaz. Engelin tam
 mekanizması — hangi uç noktanın nereye kadar sayfalayabildiği — bu kayda girmiyor;
-girmesi gereken yer arşiv işinin ön-kaydıdır ve o iş başladığında oraya yazılacak.
+girmesi gereken yer arşiv işinin ön-kaydıdır.
+
+**ÖLÇÜLDÜ (2026-09-19).** O ön-kayıt açıldı (docs/backtest.md > 6f) ve mekanizma
+`scripts/probe_funding_depth.py` ile ölçüldü (`measure-funding` #35463452072). Sonuç
+**(a) borsa tabanı**, iki sembolde de: uç nokta `/api/v5/public/funding-rate-history`
+**~3 aylık KAYAN bir pencere** tutuyor (283 kayıt, en eski 2026-06-17), dönem A'nın
+tamamı o pencerenin ~26 ay dışında ve doğrudan `after=2024-06-30` isteği BOŞ dönüyor.
+Sayılar ve üç bağımsız doğrulama §6f > "SONUÇ — Adım A KOŞULDU"da; log süreli olduğu
+için kalıcı kayıt oradadır, burada değil.
+
+Üç yan bulgu ve biri bir DÜZELTMEdir:
+
+1. **`fetch_history` kayıp vermiyor** — yürüyüş, tek istekle ulaşılabilen azami
+   derinliğin tamamına ulaşıyor. Tavanı büyütmenin yolu kodda değil, bu kaydın 1.
+   maddesindeki arşivdedir; yani yukarıdaki "açık iş" olduğu gibi duruyor.
+2. **`/api/v5/public/history-funding-rate` diye bir uç nokta YOK** (HTTP 404).
+3. ⚠ **"400 kayıt tavanı" hipotezi ÇÜRÜDÜ.** `limit=400` kabul ediliyor ama yalnızca
+   283 kayıt var: kısıt bir sayfa boyu değil, kayan pencerenin kendisi. PR #37'nin
+   "312 kayıt, 400'ün altında durdu, demek ki taban bizde olabilir" okuması yanlıştı.
+   Çürütme buraya YAZILIYOR çünkü yanlış bir izin kaydı, doğru sonucun kaydı kadar
+   iş görür: yazılmazsa aynı iz yeniden sürülür ve probe boşuna tekrar koşturulur.
+
+**Tez hâlâ ENGELLENMİŞ, ama engel artık ÖLÇÜLDÜ.** Bu kaydın başındaki ayrım yerinde
+duruyor: ölçülüp düşmüş bir tez değil, veri yolunda duran bir tez. Değişen tek şey,
+yolun nerede ve neden bittiğinin artık tahmin değil ölçüm olmasıdır. **A-2 (OKX'in
+tarihsel veri portalı) HENÜZ KAPANMADI** — erişilebilir çıktı ama içeriği doğrulanmadı —
+ve o kapanmadan arşiv adımına geçilmez.
