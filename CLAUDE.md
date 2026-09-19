@@ -363,6 +363,16 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 "tanımlı ama koşmuyor" hâli, `scalp_vol`un `REGISTRY`de durup `models` listesinde olmaması
 ile aynı statüdedir: kod ölçülmeden yarışmaz.
 
+**`ema_trend`in ÇIKIŞ EKSENİ ölçüldü ve KAPANDI** (karar 48; docs/backtest.md > 6e >
+SONUÇ). "Kenar giriş sinyalinde, çıkış geometrisi yiyor" tezi bir varyant ailesine
+dönüşmeden düştü: modelin ters sinyal çıkışı zaten yoktur (`manage_positions`
+uygulanmaz, çıkış evreni `{tp, stop, liquidation}`) ve dönem A'nın yol ölçümünde
+ön-kayıtlı seçim kuralının üç dalı da tetiklemedi — kaybedenler kazananlardan daha
+HIZLI ölüyor (medyan 6 ↔ 9 bar), kaybedenlerin yarısı hiç kâra geçmiyor (medyan MFE
++0.55R) ve hedef sonrası işaretli hareket sıfır etrafında salınıyor. Ekseni yeniden
+açmanın yolu yeni bir ön-kayıttır; açık kalan tek kaldıraç çıkış değil **stop mesafesi**
+eksenidir (docs/backtest.md > 6e > KAYIT) ve o da kendi ön-kaydıyla gelir.
+
 **Neden `ema` ayrı bir katman.** Modelin backtest'i sabit 13 coinde koşuyor; `base` evreni
 hacme göre seçilir ve 30 günde bir kayar. Modeli `base`e almak, backtest'in ölçtüğünden
 BAŞKA bir evrende koşturmak, yani forward test ile backtest'i baştan ayrıştırmak olurdu.
