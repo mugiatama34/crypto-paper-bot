@@ -23,8 +23,11 @@ from scripts.measure_funding import (
     coverage,
     deannualize,
     distribution,
+    FetchTrace,
+    fetch_history,
     flag_absolute,
     flag_relative,
+    format_traces,
     main,
     measure,
     monthly_histogram,
@@ -243,3 +246,124 @@ def test_module_does_not_import_measurement_or_strategy_modules():
     text = Path("scripts/measure_funding.py").read_text(encoding="utf-8")
     for banned in ("core.portfolio", "core.metrics", "core.ledger", "strategies."):
         assert f"import {banned}" not in text and f"from {banned}" not in text
+
+
+# --------------------------------------------------------------------------- #
+# ÇEKİM İZİ ve VERİ KAPISI (ilk koşunun dersi: boş rapor yeşil dönemez)
+# --------------------------------------------------------------------------- #
+class _StubClient:
+    """OKX istemcisinin yerine geçen sayfalayıcı; ağ yok."""
+
+    def __init__(self, pages: list[list[dict[str, str]]]) -> None:
+        self._pages = pages
+        self.calls: list[dict[str, str]] = []
+
+    def get(self, path: str, params: dict[str, str]) -> list[dict[str, str]]:
+        self.calls.append(dict(params))
+        index = len(self.calls) - 1
+        return self._pages[index] if index < len(self._pages) else []
+
+
+def _page(start: str, count: int, *, rate: float = 0.0001) -> list[dict[str, str]]:
+    index = pd.date_range(start=start, periods=count, freq="8h", tz="UTC")
+    return [
+        {"fundingTime": str(int(ts.timestamp() * 1000)), "fundingRate": str(rate)}
+        for ts in index
+    ]
+
+
+def test_trace_records_pagination_floor_when_venue_runs_out():
+    """İlk koşunun tam senaryosu: borsa dönem A'ya ulaşmadan tükeniyor."""
+    client = _StubClient([_page("2026-06-01T00:00:00+00:00", 100), _page("2026-05-01T00:00:00+00:00", 40)])
+    series, trace = fetch_history(
+        client,
+        "BTC-USDT-SWAP",
+        since=pd.Timestamp("2021-10-03T00:00:00+00:00"),
+        until=pd.Timestamp("2024-06-30T00:00:00+00:00"),
+        limit=100,
+    )
+    assert series.empty
+    assert trace.kept == 0
+    assert trace.fetched == 140  # pencere filtresinden ÖNCE görülen ham kayıt
+    assert trace.oldest_seen == pd.Timestamp("2026-05-01T00:00:00+00:00")
+    assert "TABANI" in trace.stop_reason  # kısa sayfa = sayfalama tabanı
+
+
+def test_trace_distinguishes_empty_page_from_short_page():
+    client = _StubClient([_page("2026-06-01T00:00:00+00:00", 100), []])
+    _, trace = fetch_history(
+        client,
+        "BTC-USDT-SWAP",
+        since=pd.Timestamp("2021-10-03T00:00:00+00:00"),
+        until=pd.Timestamp("2024-06-30T00:00:00+00:00"),
+        limit=100,
+    )
+    assert "boş sayfa" in trace.stop_reason
+
+
+def test_trace_counts_kept_rows_when_window_is_reached():
+    client = _StubClient([_page("2023-01-01T00:00:00+00:00", 10)])
+    series, trace = fetch_history(
+        client,
+        "BTC-USDT-SWAP",
+        since=pd.Timestamp("2021-10-03T00:00:00+00:00"),
+        until=pd.Timestamp("2024-06-30T00:00:00+00:00"),
+        limit=100,
+    )
+    assert trace.kept == 10 and series.size == 10
+
+
+def test_format_traces_names_the_floor_relative_to_period_start():
+    trace = FetchTrace(
+        symbol="BTC-USDT-SWAP",
+        fetched=300,
+        kept=0,
+        oldest_seen=pd.Timestamp("2026-06-01T00:00:00+00:00"),
+        newest_seen=pd.Timestamp("2026-09-19T00:00:00+00:00"),
+        pages=3,
+        stop_reason="kısa sayfa",
+    )
+    text = "\n".join(format_traces([trace], start=pd.Timestamp("2022-01-01T00:00:00+00:00")))
+    assert "TABANI" in text and "gün SONRA" in text
+
+
+def test_empty_report_exits_non_zero(monkeypatch, capsys):
+    """ASIL KUSUR buydu: 13 sembolde sıfır kayıt, yine de çıkış kodu 0."""
+    empty = pd.Series(
+        [], index=pd.DatetimeIndex([], tz="UTC", name="ts"), dtype="float64", name="BTC-USDT-SWAP"
+    )
+    trace = FetchTrace(
+        symbol="BTC-USDT-SWAP",
+        fetched=300,
+        kept=0,
+        oldest_seen=pd.Timestamp("2026-06-01T00:00:00+00:00"),
+        newest_seen=pd.Timestamp("2026-09-19T00:00:00+00:00"),
+        pages=3,
+        stop_reason="kısa sayfa",
+    )
+    monkeypatch.setattr(
+        "scripts.measure_funding.fetch_history", lambda *a, **k: (empty, trace)
+    )
+    monkeypatch.setattr("scripts.measure_funding.OKXClient.from_config", lambda cfg: object())
+    assert main([]) == 3
+
+
+def test_partial_data_still_exits_zero(monkeypatch):
+    """Bir sembolde veri varsa rapor okunabilirdir: kapı yalnızca TAM boşlukta kapanır."""
+    index = pd.date_range("2023-01-01T00:00:00+00:00", periods=40, freq="8h", tz="UTC")
+    index.name = "ts"
+    filled = pd.Series([0.0001] * 40, index=index, dtype="float64", name="BTC-USDT-SWAP")
+    trace = FetchTrace(
+        symbol="BTC-USDT-SWAP",
+        fetched=40,
+        kept=40,
+        oldest_seen=index[0],
+        newest_seen=index[-1],
+        pages=1,
+        stop_reason="kısa sayfa",
+    )
+    monkeypatch.setattr(
+        "scripts.measure_funding.fetch_history", lambda *a, **k: (filled, trace)
+    )
+    monkeypatch.setattr("scripts.measure_funding.OKXClient.from_config", lambda cfg: object())
+    assert main([]) == 0

@@ -3809,3 +3809,57 @@ sebebi bilinmeden silmek, "ölçtük ve tutmadı" ile "hiç ölçemedik"i aynı 
 olurdu (kural: veri yoksa `nan`, `0.0` değil). Eşikler de kurcalanmadı: bir kolu
 tetikleyene kadar eşik gevşetmek, docs/backtest.md > 7'nin yasakladığı sonuca bakarak
 parametre oynatmanın ta kendisidir.
+
+---
+
+## 49. Fonlama tezi dönem A'da ÖLÇÜLEMEZ: kaynak o kadar geriye vermiyor
+
+**Sonuç:** `scripts/measure_funding.py` koşuldu (`measure-funding` #35441623091) ve
+cevabı verdi — **dönem A'da (2022-01-01 → 2024-06-30) fonlama verisi YOK.** 13 sembolün
+hepsinde pencerede sıfır kayıt. Bu bir araç hatası değil, aracın cevaplamak için
+yazıldığı sorunun cevabıdır: *4H'de bir fonlama-ekstremi tezi bu veriyle ölçülebilir mi?*
+— **OKX public REST ile HAYIR.**
+
+**Sebep kaynağın sayfalama tabanıdır, bizim filtremiz değil.** `/api/v5/public/funding-rate-history`
+istek başına en çok 100 kayıt verir ve sayfalama ~3-4 sayfada tükenir (~300-400 kayıt ≈
+3-4 ay). Koşuda her sembol ~0.47 saniye sürdü; `exchange.min_request_interval_sec` 0.15
+olduğuna göre sembol başına ~3 istek yapıldı ve orada durdu. Yani çekim 2026 ortasına
+kadar indi, dönem A'ya 1600 günden fazla mesafe kaldı.
+
+Bu, projenin canlı yolunun zaten varsaydığı şeydi ve kimse bağını kurmamıştı:
+`data.funding_history_periods` **180**'dir (60 gün). Derin fonlama geçmişi bu depoda hiç
+var olmadı; `strategies/scalp/arms.py::funding_spike_fade`in beslendiği seri de her zaman
+bu sığ pencereydi.
+
+**Asıl kusur sonuç değil, sonucun SUNULUŞUYDU.** Koşu **yeşil** bitti: `nan` dolu bir
+dağılım tablosu, her eşikte "0 olay" yazan bir sayım ve sıfır çıkış kodu. Yani "ölçtük ve
+bulamadık" ile "hiç ölçemedik" aynı hücreye yazıldı — `core/metrics.py`nin "veri yoksa
+`nan`, `0.0` değil" kuralının tam olarak yasakladığı şey, bu kez çıkış kodunda. Bu hâliyle
+rapor okunsaydı "dönem A'da fonlama ekstremi yok" diye okunurdu; doğrusu "dönem A'da
+fonlama VERİSİ yok"tur ve ikisi aynı cümle değildir.
+
+**İki onarım yapıldı** (ikisi de sayıya değil, sayının denetlenebilirliğine dokunur):
+
+- **(a0) ÇEKİM İZİ** — sembol başına kaç sayfa çekildi, pencere filtresinden ÖNCE kaç ham
+  kayıt görüldü, bunların en eskisi/en yenisi hangi tarihti ve sayfalama NEDEN durdu.
+  Gerekçe: `coverage` yalnızca pencerenin İÇİNE bakar, oysa teşhis pencerenin DIŞINDA
+  duruyordu. İz üç sebebi ayırt eder — sembol listelenmemiş (`boş sayfa`, PENGU/ETHFI),
+  borsa o kadar geriye vermiyor (`kısa sayfa — sayfalama TABANI`), sayfalamamız bozuk
+  (`imleç ilerlemedi`). İlk koşuda bu üçü tek bir "0 kayıt" satırına çökmüştü.
+- **VERİ KAPISI** — pencerede hiçbir sembolde kayıt yoksa çıkış kodu **3**. Yeşil bir koşu
+  okunabilir bir rapor demektir.
+
+**Ne YAPILMADI ve neden.** Başka bir veri kaynağına (üçüncü taraf fonlama arşivi ya da
+başka bir borsa) geçilmedi. Bu AYRI bir karardır ve yeni bir veri varsayımı demektir;
+`scripts/measure_slippage.py`nin kitabı Bybit'ten okuma tercihi, böyle bir seçimin
+yazılı bir gerekçe istediğini gösteriyor. Üstelik burada bedel daha ağırdır: fonlama
+serisi canlı ölçümün İÇİNDEDİR (`core/funding.py` her açık pozisyona uygular), yani
+kaynağı değiştirmek backtest ile canlıyı farklı fonlama varsayımlarına ayırma riskini
+taşır — karar 25'te `fee_rate`in defteri tarihli olarak bölmesiyle aynı sınıf hata.
+
+**Bir sonraki tez için bağlayıcı sonuç:** fonlama-ekstremi tezi, bugünkü veri yoluyla
+dönem A üzerinde ön-kayıtlı olarak sınanamaz. Üç seçenek var ve üçü de ayrı bir karar
+gerektirir: (1) tezi ileriye dönük olarak kâğıtta biriktirmek (veri 60 günle sınırlı),
+(2) dönem A için ayrı bir fonlama arşivi getirmek ve canlı yolla tutarlılığını
+kanıtlamak, (3) tezi bırakmak. Bu karar sonuca bakılarak verilemez çünkü **görülecek bir
+sonuç yok** — bu, ön-kayıt disiplininin bozulma riski olmayan ender durumlardan biridir.
