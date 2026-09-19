@@ -3739,7 +3739,77 @@ işlem sayısı kolonlarda, çünkü dönem A'da evren 13 değil 9 sembolle baş
 `docs/backtest.html` ikisini de çizer ve HİÇBİRİNİ yeniden hesaplamaz (kural 7):
 verdikt de yükten okunur.
 
-## 48. Çıkış varyantı turu: hipotez teşhis aşamasında düştü, tur KAPANDI
+---
+
+## 48. Beş kollu modeller üç kolla koşuyor: kapsam tanımları yanlış yazılı
+
+**Karar:** Bir BELGE düzeltmesidir, kod değişikliği değil. `momentum_burst` (4. kol) ve
+`funding_spike_fade` (5. kol) katmanın canlı ömrü boyunca tek bir sinyal üretmedi; bu
+yüzden "beş ortak kol" ifadesi ve ona dayanan eksen kapsamları README.md ile CLAUDE.md'de
+GERÇEĞİ ANLATMIYOR. Kollar SİLİNMEDİ, eşikler kurcalanmadı, `take_survey` uygulanmadı —
+bu turda yalnızca yazılı kapsam düzeltildi.
+
+**Ölçüm dayanağı.** Kaynak defterin kendisidir (kural 1: append-only, yani dosya tüm
+geçmişi taşır), `core/metrics.py::breakdown` ile `arm_of` ölçütünde okundu:
+
+| Kol | Pozisyon | Açık pozisyon |
+|---|---:|---:|
+| `vwap_pullback` | 1 | 0 |
+| `opening_range_breakout` | 21 | 2 |
+| `rsi2_reversal` | 101 | 8 |
+| `momentum_burst` | **0** | **0** |
+| `funding_spike_fade` | **0** | **0** |
+
+Pencere 2026-09-13T19:30 → 2026-09-19T10:45 UTC, 123 pozisyon, dört defter birden
+(`scalp_bandit`, `scalp_fixed`, `scalp_managed`, `scalp_patient` — emekli modellerin
+defterleri de duruyor ve okundu). Elde bulunan git geçmişinde (sığ klon, 2026-09-18
+sonrası) `metrics_scalp.json > round.models[].emitted` kayıtlarında da iki kolun adı hiç
+geçmiyor; bu ikincil bir teyittir, birincil kanıt defterdir.
+
+**Olgu YENİ DEĞİL, yazılı kapsam yanlış.** Karar 32 iki kolun 47 günlük backtest
+penceresinde hiç tetiklemediğini ölçtü, karar 34 `momentum_burst`un sebebini yazdı
+(kapı aritmetiği: `hedef/stop ≥ 1.5` ile `stop = 5×ATR`, yapısal engelin 7.5×ATR ötede
+olmasını istiyor; `burst` tipik olarak 1–2.25×ATR). Yapılmayan şey, bu bulgunun
+**kapsam tanımlarına işlenmesiydi**: README.md ve CLAUDE.md iki kararın ikisinden de
+habersiz, "beş ortak kol" demeye devam etti. Bu turda düzeltilen odur.
+
+**Eksen SONUÇLARI geçersiz değil, eksen KAPSAMLARI yanlış.** 11 ↔ 12, 12 ↔ 15 ve açık
+olan 12 ↔ 16 çiftlerinin ikisi de aynı üç kolu gördü — kural 6 (aynı evren, aynı kurallar)
+bozulmadı, çiftler hâlâ tek değişkende ayrışıyor ve ortalama R farkı hâlâ o değişkenin
+ölçüsü. Bozulan şey, sonucun NE HAKKINDA olduğudur: "beş kollu bir modelde adaptasyonun
+katkısı yok" ile "üç kollu bir modelde adaptasyonun katkısı yok" aynı cümle değildir.
+İkincisi çok daha dar bir iddiadır ve karar 33'ün "bandit'in tahsis edecek bir şeyi yok"
+teşhisini güçlendirir: tahsis uzayı beşte üç değil, pratikte ikidir — `rsi2_reversal`
+123 pozisyonun 101'ini, `opening_range_breakout` 21'ini taşıyor, kalan bir tanesi
+`vwap_pullback`.
+
+**5. kolun sebebi BİLİNMİYOR ve bu turda ölçülmedi.** `momentum_burst`tan farkı budur:
+onun sebebi geometriden türetilebiliyordu, `funding_spike_fade`inki türetilemiyor.
+Kolun sırayla geçmesi gereken kapıları var — funding serisinin varlığı ve uzunluğu,
+tazelik penceresi (`FUNDING_FRESH_HOURS`), `FUNDING_SPIKE_FLOOR` tabanı, `FUNDING_SPIKE_MULTIPLE`
+çarpanı, gün-çapalı VWAP'in hesaplanabilmesi, sonra ev kapıları — ama hangisinde
+elendiği DEFTERDE YAZMIYOR. Bir aday listesi yazıp birini seçmek, ölçmeden sebep
+atamak olurdu; kayıt sebebi değil, sebebin BİLİNMEDİĞİNİ tutar.
+
+**Bunun mümkün olmasının sebebi `ScalpModel`in `take_survey` uygulamamasıdır**
+(`metrics_scalp.json`de beş kollu modellerin `survey` alanı `{}`). Karar 34 bunu zaten
+görmüştü ve "yeni bir kol ya da tez eklenecekse `take_survey` o modelin ilk gereksinimidir"
+yazdı — ama kuralı YALNIZCA yeni kollara bağladı, mevcut ölü kollara uygulanmadı ve
+sonuç olarak 5. kolun sebebi bugün hâlâ bilinmiyor.
+
+**AÇIK İŞ (bu turda yapılmadı):** `ScalpModel.take_survey` — beş kollu modellerin her
+barda hangi kolun hangi kapıda elendiğini sebep koduyla sayması. Bu bir denetim izidir
+(kural 15 statüsü: ölçüme girmez, sinyalleri ve sıralarını etkilemez) ve `funding_spike_fade`in
+sebebini öğrenmenin TEK yoludur. Ayrı bir turda, ayrı bir kararla gelir.
+
+**Yapılmayanlar ve gerekçeleri.** Ölü kolların kodu DURUYOR: `momentum_burst` bir
+ölçüm sonucudur (karar 34'ün kapı aritmetiği onun üzerinden türetildi) ve silinmesi o
+sonucun dayanağını yok ederdi; `funding_spike_fade` ise henüz ölçülmemiş bir tezdir —
+sebebi bilinmeden silmek, "ölçtük ve tutmadı" ile "hiç ölçemedik"i aynı hücreye yazmak
+olurdu (kural: veri yoksa `nan`, `0.0` değil). Eşikler de kurcalanmadı: bir kolu
+tetikleyene kadar eşik gevşetmek, docs/backtest.md > 7'nin yasakladığı sonuca bakarak
+parametre oynatmanın ta kendisidir.
+## 49. Çıkış varyantı turu: hipotez teşhis aşamasında düştü, tur KAPANDI
 
 **Soru dışarıdan geldi ve makuldü:** `ema_trend` bloke edilmişti (karar 47), kenar
 giriş sinyalinde görünüyordu (dönem B'de ödeme oranı 1.61, kazanma oranı %34.7) ve
