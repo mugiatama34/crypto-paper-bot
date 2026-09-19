@@ -276,7 +276,7 @@ def _payload(
         },
         "build_failures": build_failures,
         "models": [
-            {**_jsonable(asdict(item)), "name": item.model}
+            {**jsonable(asdict(item)), "name": item.model}
             for item in metrics
         ],
         "benchmarks": [strategy.name for strategy in strategies if strategy.is_benchmark],
@@ -287,7 +287,7 @@ def _payload(
 
 
 def _write_metrics(payload: dict[str, Any], path: Path) -> None:
-    """Yükü diske yazar. `_jsonable` TÜM yüke uygulanır, yalnızca model tablosuna değil.
+    """Yükü diske yazar. `jsonable` TÜM yüke uygulanır, yalnızca model tablosuna değil.
 
     Dashboard bölümleri de tanımsız metrik taşır (açık pozisyonun R'si, hiç işlem
     görmemiş bir günün ortalama R'si). Dönüşümü yükün yalnızca bir dalına uygulamak,
@@ -296,28 +296,34 @@ def _write_metrics(payload: dict[str, Any], path: Path) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(_jsonable(payload), indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        json.dumps(jsonable(payload), indent=2, ensure_ascii=False, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     logger.info("metrikler yazıldı: %s", path)
 
 
-def _jsonable(value: Any) -> Any:
+def jsonable(value: Any) -> Any:
     """nan/inf -> null. `json.dumps` bunları `NaN` yazar ve ortaya GEÇERSİZ JSON çıkar.
 
     nan burada "ölçülemedi" demektir (bkz. core/metrics.py) ve JSON'da onun karşılığı
     null'dır; 0.0'a çevirmek "ölçüldü, sıfır çıktı" ile karıştırırdı.
+
+    **Tek kopyadır ve backtest harness'ı da bunu çağırır** (`scripts/backtest.py`,
+    `scripts/backtest_ema.py`). İkinci bir uygulama, canlı yükü okuyan sayfa ile backtest
+    yükünü okuyan sayfanın farklı geçerlilikte JSON görmesi demekti — harness'ın kendi
+    kopyası tam olarak bunu yapıyordu: dataclass'ı sözlüğe indiriyor ama nan'ı OLDUĞU GİBİ
+    bırakıyordu, yani `docs/backtest.html` dosyayı hiç ayrıştıramadan ölürdü.
     """
     if isinstance(value, dict):
-        return {key: _jsonable(item) for key, item in value.items()}
+        return {key: jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
+        return [jsonable(item) for item in value]
     if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
     if is_dataclass(value) and not isinstance(value, type):
-        return _jsonable(asdict(value))
+        return jsonable(asdict(value))
     return value
 
 

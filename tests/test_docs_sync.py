@@ -34,6 +34,10 @@ README = PROJECT_ROOT / "README.md"
 _ACTIVE_HEADINGS = {
     "base": "### Aktif lig — `base`",
     "scalp": "### Aktif lig — `scalp`",
+    # `ema` katmanı TANIMLI ama tetikleyicisi yok (run-ema.yml henüz eklenmedi): kadro
+    # backtest'in ölçtüğü kümedir, koşan bir lig değil. Başlık, kapılar geçilip workflow
+    # eklendiğinde "Aktif lig" olarak yeniden adlandırılacak.
+    "ema": "### Kadro — `ema` (tanımlı, tetikleyicisi YOK)",
 }
 _CATALOG_HEADING = "### Katalog — kayıtlı ama listede değil"
 
@@ -69,6 +73,22 @@ def _models_in(section: str) -> set[str]:
         if match:
             names.add(match.group(1))
     return names
+
+
+def test_every_configured_layer_has_a_readme_section() -> None:
+    """Katman listesi config'ten OKUNUR, bu dosyada elle tutulmaz.
+
+    Bu testin kendisi bir kez kör kaldı: `_ACTIVE_HEADINGS` iki katmanı sayıyordu ve
+    üçüncü bir katman eklendiğinde onun modelleri "kayıtlı ama hiçbir katmanda koşmuyor"
+    sayıldı — yani belge kapısı, tam da korumak için yazıldığı drift'i üretti. Kapıyı
+    koruyan şey artık bir liste değil, bir eşitlik.
+    """
+    configured = set(load_config()["layers"])
+    assert configured == set(_ACTIVE_HEADINGS), (
+        "config.yaml'daki katmanlar ile README bölümleri ayrışmış.\n"
+        f"  bölümü olmayan katman: {sorted(configured - set(_ACTIVE_HEADINGS))}\n"
+        f"  config'te olmayan bölüm: {sorted(set(_ACTIVE_HEADINGS) - configured)}"
+    )
 
 
 @pytest.mark.parametrize("layer_name", sorted(_ACTIVE_HEADINGS))

@@ -386,6 +386,26 @@ defter yazan modeller), **katalog** (`strategies/registry.py`'de kayıtlı ama l
 | 13 | `vwap_clone` | long + short | **dış sistem kopyası** (kural 15b), yarışmacı değil |
 | 14 | `vwap_managed` | long + short | VWAP sapma-dönüş sinyali, ev kurallarıyla (risk boyutlandırma, %1 taban, 1.5R) |
 
+### Kadro — `ema` (tanımlı, tetikleyicisi YOK)
+
+4H, **sabit 13 sembol** (scalp katmanının evreninin aynısı), `config.yaml > layers.ema`.
+Bu katmanın **cron'u yoktur ve `run-ema.yml` henüz eklenmemiştir**: tanım var, koşu yok.
+Bugün onu okuyan tek şey `scripts/backtest.py`'dir ve hiçbir deftere yazılmaz. Canlıya
+alınması, ön-kayıtlı kapıların (`docs/backtest.md > 6d`) geçilmesine bağlıdır.
+
+Katmanın varlık sebebi evrenin sabitliğidir: `ema_trend`in backtest'i 13 coinde koşuyor,
+base evreni ise hacme göre seçilen 50 coindir ve 30 günde bir kayar — modeli base'e almak,
+backtest'in ölçtüğünden başka bir evrende koşturmak olurdu. Kıyas hedefi (`trend`), kontrol
+grubu (`random_ctrl`) ve çıpa (`buyhold`) katmanın İÇİNE alındı, çünkü katmanlar arası kıyas
+yapılmaz (CLAUDE.md > Katmanlar) ve sorulan soru tam olarak "bu model `trend`den iyi mi".
+
+| # | Strateji | Yön | Tez |
+|---|---|---|---|
+| — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
+| 1 | `trend` | long + short | Donchian kırılımı + EMA rejim filtresi — bu katmanda KIYAS HEDEFİ |
+| 9 | `random_ctrl` | long + short | **kontrol grubu**: bilgisiz çekiliş, edge'in referansı |
+| 18 | `ema_trend` | **yalnızca long** | EMA(21) EMA(55)'i yukarı keser; stop 1.5×ATR, hedef 2R, trailing ve zaman stop'u YOK |
+
 ### Katalog — kayıtlı ama listede değil
 
 Emekli bir modelin **kodu ve defteri DURUR** (kural 1: defter append-only); listeye geri
