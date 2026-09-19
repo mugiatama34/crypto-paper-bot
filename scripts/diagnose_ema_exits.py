@@ -85,10 +85,30 @@ PREREGISTERED_A: Mapping[str, Any] = {
 }
 AVG_R_TOLERANCE = 1e-9
 
-# Çıkış sonrası devam ufukları (bar). Bir eşik DEĞİL, bir dağılım ekseni: "kuyruk kaç
-# bar sonra ne kadar" sorusu tek bir ufukla sorulamaz ve tek ufuk seçmek, o ufku
-# sonradan bir parametre gibi kullanmaya davet ederdi.
+# Çıkış sonrası ufuklar (bar). Bir eşik DEĞİL, bir dağılım ekseni: "kuyruk kaç bar sonra
+# ne kadar" sorusu tek bir ufukla sorulamaz ve tek ufuk seçmek, o ufku sonradan bir
+# parametre gibi kullanmaya davet ederdi.
 CONTINUATION_HORIZONS: tuple[int, ...] = (5, 10, 20, 40)
+
+# --------------------------------------------------------------------------- #
+# BİRİNCİL VARYANT SEÇİM KURALI — teşhis çıktısı GÖRÜLMEDEN sabitlendi
+# --------------------------------------------------------------------------- #
+# Kuralın ÇALIŞTIRILABİLİR kopyası burasıdır; docs/backtest.md > 6e onu alıntılar.
+# İki yerde yazılı bir kural, bir gün birinin sessizce ayrışması demekti — ve kuralın
+# tek işi "sonucu görüp seçmedik"i kanıtlamak olduğu için o ayrışma kuralı yok ederdi.
+#
+# Eşikler ve gerekçeleri (hiçbiri veriden türetilmedi):
+# - M1 = 1.0R: `config.yaml > exit_management.breakeven_at_r` değerinin ta kendisi. Bir
+#   breakeven kuralının tetiklenebilmesi için gereken hareket odur; keyfi değildir.
+# - M2 = +0.25R: ölçülen friksiyonun (0.057R) kabaca dört katı. YUVARLAK bir sayıdır ve
+#   öyle seçildiği burada yazılıdır — sonradan eşik tartışması açılmasın.
+# - M2 ufku = 20 bar: dönem A'nın p90 tutuş süresi 21 bardır (docs/backtest.md > 6d'de
+#   koşudan önce yayımlandı), yuvarlanmış hâli. Teşhis çıktısından GELMİYOR.
+# - M4 = 2.0×: yuvarlak katsayı, açıkça yuvarlak seçildi.
+M1_MIN_MEDIAN_MFE_R = 1.0
+M2_HORIZON_BARS = 20
+M2_MIN_MEDIAN_DRIFT_R = 0.25
+M4_MIN_HOLD_RATIO = 2.0
 
 # MFE/MAE kovaları (R). Sınırlar geometriden gelir, veriden değil: 1.0R breakeven'ın,
 # 1.5R kısmi çıkışın, 2.0R hedefin yeridir (config > exit_management, ema_trend).
@@ -117,7 +137,13 @@ def position_paths(
       görebilirdi. Kapanış barını dâhil etmek, o kuralı pozisyonu öldüren barın içindeki
       bilgiyle donatmak — yani look-ahead — olurdu.
     - `continuation_r[H]`: çıkıştan SONRAKİ H bar içinde fiyatın çıkış fiyatının ne kadar
-      üstüne çıktığı. "Kesilen kuyruk" tam olarak budur.
+      üstüne çıktığı (azami YÜKSELİŞ). "Kesilen kuyruk" tam olarak budur.
+    - `drift_r[H]`: çıkıştan H bar SONRAKİ barın KAPANIŞI ile çıkış fiyatı arasındaki
+      İŞARETLİ fark. İkisi ayrı tutulur çünkü ayrı sorulara cevap verirler ve yalnızca
+      ikincisi bir kuralın dayanağı olabilir: azami yükseliş tanım gereği ≥ 0'dır ve
+      sürüklenmesiz bir yürüyüşte bile ufukla birlikte `√H` hızında büyür (20 barda
+      ~2.4R), yani "kuyruk var" demeye her zaman izin verirdi. İşaretli kapanışın
+      medyanı ise martingal altında SIFIRDIR — sıfırdan sapması gerçek bir sürüklenmedir.
 
     Mum içi sıralama bilinemez (kural 13): `mfe_r` ile `mae_r` aynı barda gerçekleşmiş
     olabilir ve hangisinin önce olduğu bu veriyle söylenemez. Bu yüzden buradaki hiçbir
@@ -157,6 +183,17 @@ def position_paths(
             )
             for horizon in horizons
         }
+        # İşaretli sürüklenme: H barın MAKSİMUMU değil, H. barın KAPANIŞI. Pencere
+        # dolmuyorsa `nan` — kısa bir pencereyi son bara kadar doldurmak, ufku pozisyondan
+        # pozisyona değiştirip medyanı kısa kuyruğa doğru çekerdi.
+        drift = {
+            str(horizon): (
+                (float(after["close"].iloc[horizon - 1]) - exit_price) / unit
+                if exit_price is not None and len(after) >= horizon
+                else float("nan")
+            )
+            for horizon in horizons
+        }
 
         paths.append(
             {
@@ -175,9 +212,74 @@ def position_paths(
                     (float(prior["low"].min()) - entry) / unit if not prior.empty else float("nan")
                 ),
                 "continuation_r": continuation,
+                "drift_r": drift,
             }
         )
     return paths
+
+
+def select_primary_family(
+    *,
+    median_mfe_r_stop: float,
+    median_drift_r_tp: float,
+    median_hold_stop: float,
+    median_hold_tp: float,
+) -> dict[str, Any]:
+    """BİRİNCİL varyant ailesini teşhis çıktısından MEKANİK olarak seçer.
+
+    Kural koşudan önce sabitlendi (docs/backtest.md > 6e) ve **bir kez çalışır**: çıkan
+    aile beklenen olmasa bile tartışılmaz. İnsanın "baktım, en iyi görüneni seçtim"
+    serbestliği tam olarak burada kapanır — bu yüzden seçim bir metin değil, bir
+    fonksiyondur.
+
+    Dallar ÖNCELİK SIRASIYLA denenir ve sıra da önceden yazılıdır:
+
+    1. **M2 — kuyruk** (`tp` çıkışlarından 20 bar sonraki İŞARETLİ hareketin medyanı
+       ≥ +0.25R): hedefte kesilen pozisyon yükselmeye devam ediyor -> *kazananı koşturan*
+       aile (trailing / hedefin kaldırılması).
+    2. **M1 — geri dönüş** (`stop` çıkışlarının medyan `mfe_r_prior`ı ≥ 1.0R): kaybedenler
+       ölmeden önce en az 1R kâra gidiyor -> *breakeven + kısmi çıkış* ailesi.
+    3. **M4 — oyalanma** (medyan `stop` tutuşu ≥ 2.0 × medyan `tp` tutuşu): kaybedenler
+       uzun süre oyalanıp sonra ölüyor -> *zaman stop'u* ailesi.
+    4. Hiçbiri: **tur KAPANIR.** Varyant kurulmaz. Bu bir başarısızlık değil bir
+       sonuçtur: yolda çıkışın sömürebileceği bir yapı yoksa, açık kalan tek kaldıraç
+       friksiyondur ve o, çıkış ekseninde değil stop mesafesi ekseninde durur
+       (docs/backtest.md > 6e > KAYIT).
+
+    M2'nin M1'den ÖNCE gelmesinin gerekçesi: ikisi de aynı pozisyonlar üzerinde ama ters
+    yönde çalışır (biri kuyruğu uzatır, öteki keser). İkisi birden tetiklenirse hangisinin
+    seçileceği önceden yazılmazsa, "hangisi daha mantıklı" tartışması kuralın kapatmak
+    için var olduğu serbestliği geri açardı. M4 en sona konur çünkü ölçtüğü şey R değil
+    sermaye hızıdır — C-1 bir R kapısıdır.
+    """
+    hold_ratio = (
+        median_hold_stop / median_hold_tp
+        if median_hold_tp and not math.isnan(median_hold_tp) and median_hold_tp > 0.0
+        else float("nan")
+    )
+    branches = [
+        ("M2", "kuyruk (trailing / hedefsiz)", median_drift_r_tp, M2_MIN_MEDIAN_DRIFT_R,
+         _at_least(median_drift_r_tp, M2_MIN_MEDIAN_DRIFT_R)),
+        ("M1", "geri dönüş (breakeven + kısmi çıkış)", median_mfe_r_stop, M1_MIN_MEDIAN_MFE_R,
+         _at_least(median_mfe_r_stop, M1_MIN_MEDIAN_MFE_R)),
+        ("M4", "oyalanma (zaman stop'u)", hold_ratio, M4_MIN_HOLD_RATIO,
+         _at_least(hold_ratio, M4_MIN_HOLD_RATIO)),
+    ]
+    fired = next((branch for branch in branches if branch[4]), None)
+    return {
+        "measurements": [
+            {"id": name, "family": family, "measured": value, "threshold": threshold, "fired": ok}
+            for name, family, value, threshold, ok in branches
+        ],
+        "branch": fired[0] if fired else "yok",
+        "family": fired[1] if fired else "tur kapanır (varyant kurulmaz)",
+        "round_closes": fired is None,
+    }
+
+
+def _at_least(value: float, threshold: float) -> bool:
+    """`nan` bir dalı TETİKLEMEZ: ölçülemeyen bir koşul sağlanmış sayılamaz."""
+    return not math.isnan(value) and value >= threshold
 
 
 def distribution(values: Sequence[float]) -> dict[str, float]:
@@ -283,13 +385,49 @@ def format_buckets(title: str, rows: Sequence[Mapping[str, Any]]) -> str:
 
 def format_continuation(rows: Mapping[str, Mapping[str, float]]) -> str:
     lines = ["", "TP SONRASI DEVAM — hedefte kapanan pozisyonun kesilen kuyruğu", "-" * 78,
-             "Çıkış fiyatının üstüne çıkılan azami mesafe (R), çıkıştan sonraki H bar içinde.",
-             "Bir kuralın kazancı DEĞİLDİR: trailing bir stop taşır, bu sayı taşımaz.", "",
+             "Çıkış fiyatının üstüne çıkılan AZAMİ mesafe (R), çıkıştan sonraki H bar içinde.",
+             "Bir kuralın kazancı DEĞİLDİR ve bir dalı TETİKLEMEZ: bu ölçü tanım gereği ≥ 0'dır",
+             "ve sürüklenmesiz bir yürüyüşte bile √H hızında büyür. Kural işaretli ölçüye bakar.",
+             "",
              f"{'ufuk (bar)':22s}{'n':>6}{'medyan':>10}{'p75':>10}{'p90':>10}{'azami':>10}{'ort.':>10}"]
     for horizon, stats in rows.items():
         lines.append(
             f"{horizon:22s}{int(stats['n']):6d}{_cell(stats['median']):>10}{_cell(stats['p75']):>10}"
             f"{_cell(stats['p90']):>10}{_cell(stats['max']):>10}{_cell(stats['mean']):>10}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def format_drift(rows: Mapping[str, Mapping[str, float]]) -> str:
+    lines = ["", "TP SONRASI İŞARETLİ HAREKET — kuralın (M2) baktığı ölçü", "-" * 78,
+             "H. barın KAPANIŞI eksi çıkış fiyatı (R). Martingal altında medyanı SIFIRDIR;",
+             "sıfırdan sapması gerçek bir sürüklenmedir. Pencere dolmayan pozisyon `—`.", "",
+             f"{'ufuk (bar)':22s}{'n':>6}{'medyan':>10}{'p75':>10}{'p90':>10}{'azami':>10}{'ort.':>10}"]
+    for horizon, stats in rows.items():
+        lines.append(
+            f"{horizon:22s}{int(stats['n']):6d}{_cell(stats['median']):>10}{_cell(stats['p75']):>10}"
+            f"{_cell(stats['p90']):>10}{_cell(stats['max']):>10}{_cell(stats['mean']):>10}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def format_primary_rule(rule: Mapping[str, Any]) -> str:
+    """Ön-kayıtlı seçim kuralının uygulanması. Kural bir kez çalışır; sonucu tartışılmaz."""
+    lines = ["", "BİRİNCİL VARYANT SEÇİMİ (kural koşudan ÖNCE sabitlendi — docs/backtest.md > 6e)",
+             "-" * 86,
+             f"{'dal':6s}{'aile':38s}{'ölçülen':>12}{'eşik':>10}{'':>8}"]
+    for item in rule["measurements"]:
+        mark = "TETİK" if item["fired"] else "—"
+        lines.append(
+            f"{item['id']:6s}{item['family']:38s}{_cell(item['measured']):>12}"
+            f"{_cell(item['threshold']):>10}{mark:>8}"
+        )
+    lines.append("")
+    lines.append(f"SEÇİLEN: {rule['family']}  (dal: {rule['branch']})")
+    if rule["round_closes"]:
+        lines.append(
+            "Hiçbir dal tetiklenmedi: yolda çıkışın sömürebileceği bir yapı yok. Bu bir\n"
+            "başarısızlık değil bir SONUÇTUR — varyant turu kurulmaz ve kayıt yazılır."
         )
     return "\n".join(lines) + "\n"
 
@@ -424,6 +562,20 @@ def diagnose(
         )
         for horizon in CONTINUATION_HORIZONS
     }
+    payload["drift_after_tp"] = {
+        str(horizon): distribution(
+            [row["drift_r"][str(horizon)] for row in by_reason.get("tp", [])]
+        )
+        for horizon in CONTINUATION_HORIZONS
+    }
+    # Kural teşhisin İÇİNDE uygulanır: sonucu bir insanın okuyup dalı seçmesi, kuralın
+    # kapatmak için var olduğu serbestliği geri açardı (docs/backtest.md > 6e).
+    payload["primary_rule"] = select_primary_family(
+        median_mfe_r_stop=payload["mfe_prior_by_exit"].get("stop", {}).get("median", float("nan")),
+        median_drift_r_tp=payload["drift_after_tp"][str(M2_HORIZON_BARS)]["median"],
+        median_hold_stop=payload["holding_by_exit"].get("stop", {}).get("median", float("nan")),
+        median_hold_tp=payload["holding_by_exit"].get("tp", {}).get("median", float("nan")),
+    )
     payload["breakdowns"] = {
         kind: {model: groups for model, groups in per_model.items() if model == MODEL}
         for kind, per_model in (result.breakdowns or {}).items()
@@ -507,6 +659,8 @@ def format_report(payload: Mapping[str, Any]) -> str:
         "HEDEFE VARANLARIN MAE'si (kapanış barı hariç) — breakeven kuralının kaç kazananı keseceği",
         payload["mae_prior_buckets_tp"]))
     out.append(format_continuation(payload["continuation_after_tp"]))
+    out.append(format_drift(payload["drift_after_tp"]))
+    out.append(format_primary_rule(payload["primary_rule"]))
     out.append(format_breakdowns(payload.get("breakdowns") or {}))
     out.append(
         "\nOKUMA NOTLARI\n"

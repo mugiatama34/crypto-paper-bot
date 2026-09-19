@@ -809,6 +809,52 @@ da hedefsiz bir varyantın sağ kuyruğu şişer, `sd` büyür ve MDE **kötüle
 MDE sayısını tüm varyantlara uygulamak, kuyruğu geniş bir varyantı olduğundan
 ölçülebilir göstermek olurdu.
 
+### Eksen istatistiği EŞLEŞTİRİLMİŞTİR: pozisyon başına ΔR
+
+Varyantlar `ema_trend`in girişini ve stop'unu MİRAS ALIR (varyant tanımları AYRI bir
+ön-kayıtla ve yine koşudan önce gelecek):
+aynı sembolde, aynı barda, aynı stop mesafesiyle girilir ve ayrışan tek şey çıkıştır.
+İki model bu yüzden **aynı fiyat yolunu** paylaşır ve farkın varyansı, iki bağımsız
+ölçümün varyansından çok daha küçüktür.
+
+Eksen istatistiği bu yüzden marjinal ortalama R değil, **eşleşen pozisyonlarda
+`ΔR = R_varyant − R_taban`in ortalamasıdır.** Precedent katmanın içindedir: model 15 ↔
+`scalp_fixed` çifti aynı gerekçeyle çekiliş kimliğini paylaşır (CLAUDE.md > "Çekiliş,
+ölçülmeyen eksende PAYLAŞILIR").
+
+`ρ` (iki modelin R'leri arasındaki korelasyon) **bilinmiyor ve ÖLÇÜLECEK**; ön-kayıtlı
+beklenti ve ondan çıkan güç şudur:
+
+| varsayılan ρ | `sd(ΔR) = 1.42·√(2(1−ρ))` | MDE (n=369, iki yanlı, güç 0.80) |
+|---|---|---|
+| 0.7 | 1.10 | +0.160R |
+| **0.8 (ön-kayıtlı beklenti)** | **0.90** | **+0.131R** |
+| 0.9 | 0.64 | +0.093R |
+
+Yani eşleştirme MDE'yi +0.20R'den **~+0.13R**'ye indirir. Hâlâ beklenen etkinin
+(0.02–0.06R) üstündedir — eşleştirme güç sorununu çözmez, **küçültür**; bu da sonucun
+"ayırt edilemedi" ile bitme ihtimalini düşürür.
+
+Üç şart, sonucu görmeden:
+
+1. **`ρ` ve gerçekleşen `sd(ΔR)` sonucun yanına YAZILIR.** Yukarıdaki tablo bir beklenti;
+   MDE gerçekleşen `sd`den yeniden hesaplanır. Beklentiyi tutmuş gibi raporlamak, gücü
+   olduğundan iyi göstermek olurdu.
+2. **`n` eşleşen pozisyonların sayısıdır, iki defterin toplamı değil.** Dolumlar
+   ayrışır (çıkış kuralı kotayı ve nakdi farklı zamanlarda serbest bırakır — CLAUDE.md
+   aynı ayrışmayı model 15 için yazar), yani eşleşme kesişimdir ve kesişimin dışında
+   kalan pozisyon sayısı da raporlanır.
+3. **C-1 BAĞLAYICI KALIR ve eşleştirme onun YERİNE GEÇMEZ.** Varyant tabandan
+   ölçülebilir biçimde iyi olup hâlâ negatif olabilir; o durumda bulunan şey "daha az
+   kötü"dür ve canlıya alınacak bir şey değildir. İkisi birlikte okunur: ΔR ekseni
+   *"çıkış kuralı bir fark yaratıyor mu"*, C-1 *"bu model para kazanıyor mu"* sorusunu
+   cevaplar.
+
+`ΔR`nin aralığı **eşleştirilmiş bootstrap** ile kurulur (pozisyon çiftleri birlikte
+yeniden örneklenir; bağımsız yeniden örnekleme eşleştirmenin kazancını geri verirdi) ve
+hesap `core/metrics.py`ye girer — ikinci bir R tanımı, aynı defterin iki cevabı demekti
+(kural 7).
+
 ### Kabul kuralı — C-1'in yanına bir KESİNLİK koşulu
 
 C-1 (`ortalama R > 0`) bu örneklemde tek başına yetersizdir (yukarıdaki 1. madde). Bu
@@ -818,10 +864,18 @@ gösterildi" ayrışır — kabul çıtasının edge kapısında (E) kontrol far
 uygulanan ayrımın aynısı (CLAUDE.md > Kabul Çıtası).
 
 Aralık `core/metrics.py::bootstrap_mean_ci` ile kurulur ve tabloda zaten vardır
-(`avg_r_ci_low` / `avg_r_ci_high`); alfa `acceptance.edge_ci_alpha`tan gelir.
+(`avg_r_ci_low` / `avg_r_ci_high`); alfa `acceptance.edge_ci_alpha`tan (0.05) gelir.
 **İKİNCİ bir alfa anahtarı açılmaz** (CLAUDE.md > Rapor Kolonları): aynı tabloda iki
 farklı kesinlik ölçüsü durması, hangi satırın hangi ölçüyle okunacağını belirsiz
-bırakırdı.
+bırakırdı — ve "hangi tabloya bakıyorduk" sorusunun cevabı bir gün belirsizleşirse
+kesinlik ölçüsünün kendisi işe yaramaz hâle gelir. Hazır kolon kullanılmasının ikinci
+kazancı yeni kod yazılmamasıdır: yeni kod yeni hata demektir.
+
+⚠ **Bu seçim SONUÇ GÖRÜLMEDEN ve DAHA SIKI olduğu BİLİNEREK yapıldı.** `edge_ci_alpha`
+iki yanlı %95'tir, yani alt sınırı tek yanlı α=0.025'e denk gelir; tartışılan alternatif
+(iki yanlı %90, yani tek yanlı α=0.05) daha gevşek olurdu. Kayıt buraya, seçim anına
+yazılıyor ki ileride bir varyant kıl payı kalırsa "keşke %90 deseydik" tartışması
+açılmasın — o tartışma, eşiği sonuca göre yeniden yorumlamanın kendisidir (§7.4).
 
 ### Çoklu karşılaştırma — tek BİRİNCİL varyant
 
@@ -837,6 +891,56 @@ yüksektir. Bu yüzden:
 - Birincil varyantın seçim KURALI da koşudan önce yazılır: Adım 0b'nin hangi çıktısının
   hangi varyanta işaret ettiği, teşhis sonucunu GÖRMEDEN sabitlenir. Aksi hâlde
   "baktım, en iyi görüneni seçtim" olurdu.
+
+### BİRİNCİL VARYANTIN SEÇİM KURALI — teşhis çıktısı GÖRÜLMEDEN sabitlendi
+
+Kuralın **çalıştırılabilir kopyası** `scripts/diagnose_ema_exits.py::select_primary_family`
+fonksiyonudur ve eşikler orada sabittir; bu bölüm onu ALINTILAR. Gerekçe: kuralın tek işi
+"sonucu görüp seçmedik"i kanıtlamaktır, iki yerde yazılı bir kural ise bir gün sessizce
+ayrışır ve o kanıtı yok eder. Seçim bir metin değil bir fonksiyondur, teşhisin İÇİNDE
+çalışır ve çıktısı log'a basılır.
+
+Dallar **öncelik sırasıyla** denenir:
+
+| sıra | dal | ölçü (dönem A teşhisi) | eşik | seçilen aile |
+|---|---|---|---|---|
+| 1 | **M2** — kuyruk | `tp` çıkışlarından 20 bar sonraki **İŞARETLİ** hareketin medyanı | ≥ **+0.25R** | kazananı koşturan (trailing / hedefin kaldırılması) |
+| 2 | **M1** — geri dönüş | `stop` çıkışlarının medyan MFE'si (kapanış barı hariç) | ≥ **1.0R** | breakeven + kısmi çıkış |
+| 3 | **M4** — oyalanma | medyan `stop` tutuşu / medyan `tp` tutuşu | ≥ **2.0×** | zaman stop'u |
+| 4 | — | hiçbiri tetiklenmedi | — | **tur KAPANIR, varyant kurulmaz** |
+
+**Eşiklerin gerekçesi (hiçbiri veriden türetilmedi):**
+
+- **M1 = 1.0R** keyfi DEĞİLDİR: `config.yaml > exit_management.breakeven_at_r` değerinin
+  ta kendisidir ve bir breakeven kuralının tetiklenebilmesi için gereken hareket odur.
+- **M2 = +0.25R** ölçülen friksiyonun (0.057R) kabaca dört katıdır. **YUVARLAK bir
+  sayıdır ve öyle seçildiği burada yazılıdır** — sonradan eşik tartışması açılmasın.
+- **M2'nin ufku = 20 bar**, dönem A'nın p90 tutuş süresinin (21 bar) yuvarlanmış hâlidir.
+  O sayı §6d'de koşudan önce yayımlandı; teşhis çıktısından gelmiyor.
+- **M4 = 2.0×** yuvarlak bir katsayıdır ve açıkça yuvarlak seçilmiştir.
+
+**M2 neden İŞARETLİ hareketi ölçer, azami yükselişi değil.** "Çıkıştan sonra ne kadar
+yükseldi" (azami) tanım gereği ≥ 0'dır ve sürüklenmesiz bir yürüyüşte bile ufukla
+birlikte `√H` hızında büyür — 20 barda ~2.4R. Onu eşiğe bağlamak, M2 dalını HER koşulda
+tetiklemek olurdu. İşaretli kapanış farkının medyanı ise martingal altında sıfırdır,
+yani sıfırdan sapması gerçek bir sürüklenmedir. Teşhis ikisini de basar; kural yalnızca
+ikincisine bakar.
+
+**Sıranın gerekçesi.** M2 ile M1 aynı pozisyonlar üzerinde TERS yönde çalışır (biri
+kuyruğu uzatır, öteki keser); ikisi birden tetiklendiğinde hangisinin seçileceği
+önceden yazılmazsa, "hangisi daha mantıklı" tartışması kuralın kapatmak için var olduğu
+serbestliği geri açardı. M4 en sona konur çünkü ölçtüğü şey R değil SERMAYE HIZIDIR ve
+C-1 bir R kapısıdır.
+
+**4. dal bir boşluk değil, bir SONUÇTUR.** Hiçbir dal tetiklenmezse yolda çıkışın
+sömürebileceği bir yapı yok demektir: varyant turu kurulmaz, sicile bu yazılır ve açık
+kalan tek kaldıraç friksiyondur — o da çıkış ekseninde değil, aşağıdaki KAYIT'ta duran
+stop mesafesi ekseninde.
+
+**Kural BİR KEZ çalışır.** Teşhis geldiğinde uygulanır, birincil aile belirlenir ve
+çıkan aile beklenen olmasa bile tartışılmaz. `nan` bir dalı tetiklemez: ölçülemeyen bir
+koşul sağlanmış sayılamaz (eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir — §4'ün
+aynı ilkesi).
 
 ### KAYIT (bir varyant önerisi DEĞİL) — friksiyon stop mesafesine bağlıdır, hedefe değil
 

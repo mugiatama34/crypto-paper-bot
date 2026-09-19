@@ -24,6 +24,7 @@ from scripts.diagnose_ema_exits import (
     check_determinism,
     distribution,
     position_paths,
+    select_primary_family,
 )
 
 
@@ -168,3 +169,72 @@ def test_determinism_gate_fails_on_a_drifting_average() -> None:
     )
     assert gate["passed"] is False
     assert gate["checks"]["avg_r"]["ok"] is False
+
+
+# --------------------------------------------------------------------------- #
+# Birincil varyant seçim kuralı (docs/backtest.md > 6e)
+# --------------------------------------------------------------------------- #
+def _select(**overrides: float) -> dict:
+    """Hiçbir dalı tetiklemeyen taban; test yalnızca ilgilendiği ölçüyü oynatır."""
+    base = dict(
+        median_mfe_r_stop=0.3,      # M1 eşiği 1.0
+        median_drift_r_tp=0.0,      # M2 eşiği +0.25
+        median_hold_stop=6.0,       # M4 eşiği 2.0×
+        median_hold_tp=8.0,
+    )
+    return select_primary_family(**(base | overrides))
+
+
+def test_no_branch_fires_closes_the_round() -> None:
+    """Yolda yapı yoksa tur kapanır — bu meşru bir sonuçtur, bir boşluk değil."""
+    rule = _select()
+    assert rule["round_closes"] is True
+    assert rule["branch"] == "yok"
+
+
+def test_m2_fires_on_signed_post_exit_drift() -> None:
+    rule = _select(median_drift_r_tp=0.25)
+    assert rule["branch"] == "M2"
+    assert rule["round_closes"] is False
+
+
+def test_m1_fires_when_losers_first_run_in_favour() -> None:
+    rule = _select(median_mfe_r_stop=1.0)
+    assert rule["branch"] == "M1"
+
+
+def test_m4_fires_on_the_holding_time_ratio() -> None:
+    rule = _select(median_hold_stop=16.0, median_hold_tp=8.0)
+    assert rule["branch"] == "M4"
+
+
+def test_priority_is_m2_then_m1_then_m4() -> None:
+    """Üçü birden tetiklense bile sıra önceden yazılıdır; tartışma yok."""
+    rule = _select(median_drift_r_tp=0.9, median_mfe_r_stop=1.4,
+                   median_hold_stop=20.0, median_hold_tp=5.0)
+    assert rule["branch"] == "M2"
+    assert [item["fired"] for item in rule["measurements"]] == [True, True, True]
+
+    without_m2 = _select(median_mfe_r_stop=1.4, median_hold_stop=20.0, median_hold_tp=5.0)
+    assert without_m2["branch"] == "M1"
+
+
+def test_thresholds_are_inclusive_at_the_boundary() -> None:
+    """Sınır 'en az bu kadar'dır; kıl payı altı tetiklemez."""
+    assert _select(median_mfe_r_stop=0.999)["round_closes"] is True
+    assert _select(median_mfe_r_stop=1.0)["branch"] == "M1"
+
+
+def test_nan_measurement_never_fires_a_branch() -> None:
+    """Ölçülemeyen bir koşul sağlanmış sayılamaz (eksik çıta, geçilmiş çıta değildir)."""
+    rule = _select(median_drift_r_tp=float("nan"), median_hold_tp=float("nan"))
+    assert rule["round_closes"] is True
+    assert all(not item["fired"] for item in rule["measurements"])
+
+
+def test_signed_drift_is_close_based_and_nan_when_the_window_is_short() -> None:
+    """İşaretli sürüklenme H. barın KAPANIŞIDIR; pencere dolmuyorsa `nan`."""
+    (path,) = position_paths([TRADE], CANDLES)
+    # Çıkıştan sonra iki bar var: kapanışları 130 ve 125 (_frame close=high).
+    assert path["drift_r"]["5"] != path["drift_r"]["5"]  # nan: 5 bar yok
+    assert position_paths([TRADE], CANDLES)[0]["continuation_r"]["5"] == pytest.approx(1.0)
