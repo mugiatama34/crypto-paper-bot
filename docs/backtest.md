@@ -752,6 +752,107 @@ satırıyla, yeni bir model olarak gelir.
 
 ---
 
+## 6e. ÖN-KAYIT — çıkış varyantı turunun İSTATİSTİKSEL GÜCÜ
+
+**Bu bölüm varyant tanımlarından ÖNCE ve Adım 0b'nin (yol teşhisi) sonucu ortaya
+çıkmadan yazıldı; tarih damgası git'tedir.** Sebebi usuldür: aşağıdaki eşikler sonuç
+görüldükten sonra yazılsaydı, "sonuç kötü çıktı, eşik yeniden yorumlanıyor" ile ayırt
+edilemezdi (§7.4). Varyantların kendisi (tanımlar, parametreler, P tahminleri, sicil
+satırı) AYRI bir ön-kayıtla ve yine koşudan önce gelecek; bu bölüm yalnızca o turun
+**okunabilirlik koşullarını** sabitler.
+
+### Ölçümün çözünürlüğü — `ema_trend`in R dağılımı İKİ NOKTALIDIR
+
+Model ne trailing ne zaman stop'u taşır ve hedefi tek dilimdir; yani her pozisyon ya
+hedefte ya ilk stop'ta kapanır (likidasyon iki dönemde de 0). Dağılım bu yüzden iki
+noktalıdır: `%35 → +1.93R`, `%65 → −1.05R`.
+
+| | hesap | değer |
+|---|---|---|
+| standart sapma | `√(p(1−p)·(1.9296+1.0519)²)` | **1.424** |
+| standart hata, A (n=369) | `1.424/√369` | **0.0742** |
+| standart hata, B (n=389) | `1.424/√389` | **0.0722** |
+
+Bağımsız sağlaması defterdedir: `core/metrics.py::bootstrap_mean_ci`in ürettiği aralık
+(A: −0.147 … +0.143) analitik `±1.96·SE = ±0.145` ile çakışıyor.
+
+**§6d'nin sonucu bu ışıkta şöyle okunur:** A `−0.0015 ± 0.074`, B `−0.0165 ± 0.072`.
+İkisi de sıfırdan ayırt edilemez. **Model negatif KANITLANMADI; sıfır kanıtlandı.**
+Bu, §6d > SONUÇ'un **BLOKE** verdiktini DEĞİŞTİRMEZ ve o bölümün hiçbir satırına
+dokunulmaz: model C-3'ten de kalıyordu, ayrıca kanıtlanmamış bir kenara sermaye
+ayrılmaz. Değiştirdiği şey verdikt değil, **bundan sonraki turun ne vaat edebileceğidir.**
+
+### Asgari tespit edilebilir etki (MDE) — turdan ÖNCE yazılır
+
+`n ≈ 400`, `sd ≈ 1.42`, `α = 0.05`, güç `0.80` için:
+
+| test | gereken GERÇEK etki |
+|---|---|
+| iki yanlı | **+0.202R** |
+| tek yanlı | +0.180R |
+
+**Bundan küçük bir iyileşme bu kurulumda görülemez.** Ölçek şudur: brüt kenar A'da
++0.057R, B'de +0.041R; friksiyon 0.057R. Yani gerçekçi bir çıkış iyileştirmesi
+(0.02–0.06R mertebesi) MDE'nin **üçte biri ile beşte biri** arasındadır. Bunun iki
+dürüst sonucu var ve ikisi de şimdi yazılıyor:
+
+1. **"Ortalama R > 0 çıktı" tek başına bir bulgu değildir.** Gerçekten değersiz bir
+   varyantın dönem B'de pozitif çıkma ihtimali ≈ %50 — C-1 bu örneklemde neredeyse
+   yazı-turadır.
+2. **Turun olumlu çıktısı bir kabul değil, bir SIRALAMA ve bir ELEME olabilir.** Bu tur
+   "şu varyant kazandırıyor"u kanıtlayamaz; kanıtlayabileceği şey "şu varyant,
+   ölçülebilir bir farkla KÖTÜLEŞTİRMİYOR / kötüleştiriyor"dur.
+
+**Her varyantın MDE'si KENDİ dağılımından yeniden hesaplanır ve sonucunun yanına
+yazılır.** İki noktalı dağılım yalnızca `ema_trend`in geometrisine aittir: trailing ya
+da hedefsiz bir varyantın sağ kuyruğu şişer, `sd` büyür ve MDE **kötüleşir**. Tek bir
+MDE sayısını tüm varyantlara uygulamak, kuyruğu geniş bir varyantı olduğundan
+ölçülebilir göstermek olurdu.
+
+### Kabul kuralı — C-1'in yanına bir KESİNLİK koşulu
+
+C-1 (`ortalama R > 0`) bu örneklemde tek başına yetersizdir (yukarıdaki 1. madde). Bu
+yüzden varyant turunda C-1, modelin KENDİ ortalama R'sinin güven aralığıyla birlikte
+okunur: **aralığın ALT SINIRI > 0.** Böylece "pozitif çıktı" ile "pozitif olduğu
+gösterildi" ayrışır — kabul çıtasının edge kapısında (E) kontrol farkı için zaten
+uygulanan ayrımın aynısı (CLAUDE.md > Kabul Çıtası).
+
+Aralık `core/metrics.py::bootstrap_mean_ci` ile kurulur ve tabloda zaten vardır
+(`avg_r_ci_low` / `avg_r_ci_high`); alfa `acceptance.edge_ci_alpha`tan gelir.
+**İKİNCİ bir alfa anahtarı açılmaz** (CLAUDE.md > Rapor Kolonları): aynı tabloda iki
+farklı kesinlik ölçüsü durması, hangi satırın hangi ölçüyle okunacağını belirsiz
+bırakırdı.
+
+### Çoklu karşılaştırma — tek BİRİNCİL varyant
+
+Birden fazla varyant sınanacaksa, birinin şansla geçme ihtimali tek varyanttan
+yüksektir. Bu yüzden:
+
+- **Koşudan önce TEK bir varyant BİRİNCİL ilan edilir**; kalanlar raporlanır ama kabul
+  çıtasına aday değildir. "Beşinin arasından B'de en iyisini seçmek", B'yi OOS olmaktan
+  çıkarırdı.
+- Birincil varyantın tahmini §6c sicilinin **3.** satırıdır ve BH düzeltmesine
+  (`q = 0.10`) girer. Satır, varyant tanımlarıyla birlikte ve koşudan ÖNCE açılır;
+  sonucu ne olursa olsun orada kalır (§7.5).
+- Birincil varyantın seçim KURALI da koşudan önce yazılır: Adım 0b'nin hangi çıktısının
+  hangi varyanta işaret ettiği, teşhis sonucunu GÖRMEDEN sabitlenir. Aksi hâlde
+  "baktım, en iyi görüneni seçtim" olurdu.
+
+### KAYIT (bir varyant önerisi DEĞİL) — friksiyon stop mesafesine bağlıdır, hedefe değil
+
+`cost_per_r ≈ 2c / stop%` özdeşliği, R başına friksiyonun **stop mesafesiyle** ters
+orantılı olduğunu söyler: 1.5×ATR'den 3.0×ATR'ye geçmek onu kabaca YARIYA indirir
+(ölçülen 0.057R → ~0.028R). Hedefin yeri bu sayıya girmez.
+
+**Bu, çıkış varyantı turunun konusu DEĞİLDİR ve o turda denenmeyecektir:** stop
+mesafesi ayrı bir geometri eksenidir ve çıkış ekseniyle birlikte oynatılırsa aradaki
+fark iki değişkenin toplamı olur (CLAUDE.md > Scalp katmanının model kuralları'nın
+"13 ↔ 14 bir eksen değil, bir toplam farktır" gerekçesi). Kaynak sistemde SL 2.5
+denemesi çökmüştü, ama orada hedef de stop'la birlikte kaymıştı — **stop ile hedefin
+AYRIŞTIRILMASI hiç test edilmedi.** Sırası gelirse kendi ön-kaydıyla gelir.
+
+---
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
