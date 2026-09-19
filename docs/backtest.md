@@ -1169,6 +1169,20 @@ vardır). Etkilediği şey dönem A'nın TEZİDİR. Kapsama tablosunda bu üç s
 `completeness` değeri **arşiv kusuru olarak okunamaz**; hangi arşiv gelirse gelsin dönem
 A'da 13/13 mümkün değildir.
 
+### Ölçüm adımının varsayılanı KAPALI — gerekçesi burada durur
+
+`measure-funding.yml`in dağılım adımı (`run_measure`) **varsayılan olarak `false`**;
+probe (`run_probe`) varsayılan olarak `true`. Gerekçe bu bölümün tamamıdır: bugünkü veri
+yolu 60 gün veriyor ve dönem A 30 ay — ölçümü elle açmadan koşturmak, 30 aylık bir soruya
+60 günlük bir pencereyle cevap arayıp neredeyse boş bir rapor üretmek demektir. Boş bir
+rapor zararsız değildir: "ölçtük, olay yok" ile "ölçemedik" aynı log'a benzer ve karar
+50'nin tam olarak ayırmak istediği şey budur (engellenmiş tez ↔ düşmüş tez).
+
+**Bu bir kapı DEĞİL bir varsayılandır:** kimse engellenmiyor, tek kutu işaretlenerek
+koşuluyor. Arşiv bu bölümün kapılarını geçtiğinde varsayılan `true`ya döner ve o
+değişikliğin gerekçesi de buraya yazılır — "bu neden kapalıydı" sorusunun cevabı
+workflow'un git geçmişinde değil, ön-kayıtta durmalı.
+
 ### Bu ön-kayıt neyi SEÇMİYOR
 
 **Eşiği.** Hangi persentil, hangi yön (pozitif/negatif kuyruk), hangi kümeleme kuralı bir
@@ -1208,6 +1222,17 @@ Bunlar eksiklik değil, kapsam dışıdır; sonuç okunurken iddia edilmeyecek �
 - Rejim değişimi (geçmişte kârlı olan gelecekte kârlı değildir)
 - Kayma varsayımının ince kitaplı sembollerde tutup tutmadığı
   (`breakdowns.symbol > cost_per_r` ipucu verir ama kanıt değildir)
+- **§6f'nin C kapısının GEÇMESİ, iki serinin AYNI olduğu anlamına gelmez.** Geçmesi
+  "olay kümeleri bu örneklemde AYIRT EDİLEMİYOR" demektir — 60 günde sembol başına ~180
+  damga, p95 ≈ 9 olay, 13 sembolde ≈ 117 olay, ve `Jaccard ≥ 0.70` her iki tarafta ~21
+  olayın kaymasına izin verir. Bu satır buraya, ileride birinin kapıyı "arşiv
+  doğrulandı" diye okuyacağı için yazıldı: kapı bir doğrulama değil, bir AYIRT
+  EDİLEMEZLİK ölçüsüdür ve örneklemi küçüktür.
+- **Cross-venue bir arşivle seçilen bir eşiğin OKX'te de aynı olayları seçtiği**
+  (§6f > Adım C). Gösterilen şey yalnızca ayırt edilemediğidir; "aynı oran" şartı başka
+  bir borsada anlamsızdır ve bu sapma arşiv kullanılırsa §5'e yazılır. Satır arşiv
+  gelmeden önce buraya kondu — sonradan eklenseydi, sonucu gördükten sonra yazılmış bir
+  uyarı olurdu.
 
 ---
 
