@@ -364,6 +364,13 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 |---|---|---|---|---|---|
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, commit `e912efd` (TADİLAT-1: `93cd891`) | A: 2022-01-01 → 2024-12-30 (sinyal kesimi 06-30), B: 2024-07-21 → 2026-09-18 | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | **P1 TUTTU** (1.549 / 1.206) ama **hipotez DÜŞTÜ**: ortalama R A −0.0015 / B −0.0165 (C-1), çıpa da geçilemedi (C-3) → **BLOKE**, §6d > SONUÇ |
+| 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 48 |
+
+**3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
+model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
+sicilde durmasının sebebi paydanın kendisi değil, **kaç denemenin yapıldığının
+görünmesidir** — düşen bir denemeyi silmek, sicilin engellemek için var olduğu yayın
+yanlılığının ta kendisidir.
 
 **Sicildeki 2. satır bu paydaya AİT DEĞİLDİR:** `ema_trend` hipotezi dış bir sistemden geldi, ev içi arama uzayından seçilmedi (bkz. §6d > Çoklu karşılaştırma). İki payda ayrı tutulur.
 
@@ -954,6 +961,69 @@ fark iki değişkenin toplamı olur (CLAUDE.md > Scalp katmanının model kurall
 "13 ↔ 14 bir eksen değil, bir toplam farktır" gerekçesi). Kaynak sistemde SL 2.5
 denemesi çökmüştü, ama orada hedef de stop'la birlikte kaymıştı — **stop ile hedefin
 AYRIŞTIRILMASI hiç test edilmedi.** Sırası gelirse kendi ön-kaydıyla gelir.
+
+---
+
+### SONUÇ — kural koşuldu, TUR KAPANDI (varyant kurulmadı)
+
+Koşu: `diagnose-ema-exits` #35435506689, commit `d0332da`, 2026-09-19. Ham çıktı
+artifact'te (`diagnose-ema-exits`, 14 gün); özet yük koşunun log'una basıldı.
+**Bu bölüm sonucu KAYDEDER, kuralları değiştirmez** — yukarıdaki hiçbir eşik, öncelik
+sırası ya da dal tanımı koşudan sonra dokunulmadı.
+
+**Determinizm kapısı GEÇTİ.** Teşhis koşusu, karara giren koşunun (`backtest-ema`
+#35391881083) dönem A sayılarını birebir üretti: 369 pozisyon, 130 tp, 239 stop,
+ortalama R −0.0014889765, azami tutuş 129 bar. `missing_bars = 0`,
+`unchecked_position_bars = 0`. Yani yol istatistiği okunabilir.
+
+**Kuralın uygulanması (bir kez çalıştı):**
+
+| dal | aile | ölçülen | eşik | sonuç |
+|---|---|---|---|---|
+| M2 | kuyruk (trailing / hedefsiz) | **+0.153R** | ≥ +0.25R | tetiklemedi |
+| M1 | geri dönüş (breakeven + kısmi) | **0.552R** | ≥ 1.0R | tetiklemedi |
+| M4 | oyalanma (zaman stop'u) | **0.667×** | ≥ 2.0× | tetiklemedi |
+
+**SEÇİLEN: 4. dal — tur kapanır, varyant kurulmaz.**
+
+#### Ölçülen yol (kayıt)
+
+| çıkış | n | tutuş: medyan / p75 / p90 / azami (bar) | MFE\* medyan | MAE\* medyan |
+|---|---|---|---|---|
+| `tp` | 130 | 9 / 15.8 / 22 / 129 | +1.62R | −0.41R |
+| `stop` | 239 | 6 / 12 / 20 / 43 | +0.55R | −0.77R |
+
+\* kapanış barı HARİÇ (kural 13b): bir çıkış kuralının karar anında görebileceği hareket.
+
+Stop'la kapananların MFE dağılımı (kapanış barı hariç, n=222 — kapanıştan önce barı
+olan pozisyonlar): `%46.8` hiç +0.5R'ye ulaşamadı, `%24.3` 0.5–1.0R, `%16.7` 1.0–1.5R,
+`%12.2` 1.5–2.0R. Hedefe varanların MAE'si: `%34.7` −0.25R'den derine hiç inmedi,
+`%17.7` −0.75R'nin altına indi.
+
+TP sonrası İŞARETLİ hareketin medyanı ufuklar arasında işaret değiştiriyor:
+5 bar −0.10R, 10 bar −0.23R, **20 bar +0.15R**, 40 bar −0.37R. Kural yalnızca 20 barlık
+ufka bakar (o ufuk koşudan önce sabitlenmişti) ve orada da eşiğin altında kalıyor;
+diğer üç ufkun negatif olması, +0.15R'nin kararlı bir sürüklenme DEĞİL gürültü
+olduğunu söylüyor — martingal ile uyumlu. Azami YÜKSELİŞ ölçüsü (20 barda medyan
++1.46R) bu tabloda bir bulgu değildir: sürüklenmesiz bir yürüyüşte de aynı mertebede
+çıkar ve kural bu yüzden ona bakmıyor.
+
+#### Ne öğrenildi (bir kural değil, bir kayıt)
+
+- **Zaman stop'unun ön kabulü TERSİNE çıktı.** Kaybedenler kazananlardan DAHA HIZLI
+  ölüyor (medyan 6 ↔ 9 bar, p90 20 ↔ 22 bar). Bir zaman stop'u bu dağılımda önce
+  kazananları keserdi; "oyalanan kaybedenleri kes" tezinin dayanağı bu veride yok.
+- **Kaybedenlerin yarısı hiç kâra geçmiyor:** medyan MFE +0.55R ve `%46.8`'i +0.5R'yi
+  bile görmüyor. Breakeven'ın koruyacağı bir kâr çoğu kayıpta hiç oluşmamış.
+- **Hedefte kesilen kuyruk ölçülebilir değil:** çıkış sonrası işaretli hareket sıfır
+  etrafında salınıyor. "TP'ler erken kesiyor" iddiası bu pencerede desteklenmiyor.
+- Üçü birlikte, §6e'nin 4. dalının tanımladığı durumdur: **yolda çıkışın sömürebileceği
+  bir yapı yok.** Kenar sinyalin kendisinde ve küçük (brüt +0.057R ↔ friksiyon 0.057R);
+  onu çıkış geometrisini oynatarak büyütmenin bu veride bir dayanağı yok.
+
+Açık kalan tek kaldıraç friksiyondur ve o, çıkış ekseninde değil **stop mesafesi**
+ekseninde durur (yukarıdaki KAYIT). O eksen kendi ön-kaydıyla gelir; bu tur onu
+denemedi ve denemeyecek.
 
 ---
 

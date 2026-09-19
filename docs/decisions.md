@@ -3738,3 +3738,78 @@ anlamlı göstermek olurdu — sicilin var oluş sebebi budur.
 işlem sayısı kolonlarda, çünkü dönem A'da evren 13 değil 9 sembolle başlıyor).
 `docs/backtest.html` ikisini de çizer ve HİÇBİRİNİ yeniden hesaplamaz (kural 7):
 verdikt de yükten okunur.
+
+## 48. Çıkış varyantı turu: hipotez teşhis aşamasında düştü, tur KAPANDI
+
+**Soru dışarıdan geldi ve makuldü:** `ema_trend` bloke edilmişti (karar 47), kenar
+giriş sinyalinde görünüyordu (dönem B'de ödeme oranı 1.61, kazanma oranı %34.7) ve
+"çıkış geometrisi kenarı yiyor" tezi, çıkış mekanizması varyantlarını denemeyi
+öneriyordu. Bu kayıt, o turun neden hiç kurulmadığını yazar.
+
+**Hipotezin öncülü YAPI düzeyinde yanlıştı.** Tez, ters sinyalde pozisyonun çevrildiği
+bir mekanizma varsayıyordu — kaynak sistemde (TradingView `strategy.entry`) gerçekten
+öyle, ama repo implementasyonunda öyle değil: `strategies/ema_trend.py`
+`manage_positions`ı uygulamaz, yani çıkış evreni `{tp, stop, liquidation}`tır ve
+likidasyon iki dönemde de 0'dır. Ölçülen ters sinyal çıkışı payı **%0** (doğrulama
+ölçütü >%30). Ödeme oranının hedefin (2R) altında kalmasının gerçek sebebi de başkaydı:
+dolum kuralı (kural 13) emri SONRAKİ barın açılışından doldurur, yani kesişim barından
+sonraki boşluk girişi yukarı kaydırır — hedefte kapanan pozisyon 2.0R değil **1.93R**,
+stop'ta kapanan −1.00R değil **−1.05R** yazar. Kapı işini yaptı: hipotez düştü ve
+varyant kurulmadı.
+
+**Yerine geçen soru ölçülebilirdi, ama ancak YOL verisiyle.** Sürüklenmesiz bir
+yürüyüşte hedefe (+3×ATR) stop'tan (−1.5×ATR) önce varma olasılığı %33.3'tür; ölçülen
+%35.2 (A) ve %34.7 (B). Yani sapma var, küçük (1.4–1.9 puan) ve nerede yoğunlaştığı
+bilinmiyordu — brüt kenar +0.057R/+0.041R, friksiyon 0.057R. Şeklini ölçmeden varyant
+tanımlamak tahmin olurdu; tahminle tanımlanan varyant ise ilk kapıda "kurtarmak için
+ayar arama"ya dönerdi (docs/backtest.md > 7.1).
+
+**Ölçüm ayrı bir araçla ve salt okunur yapıldı** (`scripts/diagnose_ema_exits.py`,
+Adım 0b): ikinci bir backtest değil (`run_backtest`i çağırır, pencereyi
+`backtest_ema.py`den ithal eder), metrik hesaplamaz (kural 7), dönem B parametresi
+YOKTUR — B, varyantların OOS penceresiydi ve yol istatistiğini bir kez görmek, ondan
+sonra seçilen her eşiği B'ye bakarak seçilmiş yapardı. Determinizm kapısı içindedir ve
+geçti: karara giren koşunun dönem A sayıları birebir yeniden üretildi (369 pozisyon,
+130 tp, 239 stop, ort. R −0.0014889765).
+
+**Seçim kuralı koşudan ÖNCE yazıldı, KODA konuldu ve bir kez çalıştı.** Dört dal
+(kuyruk / geri dönüş / oyalanma / hiçbiri), yazılı öncelik sırası ve gerekçelendirilmiş
+eşikler (docs/backtest.md > 6e). Kuralın metin değil FONKSİYON olmasının sebebi, tek
+işinin "sonucu görüp seçmedik"i kanıtlamak olmasıydı: teşhis çıktısını bir insanın
+okuyup dalı seçmesi, kuralın kapatmak için var olduğu serbestliği geri açardı. Ölçülen:
+M2 +0.153R (eşik +0.25R), M1 0.552R (eşik 1.0R), M4 0.667× (eşik 2.0×). **Hiçbiri
+tetiklemedi -> 4. dal: tur kapandı.**
+
+**Üç şey öğrenildi ve üçü de kayıttır, kural değil:**
+
+1. **Zaman stop'unun ön kabulü tersine çıktı:** kaybedenler kazananlardan daha HIZLI
+   ölüyor (medyan 6 ↔ 9 bar). Bir zaman stop'u bu dağılımda önce kazananları keserdi.
+2. **Kaybedenlerin yarısı hiç kâra geçmiyor** (medyan MFE +0.55R; %46.8'i +0.5R'yi bile
+   görmüyor), yani breakeven'ın koruyacağı kâr çoğu kayıpta hiç oluşmuyor.
+3. **Hedefte kesilen kuyruk ölçülemiyor:** çıkış sonrası İŞARETLİ hareketin medyanı
+   ufuklar arasında işaret değiştiriyor (5 bar −0.10R, 10 bar −0.23R, 20 bar +0.15R,
+   40 bar −0.37R). Azami yükseliş ölçüsü büyük çıkar ama sürüklenmesiz bir yürüyüşte de
+   büyüktür — bu yüzden kural ona değil işaretli ölçüye bakar.
+
+**Güç hesabı da bu turdan önce yazıldı ve turun ne vaat edebileceğini sınırlıyordu.**
+`ema_trend`in R dağılımı iki noktalıdır (sd 1.42), n≈370'te SE ≈ 0.074, yani MDE
++0.20R. Gerçekçi bir çıkış iyileştirmesi (0.02–0.06R) bunun üçte biri ile beşte biri
+arasındadır. Bunun iki sonucu vardı ve ikisi de ön-kayda girdi: (a) mevcut sonuç
+"model negatif kanıtlandı" değil **"sıfır kanıtlandı"** demektir (BLOKE verdikti yine de
+değişmez — C-3'ten de kalıyordu ve kanıtlanmamış bir kenara sermaye ayrılmaz);
+(b) eksen istatistiği eşleştirilmiş ΔR olacaktı (varyantlar girişi ve stop'u miras
+aldığı için aynı yolu paylaşırlar; ρ≈0.8 beklentisiyle MDE ≈ +0.13R). Tur kapandığı
+için ikisi de kullanılmadı ama ön-kayıtta duruyor: bir sonraki tur aynı çıtayı bulacak.
+
+**Sicile 3. satır olarak yazıldı** (docs/backtest.md > 6c), düştüğü hâlde — hatta tam
+da düştüğü için. Satır BH paydasına girmez (hipotez bir model koşusuna hiç dönüşmedi,
+düzeltilecek bir `p` yok) ama sicilde durur: kaç denemenin yapıldığı görünmezse,
+kalan sonuçlar olduğundan anlamlı görünür.
+
+**Açık kalan tek kaldıraç friksiyondur ve bu turun konusu DEĞİLDİ.** `cost_per_r ≈ 2c /
+stop%` özdeşliği R başına friksiyonu stop MESAFESİNE bağlar, hedefe değil: 1.5×ATR'den
+3.0×ATR'ye geçmek onu kabaca yarıya indirir. Bu ayrı bir geometri eksenidir; çıkış
+ekseniyle birlikte oynatılsaydı aradaki fark iki değişkenin toplamı olurdu (13 ↔ 14
+çiftinin düştüğü hata). Kaynak sistemde SL 2.5 denemesi çökmüştü ama orada hedef de
+stop'la birlikte kaymıştı — stop ile hedefin AYRIŞTIRILMASI hiç test edilmedi. Sırası
+gelirse kendi ön-kaydıyla gelir (docs/backtest.md > 6e > KAYIT).
