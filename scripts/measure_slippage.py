@@ -56,11 +56,11 @@ import logging
 import statistics
 import sys
 import time
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+
+import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -175,10 +175,20 @@ class BookError(RuntimeError):
     """Kitap çekilemedi."""
 
 
+# İstek `requests` ile atılır, `urllib` ile DEĞİL — ve bu bir stil tercihi değil, ÖLÇÜLMÜŞ
+# bir arızanın onarımıdır (karar 51). Çıplak `urllib` `Python-urllib/3.11` User-Agent'ı
+# gönderir ve iki borsanın önündeki CDN de onu 403 ile keser: koşu #1 (bybit) ve #2 (okx)
+# 13 sembolün 260 örneğinin TAMAMINI böyle kaybetti. Projenin canlı veri yolu
+# (`core/data.py::_default_session`) zaten `requests.Session` kullanıyor ve aynı
+# runner'lardan aynı borsayı saatlerdir okuyor — yani engel borsada değil, bu dosyanın
+# İKİNCİ bir HTTP istemcisi kullanmasındaydı.
+_SESSION = requests.Session()
+
+
 def _get_json(url: str, params: Mapping[str, str], *, timeout: float) -> dict[str, Any]:
-    query = urllib.parse.urlencode(dict(params))
-    with urllib.request.urlopen(f"{url}?{query}", timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    response = _SESSION.get(url, params=dict(params), timeout=timeout)
+    response.raise_for_status()
+    return json.loads(response.text)
 
 
 def fetch_book_bybit(symbol: str, *, timeout: float) -> Book:
