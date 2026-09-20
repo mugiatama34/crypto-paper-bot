@@ -81,6 +81,16 @@
   }
   .sig .sig-sym { font-weight: 600; overflow-wrap: anywhere; }
   .sig .sig-meta { color: var(--ink-dim); font-size: 11.5px; }
+  /* Reddedilen emir, ÜRETİLEN sinyalden gözle ayrılır: ikisi aynı listede aynı
+     görünseydi "açılamayan" ile "kuyruğa giren" aynı olay sanılırdı. Ayrım renk
+     TEK BAŞINA taşımaz — başlık satırı ve satır başındaki işaret de söyler (renk
+     körlüğünde renk yeterli bir ipucu değildir). */
+  .sig.rej { border-left: 2px solid var(--neg); padding-left: 7px; }
+  .sig.rej .sig-why { color: var(--neg-ink); }
+  .siglist-h {
+    margin-top: 7px; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--ink-dim);
+  }
 
   @media (min-width: 480px) {
     .wide { display: block; }
@@ -480,7 +490,7 @@ function renderRound() {
     "Bir <b>sinyal</b> bir işlem değildir: emir bir SONRAKİ barın açılışından dolar " +
     "(kural 13) ve o anda kota, nakit ya da açılış boşluğu kapıları onu reddedebilir. " +
     "Reddedilen emir deftere hiç girmez — yukarıdaki iki tabloda da görünmez, " +
-    "<b>sebebi yalnızca burada durur</b>. " +
+    "<b>hangisinin neden açılamadığı yalnızca burada durur</b>. " +
     "<b>Bu bölüm son turu gösterir</b>, geçmişi değil: tur raporu her turda üzerine " +
     "yazılır (<code>docs/data/metrics_*.json &gt; round</code>); daha eski turların " +
     "sayıları depo geçmişindeki sürümlerindedir. Sayılar bir <b>denetim izidir</b>, " +
@@ -519,6 +529,17 @@ function renderRound() {
           esc(rejectLabel(code)) + (count > 1 ? " ×" + count : "") + "</span>";
       }).join("");
 
+      // REDDEDİLEN emirler: turun asıl cevabı. Rozetler "kaç tane"yi söyler, bu liste
+      // "hangileri"ni — bildirilen bir sinyalin başına ne geldiği ancak sembol düzeyinde
+      // okunabilir. Gerekçe METNİ yükten gelir (`core/portfolio.py` üretir): burada
+      // koddan Türkçe'ye çeviren ikinci bir tablo, kural değiştiğinde sessizce eskirdi.
+      const rejected = (m.rejected || []).map((r) =>
+        '<div class="sig rej">' + dirBadge(r.direction) +
+        '<span class="sig-sym">' + esc(r.symbol) + "</span>" +
+        '<span class="sig-why">' + esc(r.detail || rejectLabel(r.code)) + "</span>" +
+        '<span class="sig-meta">bar ' + esc(shortTs(r.bar)) +
+        " → dolum denendi " + esc(shortTs(r.at)) + "</span></div>").join("");
+
       // `emitted` turun TÜM barlarını taşır (scalp'te `signals_per_bar` açık, bkz.
       // CLAUDE.md > Telafi edilen barlarda sinyal): bar damgası bu yüzden satırda
       // durur — hangi barın kapanışına ait olduğu sonradan geri hesaplanamaz.
@@ -530,6 +551,15 @@ function renderRound() {
         " · stop " + esc(price(e.stop_price)) +
         " · hedef " + esc(price(e.target_price)) + "</span></div>").join("");
 
+      // Rozet VAR ama kayıt YOK: bu bölümden önce üretilmiş bir yük, ya da ret bir
+      // ÇIKIŞ emrine ait (liste yalnızca sinyalleri taşır). İkisi de "hangileri"
+      // sorusunu cevapsız bırakır ve bu SÖYLENİR — sessiz bir boşluk, okuyucuya
+      // "demek ki bir sinyal reddedilmedi" dedirtirdi.
+      const unlisted = badges && !rejected
+        ? '<div class="siglist-h">Ret sayıldı ama kaydı yok: yük bu bölümden önce ' +
+          "üretilmiş ya da ret bir çıkış emrine ait (liste yalnızca sinyalleri taşır).</div>"
+        : "";
+
       return '<article class="row">' +
         '<div class="round-line">' +
           '<div class="row-model">' + modelCell({ model: m.model, layer: layer.key }) + "</div>" +
@@ -537,7 +567,12 @@ function renderRound() {
             "</b></div>" +
           (badges ? '<span class="badges">' + badges + "</span>" : "") +
         "</div>" +
-        (emitted ? '<div class="sigs">' + emitted + "</div>" : "") +
+        (rejected
+          ? '<div class="siglist-h">Açılamayan emirler</div><div class="sigs">' + rejected + "</div>"
+          : unlisted) +
+        (emitted
+          ? '<div class="siglist-h">Üretilen sinyaller</div><div class="sigs">' + emitted + "</div>"
+          : "") +
         "</article>";
     }).join("");
 

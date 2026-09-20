@@ -48,6 +48,7 @@ import logging
 import math
 import os
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -133,26 +134,36 @@ def _run(args: argparse.Namespace) -> int:
         return 0
 
     as_of = _stamp(payload.get("as_of"))
-    signals = _last_bar_signals(payload, as_of=as_of)
-    if not signals:
-        logger.info("%s barında yeni sinyal yok: bildirim yollanmıyor", payload.get("as_of"))
-        return 0
-
-    span = _bar_span(signals)
     state = _load_state(Path(args.state))
-    fresh = _without_recent(signals, state=state, bar_span=span)
-    if not fresh:
+
+    signals = _last_bar_signals(payload, as_of=as_of)
+    # Ret takibi, durum dosyası GÜNCELLENMEDEN önce seçilir: eşleşme "bu sinyali daha
+    # önce bildirmiştik" koşuludur ve bu turda bildirilenler o koşulu sağlamaz — onların
+    # dolumu bir sonraki barda, yani bir sonraki turda denenecek (kural 13).
+    rejects = _followup_rejects(payload, state=state)
+
+    span = _bar_span(signals, rejects)
+    fresh = _without_recent(signals, state=state.sent, bar_span=span) if signals else []
+    if signals and not fresh:
         logger.info(
-            "%d sinyalin hepsi son %d barda zaten bildirilmişti: bildirim yollanmıyor",
+            "%d sinyalin hepsi son %d barda zaten bildirilmişti: sinyal mesajı yollanmıyor",
             len(signals), DEDUPE_BARS,
+        )
+    if not fresh and not rejects:
+        logger.info(
+            "%s barında yeni sinyal ve bildirilecek ret yok: bildirim yollanmıyor",
+            payload.get("as_of"),
         )
         return 0
 
+    # SIRA: önce sinyal, sonra ret. Aynı turda ikisi birden çıkarsa okuyucu önce yeni
+    # fırsatı, sonra eski sinyalin sonucunu görür; tersi, cevabı sorudan önce koyardı.
     messages = build_messages(fresh)
+    reject_messages = build_reject_messages(rejects)
     if args.dry_run:
         # Durum dosyasına YAZILMAZ: yollanmamış bir mesajı "bildirildi" saymak, gerçek
         # koşuda aynı sinyali susturur ve bildirimi sessizce kaybederdi.
-        print("\n\n---\n\n".join(text for text, _ in messages))
+        print("\n\n---\n\n".join(text for text, _ in [*messages, *reject_messages]))
         return 0
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -165,17 +176,30 @@ def _run(args: argparse.Namespace) -> int:
     # Durum, mesaj mesaj güncellenir: yollanamayan bir mesajın sinyalleri "bildirildi"
     # SAYILMAZ, yoksa susturma penceresi hiç gitmemiş bir bildirimi susturmuş olurdu.
     # Bir mesajın hatası kalanları da susturmaz — hepsi denenir.
-    notified = [
-        signal
-        for text, covered in messages
-        if _send(token=token, chat_id=chat_id, message=text)
-        for signal in covered
-    ]
-    if not notified:
+    def _delivered(
+        batch: Sequence[tuple[str, list[Mapping[str, Any]]]]
+    ) -> list[Mapping[str, Any]]:
+        return [
+            item
+            for text, covered in batch
+            if _send(token=token, chat_id=chat_id, message=text)
+            for item in covered
+        ]
+
+    notified = _delivered(messages)
+    notified_rejects = _delivered(reject_messages)
+    if not notified and not notified_rejects:
         logger.warning("hiçbir mesaj yollanamadı, durum dosyası güncellenmedi")
         return 0
 
-    _save_state(Path(args.state), state=state, notified=notified, as_of=as_of, bar_span=span)
+    _save_state(
+        Path(args.state),
+        state=state,
+        notified=notified,
+        notified_rejects=notified_rejects,
+        as_of=as_of,
+        bar_span=span,
+    )
     return 0
 
 
@@ -239,23 +263,29 @@ def _last_bar_signals(
     return signals
 
 
-def _bar_span(signals: Sequence[Mapping[str, Any]]) -> timedelta | None:
-    """Bar süresi: sinyalin kendi `fills_at - bar` farkı (kural 13'ün bir barı).
+def _bar_span(*groups: Sequence[Mapping[str, Any]]) -> timedelta | None:
+    """Bar süresi: kaydın kendi "dolum barı − sinyal barı" farkı (kural 13'ün bir barı).
 
     Config'ten okunmaz, çünkü rapor zaten ikisini de taşır ve script'in katmanın bar
     ayarına dair ikinci bir varsayım kurması, iki kaynağın bir gün ayrışması demekti.
+
+    Hem `emitted` (`fills_at`) hem `rejected` (`at`) kayıtlarından okunur: yalnızca
+    sinyal listesine bakmak, sinyalsiz ama retli bir turda bar süresini ölçülemez
+    kılar ve susturma penceresi o turda sessizce uygulanmaz olurdu.
     """
-    for item in signals:
-        bar, fills_at = _stamp(item.get("bar")), _stamp(item.get("fills_at"))
-        if bar is not None and fills_at is not None and fills_at > bar:
-            return fills_at - bar
+    for group in groups:
+        for item in group:
+            bar = _stamp(item.get("bar"))
+            filled = _stamp(item.get("fills_at")) or _stamp(item.get("at"))
+            if bar is not None and filled is not None and filled > bar:
+                return filled - bar
     return None
 
 
 def _without_recent(
     signals: Sequence[Mapping[str, Any]],
     *,
-    state: dict[str, str],
+    state: Mapping[str, str],
     bar_span: timedelta | None,
 ) -> list[dict[str, Any]]:
     """Son `DEDUPE_BARS` bar içinde aynı (model, sembol, yön) bildirilmişse eler.
@@ -285,6 +315,44 @@ def _without_recent(
     return kept
 
 
+def _followup_rejects(
+    payload: Mapping[str, Any], *, state: NotifyState
+) -> list[dict[str, Any]]:
+    """Turda açılamayan emirlerden, DAHA ÖNCE BİLDİRDİKLERİMİZ.
+
+    Kaynak `round.models[].rejected` (bkz. `core/engine.py::RejectedOrder`): ret SAYISI
+    (`rejections`) hangi sinyalin düştüğünü söylemez, bu liste söyler.
+
+    **Filtre bildirdiklerimizle sınırlıdır ve bu ZORUNLUDUR.** Ret, sistemin olağan
+    işleyişidir: referans çıpası her turda iki `duplicate_position` alır (kural 15) ve
+    kotası dolu bir model her barda ret yazar. Hepsini bildirmek, susturma penceresinin
+    engellemek için var olduğu gürültünün tam olarak kendisi olurdu. Eşleşme
+    `sent[anahtar] == ret.bar` ile kurulur: yani "senin telefonuna düşen O sinyal
+    açılamadı" — başka hiçbir ret mesaj üretmez.
+
+    Eşleşmenin SİNYAL BARINDAN kurulması, ikinci bir kimlik icat etmemenin sonucudur:
+    bildirim o damgayı zaten saklıyor ve ret kaydı onu taşıyor. Dolum barından kurmak,
+    bildirim anında bilinmeyen bir değeri anahtar yapmak olurdu.
+
+    Bir kez bildirilen ret TEKRAR ETMEZ (`state.rejected`): aynı rapor iki kez okunursa
+    (elle koşu, `--force`) ikinci mesaj yeni bir bilgi taşımazdı.
+    """
+    rejects: list[dict[str, Any]] = []
+    for model in (payload.get("round") or {}).get("models") or ():
+        for item in model.get("rejected") or ():
+            row = {**item, "model": item.get("model") or model.get("model")}
+            key, bar = _key(row), _stamp(row.get("bar"))
+            notified = _stamp(state.sent.get(key))
+            if bar is None or notified is None or bar != notified:
+                continue
+            if _stamp(state.rejected.get(key)) == bar:
+                logger.info("%s: bu sinyalin reddi zaten bildirildi, atlanıyor", key)
+                continue
+            rejects.append(row)
+    rejects.sort(key=lambda item: (str(item.get("model")), str(item.get("symbol"))))
+    return rejects
+
+
 def _key(signal: Mapping[str, Any]) -> str:
     return f"{signal.get('model')}|{signal.get('symbol')}|{signal.get('direction')}"
 
@@ -292,7 +360,26 @@ def _key(signal: Mapping[str, Any]) -> str:
 # --------------------------------------------------------------------------- #
 # Durum dosyası (yalnızca bildirim bookkeeping'i — ölçümün parçası DEĞİL)
 # --------------------------------------------------------------------------- #
-def _load_state(path: Path) -> dict[str, str]:
+@dataclass(frozen=True)
+class NotifyState:
+    """İki ayrı defter, tek dosya: hangi sinyal bildirildi, hangisinin ölümü bildirildi.
+
+    Ayrı tutulurlar çünkü iki FARKLI soruyu cevaplarlar. `sent` susturma penceresidir
+    (aynı kurulumu 4 bar boyunca tekrar bildirme); `rejected` ise "bu sinyalin
+    açılamadığını zaten söyledim" demektir. Tek bir haritaya sıkıştırmak, bir ret
+    bildirimini sinyalin kendisi gibi sayıp bir sonraki gerçek sinyali susturur —
+    ya da tersi, aynı reddi her turda tekrar yollardı.
+
+    İkisinin de değeri SİNYALİN BARIDIR (dolum barı değil): eşleşme oradan kurulur,
+    çünkü ret kaydı (`core/engine.py::RejectedOrder.bar`) sinyalin barını taşır ve iki
+    yüzeyin ortak kimliği odur.
+    """
+
+    sent: dict[str, str] = field(default_factory=dict)
+    rejected: dict[str, str] = field(default_factory=dict)
+
+
+def _load_state(path: Path) -> NotifyState:
     """Son bildirim zamanları. Dosya yoksa/bozuksa BOŞ döner, hata fırlatmaz.
 
     Bozuk bir durum dosyası yüzünden bildirimin susması, susturma penceresinin
@@ -301,33 +388,40 @@ def _load_state(path: Path) -> dict[str, str]:
     """
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        sent = payload.get("sent") or {}
-        return {str(key): str(value) for key, value in sent.items()}
+        return NotifyState(
+            sent=_str_map(payload.get("sent")),
+            # `rejected` bu bölümden ÖNCEKİ dosyalarda yoktur ve yokluğu boş demektir:
+            # en kötü ihtimalle bir ret bildirimi bir kez tekrar eder.
+            rejected=_str_map(payload.get("rejected")),
+        )
     except FileNotFoundError:
-        return {}
+        return NotifyState()
     except Exception as exc:  # noqa: BLE001
         logger.warning("%s okunamadı, susturma penceresi bu turda uygulanmıyor: %s", path, exc)
-        return {}
+        return NotifyState()
+
+
+def _str_map(value: Any) -> dict[str, str]:
+    return {str(key): str(item) for key, item in (value or {}).items()}
 
 
 def _save_state(
     path: Path,
     *,
-    state: Mapping[str, str],
+    state: NotifyState,
     notified: Iterable[Mapping[str, Any]],
+    notified_rejects: Iterable[Mapping[str, Any]] = (),
     as_of: datetime | None,
     bar_span: timedelta | None,
 ) -> None:
-    updated = dict(state)
-    for item in notified:
-        bar = item.get("bar")
-        if bar:
-            updated[_key(item)] = str(bar)
+    sent = _with_bars(state.sent, notified)
+    rejected = _with_bars(state.rejected, notified_rejects)
 
     payload = {
         "note": "Telegram sinyal bildiriminin susturma penceresi; ölçümün parçası değildir.",
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "sent": dict(sorted(_pruned(updated, as_of=as_of, bar_span=bar_span).items())),
+        "sent": dict(sorted(_pruned(sent, as_of=as_of, bar_span=bar_span).items())),
+        "rejected": dict(sorted(_pruned(rejected, as_of=as_of, bar_span=bar_span).items())),
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -338,7 +432,22 @@ def _save_state(
     except Exception as exc:  # noqa: BLE001 — yazamamak en kötü ihtimalle tekrar mesajdır
         logger.warning("%s yazılamadı: %s", path, exc)
         return
-    logger.info("bildirim durumu güncellendi: %s (%d kayıt)", path, len(payload["sent"]))
+    logger.info(
+        "bildirim durumu güncellendi: %s (%d sinyal, %d ret)",
+        path, len(payload["sent"]), len(payload["rejected"]),
+    )
+
+
+def _with_bars(
+    state: Mapping[str, str], items: Iterable[Mapping[str, Any]]
+) -> dict[str, str]:
+    """Kayıtların SİNYAL barını anahtarlarına yazar (iki harita için aynı kural)."""
+    updated = dict(state)
+    for item in items:
+        bar = item.get("bar")
+        if bar:
+            updated[_key(item)] = str(bar)
+    return updated
 
 
 def _pruned(
@@ -423,6 +532,69 @@ def _batch_message(signals: Sequence[Mapping[str, Any]]) -> str:
     lines.append("")
     lines.append(_warning(signals[0]))
     return _clipped("\n".join(lines))
+
+
+def build_reject_messages(
+    rejects: Sequence[Mapping[str, Any]],
+) -> list[tuple[str, list[Mapping[str, Any]]]]:
+    """Açılamayan emirlerin mesajları — sinyal mesajıyla AYNI eşikleri kullanır.
+
+    Ayrı bir mesaj türüdür ve sinyal mesajına EKLENMEZ: ikisi farklı turlarda olur
+    (sinyal barın kapanışında duyurulur, dolum bir sonraki barda denenir — kural 13),
+    yani birleştirilecek bir an yoktur. Uyarı satırı da taşımaz: `_warning` "bu emir
+    dolmayabilir" der, burada dolmadığı ZATEN bilinmektedir.
+    """
+    if len(rejects) > MAX_SINGLE_MESSAGES:
+        return [(_reject_batch_message(rejects), list(rejects))]
+    return [(_reject_message(item), [item]) for item in rejects]
+
+
+def _reject_message(reject: Mapping[str, Any]) -> str:
+    lines = [
+        "<b>🚫 SİNYAL AÇILAMADI</b>",
+        f"<b>{_esc(reject.get('model'))}</b> / {_esc(_arm(reject))}",
+        f"{_esc(reject.get('symbol'))} · <b>{_esc(_direction(reject))}</b>",
+        f"bar {_esc(_clock(reject.get('bar')))} UTC · "
+        f"dolum denendi {_esc(_clock(reject.get('at')))} UTC",
+        f"sebep: <b>{_esc(_reject_detail(reject))}</b>",
+        "",
+        _reject_note(),
+    ]
+    return _clipped("\n".join(lines))
+
+
+def _reject_batch_message(rejects: Sequence[Mapping[str, Any]]) -> str:
+    lines = [f"<b>🚫 SİNYAL AÇILAMADI — {len(rejects)} sinyal</b>", ""]
+    for index, item in enumerate(rejects, start=1):
+        lines.append(
+            f"{index}. <b>{_esc(item.get('model'))}</b> — "
+            f"{_esc(item.get('symbol'))} <b>{_esc(_direction(item))}</b>"
+        )
+        lines.append(f"   {_esc(_reject_detail(item))}")
+    lines.append("")
+    lines.append(_reject_note())
+    return _clipped("\n".join(lines))
+
+
+def _reject_note() -> str:
+    text = (
+        "Bot bu emri AÇMADI: deftere hiçbir satır girmedi ve sitede bir işlem olarak "
+        "görünmeyecek."
+    )
+    link = _positions_url()
+    return f'{text} <a href="{_esc(link)}">Turun tamamı</a>' if link else text
+
+
+def _reject_detail(reject: Mapping[str, Any]) -> str:
+    """Sebebin okunur hâli: `core/portfolio.py`nin ÜRETTİĞİ metin (`RejectedOrder.detail`).
+
+    Koddan Türkçe'ye çeviren bir tablo BURADA TUTULMAZ: kuralın kendisi portfolio'da
+    duruyor ve ikinci bir etiket tablosu (biri burada, biri `docs/positions.html`de)
+    kota adı değiştiğinde sessizce eskiyen iki kopya demekti. Metin yoksa ham kod
+    yazılır — uydurma bir açıklama, yeni bir sebebi eski bir sebep gibi okuturdu.
+    """
+    text = " ".join(str(reject.get("detail") or "").split())
+    return text or str(reject.get("code") or "—")
 
 
 def _warning(signal: Mapping[str, Any]) -> str:

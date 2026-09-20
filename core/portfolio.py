@@ -738,14 +738,14 @@ class Portfolio:
             max_positions = min(max_positions, int(limits.max_positions))
         if len(account.positions) >= max_positions:
             return OpenResult(
-                rejected=f"max_positions={max_positions} dolu",
+                rejected=f"eşzamanlı pozisyon kotası dolu (max_positions={max_positions})",
                 reason_code="max_positions",
             )
         if direction == "short":
             open_shorts = sum(1 for p in account.positions if p.direction == "short")
             if open_shorts >= self.max_short_positions:
                 return OpenResult(
-                    rejected=f"max_short_positions={self.max_short_positions} dolu",
+                    rejected=f"short kotası dolu (max_short_positions={self.max_short_positions})",
                     reason_code="max_short_positions",
                 )
         if limits is not None and limits.max_per_direction is not None:
