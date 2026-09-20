@@ -364,6 +364,13 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 |---|---|---|---|---|---|
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, commit `e912efd` (TADİLAT-1: `93cd891`) | A: 2022-01-01 → 2024-12-30 (sinyal kesimi 06-30), B: 2024-07-21 → 2026-09-18 | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | **P1 TUTTU** (1.549 / 1.206) ama **hipotez DÜŞTÜ**: ortalama R A −0.0015 / B −0.0165 (C-1), çıpa da geçilemedi (C-3) → **BLOKE**, §6d > SONUÇ |
+| 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 49 |
+
+**3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
+model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
+sicilde durmasının sebebi paydanın kendisi değil, **kaç denemenin yapıldığının
+görünmesidir** — düşen bir denemeyi silmek, sicilin engellemek için var olduğu yayın
+yanlılığının ta kendisidir.
 
 **Sicildeki 2. satır bu paydaya AİT DEĞİLDİR:** `ema_trend` hipotezi dış bir sistemden geldi, ev içi arama uzayından seçilmedi (bkz. §6d > Çoklu karşılaştırma). İki payda ayrı tutulur.
 
@@ -752,6 +759,441 @@ satırıyla, yeni bir model olarak gelir.
 
 ---
 
+## 6e. ÖN-KAYIT — çıkış varyantı turunun İSTATİSTİKSEL GÜCÜ
+
+**Bu bölüm varyant tanımlarından ÖNCE ve Adım 0b'nin (yol teşhisi) sonucu ortaya
+çıkmadan yazıldı; tarih damgası git'tedir.** Sebebi usuldür: aşağıdaki eşikler sonuç
+görüldükten sonra yazılsaydı, "sonuç kötü çıktı, eşik yeniden yorumlanıyor" ile ayırt
+edilemezdi (§7.4). Varyantların kendisi (tanımlar, parametreler, P tahminleri, sicil
+satırı) AYRI bir ön-kayıtla ve yine koşudan önce gelecek; bu bölüm yalnızca o turun
+**okunabilirlik koşullarını** sabitler.
+
+### Ölçümün çözünürlüğü — `ema_trend`in R dağılımı İKİ NOKTALIDIR
+
+Model ne trailing ne zaman stop'u taşır ve hedefi tek dilimdir; yani her pozisyon ya
+hedefte ya ilk stop'ta kapanır (likidasyon iki dönemde de 0). Dağılım bu yüzden iki
+noktalıdır: `%35 → +1.93R`, `%65 → −1.05R`.
+
+| | hesap | değer |
+|---|---|---|
+| standart sapma | `√(p(1−p)·(1.9296+1.0519)²)` | **1.424** |
+| standart hata, A (n=369) | `1.424/√369` | **0.0742** |
+| standart hata, B (n=389) | `1.424/√389` | **0.0722** |
+
+Bağımsız sağlaması defterdedir: `core/metrics.py::bootstrap_mean_ci`in ürettiği aralık
+(A: −0.147 … +0.143) analitik `±1.96·SE = ±0.145` ile çakışıyor.
+
+**§6d'nin sonucu bu ışıkta şöyle okunur:** A `−0.0015 ± 0.074`, B `−0.0165 ± 0.072`.
+İkisi de sıfırdan ayırt edilemez. **Model negatif KANITLANMADI; sıfır kanıtlandı.**
+Bu, §6d > SONUÇ'un **BLOKE** verdiktini DEĞİŞTİRMEZ ve o bölümün hiçbir satırına
+dokunulmaz: model C-3'ten de kalıyordu, ayrıca kanıtlanmamış bir kenara sermaye
+ayrılmaz. Değiştirdiği şey verdikt değil, **bundan sonraki turun ne vaat edebileceğidir.**
+
+### Asgari tespit edilebilir etki (MDE) — turdan ÖNCE yazılır
+
+`n ≈ 400`, `sd ≈ 1.42`, `α = 0.05`, güç `0.80` için:
+
+| test | gereken GERÇEK etki |
+|---|---|
+| iki yanlı | **+0.202R** |
+| tek yanlı | +0.180R |
+
+**Bundan küçük bir iyileşme bu kurulumda görülemez.** Ölçek şudur: brüt kenar A'da
++0.057R, B'de +0.041R; friksiyon 0.057R. Yani gerçekçi bir çıkış iyileştirmesi
+(0.02–0.06R mertebesi) MDE'nin **üçte biri ile beşte biri** arasındadır. Bunun iki
+dürüst sonucu var ve ikisi de şimdi yazılıyor:
+
+1. **"Ortalama R > 0 çıktı" tek başına bir bulgu değildir.** Gerçekten değersiz bir
+   varyantın dönem B'de pozitif çıkma ihtimali ≈ %50 — C-1 bu örneklemde neredeyse
+   yazı-turadır.
+2. **Turun olumlu çıktısı bir kabul değil, bir SIRALAMA ve bir ELEME olabilir.** Bu tur
+   "şu varyant kazandırıyor"u kanıtlayamaz; kanıtlayabileceği şey "şu varyant,
+   ölçülebilir bir farkla KÖTÜLEŞTİRMİYOR / kötüleştiriyor"dur.
+
+**Her varyantın MDE'si KENDİ dağılımından yeniden hesaplanır ve sonucunun yanına
+yazılır.** İki noktalı dağılım yalnızca `ema_trend`in geometrisine aittir: trailing ya
+da hedefsiz bir varyantın sağ kuyruğu şişer, `sd` büyür ve MDE **kötüleşir**. Tek bir
+MDE sayısını tüm varyantlara uygulamak, kuyruğu geniş bir varyantı olduğundan
+ölçülebilir göstermek olurdu.
+
+### Eksen istatistiği EŞLEŞTİRİLMİŞTİR: pozisyon başına ΔR
+
+Varyantlar `ema_trend`in girişini ve stop'unu MİRAS ALIR (varyant tanımları AYRI bir
+ön-kayıtla ve yine koşudan önce gelecek):
+aynı sembolde, aynı barda, aynı stop mesafesiyle girilir ve ayrışan tek şey çıkıştır.
+İki model bu yüzden **aynı fiyat yolunu** paylaşır ve farkın varyansı, iki bağımsız
+ölçümün varyansından çok daha küçüktür.
+
+Eksen istatistiği bu yüzden marjinal ortalama R değil, **eşleşen pozisyonlarda
+`ΔR = R_varyant − R_taban`in ortalamasıdır.** Precedent katmanın içindedir: model 15 ↔
+`scalp_fixed` çifti aynı gerekçeyle çekiliş kimliğini paylaşır (CLAUDE.md > "Çekiliş,
+ölçülmeyen eksende PAYLAŞILIR").
+
+`ρ` (iki modelin R'leri arasındaki korelasyon) **bilinmiyor ve ÖLÇÜLECEK**; ön-kayıtlı
+beklenti ve ondan çıkan güç şudur:
+
+| varsayılan ρ | `sd(ΔR) = 1.42·√(2(1−ρ))` | MDE (n=369, iki yanlı, güç 0.80) |
+|---|---|---|
+| 0.7 | 1.10 | +0.160R |
+| **0.8 (ön-kayıtlı beklenti)** | **0.90** | **+0.131R** |
+| 0.9 | 0.64 | +0.093R |
+
+Yani eşleştirme MDE'yi +0.20R'den **~+0.13R**'ye indirir. Hâlâ beklenen etkinin
+(0.02–0.06R) üstündedir — eşleştirme güç sorununu çözmez, **küçültür**; bu da sonucun
+"ayırt edilemedi" ile bitme ihtimalini düşürür.
+
+Üç şart, sonucu görmeden:
+
+1. **`ρ` ve gerçekleşen `sd(ΔR)` sonucun yanına YAZILIR.** Yukarıdaki tablo bir beklenti;
+   MDE gerçekleşen `sd`den yeniden hesaplanır. Beklentiyi tutmuş gibi raporlamak, gücü
+   olduğundan iyi göstermek olurdu.
+2. **`n` eşleşen pozisyonların sayısıdır, iki defterin toplamı değil.** Dolumlar
+   ayrışır (çıkış kuralı kotayı ve nakdi farklı zamanlarda serbest bırakır — CLAUDE.md
+   aynı ayrışmayı model 15 için yazar), yani eşleşme kesişimdir ve kesişimin dışında
+   kalan pozisyon sayısı da raporlanır.
+3. **C-1 BAĞLAYICI KALIR ve eşleştirme onun YERİNE GEÇMEZ.** Varyant tabandan
+   ölçülebilir biçimde iyi olup hâlâ negatif olabilir; o durumda bulunan şey "daha az
+   kötü"dür ve canlıya alınacak bir şey değildir. İkisi birlikte okunur: ΔR ekseni
+   *"çıkış kuralı bir fark yaratıyor mu"*, C-1 *"bu model para kazanıyor mu"* sorusunu
+   cevaplar.
+
+`ΔR`nin aralığı **eşleştirilmiş bootstrap** ile kurulur (pozisyon çiftleri birlikte
+yeniden örneklenir; bağımsız yeniden örnekleme eşleştirmenin kazancını geri verirdi) ve
+hesap `core/metrics.py`ye girer — ikinci bir R tanımı, aynı defterin iki cevabı demekti
+(kural 7).
+
+### Kabul kuralı — C-1'in yanına bir KESİNLİK koşulu
+
+C-1 (`ortalama R > 0`) bu örneklemde tek başına yetersizdir (yukarıdaki 1. madde). Bu
+yüzden varyant turunda C-1, modelin KENDİ ortalama R'sinin güven aralığıyla birlikte
+okunur: **aralığın ALT SINIRI > 0.** Böylece "pozitif çıktı" ile "pozitif olduğu
+gösterildi" ayrışır — kabul çıtasının edge kapısında (E) kontrol farkı için zaten
+uygulanan ayrımın aynısı (CLAUDE.md > Kabul Çıtası).
+
+Aralık `core/metrics.py::bootstrap_mean_ci` ile kurulur ve tabloda zaten vardır
+(`avg_r_ci_low` / `avg_r_ci_high`); alfa `acceptance.edge_ci_alpha`tan (0.05) gelir.
+**İKİNCİ bir alfa anahtarı açılmaz** (CLAUDE.md > Rapor Kolonları): aynı tabloda iki
+farklı kesinlik ölçüsü durması, hangi satırın hangi ölçüyle okunacağını belirsiz
+bırakırdı — ve "hangi tabloya bakıyorduk" sorusunun cevabı bir gün belirsizleşirse
+kesinlik ölçüsünün kendisi işe yaramaz hâle gelir. Hazır kolon kullanılmasının ikinci
+kazancı yeni kod yazılmamasıdır: yeni kod yeni hata demektir.
+
+⚠ **Bu seçim SONUÇ GÖRÜLMEDEN ve DAHA SIKI olduğu BİLİNEREK yapıldı.** `edge_ci_alpha`
+iki yanlı %95'tir, yani alt sınırı tek yanlı α=0.025'e denk gelir; tartışılan alternatif
+(iki yanlı %90, yani tek yanlı α=0.05) daha gevşek olurdu. Kayıt buraya, seçim anına
+yazılıyor ki ileride bir varyant kıl payı kalırsa "keşke %90 deseydik" tartışması
+açılmasın — o tartışma, eşiği sonuca göre yeniden yorumlamanın kendisidir (§7.4).
+
+### Çoklu karşılaştırma — tek BİRİNCİL varyant
+
+Birden fazla varyant sınanacaksa, birinin şansla geçme ihtimali tek varyanttan
+yüksektir. Bu yüzden:
+
+- **Koşudan önce TEK bir varyant BİRİNCİL ilan edilir**; kalanlar raporlanır ama kabul
+  çıtasına aday değildir. "Beşinin arasından B'de en iyisini seçmek", B'yi OOS olmaktan
+  çıkarırdı.
+- Birincil varyantın tahmini §6c sicilinin **3.** satırıdır ve BH düzeltmesine
+  (`q = 0.10`) girer. Satır, varyant tanımlarıyla birlikte ve koşudan ÖNCE açılır;
+  sonucu ne olursa olsun orada kalır (§7.5).
+- Birincil varyantın seçim KURALI da koşudan önce yazılır: Adım 0b'nin hangi çıktısının
+  hangi varyanta işaret ettiği, teşhis sonucunu GÖRMEDEN sabitlenir. Aksi hâlde
+  "baktım, en iyi görüneni seçtim" olurdu.
+
+### BİRİNCİL VARYANTIN SEÇİM KURALI — teşhis çıktısı GÖRÜLMEDEN sabitlendi
+
+Kuralın **çalıştırılabilir kopyası** `scripts/diagnose_ema_exits.py::select_primary_family`
+fonksiyonudur ve eşikler orada sabittir; bu bölüm onu ALINTILAR. Gerekçe: kuralın tek işi
+"sonucu görüp seçmedik"i kanıtlamaktır, iki yerde yazılı bir kural ise bir gün sessizce
+ayrışır ve o kanıtı yok eder. Seçim bir metin değil bir fonksiyondur, teşhisin İÇİNDE
+çalışır ve çıktısı log'a basılır.
+
+Dallar **öncelik sırasıyla** denenir:
+
+| sıra | dal | ölçü (dönem A teşhisi) | eşik | seçilen aile |
+|---|---|---|---|---|
+| 1 | **M2** — kuyruk | `tp` çıkışlarından 20 bar sonraki **İŞARETLİ** hareketin medyanı | ≥ **+0.25R** | kazananı koşturan (trailing / hedefin kaldırılması) |
+| 2 | **M1** — geri dönüş | `stop` çıkışlarının medyan MFE'si (kapanış barı hariç) | ≥ **1.0R** | breakeven + kısmi çıkış |
+| 3 | **M4** — oyalanma | medyan `stop` tutuşu / medyan `tp` tutuşu | ≥ **2.0×** | zaman stop'u |
+| 4 | — | hiçbiri tetiklenmedi | — | **tur KAPANIR, varyant kurulmaz** |
+
+**Eşiklerin gerekçesi (hiçbiri veriden türetilmedi):**
+
+- **M1 = 1.0R** keyfi DEĞİLDİR: `config.yaml > exit_management.breakeven_at_r` değerinin
+  ta kendisidir ve bir breakeven kuralının tetiklenebilmesi için gereken hareket odur.
+- **M2 = +0.25R** ölçülen friksiyonun (0.057R) kabaca dört katıdır. **YUVARLAK bir
+  sayıdır ve öyle seçildiği burada yazılıdır** — sonradan eşik tartışması açılmasın.
+- **M2'nin ufku = 20 bar**, dönem A'nın p90 tutuş süresinin (21 bar) yuvarlanmış hâlidir.
+  O sayı §6d'de koşudan önce yayımlandı; teşhis çıktısından gelmiyor.
+- **M4 = 2.0×** yuvarlak bir katsayıdır ve açıkça yuvarlak seçilmiştir.
+
+**M2 neden İŞARETLİ hareketi ölçer, azami yükselişi değil.** "Çıkıştan sonra ne kadar
+yükseldi" (azami) tanım gereği ≥ 0'dır ve sürüklenmesiz bir yürüyüşte bile ufukla
+birlikte `√H` hızında büyür — 20 barda ~2.4R. Onu eşiğe bağlamak, M2 dalını HER koşulda
+tetiklemek olurdu. İşaretli kapanış farkının medyanı ise martingal altında sıfırdır,
+yani sıfırdan sapması gerçek bir sürüklenmedir. Teşhis ikisini de basar; kural yalnızca
+ikincisine bakar.
+
+**Sıranın gerekçesi.** M2 ile M1 aynı pozisyonlar üzerinde TERS yönde çalışır (biri
+kuyruğu uzatır, öteki keser); ikisi birden tetiklendiğinde hangisinin seçileceği
+önceden yazılmazsa, "hangisi daha mantıklı" tartışması kuralın kapatmak için var olduğu
+serbestliği geri açardı. M4 en sona konur çünkü ölçtüğü şey R değil SERMAYE HIZIDIR ve
+C-1 bir R kapısıdır.
+
+**4. dal bir boşluk değil, bir SONUÇTUR.** Hiçbir dal tetiklenmezse yolda çıkışın
+sömürebileceği bir yapı yok demektir: varyant turu kurulmaz, sicile bu yazılır ve açık
+kalan tek kaldıraç friksiyondur — o da çıkış ekseninde değil, aşağıdaki KAYIT'ta duran
+stop mesafesi ekseninde.
+
+**Kural BİR KEZ çalışır.** Teşhis geldiğinde uygulanır, birincil aile belirlenir ve
+çıkan aile beklenen olmasa bile tartışılmaz. `nan` bir dalı tetiklemez: ölçülemeyen bir
+koşul sağlanmış sayılamaz (eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir — §4'ün
+aynı ilkesi).
+
+### KAYIT (bir varyant önerisi DEĞİL) — friksiyon stop mesafesine bağlıdır, hedefe değil
+
+`cost_per_r ≈ 2c / stop%` özdeşliği, R başına friksiyonun **stop mesafesiyle** ters
+orantılı olduğunu söyler: 1.5×ATR'den 3.0×ATR'ye geçmek onu kabaca YARIYA indirir
+(ölçülen 0.057R → ~0.028R). Hedefin yeri bu sayıya girmez.
+
+**Bu, çıkış varyantı turunun konusu DEĞİLDİR ve o turda denenmeyecektir:** stop
+mesafesi ayrı bir geometri eksenidir ve çıkış ekseniyle birlikte oynatılırsa aradaki
+fark iki değişkenin toplamı olur (CLAUDE.md > Scalp katmanının model kuralları'nın
+"13 ↔ 14 bir eksen değil, bir toplam farktır" gerekçesi). Kaynak sistemde SL 2.5
+denemesi çökmüştü, ama orada hedef de stop'la birlikte kaymıştı — **stop ile hedefin
+AYRIŞTIRILMASI hiç test edilmedi.** Sırası gelirse kendi ön-kaydıyla gelir.
+
+---
+
+### SONUÇ — kural koşuldu, TUR KAPANDI (varyant kurulmadı)
+
+Koşu: `diagnose-ema-exits` #35435506689, commit `d0332da`, 2026-09-19. Ham çıktı
+artifact'te (`diagnose-ema-exits`, 14 gün); özet yük koşunun log'una basıldı.
+**Bu bölüm sonucu KAYDEDER, kuralları değiştirmez** — yukarıdaki hiçbir eşik, öncelik
+sırası ya da dal tanımı koşudan sonra dokunulmadı.
+
+**Determinizm kapısı GEÇTİ.** Teşhis koşusu, karara giren koşunun (`backtest-ema`
+#35391881083) dönem A sayılarını birebir üretti: 369 pozisyon, 130 tp, 239 stop,
+ortalama R −0.0014889765, azami tutuş 129 bar. `missing_bars = 0`,
+`unchecked_position_bars = 0`. Yani yol istatistiği okunabilir.
+
+**Kuralın uygulanması (bir kez çalıştı):**
+
+| dal | aile | ölçülen | eşik | sonuç |
+|---|---|---|---|---|
+| M2 | kuyruk (trailing / hedefsiz) | **+0.153R** | ≥ +0.25R | tetiklemedi |
+| M1 | geri dönüş (breakeven + kısmi) | **0.552R** | ≥ 1.0R | tetiklemedi |
+| M4 | oyalanma (zaman stop'u) | **0.667×** | ≥ 2.0× | tetiklemedi |
+
+**SEÇİLEN: 4. dal — tur kapanır, varyant kurulmaz.**
+
+#### Ölçülen yol (kayıt)
+
+| çıkış | n | tutuş: medyan / p75 / p90 / azami (bar) | MFE\* medyan | MAE\* medyan |
+|---|---|---|---|---|
+| `tp` | 130 | 9 / 15.8 / 22 / 129 | +1.62R | −0.41R |
+| `stop` | 239 | 6 / 12 / 20 / 43 | +0.55R | −0.77R |
+
+\* kapanış barı HARİÇ (kural 13b): bir çıkış kuralının karar anında görebileceği hareket.
+
+Stop'la kapananların MFE dağılımı (kapanış barı hariç, n=222 — kapanıştan önce barı
+olan pozisyonlar): `%46.8` hiç +0.5R'ye ulaşamadı, `%24.3` 0.5–1.0R, `%16.7` 1.0–1.5R,
+`%12.2` 1.5–2.0R. Hedefe varanların MAE'si: `%34.7` −0.25R'den derine hiç inmedi,
+`%17.7` −0.75R'nin altına indi.
+
+TP sonrası İŞARETLİ hareketin medyanı ufuklar arasında işaret değiştiriyor:
+5 bar −0.10R, 10 bar −0.23R, **20 bar +0.15R**, 40 bar −0.37R. Kural yalnızca 20 barlık
+ufka bakar (o ufuk koşudan önce sabitlenmişti) ve orada da eşiğin altında kalıyor;
+diğer üç ufkun negatif olması, +0.15R'nin kararlı bir sürüklenme DEĞİL gürültü
+olduğunu söylüyor — martingal ile uyumlu. Azami YÜKSELİŞ ölçüsü (20 barda medyan
++1.46R) bu tabloda bir bulgu değildir: sürüklenmesiz bir yürüyüşte de aynı mertebede
+çıkar ve kural bu yüzden ona bakmıyor.
+
+#### Ne öğrenildi (bir kural değil, bir kayıt)
+
+- **Zaman stop'unun ön kabulü TERSİNE çıktı.** Kaybedenler kazananlardan DAHA HIZLI
+  ölüyor (medyan 6 ↔ 9 bar, p90 20 ↔ 22 bar). Bir zaman stop'u bu dağılımda önce
+  kazananları keserdi; "oyalanan kaybedenleri kes" tezinin dayanağı bu veride yok.
+- **Kaybedenlerin yarısı hiç kâra geçmiyor:** medyan MFE +0.55R ve `%46.8`'i +0.5R'yi
+  bile görmüyor. Breakeven'ın koruyacağı bir kâr çoğu kayıpta hiç oluşmamış.
+- **Hedefte kesilen kuyruk ölçülebilir değil:** çıkış sonrası işaretli hareket sıfır
+  etrafında salınıyor. "TP'ler erken kesiyor" iddiası bu pencerede desteklenmiyor.
+- Üçü birlikte, §6e'nin 4. dalının tanımladığı durumdur: **yolda çıkışın sömürebileceği
+  bir yapı yok.** Kenar sinyalin kendisinde ve küçük (brüt +0.057R ↔ friksiyon 0.057R);
+  onu çıkış geometrisini oynatarak büyütmenin bu veride bir dayanağı yok.
+
+Açık kalan tek kaldıraç friksiyondur ve o, çıkış ekseninde değil **stop mesafesi**
+ekseninde durur (yukarıdaki KAYIT). O eksen kendi ön-kaydıyla gelir; bu tur onu
+denemedi ve denemeyecek.
+
+---
+
+## 6f. ÖN-KAYIT — dönem A fonlama arşivi (karar 50'nin açık işi)
+
+**Bu bir TEZİN ön-kaydı değil, bir VERİ YOLUNUN ön-kaydıdır.** Sabitlenen şey bir modelin
+performansı hakkında bir tahmin değil, *"dönem A'nın fonlama dağılımı hangi veriyle
+sorulacak"* sorusunun cevabıdır. Bu yüzden §6c'nin sicil tablosuna **girmez** ve BH
+paydasına eklenmez: sicil bir modelin performansı hakkında iddia taşıyan satırları sayar
+ve bu satırın öyle bir iddiası yoktur (§6c'nin "ölçüm katmanı hipotez DEĞİLDİR" ayrımı).
+Arşivle beslenen bir TEZ geldiğinde o tez kendi satırını açar.
+
+**Neden şimdi yazılıyor.** Karar 50 arşiv işinin sırasını bağlayıcı kıldı (önce arşiv,
+sonra örtüşme kanıtı, ancak sonra kullanım) ve "engelin tam mekanizması … girmesi gereken
+yer arşiv işinin ön-kaydıdır" dedi. Burası o yer. Kapılar veri GÖRÜLMEDEN sabitleniyor;
+tersi §7.1'in yasakladığı şeyin ta kendisidir. Belge, `scripts/probe_funding_depth.py`
+hiç koşmadan commit edilir — probe'un ürettiği hiçbir sayı bu sayfadaki hiçbir eşiği
+seçmedi.
+
+### Adımlar ve sıra (bağlayıcı)
+
+| Adım | Soru | Nerede cevaplanır |
+|---|---|---|
+| **A** | OKX'in KENDİ yolu dönem A'ya ulaşıyor mu? | `scripts/probe_funding_depth.py` log'u |
+| **B** | Ulaşmıyorsa hangi arşiv? | aday sırası aşağıda SABİT |
+| **C** | Arşiv canlı seriyle tutarlı mı? | 60 günlük örtüşmede üç koşul |
+
+**A geçerse B ve C DÜŞER.** OKX-içi bir yol bir kaynak değişikliği değildir: kural 5'in
+"tüm modeller aynı veriyi görür" şartı zaten sağlanır ve karar 50'nin örtüşme kanıtı
+konusuz kalır. Bu yüzden probe'un sırası da A-2 (OKX'in tarihsel veri portalı) ile başlar:
+portal erişilebilir ve fonlama veri kümesi taşıyorsa aşağıdaki (a)/(b) ayrımı bile
+gereksizdir.
+
+### Adım A — iki hipotez, tek ayrım
+
+PR #37'nin izi `BTC-USDT-SWAP` için **4 sayfa / 312 kayıt / en eski 2026-06-11** verdi ve
+"kısa sayfa" (12 < 100) ile durdu. Kısa sayfa İKİ ayrı şeyin imzasıdır ve iz ikisini
+ayırt etmiyor:
+
+- **(a) borsa tabanı** — uç nokta bu yoldan gerçekten ~3-4 ay veriyor;
+- **(b) yürüyüş tabanı** — `fetch_history`nin `after`-yürüyüşü sunucu tarafı bir pencereyi
+  tüketiyor ve doğrudan parametrelenmiş bir istek daha geriye ulaşıyor.
+
+312 kayıt, bir ikincil kaynağın bildirdiği 400 kayıtlık tavanın **altında** durdu; bu (b)
+lehine bir işarettir ama kanıt değildir — kanıt tek bir istektir.
+
+**Ayrım MEKANİKTİR ve kodda yazılıdır** (`probe_funding_depth.py::classify_depth_floor`).
+Gerekçe `diagnose_ema_exits.py::select_primary_family`in aynısıdır: sonucu bir insanın
+okuyup "bana (b) gibi göründü" demesi, kuralın kapatmak için var olduğu serbestliği geri
+açardı. Kural, probe koşmadan önce şudur:
+
+1. Yürüyüşün ulaştığı en eski damgadan **doğrudan** bir `after` isteği daha eski kayıt
+   döndürüyorsa → **(b) yürüyüş tabanı.**
+2. Döndürmüyorsa, dönem A kesimine (2024-06-30) **doğrudan** atlayan bir `after` isteği
+   kayıt döndürüyorsa → yine **(b).**
+3. İkisi de boşsa → **(a) borsa tabanı.**
+4. Herhangi bir istek hata verirse → **belirsiz** (probe hata koduyla biter; belirsiz bir
+   sonuç "(a) çıktı" diye okunamaz).
+
+### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi
+
+1. **Bybit** — `/v5/market/funding/history`
+2. **Binance** — `data.binance.vision` aylık `fundingRate` dökümleri (sembol eşleme gerekir:
+   `BTCUSDT` ↔ `BTC-USDT-SWAP`)
+3. **Ücretli kaynaklar** (Tardis.dev, CoinAPI, CryptoHFTData) — **kapsam dışı**
+
+**Bybit'in önceliği kapsamadan DEĞİL, venue tercihinden gelir:** hesabın tutulduğu yer
+zaten Bybit'tir — `fee_rate` Bybit'in taker oranıdır ve `scripts/measure_slippage.py`
+kitabı Bybit'ten okur. Sıranın tek gerekçesi budur ve **bağlayıcıdır: Binance daha iyi
+kapsama verse bile Bybit seçilir.** Kasıtlı; aksi hâlde arşiv kapsamaya bakılarak seçilir
+ve kapsama sonuçla korelasyonlu olabilir (§7.2'nin "post-hoc filtre yok" kuralının kaynak
+seçimine uygulanmış hâli).
+
+Bybit C kapısında düşerse sıradaki aday Binance'tir — ama bu bir SEÇİM değil bir
+DÜŞMEDİR: Bybit'in hangi koşulda düştüğü yazılır ve Binance kendi C kapısından baştan
+geçmek zorundadır.
+
+### Adım C — örtüşme kapısı (veri görülmeden sabitlendi)
+
+**Pencere:** arşiv ile canlı serinin kesiştiği **son 60 gün** (`data.funding_history_periods`
+= 180 periyot, karar 50). **Evren:** `ema` katmanının 13 sembolü — üçü de bu pencerede
+mevcuttur (aşağıdaki listeleme notu C'yi etkilemez). **Üç koşul, ÜÇÜ BİRDEN:**
+
+| Kapı | Ölçü | Geçme koşulu |
+|---|---|---|
+| **C-a** | damga hizası | iki serinin damga kümeleri **≥ %95** örtüşür (Jaccard, damga bazında) |
+| **C-b** | olay kümesi | p95 eşiğinin ürettiği olay kümelerinin **Jaccard ≥ 0.70** |
+| **C-c** | işaret uyumu | ortak damgaların **≥ %95**'inde oranın İŞARETİ aynı |
+
+Üç sayı da bu commit'te sabittir ve koşudan sonra §7.1/§7.4 gereği değiştirilmez.
+
+**C-b'nin eşiği STATİKTİR, kayan değil:** ölçümün kendi kuralı 270 periyotluk kayan
+pencere + `shift(1)`tir ve o pencere 60 güne SIĞMAZ. C-b'de p95, örtüşme penceresinin
+kendi dağılımından hesaplanır. Bu bilinçli bir sapmadır, yalnızca C kapısında geçerlidir
+ve dağılım raporunun kuralını DEĞİŞTİRMEZ.
+
+**C-b'nin örneklemi küçüktür ve bu yazılı olsun:** 60 gün = sembol başına ~180 damga, p95
+≈ 9 olay, 13 sembolde ≈ 117 olay. `Jaccard ≥ 0.70`, iki kümenin her birinin ~%82'sinin
+ortak olması demektir — yani ≈117 olayda her iki tarafta ~21 olayın kayması tolere edilir.
+Kapı bu çözünürlükte okunmalıdır: geçmesi "seriler aynı" demek değil, "olay kümeleri bu
+örneklemde ayırt edilemiyor" demektir.
+
+⚠ **C, karar 50'nin LİTERAL şartından daha zayıftır ve bu sessizce geçilmiyor.** Karar 50
+"aynı zaman damgası, aynı oran" dedi. O şart **aynı borsanın** arşivi için doğrudur ve
+adım A geçerse aynen uygulanır — C-a/b/c'nin yerine birebir eşitlik aranır. Ama B'nin
+adayları BAŞKA borsalardır ve başka bir borsanın fonlama oranı tanım gereği başka bir
+sayıdır: "aynı oran" orada sağlanamadığı için değil, **anlamsız olduğu için** geçersizdir.
+Cross-venue bir arşivde ölçülebilen şey "aynı veri" değil **"aynı olgu"**dur ve yukarıdaki
+üç koşul tam olarak onu ölçer.
+
+**Bedeli de yazılı:** cross-venue bir arşivle seçilen bir eşik, OKX mumlarıyla koşacak bir
+backtest'e uygulandığında bir **cross-venue varsayımı** taşır — §5c'nin "maliyet modeli
+varsayımdır, gözlem değil" maddesiyle aynı statü. Arşiv kullanılırsa bu sapma §5'in kabul
+edilen sapmalar listesine girer ve §8'in "iddia edilmeyecekler" listesine bir satır ekler:
+*eşiğin OKX'te de aynı olayları seçtiği gösterilmedi, yalnızca ayırt edilemediği.*
+
+### Örneklem bütçesi — n hesabı 13 DEĞİL ~10.6 sembol üzerinden
+
+Dönem A (2022-01-01 → 2024-06-30, 912 gün) boyunca `ema` katmanının 13 sembolünün üçü
+pencereyi tam göremez. Bu bir arşiv kusuru değil bir **listeleme tarihidir** ve
+`measure_funding.py::coverage` ayrımı zaten yapar (beklenen sayı sembolün KENDİ ilk
+kaydından sayılır):
+
+| Sembol | Listeleme (ikincil kaynak; probe'un kapsam tablosu DOĞRULAYACAK) | Dönem A payı |
+|---|---|---|
+| PENGU | perp 2024-12-18 | **0.00** — dönem A 2024-06-30'da biter |
+| ETHFI | 2024-03-18 | ~0.11 (≈3.4 ay / 30) |
+| SUI | 2023-05 | ~0.47 (≈14 ay / 30) |
+| diğer 10 | 2022-01-01 öncesi (VARSAYIM, doğrulanacak) | 1.00 |
+
+**Etkin sembol sayısı ≈ 10 + 0.47 + 0.11 + 0.00 = 10.58.** Beklenen damga sayısı
+`912 × 3 × 10.58 ≈ 29.000` — 13 sembol varsayımının (`13 × 912 × 3 ≈ 35.600`) **%81'i.**
+
+**ÖN-KAYIT: bu tezle ilgili her n hesabı, güç hesabı ve "kaç olay beklenir" beklentisi
+10.6 sembol üzerinden kurulur.** 13 üzerinden kurulmuş bir beklenti olay sayısını ~%20
+fazla sayar; fonlama ekstremleri zaten seyrekse bu fark tezi ölçülebilir taraftan
+ölçülemez tarafa itebilir — ve `acceptance.min_trades` (30) kapısına ulaşıp ulaşılamadığı
+tam olarak bu sayıya bağlıdır. Sayı koşudan SONRA "aslında 13'tü" diye düzeltilemez
+(§7.1).
+
+**Bu üç satır C kapısını ETKİLEMEZ** (örtüşme penceresi son 60 gündür, orada üçü de
+vardır). Etkilediği şey dönem A'nın TEZİDİR. Kapsama tablosunda bu üç sembolün düşük
+`completeness` değeri **arşiv kusuru olarak okunamaz**; hangi arşiv gelirse gelsin dönem
+A'da 13/13 mümkün değildir.
+
+### Ölçüm adımının varsayılanı KAPALI — gerekçesi burada durur
+
+`measure-funding.yml`in dağılım adımı (`run_measure`) **varsayılan olarak `false`**;
+probe (`run_probe`) varsayılan olarak `true`. Gerekçe bu bölümün tamamıdır: bugünkü veri
+yolu 60 gün veriyor ve dönem A 30 ay — ölçümü elle açmadan koşturmak, 30 aylık bir soruya
+60 günlük bir pencereyle cevap arayıp neredeyse boş bir rapor üretmek demektir. Boş bir
+rapor zararsız değildir: "ölçtük, olay yok" ile "ölçemedik" aynı log'a benzer ve karar
+50'nin tam olarak ayırmak istediği şey budur (engellenmiş tez ↔ düşmüş tez).
+
+**Bu bir kapı DEĞİL bir varsayılandır:** kimse engellenmiyor, tek kutu işaretlenerek
+koşuluyor. Arşiv bu bölümün kapılarını geçtiğinde varsayılan `true`ya döner ve o
+değişikliğin gerekçesi de buraya yazılır — "bu neden kapalıydı" sorusunun cevabı
+workflow'un git geçmişinde değil, ön-kayıtta durmalı.
+
+### Bu ön-kayıt neyi SEÇMİYOR
+
+**Eşiği.** Hangi persentil, hangi yön (pozitif/negatif kuyruk), hangi kümeleme kuralı bir
+olay sayar — hiçbiri burada yok, çünkü hiçbiri veri görülmeden seçilemez ve
+`measure_funding.py`nin raporu da onları önermez (§7). Eşik, arşiv C kapısını geçtikten ve
+dağılım GÖRÜLDÜKTEN sonra **ayrı bir ön-kayıtla** seçilir ve o ön-kayıt §6c'nin siciline
+kendi satırını açar. Bu belge yalnızca **hangi veriyle** sorulacağını sabitler, **ne
+sorulacağını** değil.
+
+---
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
@@ -780,6 +1222,17 @@ Bunlar eksiklik değil, kapsam dışıdır; sonuç okunurken iddia edilmeyecek �
 - Rejim değişimi (geçmişte kârlı olan gelecekte kârlı değildir)
 - Kayma varsayımının ince kitaplı sembollerde tutup tutmadığı
   (`breakdowns.symbol > cost_per_r` ipucu verir ama kanıt değildir)
+- **§6f'nin C kapısının GEÇMESİ, iki serinin AYNI olduğu anlamına gelmez.** Geçmesi
+  "olay kümeleri bu örneklemde AYIRT EDİLEMİYOR" demektir — 60 günde sembol başına ~180
+  damga, p95 ≈ 9 olay, 13 sembolde ≈ 117 olay, ve `Jaccard ≥ 0.70` her iki tarafta ~21
+  olayın kaymasına izin verir. Bu satır buraya, ileride birinin kapıyı "arşiv
+  doğrulandı" diye okuyacağı için yazıldı: kapı bir doğrulama değil, bir AYIRT
+  EDİLEMEZLİK ölçüsüdür ve örneklemi küçüktür.
+- **Cross-venue bir arşivle seçilen bir eşiğin OKX'te de aynı olayları seçtiği**
+  (§6f > Adım C). Gösterilen şey yalnızca ayırt edilemediğidir; "aynı oran" şartı başka
+  bir borsada anlamsızdır ve bu sapma arşiv kullanılırsa §5'e yazılır. Satır arşiv
+  gelmeden önce buraya kondu — sonradan eklenseydi, sonucu gördükten sonra yazılmış bir
+  uyarı olurdu.
 
 ---
 

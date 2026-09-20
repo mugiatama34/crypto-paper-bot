@@ -58,7 +58,8 @@ barı kendi sinyalini de üretir.
 4 saatlik değil. Gerekçe ölçüldü (docs/decisions.md > 39): `5 0,4,8,12,16,20` iken turların
 %35'i telafi yapıyor ve barların **%26'sı sinyalsiz** geçiyordu, üstelik kaybolan bar hep
 00:00 ya da 08:00 barıydı — yani kayıp gürültü değil YANLILIK. Saatlik kadans her 4H barına
-dört bağımsız şans verir ve ölçüm kuralına dokunmaz (`signals_per_bar` base'de KAPALI
+dört bağımsız şans vermeyi HEDEFLER; ölçülen teslim 0.97'dir (karar 39-DOĞRULAMA) ve
+ölçüm kuralına dokunmaz (`signals_per_bar` base'de KAPALI
 kalır). Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü commit
 edilseler HEAD'deki tur denetim izini boş bir turla ezerlerdi. Koşudan sonra `ledgers/` ve
 `docs/data/` commit edilir (değişiklik yoksa boş commit atılmaz). **Defter bu yüzden depoya
@@ -86,7 +87,7 @@ ayrımı taşır: beklenen tekrar `INFO`, arıza `WARNING`.
 | Modeller | bkz. [Model listesi](#model-listesi) — tek kaynak `config.yaml > models` | bkz. [Model listesi](#model-listesi) — tek kaynak `config.yaml > layers.scalp.models` |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
-| Cron | `run.yml` — **saatlik** (`5 * * * *`), her 4H barına dört şans (karar 39) | `run-scalp.yml` — cron YOK, dış tetikleyici (~15 dk) |
+| Cron | `run.yml` — **saatlik** (`5 * * * *`); hedef bar başına 4 şans, ölçülen 0.97 (karar 39-DOĞRULAMA) | `run-scalp.yml` — cron YOK, dış tetikleyici (~15 dk) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı | 3×ATR | 8×ATR |
 | Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |
@@ -109,8 +110,18 @@ koştuğu [Model listesi](#model-listesi)ndedir. Kollar:
 1. **VWAP geri çekilme** — gün-çapalı VWAP'e trend yönünde dokunuş
 2. **Açılış aralığı kırılımı** — günün ilk 4 barının aralığı + hacim teyidi
 3. **RSI(2) aşırılık dönüşü** — yalnızca aralık rejiminde
-4. **Momentum patlaması devamı** — 3 bar üst üste aynı yön + hacim
-5. **Funding sıçraması fade'i** — funding aniden yükseldiğinde short
+4. **Momentum patlaması devamı** — 3 bar üst üste aynı yön + hacim — ⚠ **ÖLÜ KOL**
+5. **Funding sıçraması fade'i** — funding aniden yükseldiğinde short — ⚠ **ÖLÜ KOL**
+
+⚠ **Kol tanımı beş, gerçekte koşan üç.** 4. ve 5. kol katmanın canlı ömrü boyunca
+(2026-09-13'ten beri, 123 pozisyon) **tek bir sinyal üretmedi**: deftere sıfır işlem,
+açık pozisyonlarda sıfır kayıt. Bu yüzden aşağıdaki eksenlerin hepsi beş kolun değil
+**üç kolun** ölçümüdür (bkz. [Ölçüm eksenleri](#ölçüm-eksenleri) ve karar 48).
+Kol tanımları SİLİNMEDİ: `momentum_burst`un ölü olma sebebi ölçüldü ve yazıldı (karar
+34 — `hedef/stop ≥ 1.5` kapısı, `stop = 5×ATR` iken yapısal engelin 7.5×ATR ötede
+olmasını istiyor, `burst` ise tipik olarak 1–2.25×ATR), `funding_spike_fade`in sebebi
+ise **BİLİNMİYOR** — `ScalpModel` `take_survey` uygulamadığı için hangi kapıda elendiği
+hiçbir yere yazılmıyor. Onu öğrenmek açık bir iştir.
 
 Modeller birbirinden **tek bir eksende** ayrışır ve her eksen bir soruyu ölçer
 (bkz. [Ölçüm eksenleri](#ölçüm-eksenleri)): `scalp_bandit` kol tahsisini öğrenir,
@@ -137,13 +148,22 @@ Scalp katmanı bir "en iyi model" yarışı değil, bir **eksen tablosudur**: he
 olarak TEK bir değişken ayrışır ve iki modelin ortalama R farkı o değişkenin ölçüsüdür.
 Bir eksen kapandığında satır silinmez — kapanışın kendisi bir ölçüm sonucudur.
 
-| Eksen | Çift | Ayrışan tek şey | Durum |
-|---|---|---|---|
-| Sürenin katkısı | `scalp_fixed` (12) ↔ `scalp_patient` (16) | zaman stop'u sınırı (16 ↔ 100 bar) | **AÇIK** — hareket eden tek eksen (−0.15 ↔ −0.01) |
-| İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_managed` (14) | **tek değişken DEĞİL** — altı eksende birden ayrışır | AÇIK |
-| Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi | KAPALI — iki kez "fark yok" (karar 33) |
-| Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış | KAPALI — iki kez "fark yok" (karar 33) |
-| Volatilite rejiminin katkısı | `scalp_patient` (16) ↔ `scalp_vol` (17) | kesitsel ATR% medyan kapısı | KAPALI — ön-kayıtlı P1 düştü (karar 36) |
+| Eksen | Çift | Ayrışan tek şey | Kapsam | Durum |
+|---|---|---|---|---|
+| Sürenin katkısı | `scalp_fixed` (12) ↔ `scalp_patient` (16) | zaman stop'u sınırı (16 ↔ 100 bar) | **üç kol** | **AÇIK** — hareket eden tek eksen (−0.15 ↔ −0.01) |
+| İki sistemin toplam farkı ⚠ | `vwap_clone` (13) ↔ `vwap_managed` (14) | **tek değişken DEĞİL** — altı eksende birden ayrışır | kol yok (ayrı sinyal modülleri) | AÇIK |
+| Adaptasyonun katkısı | `scalp_bandit` (11) ↔ `scalp_fixed` (12) | kol seçimi | **üç kol** | KAPALI — iki kez "fark yok" (karar 33) |
+| Çıkış yönetiminin katkısı | `scalp_fixed` (12) ↔ `scalp_managed` (15) | üç aşamalı çıkış | **üç kol** | KAPALI — iki kez "fark yok" (karar 33) |
+| Volatilite rejiminin katkısı | `scalp_patient` (16) ↔ `scalp_vol` (17) | kesitsel ATR% medyan kapısı | **üç kol** | KAPALI — ön-kayıtlı P1 düştü (karar 36) |
+
+⚠ **Kapsam kolonu neden var.** Beş kollu modellerin dördünde de 4. ve 5. kol hiç
+tetiklemedi (karar 48), yani bu eksenlerin hiçbiri "beş kollu bir modelde" ölçülmedi —
+üçünde ölçüldü ve pratikte ikisinde (`rsi2_reversal` 123 pozisyonun 101'ini,
+`opening_range_breakout` 21'ini taşıyor). Eksen SONUÇLARI geçersiz değildir: çiftin iki
+tarafı da aynı üç kolu gördü, yani kural 6 bozulmadı ve fark hâlâ ayrışan tek
+değişkenin ölçüsüdür. Geçersiz olan, sonucun beş kol HAKKINDA okunmasıdır — "beş kollu
+bir modelde adaptasyonun katkısı yok" ile "üç kollu bir modelde adaptasyonun katkısı
+yok" aynı iddia değildir, ikincisi çok daha dardır.
 
 **13 ↔ 14 bir eksen DEĞİL, bir toplam farktır.** İki model sinyal kuralları, boyutlandırma,
 ev kapıları, seçim politikası, bar başına sinyal sayısı ve evren olmak üzere altı eksende
@@ -381,7 +401,7 @@ defter yazan modeller), **katalog** (`strategies/registry.py`'de kayıtlı ama l
 
 | # | Strateji | Yön | Tez |
 |---|---|---|---|
-| 12 | `scalp_fixed` | long + short | beş kol, eşit ağırlıklı çekiliş, öğrenme yok — eksenlerin KONTROLÜ |
+| 12 | `scalp_fixed` | long + short | beş kol (üçü canlı, bkz. karar 48), eşit ağırlıklı çekiliş, öğrenme yok — eksenlerin KONTROLÜ |
 | 16 | `scalp_patient` | long + short | `scalp_fixed`in ikizi, tek farkı zaman stop'u sınırı (16 ↔ 100 bar) |
 | 13 | `vwap_clone` | long + short | **dış sistem kopyası** (kural 15b), yarışmacı değil |
 | 14 | `vwap_managed` | long + short | VWAP sapma-dönüş sinyali, ev kurallarıyla (risk boyutlandırma, %1 taban, 1.5R) |
