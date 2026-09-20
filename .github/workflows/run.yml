@@ -137,3 +137,71 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scripts/telegram_report.py --log-level INFO
+
+      # Anlık SİNYAL bildirimi — YALNIZCA `trend` için (`--models trend`).
+      #
+      # Günlük özetten (yukarısı) ayrıdır ve onu değiştirmez: o, günde bir kez
+      # performans tablosunu yollar; bu, bir sonraki barın açılışında dolacak bir emri
+      # duyurur (kural 13). İki ayrı soru, iki ayrı mesaj.
+      #
+      # Neden izin listesi ve neden yalnızca `trend`: base kadrosunun öteki üç satırı
+      # bildirime değmez — `buyhold` her turda aynı iki sinyali üretir ve hepsi
+      # `duplicate_position` ile reddedilir (kural 15), `random_ctrl` bilgisiz bir
+      # çekiliştir ve `meanrev` bugün izlenmiyor. Listenin bedeli genişleme körlüğüdür
+      # (kadroya eklenen model sessizce bildirilmez); script bu yüzden atladığı her
+      # modeli `logger.info` ile YAZAR.
+      #
+      # Bu bir BİLDİRİM ayarıdır, ölçüm değil: dört model de koşmaya, deftere yazmaya
+      # ve tabloda görünmeye devam eder.
+      #
+      # `advanced` kapısına bağlıdır (özetle aynı gerekçe): bar ilerletmeyen turlarda
+      # `as_of` sabit kalır ve aynı sinyal dört kez bildirilirdi.
+      - name: Telegram trend signal alerts
+        if: always() && steps.round.outputs.advanced == 'true'
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/telegram_signals.py --log-level INFO --layer base --models trend
+
+      # Susturma penceresinin durumu koşular arası TAŞINMAK zorundadır: runner her
+      # koşuda sıfırdan kurulur, commit edilmezse "bu sinyali 4 bar önce bildirmiştim"
+      # bilgisi her turda kaybolurdu. Dosya KATMANA özeldir (state/telegram_base.json):
+      # pencere bar cinsindendir ve 4 saatlik katmanın 4 barı 16 saattir, scalp'inki 1.
+      #
+      # Neden ayrı bir commit: dosyayı defter commit'ine katmak, ağ erişimi olan
+      # bildirim adımını turun kaydedilmesinin ÖNÜNE koymayı gerektirirdi. Ayrı ve
+      # `continue-on-error` bir adım en kötü ihtimalde tekrar eden bir mesaja mal olur;
+      # ölçüme hiç dokunmaz (`git add` yalnızca durum dosyasını alır).
+      - name: Commit notification state
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ ! -f state/telegram_base.json ]; then
+            echo "bildirim durumu dosyası yok, commit atlanıyor"
+            exit 0
+          fi
+
+          git add state/telegram_base.json
+
+          if git diff --cached --quiet; then
+            echo "bildirim durumu değişmedi, commit atlanıyor"
+            exit 0
+          fi
+
+          git commit -m "trend-telegram: bildirim durumu"
+
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız oldu"
+          exit 1

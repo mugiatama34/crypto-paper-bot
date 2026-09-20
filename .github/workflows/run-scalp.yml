@@ -112,7 +112,17 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/telegram_signals.py --log-level INFO
+        # `--mute vwap_clone`: kopya modelin sinyalleri TELEFONA düşmez. Bu bir
+        # BİLDİRİM ayarıdır, ölçüm değil — model koşmaya, deftere yazmaya ve tabloda
+        # görünmeye devam eder (kural 15b: dış sistem kopyası, yarışmacı değil ama
+        # ölçülen bir satır). Gerekçe gürültüdür: kopya barda tek sinyal kuralına tabi
+        # DEĞİLDİR ve kendi pozisyon kotasına (5) kadar sinyal üretir, yani tek başına
+        # mesaj akışının çoğunu o doldurur.
+        #
+        # Susturma listesi (izin listesi değil): scalp kadrosuna yeni bir model
+        # eklendiğinde o model bildirilmeye BAŞLAR. Hata yönü gürültüdür, sessizlik
+        # değil — yeni bir modelin sessizce bildirilmemesi fark edilmezdi.
+        run: python scripts/telegram_signals.py --log-level INFO --mute vwap_clone
 
       # Susturma penceresinin durumu (state/telegram_scalp.json) koşular arası TAŞINMAK
       # zorundadır: runner her koşuda sıfırdan kurulur, commit edilmezse "bu sinyali 4 bar

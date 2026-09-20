@@ -254,8 +254,24 @@
   .mcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   .mcard-name { font-weight: 650; font-size: 14px; overflow-wrap: anywhere; }
   .mcard-rank { color: var(--ink-dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .mcard-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  /* Kartın dört sayısı: ÖLÇÜLEBİLİR bir ızgara, akan bir satır değil — kartlar yan
+     yana durduğunda aynı etiket aynı sütunda olmalı ki göz yatay tarayabilsin. */
+  .mcard-row {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px;
+    font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums;
+    border-top: 1px solid var(--hair); padding-top: 9px; margin-top: 2px;
+  }
+  .mcard-row > div { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
   .mcard-row span { color: var(--ink-dim); }
+  .mcard-badges { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
+  /* Açık pozisyon sayısı tabloda nötr bir rozet: bir performans sayısı DEĞİLDİR
+     (sonucu yok), bu yüzden getiri/R gibi işaret rengi almaz. */
+  .mt-open {
+    display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 999px;
+    border: 1px solid var(--hair); background: var(--surface-2); font-size: 12px;
+  }
+  /* Sıfır da bir ÖLÇÜMDÜR ve yazılır, ama göz onu taramaz: rozet sönükleşir. */
+  .mt-open.zero { color: var(--ink-dim); border-color: transparent; background: transparent; }
   .mcard-spark { margin-top: auto; }
   .mcard-spark svg { display: block; width: 100%; height: 34px; overflow: visible; }
 
@@ -430,8 +446,11 @@
     <section id="sec-models">
       <h2>Modeller</h2>
       <p class="note">
-        Hepsi tek tabloda: <b>10.000 $ ile başlayan hesap şimdi nerede</b> ve sıralamayı
-        belirleyen <b>ort. R</b> yan yana. Kolon başlığına tıklayarak sıralayabilirsiniz.
+        Hepsi tek tabloda ve hepsi aynı birimde: <b>10.000 $ ile başlayan hesap şimdi
+        nerede</b> (özsermaye ve getiri), sıralamayı belirleyen <b>ort. R</b>, ve bu
+        sayıların ne kadarının kesinleştiğini söyleyen <b>kapanan / açık</b> pozisyon
+        sayısı. Açık pozisyonun sonucu henüz yoktur: ne ort. R'ye ne getiriye girer.
+        Kolon başlığına tıklayarak sıralayabilirsiniz.
       </p>
       <details class="howto">
         <summary>Nasıl okunur? — birim, sıralama, bloklar ve rozetler</summary>
@@ -471,8 +490,8 @@
       <p class="note">
         Aynı modeller, bu kez <b>hangi soruyu sorduklarına</b> göre kümelenmiş: iki trend
         modelini yan yana okumak, ortalamaya dönüş modelinin yanında okumaktan başka bir şey
-        söyler. Kart ayrıca tablonun taşımadığı detayı taşır — özsermaye kıvrımı, rozet
-        gerekçeleri, açık pozisyon sayısı ve eğri filtresi.
+        söyler. Kartlar tablonun sayılarını tekrar eder (aynı kaynaktan, aynı biçimde) ve
+        tablonun taşımadığı ikisini ekler: özsermaye kıvrımı ve eğri filtresi.
       </p>
       <div id="groups"></div>
     </section>
@@ -721,6 +740,7 @@ let STYLE = {};
 let DATA = null;
 let MODELS = {};              // model -> metrics satırı
 let FLAGS = {};               // model -> acceptance bayrakları
+let OPEN_COUNT = {};          // model -> AÇIK pozisyon sayısı (tek sayım, üç okuyucu)
 /* Eğri izolasyonu: TEK state. Üç yüzey (model kartı, grafik lejandı, grafik
    başındaki filtre şeridi) bunu okur ve yalnızca setIsolated() yazar — ikinci bir
    "seçili model" değişkeni, iki yüzeyin bir gün farklı şey göstermesi demekti. */
@@ -756,6 +776,11 @@ function render(d) {
   for (const m of (d.models || [])) MODELS[m.model || m.name] = m;
   FLAGS = {};
   for (const f of ((d.acceptance || {}).models || [])) FLAGS[f.model] = f;
+  /* AÇIK pozisyon sayısı model başına: tablo, kartlar ve özet ŞERİDİ aynı haritadan
+     okur. Üç yerde ayrı ayrı saymak, bir gün birinin kapsamı (ör. çıpayı dışarıda
+     bırakmak) sessizce ayrışması demekti — aynı sayfada iki farklı "açık" sayısı. */
+  OPEN_COUNT = {};
+  for (const p of (d.open_positions || [])) OPEN_COUNT[p.model] = (OPEN_COUNT[p.model] || 0) + 1;
 
   renderHeader(d);
   computeRanks(d);
@@ -880,19 +905,41 @@ function loadScalp() {
     .catch(() => { /* katman henüz koşmadı: bölüm gizli kalır */ });
 }
 
-const SCALP_COLUMNS = ["model", "işlem", "ort. R", "medyan R", "kazanma", "toplam R", "getiri", "cost/R", "stop %"];
+/* Base tablosuyla AYNI dört sütunu taşır (özsermaye, getiri, kapanan, açık): iki
+   katmanın SAYILARI kıyaslanmaz (CLAUDE.md > Katmanlar) ama okuyucunun iki tabloda
+   aynı soruyu aynı adla sorabilmesi gerekir. "İşlem" yerine "kapanan", çünkü açık
+   pozisyon da bir işlemdir ve tek başına "işlem" ikisini de anlatabilir. */
+const SCALP_COLUMNS = [
+  "model", "özsermaye", "getiri", "ort. R", "kapanan", "açık",
+  "medyan R", "kazanma", "toplam R", "cost/R", "stop %",
+];
 
-function scalpRow(model) {
+/* Açık pozisyon sayısı scalp YÜKÜNDEN gelir, base'inkinden değil: iki katman ayrı
+   defterlere yazar ve base'in haritasını burada okumak, bir katmanın pozisyonunu
+   ötekinin satırında göstermek olurdu. */
+function scalpOpenCounts(d) {
+  const counts = {};
+  for (const p of (d.open_positions || [])) counts[p.model] = (counts[p.model] || 0) + 1;
+  return counts;
+}
+
+function scalpRow(model, openCounts) {
   const total = model.total || {};
   const account = model.account || {};
+  const equity = num(account.final_equity);
+  const open = (openCounts || {})[model.name || model.model] || 0;
   return [
     ["", esc(model.name || model.model)],
-    ["", total.trades ?? DASH],
+    ["", equity === null ? DASH : "$" + equity.toLocaleString("tr-TR", {
+      minimumFractionDigits: 0, maximumFractionDigits: 0 })],
+    [signClass(account.total_return), pctSigned(account.total_return)],
     [signClass(total.avg_r), fmtSigned(total.avg_r)],
+    ["", total.trades ?? DASH],
+    // Sıfır `—` DEĞİLDİR (base tablosuyla aynı gerekçe): sayı ölçülüyor.
+    ["", '<span class="mt-open' + (open ? "" : " zero") + '">' + open + "</span>"],
     [signClass(total.median_r), fmtSigned(total.median_r)],
     ["", pct(total.win_rate)],
     [signClass(total.total_r), fmtSigned(total.total_r, 1)],
-    [signClass(account.total_return), pctSigned(account.total_return)],
     ["", fmt(total.cost_per_r, 3)],
     ["", pctRaw(total.avg_stop_distance_pct)],
   ];
@@ -917,27 +964,35 @@ function renderScalp(d) {
     ", " + (d.universe_size ?? DASH) + " sembol, stop tavanı " +
     fmt((d.settings || {}).max_stop_atr_multiple, 1) + "×ATR.";
 
+  const scalpOpen = scalpOpenCounts(d);
   el("scalp-models").innerHTML = '<table class="grid"><thead><tr>' +
     SCALP_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
-    models.map((m) => '<tr class="data">' + scalpRow(m).map(([cls, v]) =>
+    models.map((m) => '<tr class="data">' + scalpRow(m, scalpOpen).map(([cls, v]) =>
       '<td class="' + cls + '">' + v + "</td>").join("") + "</tr>").join("") +
     "</tbody></table>";
 
-  /* Dar ekranda tablo yerine kart: 9 kolon telefonda ancak yatay kaydırmayla sığardı. */
+  /* Dar ekranda tablo yerine kart: 11 kolon telefonda ancak yatay kaydırmayla sığardı.
+     Ana sayı hesap düzeyindedir ($ ve %) — tek bakışta kıyaslanabilen budur; ort. R
+     alanların ilk satırında durur ve birincil metrik olmayı sürdürür. */
   el("scalp-models-cards").innerHTML = models.map((m) => {
     const total = m.total || {}, account = m.account || {};
+    const equity = num(account.final_equity);
     const fields = [
-      ["işlem", total.trades ?? DASH],
+      ["ort. R", fmtSigned(total.avg_r) + "R"],
+      ["kapanan", total.trades ?? DASH],
+      ["açık", String(scalpOpen[m.name || m.model] || 0)],
       ["kazanma", pct(total.win_rate)],
       ["toplam R", fmtSigned(total.total_r, 1)],
-      ["getiri", pctSigned(account.total_return)],
       ["cost/R", fmt(total.cost_per_r, 3)],
       ["stop %", pctRaw(total.avg_stop_distance_pct)],
     ];
     return '<article class="row">' +
       '<div class="row-top"><div><span class="row-sym">' + esc(m.name || m.model) + "</span></div>" +
-      '<div style="text-align:right"><div class="row-val ' + signClass(total.avg_r) + '">' +
-      fmtSigned(total.avg_r) + "R</div><div class=\"row-val-sub\">ort. R</div></div></div>" +
+      '<div style="text-align:right"><div class="row-val ' + signClass(account.total_return) + '">' +
+      esc(equity === null ? DASH : "$" + equity.toLocaleString("tr-TR", {
+        minimumFractionDigits: 0, maximumFractionDigits: 0 })) +
+      '</div><div class="row-val-sub ' + signClass(account.total_return) + '">' +
+      pctSigned(account.total_return) + "</div></div></div>" +
       '<div class="row-grid">' + fields.map(([k, v]) =>
         "<div><span>" + esc(k) + '</span> <b><span class="nw">' + esc(String(v)) + "</span></b></div>").join("") +
       "</div></article>";
@@ -958,7 +1013,7 @@ function renderScalp(d) {
       'modellemesi korunur — kapatmak kopyayı haksız biçimde iyi gösterirdi.</p></div></details>' +
       '<div class="card wide"><table class="grid"><thead><tr>' +
       SCALP_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
-      replicas.map((m) => '<tr class="data">' + scalpRow(m).map(([cls, v]) =>
+      replicas.map((m) => '<tr class="data">' + scalpRow(m, scalpOpen).map(([cls, v]) =>
         '<td class="' + cls + '">' + v + "</td>").join("") + "</tr>").join("") +
       "</tbody></table></div>"
     : "";
@@ -1131,12 +1186,20 @@ function renderSummary(d) {
   }
 
   const leaderFlags = leader ? FLAGS[leader.model] : null;
+  // Havuzla AYNI kapsam: yalnızca yarışmacılar. Çıpanın açık pozisyonunu buraya katmak,
+  // "kapanmış işlem (yarışmacı)" kutusunda iki farklı kapsamı toplamak olurdu (kural 15).
+  const openTotal = names.reduce((sum, model) => sum + (OPEN_COUNT[model] || 0), 0);
   const cards = [
     {
+      // Kapanan ile AÇIK yan yana: kapanan sayı ölçümün örneklemidir (kabul çıtası ona
+      // bakar), açık olanın ise sonucu henüz yoktur ve hiçbir ortalamaya girmez. İkisini
+      // birlikte göstermek, tablodaki her sayının ne kadarının kesinleşmiş olduğunu söyler.
       k: "kapanmış işlem (yarışmacı)",
       v: String(num(total.trades) ?? 0),
       vClass: "",
-      sub: names.length + " yarışmacı · referans çıpası havuzda değil (kural 15)",
+      sub: names.length + " yarışmacı · şu an <b>" + openTotal + " açık pozisyon</b>" +
+        (openTotal ? " (sonucu yok, ortalamalara girmez)" : "") +
+        " · referans çıpası havuzda değil (kural 15)",
     },
     {
       k: "lider · işlem başına ort. R",
@@ -1361,8 +1424,6 @@ function renderGroups(d) {
   const grouped = new Set([].concat(...GROUPS.map((g) => g.models), REFERENCE_GROUP.models));
   const benchmarks = d.benchmarks || [];
   const controlModel = (d.acceptance || {}).control_model || null;
-  const openCount = {};
-  for (const p of (d.open_positions || [])) openCount[p.model] = (openCount[p.model] || 0) + 1;
 
   const rank = RANK;
   const sections = GROUPS.map((g) => ({ ...g, models: g.models.filter((m) => present.has(m)) }))
@@ -1437,15 +1498,22 @@ function renderGroups(d) {
         (capital === null ? "başlangıç —" : "başlangıç $" + capital.toLocaleString("tr-TR")) +
       "</span>";
 
-    const open = openCount[model] || 0;
+    const open = OPEN_COUNT[model] || 0;
     // Çıpanın ort. R'si YOKTUR (stop'suz sinyalin 1R'si yok, kural 15); `—` yazmak
     // "ölçtük, sıfır çıktı" demekten farklıdır.
-    const folded = [
+    //
+    // Bu dört sayı artık KATLI DEĞİL: kart bir dashboard hücresidir ve "ort. R kaç,
+    // kaç işlem kapandı, kaç tane açık" sorularının cevabı bir tıklamanın arkasında
+    // duramaz. Katlanan bölümde yalnızca eğri ve detay bağlantısı kalır.
+    //
+    // "açık" sıfırken de YAZILIR: satırın yokluğu "açık pozisyon yok" ile "bu kart o
+    // sayıyı hiç göstermiyor"u aynı görüntüye indirirdi.
+    const stats = [
       isBenchmark ? ["ort. R", DASH] : ["ort. R", fmtSigned(total.avg_r) + "R"],
-      ["işlem", String(num(total.trades) ?? 0)],
+      ["kapanan", String(num(total.trades) ?? 0)],
+      ["açık", String(open)],
       ["MDD", pct(account.max_drawdown, 2)],
     ];
-    if (open) folded.push(["açık", String(open)]);
 
     /* Eğrisi olmayan model izole edilemez: grafiğin görünen seri kümesi boşalır ve
        sayfa "filtreledim ama hiçbir şey yok" gösterirdi. Kart yine durur (kural 33'ün
@@ -1469,14 +1537,14 @@ function renderGroups(d) {
       '<div class="mcard-rank"' + (rankHint(model) ? ' title="' + esc(rankHint(model)) + '"' : "") + ">" +
         (rank[model] ? "#" + rank[model] : rankLabel(model)) + "</div></div>" +
       '<div class="mcard-eq">' + hero + "</div>" +
+      '<div class="mcard-row">' +
+        stats.map(([k, v]) => "<div><span>" + esc(k) + "</span> " + esc(v) + "</div>").join("") +
+      "</div>" +
+      '<div class="mcard-badges">' + badges(FLAGS[model], false) + "</div>" +
       filterBtn +
       '<span class="iso-mark" hidden>◉ eğride yalnız bu model</span>' +
-      "<details><summary>detaylar</summary>" +
+      "<details><summary>eğri ve detay</summary>" +
         '<div class="mcard-fold">' +
-          '<div class="mcard-row">' +
-            folded.map(([k, v]) => "<div><span>" + esc(k) + "</span> " + esc(v) + "</div>").join("") +
-          "</div>" +
-          "<div>" + badges(FLAGS[model], false) + "</div>" +
           '<div class="mcard-spark">' + sparkline((DATA.equity || {})[model], st.color || "#888", !!st.dash) + "</div>" +
           '<a class="mcard-more" href="' + modelHref(model) + '">model detayı →</a>' +
         "</div>" +
@@ -1551,9 +1619,32 @@ const TABLE_COLUMNS = [
     },
   },
   {
-    key: "trades", label: "işlem", dir: -1,
+    // "İŞLEM" ikisini de anlatabilirdi; etiket KAPANAN der. Birim POZİSYONDUR, defter
+    // satırı değil (CLAUDE.md > Dolum ve Pozisyon): kısmi çıkış dilimleri ayrı
+    // sayılmaz, bu yüzden sayı `docs/positions.html`deki satır sayısından küçük olabilir.
+    key: "trades", label: "kapanan", dir: -1,
+    title: "R'ye giren KAPANMIŞ pozisyon sayısı (dilimler ayrı sayılmaz)",
     get: (m) => num(((MODELS[m] || {}).total || {}).trades),
     cell: (m) => String(num(((MODELS[m] || {}).total || {}).trades) ?? 0),
+  },
+  {
+    // Açık pozisyonun SONUCU henüz yoktur: ortalama R'ye, getiriye ve kapanan sayısına
+    // girmez. Kolon tam da bunu görünür kılar — "bu model 39 işlem kapattı ama şu an
+    // 5 pozisyonu daha açık" cümlesi, tablonun geri kalanının ne kadarının kesinleşmiş
+    // olduğunu söyler.
+    key: "open", label: "açık", dir: -1,
+    title: "Şu an açık pozisyon sayısı — sonucu henüz yok, ort. R'ye ve getiriye girmez",
+    get: (m) => OPEN_COUNT[m] || 0,
+    // Sıfır `—` DEĞİLDİR: sayı ölçülüyor ve gerçekten sıfır (CLAUDE.md'nin "veri yoksa
+    // nan, 0.0 değil" kuralının tersi yönü). `—` yazmak "bu modelin açık pozisyonu
+    // ölçülemiyor" demek olurdu — üstelik kart "0" gösterirken tablo "—" gösterseydi
+    // aynı sayfada aynı olgunun iki ayrı gösterimi olurdu.
+    cell: (m) => {
+      const open = OPEN_COUNT[m] || 0;
+      return open
+        ? '<span class="mt-open">' + open + "</span>"
+        : '<span class="mt-open zero">0</span>';
+    },
   },
   {
     key: "mdd", label: "MDD", dir: -1,
@@ -1661,7 +1752,7 @@ function renderModelTable() {
     return '<th scope="col" class="sortable' + pad + '"' +
       (active ? ' aria-sort="' + (sortState.dir > 0 ? "ascending" : "descending") + '"' : "") +
       '><button type="button" data-sort="' + esc(c.key) + '" title="' +
-      esc(c.label + " sütununa göre sırala") + '">' + esc(c.label) +
+      esc((c.title ? c.title + "\n" : "") + c.label + " sütununa göre sırala") + '">' + esc(c.label) +
       '<span class="ind" aria-hidden="true">' + arrow + "</span></button></th>";
   }).join("") + "</tr></thead>";
 
@@ -1694,9 +1785,12 @@ function renderModelTable() {
       const total = (MODELS[m] || {}).total || {};
       const equityCell = TABLE_COLUMNS.find((c) => c.key === "equity").cell(m);
       const avgCell = TABLE_COLUMNS.find((c) => c.key === "avg_r").cell(m);
+      // Dar ekran GENİŞ tabloyla aynı alanları taşır: telefonda eksik bir kolon,
+      // aynı modelin iki cihazda iki farklı özeti demekti.
       const sub = [
         ["ort. R", avgCell],
-        ["işlem", String(num(total.trades) ?? 0)],
+        ["kapanan", String(num(total.trades) ?? 0)],
+        ["açık", TABLE_COLUMNS.find((c) => c.key === "open").cell(m)],
         ["MDD", pct(account.max_drawdown, 2)],
       ];
       return '<div class="mt-item" data-model="' + esc(m) + '" style="--accent:' +
