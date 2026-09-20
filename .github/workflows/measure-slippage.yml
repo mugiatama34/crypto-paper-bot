@@ -29,7 +29,13 @@ on:
         required: false
         default: "scalp"
       venue:
-        description: "Kitabı okunacak borsa (bybit = maliyeti ödeyen taraf)"
+        # VARSAYILAN bybit KALIR, çünkü doğru soru odur: maliyeti ödeyen taraf hesabın
+        # tutulduğu yerdir. Ama Bybit kitabı GitHub runner'ının IP'sinden 403 ile
+        # reddediliyor (karar 51) — o durumda iş artık YEŞİL BİTMEZ, script çıkış kodu 1
+        # döner. Erişilebilen taraf `okx`tir ve ölçtüğü şey DAHA ZAYIFTIR: mutlak
+        # seviyeyi Bybit için söylemez. Varsayılanı okx yapmak, aracı sessizce başka bir
+        # soruyu cevaplar hâle getirirdi.
+        description: "Kitabı okunacak borsa (bybit = maliyeti ödeyen taraf; runner'dan 403 alıyor — karar 51)"
         required: false
         default: "bybit"
         type: choice

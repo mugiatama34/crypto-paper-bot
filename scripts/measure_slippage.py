@@ -395,6 +395,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     assumed = 2.0 * float(get_setting(config, "slippage_base")) * 100.0
     print(format_results(results, assumed_round_trip_pct=assumed, venue=args.venue))
+
+    # Hiçbir kitap okunamadıysa çıkış kodu 0 OLAMAZ. Tablo zaten tamamen `—` basar, ama
+    # koşunun kendisi yeşil dönerdi ve "ölçüldü, varsayım tuttu" ile "hiç ölçülemedi" aynı
+    # rozeti taşırdı — projenin "atlama sessiz olamaz" kuralının (kural 14/15) araç
+    # tarafındaki karşılığı. Kısmi ölçüm düşürmez: `samples` kolonu kaç örneğin toplandığını
+    # zaten satır satır söyler ve eksik satır `—` ile durur.
+    if not any(row.samples for row in results):
+        logger.error(
+            "%s kitabından hiçbir örnek alınamadı: ölçüm YAPILMADI (yukarıdaki tablo boştur)",
+            args.venue,
+        )
+        return 1
     return 0
 
 

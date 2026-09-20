@@ -140,6 +140,23 @@ def test_measure_survives_a_symbol_whose_book_fails() -> None:
     assert results[0].half_spread_pct is None
 
 
+def test_a_venue_that_blocks_every_symbol_leaves_nothing_measured() -> None:
+    """Tüm evren düşerse `samples` toplamı 0'dır — `main` bu koşulda çıkış kodu 1 döner.
+
+    Gerçek bir koşuda oldu: Bybit, GitHub runner'ının IP'sini 403 ile reddetti ve iş
+    YEŞİL bitti (bkz. docs/decisions.md > 51). Boş bir tablo ile ölçülmüş bir tablo aynı
+    rozeti taşıyamaz; sınanan şey o ayrımın kaynağıdır.
+    """
+    def fetch(symbol: str) -> Book:
+        raise RuntimeError("HTTP Error 403: Forbidden")
+
+    results = measure(
+        ["A-USDT-SWAP", "B-USDT-SWAP"], notionals={}, fetch=fetch,
+        samples=3, interval=0.0, sleep=lambda _: None,
+    )
+    assert not any(row.samples for row in results)
+
+
 def test_report_puts_the_measurement_next_to_the_assumption() -> None:
     """Tek başına bir spread sayısı bir şey söylemez: kıyas varsayımladır."""
     results = measure(
