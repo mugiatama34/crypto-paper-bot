@@ -77,12 +77,66 @@
   .group-note { font-size: 11.5px; color: var(--ink-muted); }
   .mcards { display: grid; gap: 10px; grid-template-columns: 1fr; }
   /* Kart artık bir <a> DEĞİL: içinde katlanır bir bölüm var ve tıklamak onu açmalı,
-     sayfayı değiştirmemeli. Detay sayfasına giden bağlantı katlanan bölümün içindedir. */
+     sayfayı değiştirmemeli. Detay sayfasına giden bağlantı katlanan bölümün içindedir.
+
+     Kart yüzeyi ÖZSERMAYE EĞRİSİNİ filtreler (izolasyon). Kartın kendisi bir <button>
+     ya da role="button" DEĞİLDİR: içinde zaten iki etkileşimli öğe var (katlanır
+     "detaylar" başlığı ve "model detayı →" bağlantısı) ve onları bir düğmenin içine
+     yuvalamak hem geçersiz HTML hem de klavye/ekran okuyucu için okunamaz bir ağaç
+     üretirdi. Bu yüzden erişilebilir kontrol kartın İÇİNDEKİ `.mcard-filter`
+     düğmesidir (aria-pressed taşır); yüzeye tık yalnızca fare için bir KISAYOLDUR
+     ve aynı state'i çağırır. */
   .mcard {
     display: flex; flex-direction: column; gap: 8px;
-    background: var(--surface); border: 1px solid var(--hair); border-top: 3px solid var(--ink-muted);
+    background: var(--surface); border: 1px solid var(--hair);
+    border-top: 3px solid var(--accent, var(--ink-muted));
     border-radius: var(--radius); padding: 12px; color: inherit; min-width: 0;
+    cursor: pointer; transition: border-color .12s ease, background-color .12s ease;
   }
+  /* Tıklanabilirlik GÖRÜNÜR olmalı: eskiden kart durağan duruyordu ve sayfa metni
+     "tıklayınca filtrelenir" derken hiçbir şey öyle görünmüyordu. */
+  .mcard:hover { background: var(--surface-2); border-color: var(--axis); }
+  .mcard:focus-within { border-color: var(--ink-muted); }
+  /* Eğrisi olmayan model izole EDİLEMEZ (izole edilirse grafik boşalırdı): kart
+     tıklanabilir görünmez, içindeki düğme de disabled'dır. */
+  .mcard.nofilter { cursor: default; }
+  .mcard.nofilter:hover { background: var(--surface); border-color: var(--hair); }
+  /* Seçili kart: modelin KENDİ rengiyle çerçevelenir — grafikteki çizgi, lejandaki
+     düğme ve grafik başındaki chip ile aynı renk kimliği. */
+  .mcard.isolated {
+    background: var(--surface-2);
+    border-color: var(--accent, var(--ink-muted));
+    box-shadow: 0 0 0 1px var(--accent, var(--ink-muted));
+  }
+  /* Kart içi filtre düğmesi: lejandaki `.lg` ile aynı dil (pill + aria-pressed). */
+  .mcard-filter {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+    min-height: var(--touch); padding: 0 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--hair); background: var(--surface-2); color: var(--ink-muted);
+    font: 600 11.5px/1 var(--font); white-space: nowrap;
+  }
+  .mcard-filter:hover:not(:disabled) { border-color: var(--axis); color: var(--ink-2); }
+  .mcard-filter:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 1px; }
+  .mcard-filter:disabled { opacity: 0.45; cursor: default; }
+  .mcard-filter[aria-pressed="true"] {
+    color: var(--ink); border-color: var(--accent, var(--ink-muted));
+    background: color-mix(in srgb, var(--accent, #888) 18%, transparent);
+  }
+  .mcard-filter i {
+    width: 14px; height: 0; border-top: 2px solid var(--accent, var(--ink-muted)); display: inline-block;
+  }
+
+  /* ---------------- grafik filtre şeridi ---------------- */
+  /* Filtrenin DURUMU grafiğin yanında yazılı durur. Eskiden tek göstergesi lejandaki
+     bir düğmenin sönük görünmesiydi: filtre açıkken sayfanın geri kalanı bunu hiçbir
+     yerde söylemiyordu ve grafik "bozuk" gibi okunabiliyordu. */
+  .filterbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin-bottom: 10px; min-height: var(--touch);
+  }
+  .filterbar .chip { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; }
+  .filterbar .chip i { width: 14px; height: 0; border-top-width: 2px; display: inline-block; }
+  .filterbar .hint { color: var(--ink-muted); font-size: 12px; }
   /* Referans ve kontrol satırları grafikte nötr; kartta da öyle görünürler. Çıpa
      ayrıca KESİKLİ kenarlıkla ayrışır: aynı sütunda yarışmıyor (kural 15). */
   .mcard.reference { border-style: dashed; background: rgba(255,255,255,0.028); }
@@ -215,7 +269,10 @@
     .wide { display: block; }
     .narrow { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .tip { transition: none; }
+    .mcard { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -319,7 +376,12 @@
 
     <section id="sec-equity">
       <h2>Özsermaye eğrileri</h2>
-      <p class="note">Bir modele tıklayınca yalnız o kalır; tekrar tıklayınca hepsi döner. Kesikli gri çizgi başlangıç sermayesidir.</p>
+      <p class="note">
+        <b>Modeller</b> bölümündeki bir karta ya da aşağıdaki lejanda tıklayınca yalnız o
+        model kalır; tekrar tıklayınca hepsi döner. Kesikli gri çizgi başlangıç sermayesidir.
+      </p>
+      <!-- Filtrenin durumu: kart, lejand ve bu şerit TEK bir state'i (isolated) çizer. -->
+      <div class="filterbar" id="equity-filter"></div>
       <div class="card">
         <div class="chart-wrap" id="equity-wrap">
           <svg id="equity" role="img" aria-label="Model özsermaye eğrileri"></svg>
@@ -556,6 +618,9 @@ let STYLE = {};
 let DATA = null;
 let MODELS = {};              // model -> metrics satırı
 let FLAGS = {};               // model -> acceptance bayrakları
+/* Eğri izolasyonu: TEK state. Üç yüzey (model kartı, grafik lejandı, grafik
+   başındaki filtre şeridi) bunu okur ve yalnızca setIsolated() yazar — ikinci bir
+   "seçili model" değişkeni, iki yüzeyin bir gün farklı şey göstermesi demekti. */
 let isolated = null;          // seviye 1 eğri izolasyonu
 let overviewScroll = 0;       // detaydan dönüşte okuyucunun bıraktığı yer
 let entryWasDetail = false;   // sayfaya doğrudan #model=... ile mi girildi
@@ -594,6 +659,7 @@ function render(d) {
   renderGroups(d);
   renderEquity(d);
   renderCorrelation(d);
+  setupCardFilter();
   setupSectionNav();
   loadScalp();
 
@@ -1214,6 +1280,8 @@ function renderGroups(d) {
       '<span class="group-note">' + esc(g.note) + "</span></div>" +
       '<div class="mcards">' + cards.join("") + "</div></div>";
   }).join("");
+  // Kartlar yeniden çizildi: aktif filtre varsa işareti geri koy.
+  applyIsolationToCards();
 
   // Rütbesizliğin SEBEBİ görünür olmalı: "—" tek başına "ölçülemedi" ile "kapıya 4
   // işlem kaldı"yı aynı işarete indirger.
@@ -1267,14 +1335,29 @@ function renderGroups(d) {
     ];
     if (open) folded.push(["açık", String(open)]);
 
-    return '<div class="mcard' + (isReferenceGroup || isBenchmark ? " reference" : "") + '"' +
-      ' style="border-top-color:' + (st.color || "var(--ink-muted)") + '">' +
+    /* Eğrisi olmayan model izole edilemez: grafiğin görünen seri kümesi boşalır ve
+       sayfa "filtreledim ama hiçbir şey yok" gösterirdi. Kart yine durur (kural 33'ün
+       ölçütü "model n'e ulaşabiliyor mu"), yalnızca filtre kapalıdır. */
+    const filterable = ((DATA.equity || {})[model] || []).length > 0;
+    const accent = st.color || "var(--ink-muted)";
+    const filterBtn =
+      '<button type="button" class="mcard-filter" aria-pressed="false"' +
+      (filterable ? "" : " disabled") +
+      ' title="' + esc(filterable
+        ? "Özsermaye eğrisinde yalnız bu modeli göster"
+        : "Bu modelin henüz özsermaye kaydı yok: eğride izole edilemez") + '">' +
+      '<i></i>eğride yalnız bu</button>';
+
+    return '<div class="mcard' + (isReferenceGroup || isBenchmark ? " reference" : "") +
+      (filterable ? "" : " nofilter") + '" data-model="' + esc(model) + '"' +
+      ' style="--accent:' + accent + '">' +
       '<div class="mcard-top"><div class="mcard-name"><span class="swatch' + (st.dash ? " dashed" : "") +
         '" style="background:' + (st.color || "var(--ink-muted)") + ";color:" + (st.color || "var(--ink-muted)") +
         '"></span>' + esc(model) + tag + "</div>" +
       '<div class="mcard-rank"' + (rankHint(model) ? ' title="' + esc(rankHint(model)) + '"' : "") + ">" +
         (rank[model] ? "#" + rank[model] : rankLabel(model)) + "</div></div>" +
       '<div class="mcard-eq">' + hero + "</div>" +
+      filterBtn +
       "<details><summary>detaylar</summary>" +
         '<div class="mcard-fold">' +
           '<div class="mcard-row">' +
@@ -1287,6 +1370,96 @@ function renderGroups(d) {
       "</details>" +
       "</div>";
   }
+}
+
+/* ------------------------- eğri izolasyonu (filtre) -------------------------
+ *
+ * Sayfa metni "bir modele tıklayınca yalnız o kalır" diyordu ama bunu YALNIZCA
+ * grafiğin altındaki küçük lejand düğmesi yapıyordu; model kartı hiçbir şey
+ * yapmıyordu. Artık iki giriş de aynı kapıdan geçer.
+ *
+ * TEK YAZAR: setIsolated. Kart sınıfı, lejand düğmesinin aria-pressed'ı, grafiğin
+ * `isolate` seçeneği ve filtre şeridi hep buradan tazelenir — her yüzeyin kendi
+ * "seçili model" kopyasını tutması, iki yüzeyin bir gün farklı şey göstermesiydi.
+ * ------------------------------------------------------------------------- */
+const canIsolate = (model) => ((DATA && DATA.equity ? DATA.equity[model] : null) || []).length > 0;
+
+function setIsolated(model) {
+  const next = model && canIsolate(model) ? model : null;
+  if (next === isolated) return;
+  isolated = next;
+  renderEquity(DATA);          // lejand + grafik + filtre şeridi
+  applyIsolationToCards();
+}
+
+/* Kartlar YENİDEN ÇİZİLMEZ, yalnızca işaretlenir: innerHTML'i tazelemek açık
+   "detaylar" bölümlerini kapatır ve klavye odağını kartın dışına atardı. */
+function applyIsolationToCards() {
+  document.querySelectorAll("#groups .mcard[data-model]").forEach((node) => {
+    const on = node.dataset.model === isolated;
+    node.classList.toggle("isolated", on);
+    const btn = node.querySelector(".mcard-filter");
+    if (!btn || btn.disabled) return;
+    btn.setAttribute("aria-pressed", String(on));
+    btn.title = on
+      ? "Filtreyi kaldır: tüm modelleri göster"
+      : "Özsermaye eğrisinde yalnız bu modeli göster";
+  });
+}
+
+/* Filtre grafiğin yanında YAZILI durur. Tek göstergesi lejanddaki bir düğmenin
+   sönükleşmesi olduğunda, filtre açık unutulmuş bir grafik "veri kayboldu" gibi
+   okunuyordu. */
+function renderEquityFilter() {
+  const host = el("equity-filter");
+  if (!host) return;
+  if (!DATA || !Object.keys(DATA.equity || {}).length) { host.innerHTML = ""; return; }
+
+  if (!isolated) {
+    host.innerHTML = '<span class="hint">Tüm modeller gösteriliyor — bir model kartına ' +
+      "ya da aşağıdaki lejanda tıklayarak tek modele indirebilirsiniz.</span>";
+    return;
+  }
+  const st = STYLE[isolated] || {};
+  host.innerHTML =
+    '<span class="chip"><i style="border-top-color:' + (st.color || "#888") +
+      ";border-top-style:" + (st.dash ? "dashed" : "solid") + '"></i>' +
+      "Filtrelendi: <b>" + esc(isolated) + "</b></span>" +
+    '<button type="button" class="linkbtn" id="equity-clear">✕ Hepsini göster</button>';
+  el("equity-clear").addEventListener("click", () => setIsolated(null));
+}
+
+/* Kart yüzeyine tık: fare için bir KISAYOL (erişilebilir yol kartın içindeki
+   `.mcard-filter` düğmesidir). Delegasyon `#groups` üzerinde bir kez bağlanır —
+   kart başına dinleyici, renderGroups her çağrıldığında birikirdi. */
+function setupCardFilter() {
+  el("groups").addEventListener("click", (ev) => {
+    const node = ev.target.closest ? ev.target.closest(".mcard[data-model]") : null;
+    if (!node) return;
+    const onButton = !!ev.target.closest(".mcard-filter");
+    // Kartın KENDİ etkileşimli öğeleri kendi işlerini yapar: "detaylar" açılır
+    // başlığı katlamayı açar, "model detayı →" detay seviyesine gider.
+    if (!onButton && ev.target.closest("a, button, summary")) return;
+    // Metin seçiliyorsa tık bir komut değil, bir seçimin bitişidir.
+    if (!onButton && String(window.getSelection() || "").length) return;
+    const model = node.dataset.model;
+    if (!canIsolate(model)) return;
+
+    const turningOn = isolated !== model;
+    setIsolated(turningOn ? model : null);
+    // Etkiyi GÖSTER: grafik tamamen ekran dışındaysa oraya götür. Görünürken
+    // kaydırmak, okuyucunun yerini sebepsiz değiştirmek olurdu.
+    if (turningOn) revealEquity();
+  });
+}
+
+function revealEquity() {
+  const sec = el("sec-equity");
+  if (!sec || sec.hidden) return;
+  const box = sec.getBoundingClientRect();
+  const onScreen = box.top < window.innerHeight - 80 && box.bottom > 80;
+  if (onScreen) return;
+  sec.scrollIntoView({ behavior: REDUCED_MOTION.matches ? "auto" : "smooth", block: "start" });
 }
 
 /* --------------------------- eğri grafikleri --------------------------- */
@@ -1326,6 +1499,7 @@ function renderEquity(d) {
     // SVGElement onu uygulamaz — atama sessizce bir JS alanı yaratır, öznitelik yazılmaz.
     equityChart.clear();
     legend.innerHTML = '<p class="empty">Henüz özsermaye kaydı yok.</p>';
+    renderEquityFilter();
     return;
   }
 
@@ -1336,12 +1510,14 @@ function renderEquity(d) {
       '<i style="border-top-color:' + (st.color || "#888") + ";border-top-style:" + (st.dash ? "dashed" : "solid") + '"></i>' +
       esc(m) + "</button>";
   }).join("");
+  // Lejand da kart da AYNI kapıdan geçer (setIsolated); burada `isolated`a doğrudan
+  // yazmak, iki girişin iki ayrı tazeleme yolu olması demekti.
   legend.querySelectorAll(".lg").forEach((b) => b.addEventListener("click", () => {
-    isolated = isolated === b.dataset.model ? null : b.dataset.model;
-    renderEquity(d);
+    setIsolated(isolated === b.dataset.model ? null : b.dataset.model);
   }));
 
   equityChart.show(equity, names, { isolate: isolated });
+  renderEquityFilter();
 }
 
 function paintLines(svg, tip, state) {
