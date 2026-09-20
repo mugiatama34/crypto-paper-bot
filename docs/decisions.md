@@ -4052,3 +4052,43 @@ bağımlılık demektir ve onun da düşmesi mümkündür — fark, düştüğü
 
 **Ön-kayıt sicili (§6c) DEĞİŞMEDİ:** bu bir kural hipotezi değil, bir altyapı ölçümüdür ve
 bir modelin performansı hakkında iddia taşımaz (karar 40'ın ölçütü).
+
+---
+
+## 51. Boş bir rapor YEŞİL dönemişti: `measure_funding.py`nin çıkış kodu kusuru
+
+**Bu kayıt karar 50'nin BULGUSU hakkında değildir** — veri yolunun tıkalı olduğu, engelin
+mekanizması ve açık iş orada yazılı ve orası tek kaynaktır. Burada kayda geçen şey aracın
+o bulguyu nasıl SUNDUĞUDUR ve bu ayrı bir kusurdur.
+
+**Kusur.** İlk koşu (`measure-funding` #35441623091) 13 sembolün hepsinde dönem A
+penceresinde sıfır kayıt buldu ve bunu `nan` dolu bir dağılım tablosu, her eşikte "0 olay"
+yazan bir sayım ve **çıkış kodu 0** ile bildirdi. Yani *"ölçtük ve bulamadık"* ile *"hiç
+ölçemedik"* aynı hücreye yazıldı — `core/metrics.py`nin "veri yoksa `nan`, `0.0` değil"
+kuralının tam olarak yasakladığı şey, bu kez çıkış kodunda. O hâliyle rapor **"dönem A'da
+fonlama ekstremi yok"** diye okunurdu; doğrusu **"dönem A'da fonlama VERİSİ yok"**tur ve
+ikisi aynı cümle değildir.
+
+**İki onarım, ikisi de sayıya değil sayının DENETLENEBİLİRLİĞİNE dokunur:**
+
+- **(a0) ÇEKİM İZİ** — sembol başına kaç sayfa çekildi, pencere filtresinden ÖNCE kaç ham
+  kayıt görüldü, bunların en eskisi/en yenisi hangi tarihti ve sayfalama NEDEN durdu.
+  Gerekçe: `coverage` yalnızca pencerenin İÇİNE bakar, oysa teşhis pencerenin DIŞINDA
+  duruyordu. İz üç sebebi ayırt eder — sembol listelenmemiş (`boş sayfa`), kaynak o kadar
+  geriye vermiyor (`kısa sayfa`), sayfalamamız bozuk (`imleç ilerlemedi`). İlk koşuda bu
+  üçü tek bir "0 kayıt" satırına çökmüştü.
+- **VERİ KAPISI** — pencerede hiçbir sembolde kayıt yoksa çıkış kodu **3**. Yeşil bir koşu
+  okunabilir bir rapor demektir.
+
+⚠ **Bu turda üretilen MEKANİZMA okuması YANLIŞTI ve karar 50 onu çürüttü.** Koşu log'undan
+"sembol başına ~3 istek, 312 kayıt, 400'ün altında durdu" okunup sebep bir **sayfalama
+tavanı** sanılmıştı — yani tabanın BİZDE olabileceği ihtimali açık bırakılmıştı.
+`scripts/probe_funding_depth.py` ölçtü: `limit=400` kabul ediliyor ama o kadar kayıt YOK;
+kısıt bir sayfa boyu değil, uç noktanın tuttuğu **~3 aylık kayan pencerenin kendisidir** ve
+`fetch_history` ulaşılabilen azami derinliğin tamamına ulaşıyor, kayıp vermiyor.
+
+**Dersin kendisi kaydın sebebidir:** yanlış olan şey teşhisin içeriği değil, teşhisin
+ÜRETİLME BİÇİMİYDİ. Sayı log'un satır zaman damgalarından ve bir throttle sabitinden geri
+hesaplanmıştı — yani ölçülmemiş bir mekanizma, ölçülmüş bir sayıdan türetilmişti. Doğru
+yol karar 50'nin yaptığıdır: soruyu soran ayrı bir probe yazmak ve ön-kaydını koşudan önce
+commit etmek. Bir araç kendi teşhisini üretemez; teşhis de ölçülür.

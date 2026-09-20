@@ -50,6 +50,34 @@ gitmek dönem B'ye dokunmaz.
 `2 × damga sayısı` bar sürer. Bu bir çeviridir, bir ölçüm değil — mum verisi hiç
 çekilmez.
 
+⚠ **İLK KOŞUNUN SONUCU: OKX bu pencereyi VERMİYOR** (koşu #35441623091). 13 sembolün
+hepsinde dönem A penceresinde SIFIR kayıt bulundu. Sebep bu aracın filtresi değil,
+kaynağın sınırıdır: `/api/v5/public/funding-rate-history` **~3 aylık KAYAN bir pencere**
+tutuyor (283 kayıt, en eski 2026-06-17) ve dönem A'nın tamamı o pencerenin ~26 ay
+dışında kalıyor — ölçen `scripts/probe_funding_depth.py`, kayıt karar 50 ve
+docs/backtest.md > 6f. Projenin canlı yolu da bunu zaten varsayıyor:
+`data.funding_history_periods` 180 (60 gün).
+
+⚠ **Bu başlık bir zamanlar sebebi "~300-400 kayıtlık sayfalama tavanı" diye yazıyordu ve
+o okuma ÇÜRÜDÜ** (karar 51): `limit=400` kabul ediliyor ama o kadar kayıt YOK, yani kısıt
+bir sayfa boyu değil pencerenin kendisidir; `fetch_history` de kayıp vermiyor —
+ulaşılabilen azami derinliğin tamamına ulaşıyor. Yanlış olan teşhisin içeriği değil
+ÜRETİLME BİÇİMİYDİ: mekanizma log'un zaman damgalarından geri hesaplanmıştı, ölçülmemişti.
+
+Bu bir ARAÇ hatası değil, bir VERİ bulgusudur ve tam olarak aracın cevaplamak için
+yazıldığı sorunun cevabıdır: *bu veriyle ölçülebilir mi?* — **OKX public REST ile
+HAYIR.** Araçta düzeltilen şey sonucun kendisi değil, SUNULUŞUDUR: koşu sıfır kodla
+bitiyordu, yani "ölçtük ve bulamadık" ile "hiç ölçemedik" aynı hücreye yazılıyordu
+(`core/metrics.py`nin "veri yoksa `nan`, `0.0` değil" kuralının çıkış kodundaki
+karşılığı). İki şey eklendi: **(a0) ÇEKİM İZİ** bölümü (kaynağın gerçekte verdiği en eski damgayı
+gösterir — üç ayrı sebebi ayırt eder: sembol listelenmemiş / borsa o kadar geriye
+vermiyor / sayfalamamız bozuk) ve bir **VERİ KAPISI** (pencerede hiçbir sembolde kayıt
+yoksa çıkış kodu 3).
+
+Dönem A'yı gerçekten ölçmek AYRI bir karardır ve bu araçta verilmedi: başka bir kaynak
+(üçüncü taraf funding arşivi ya da başka bir borsa) yeni bir veri varsayımı demektir ve
+`scripts/measure_slippage.py`nin Bybit'i seçerken yazdığı türden bir gerekçe ister.
+
 Kullanım (depo kökünden):
     python scripts/measure_funding.py
     python scripts/measure_funding.py --window-periods 180
@@ -367,23 +395,54 @@ def count_events(
 # --------------------------------------------------------------------------- #
 # Veri çekme (bellekte; önbelleğe YAZILMAZ)
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True, kw_only=True)
+class FetchTrace:
+    """Çekimin KENDİ izi: kaç kayıt geldi, en eskisi neydi, sayfalama NEDEN durdu.
+
+    Ayrı bir kayıt olmasının sebebi bu aracın ilk koşusudur: 13 sembolün hepsi dönem A
+    penceresinde "0 kayıt" verdi ve rapor bunu `nan` dolu bir tabloyla, SIFIR çıkış
+    koduyla bildirdi. O tabloda eksik olan tek bilgi, çekimin gerçekte NEREYE kadar
+    gidebildiğiydi — `coverage` yalnızca pencerenin İÇİNE bakar, oysa teşhis pencerenin
+    DIŞINDA duruyordu (kaynağın verdiği en eski damga). İz, "sembol listelenmemiş", "borsa o
+    kadar geriye vermiyor" ve "sayfalamamız bozuk" durumlarını birbirinden ayırır.
+    """
+
+    symbol: str
+    fetched: int          # sayfalarda GÖRÜLEN kayıt (pencere filtresinden ÖNCE)
+    kept: int             # pencereye giren kayıt
+    oldest_seen: pd.Timestamp | None
+    newest_seen: pd.Timestamp | None
+    pages: int
+    stop_reason: str
+
+
 def fetch_history(
     client: OKXClient, symbol: str, *, since: pd.Timestamp, until: pd.Timestamp, limit: int
-) -> pd.Series:
+) -> tuple[pd.Series, FetchTrace]:
     """`since`..`until` aralığındaki fonlama geçmişini sayfalayarak çeker.
 
     `core/data.py::fetch_funding` yerine ayrı bir sayfalama var çünkü o fonksiyon
     `data.funding_history_periods` (180) ile budar ve `data/cache/`e YAZAR; bu ölçüm
     yıllar istiyor ve önbelleğe dokunmamalı (modül başlığı).
+
+    Seriyle birlikte `FetchTrace` döner: boş bir seri tek başına sebebini söylemez.
     """
     rows: dict[pd.Timestamp, float] = {}
     cursor_ms: int | None = None
+    pages = 0
+    fetched = 0
+    oldest_seen: pd.Timestamp | None = None
+    newest_seen: pd.Timestamp | None = None
+    stop_reason = "pencere tamamlandı"
+
     while True:
         params: dict[str, str] = {"instId": symbol, "limit": str(limit)}
         if cursor_ms is not None:
             params["after"] = str(cursor_ms)
         page = client.get(FUNDING_ENDPOINT, params)
+        pages += 1
         if not page:
+            stop_reason = "boş sayfa (borsa daha geriye vermiyor)"
             break
         previous_cursor = cursor_ms
         oldest_ms: int | None = None
@@ -391,21 +450,82 @@ def fetch_history(
             funding_time = int(raw["fundingTime"])
             oldest_ms = funding_time if oldest_ms is None else min(oldest_ms, funding_time)
             stamp = pd.Timestamp(funding_time, unit="ms", tz="UTC")
+            fetched += 1
+            oldest_seen = stamp if oldest_seen is None else min(oldest_seen, stamp)
+            newest_seen = stamp if newest_seen is None else max(newest_seen, stamp)
             if stamp >= until or stamp < since:
                 continue
             rows[stamp] = float(raw["fundingRate"])
         cursor_ms = oldest_ms
-        if cursor_ms is None or cursor_ms == previous_cursor or len(page) < limit:
+        if cursor_ms is None:
+            stop_reason = "imleç yok"
+            break
+        if cursor_ms == previous_cursor:
+            stop_reason = "imleç ilerlemedi (uç `after`'ı yok sayıyor)"
+            break
+        if len(page) < limit:
+            stop_reason = f"kısa sayfa ({len(page)} < {limit}) — sayfalama TABANI"
             break
         if pd.Timestamp(cursor_ms, unit="ms", tz="UTC") < since:
+            stop_reason = "ısınma başlangıcının gerisine geçildi"
             break
 
+    trace = FetchTrace(
+        symbol=symbol,
+        fetched=fetched,
+        kept=len(rows),
+        oldest_seen=oldest_seen,
+        newest_seen=newest_seen,
+        pages=pages,
+        stop_reason=stop_reason,
+    )
     if not rows:
-        return pd.Series([], index=pd.DatetimeIndex([], tz="UTC", name="ts"), dtype="float64", name=symbol)
+        empty = pd.Series(
+            [], index=pd.DatetimeIndex([], tz="UTC", name="ts"), dtype="float64", name=symbol
+        )
+        return empty, trace
     series = pd.Series(rows, dtype="float64").sort_index()
     series.index.name = "ts"
     series.name = symbol
-    return series
+    return series, trace
+
+
+def format_traces(traces: Sequence[FetchTrace], *, start: pd.Timestamp) -> list[str]:
+    """Çekim izi — kapsam tablosundan ÖNCE gelir çünkü onu okunur kılan şey budur.
+
+    "Pencerede 0 kayıt" satırı tek başına üç farklı sebebi anlatabilir; hangisi olduğu
+    yalnızca ÇEKİLEN aralığa bakılarak ayırt edilir.
+    """
+    out = [
+        "",
+        "=" * 78,
+        "(a0) ÇEKİM İZİ — borsa gerçekte nereye kadar veriyor?",
+        "=" * 78,
+        "'çekilen' pencere filtresinden ÖNCEki ham kayıt sayısıdır; 'en eski' o kayıtların",
+        "en eskisi. Dönem başı hedefi: " + f"{start:%Y-%m-%d}. En eski kayıt bu tarihten",
+        "YENİYSE borsa o kadar geriye vermiyor demektir — pencerede veri olmaması bizim",
+        "filtremizin değil, kaynağın sınırıdır.",
+        "",
+        f"{'sembol':22s} {'sayfa':>5s} {'çekilen':>8s} {'pencerede':>10s} {'en eski':16s} {'en yeni':16s}  durma sebebi",
+    ]
+    for item in traces:
+        oldest = f"{item.oldest_seen:%Y-%m-%d %H:%M}" if item.oldest_seen is not None else "—"
+        newest = f"{item.newest_seen:%Y-%m-%d %H:%M}" if item.newest_seen is not None else "—"
+        out.append(
+            f"{item.symbol:22s} {item.pages:5d} {item.fetched:8d} {item.kept:10d} "
+            f"{oldest:16s} {newest:16s}  {item.stop_reason}"
+        )
+    floors = [item.oldest_seen for item in traces if item.oldest_seen is not None]
+    if floors:
+        floor = max(floors)
+        out.append("")
+        out.append(
+            f"Sayfalama TABANI (en geç kalan 'en eski' kayıt): {floor:%Y-%m-%d %H:%M} UTC — "
+            f"dönem başından {(floor - start).days} gün SONRA."
+            if floor > start
+            else f"Sayfalama tabanı {floor:%Y-%m-%d %H:%M} UTC: dönem başını kapsıyor."
+        )
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -648,18 +768,37 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     client = OKXClient.from_config(layer.config)
     series_by_symbol: dict[str, pd.Series] = {}
+    traces: list[FetchTrace] = []
+    failures: list[str] = []
     for symbol in symbols:
         try:
-            series = fetch_history(
+            series, trace = fetch_history(
                 client, symbol, since=warmup_start, until=end, limit=args.request_limit
             )
         except Exception as exc:  # ölçüm aracı: tek sembolün hatası koşuyu düşürmez
             logger.warning("%s fonlama geçmişi alınamadı: %s", symbol, exc)
+            failures.append(symbol)
             series = pd.Series(
                 [], index=pd.DatetimeIndex([], tz="UTC", name="ts"), dtype="float64", name=symbol
             )
-        logger.info("%-22s %5d kayıt", symbol, series.size)
+            trace = FetchTrace(
+                symbol=symbol,
+                fetched=0,
+                kept=0,
+                oldest_seen=None,
+                newest_seen=None,
+                pages=0,
+                stop_reason=f"HATA: {exc}",
+            )
+        logger.info(
+            "%-22s pencerede %5d kayıt (çekilen %5d, en eski %s)",
+            symbol,
+            series.size,
+            trace.fetched,
+            f"{trace.oldest_seen:%Y-%m-%d}" if trace.oldest_seen is not None else "—",
+        )
         series_by_symbol[symbol] = series
+        traces.append(trace)
 
     coverages, distributions, counts = measure(
         series_by_symbol, start=start, end=end, window=args.window_periods
@@ -674,6 +813,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"# Kayan pencere: {args.window_periods} periyot | Soğuma: {COOLDOWN_PERIODS} periyot (24s)",
         "#" * 78,
     ]
+    lines += format_traces(traces, start=start)
     lines += format_coverage(coverages, start=start, end=end)
     lines += format_distribution(distributions)
     lines += format_events(counts, window=args.window_periods)
@@ -687,6 +827,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         "=" * 78,
     ]
     print("\n".join(lines))
+
+    # VERİ KAPISI. Bu aracın ilk koşusu 13 sembolün hepsinde pencerede sıfır kayıt buldu
+    # ve bunu `nan` dolu bir tabloyla, SIFIR çıkış koduyla bildirdi — yani "ölçtük ve
+    # bulamadık" ile "hiç ölçemedik" aynı hücreye yazıldı. Bu, `core/metrics.py`nin
+    # "veri yoksa nan, 0.0 değil" kuralının çıkış kodundaki karşılığıdır ve aynı
+    # gerekçeyle bir KAPIDIR: yeşil bir koşu, okunabilir bir rapor demektir.
+    measured = sum(1 for item in coverages if item.observed > 0)
+    if measured == 0:
+        logger.error(
+            "HİÇBİR sembolde dönem A penceresinde (%s → %s) kayıt yok. "
+            "Rapordaki her sayı `nan`dır ve hiçbir soru cevaplanmadı.",
+            start,
+            end,
+        )
+        logger.error(
+            "Teşhis için (a0) ÇEKİM İZİ bölümüne bakın: sayfalama tabanı dönem başından "
+            "SONRAYSA sebep bizim filtremiz değil, kaynağın geçmiş sınırıdır."
+        )
+        return 3
+    if failures:
+        logger.warning("çekilemeyen sembol(ler): %s", ", ".join(failures))
+    logger.info("%d/%d sembolde dönem A verisi var", measured, len(coverages))
     return 0
 
 
