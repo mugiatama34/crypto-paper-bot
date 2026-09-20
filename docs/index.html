@@ -52,19 +52,22 @@
   .ls-col.short { border-top: 3px solid var(--short); }
   .ls-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   .ls-name { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; }
-  .ls-col.long  .ls-name { color: var(--long); }
-  .ls-col.short .ls-name { color: var(--short); }
+  /* Panel başlığı METİNDİR: --short 13px'te 4.48 veriyordu (AA eşiği 4.5).
+     Üstteki 3px'lik kenar çizgisi İŞARET rengini (--long/--short) korur, yani
+     panelin renk kimliği değişmez. */
+  .ls-col.long  .ls-name { color: var(--long-ink); }
+  .ls-col.short .ls-name { color: var(--short-ink); }
   .ls-hero { font-size: clamp(27px, 9vw, 34px); font-weight: 650; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .ls-hero small { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 6px; letter-spacing: 0; }
-  .ls-ci { font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .ls-hero small { font-size: 13px; font-weight: 400; color: var(--ink-dim); margin-left: 6px; letter-spacing: 0; }
+  .ls-ci { font-size: 11.5px; color: var(--ink-dim); font-variant-numeric: tabular-nums; margin-top: 2px; }
   /* Kapı altındaki kırılım satırı: gizlenmez, SOLGUN. Okuyucu satırı görür ama
      ortalamasını model tablosundaki bir ortalamayla aynı ağırlıkta okumaz. */
   tr.below-gate { opacity: 0.55; }
-  .gate-mark { font-size: 10px; border: 1px solid var(--ink-muted); border-radius: 4px; padding: 0 3px; color: var(--ink-muted); }
+  .gate-mark { font-size: 10.5px; border: 1px solid var(--ink-dim); border-radius: 4px; padding: 0 3px; color: var(--ink-dim); }
   .ls-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
   .ls-tiles > div { min-width: 0; }
   .verdict { margin-top: var(--gap); }
-  .verdict p { margin: 0; color: var(--ink-2); font-size: 13px; }
+  .verdict p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
   .verdict b { color: var(--ink); }
 
   /* ---------------- model kartları ---------------- */
@@ -74,15 +77,150 @@
     margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--grid);
   }
   .group-name { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
-  .group-note { font-size: 11.5px; color: var(--ink-muted); }
+  .group-note { font-size: 12px; color: var(--ink-dim); }
   .mcards { display: grid; gap: 10px; grid-template-columns: 1fr; }
   /* Kart artık bir <a> DEĞİL: içinde katlanır bir bölüm var ve tıklamak onu açmalı,
-     sayfayı değiştirmemeli. Detay sayfasına giden bağlantı katlanan bölümün içindedir. */
+     sayfayı değiştirmemeli. Detay sayfasına giden bağlantı katlanan bölümün içindedir.
+
+     Kart yüzeyi ÖZSERMAYE EĞRİSİNİ filtreler (izolasyon). Kartın kendisi bir <button>
+     ya da role="button" DEĞİLDİR: içinde zaten iki etkileşimli öğe var (katlanır
+     "detaylar" başlığı ve "model detayı →" bağlantısı) ve onları bir düğmenin içine
+     yuvalamak hem geçersiz HTML hem de klavye/ekran okuyucu için okunamaz bir ağaç
+     üretirdi. Bu yüzden erişilebilir kontrol kartın İÇİNDEKİ `.mcard-filter`
+     düğmesidir (aria-pressed taşır); yüzeye tık yalnızca fare için bir KISAYOLDUR
+     ve aynı state'i çağırır. */
   .mcard {
     display: flex; flex-direction: column; gap: 8px;
-    background: var(--surface); border: 1px solid var(--hair); border-top: 3px solid var(--ink-muted);
+    background: var(--surface); border: 1px solid var(--hair);
+    border-top: 3px solid var(--accent, var(--ink-muted));
     border-radius: var(--radius); padding: 12px; color: inherit; min-width: 0;
+    cursor: pointer; transition: border-color .12s ease, background-color .12s ease;
   }
+  /* Tıklanabilirlik GÖRÜNÜR olmalı: eskiden kart durağan duruyordu ve sayfa metni
+     "tıklayınca filtrelenir" derken hiçbir şey öyle görünmüyordu. */
+  .mcard:hover { background: var(--surface-2); border-color: var(--axis); }
+  .mcard:focus-within { border-color: var(--ink-muted); }
+  /* Eğrisi olmayan model izole EDİLEMEZ (izole edilirse grafik boşalırdı): kart
+     tıklanabilir görünmez, içindeki düğme de disabled'dır. */
+  .mcard.nofilter { cursor: default; }
+  .mcard.nofilter:hover { background: var(--surface); border-color: var(--hair); }
+  /* Seçili kart: modelin KENDİ rengiyle çerçevelenir — grafikteki çizgi, lejandaki
+     düğme ve grafik başındaki chip ile aynı renk kimliği. */
+  .mcard.isolated {
+    background: var(--surface-2);
+    border-color: var(--accent, var(--ink-muted));
+    box-shadow: 0 0 0 1px var(--accent, var(--ink-muted));
+  }
+  /* Kart içi filtre düğmesi: lejandaki `.lg` ile aynı dil (pill + aria-pressed). */
+  .mcard-filter {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+    min-height: var(--touch); padding: 0 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--hair); background: var(--surface-2); color: var(--ink-dim);
+    font: 600 12px/1 var(--font); white-space: nowrap;
+  }
+  .mcard-filter:hover:not(:disabled) { border-color: var(--axis); color: var(--ink-2); }
+  .mcard-filter:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 1px; }
+  .mcard-filter:disabled { opacity: 0.45; cursor: default; }
+  .mcard-filter[aria-pressed="true"] {
+    color: var(--ink); border-color: var(--accent, var(--ink-muted));
+    background: color-mix(in srgb, var(--accent, #888) 18%, transparent);
+  }
+  .mcard-filter i {
+    width: 14px; height: 0; border-top: 2px solid var(--accent, var(--ink-muted)); display: inline-block;
+  }
+
+  /* ---------------- kıyas tablosu (birincil tarama görünümü) ----------------
+     Kartlar tezlere göre GRUPLU durur ve bu gruplama bir bilgidir; ama "kim önde"
+     sorusunu cevaplamak için okuyucunun beş grubu gezip sayıları kafasında
+     birleştirmesi gerekiyordu. Tablo o taramayı tek ekrana indirir; kartlar
+     DETAY olarak altında kalır (kıvrım, rozet gerekçesi, açık pozisyon sayısı).
+
+     Tablo ↔ kart kırılımı sayfanın ZATEN kullandığı `.wide`/`.narrow` eşiğidir
+     (1060px): scalp tablosu ve korelasyon matrisi de orada dönüyor. Bu tabloya
+     özel daha düşük bir eşik teknik olarak mümkündü (8 kolon ~760px'e sığar) ama
+     sayfada iki ayrı "tablo artık kart oldu" genişliği olurdu. */
+  th.sortable { padding: 0; }
+  th.sortable button {
+    width: 100%; min-height: var(--touch); padding: 6px 7px; cursor: pointer;
+    background: transparent; border: 0; color: inherit;
+    font: inherit; text-transform: inherit; letter-spacing: inherit;
+    display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px;
+  }
+  /* table.grid varsayılanı sağa hizalıdır (sayı kolonları); rütbe ve model adı
+     metin kolonlarıdır ve sola hizalanır. */
+  table.grid th.mt-left, table.grid td.mt-left { text-align: left; }
+  th.sortable.mt-left button { justify-content: flex-start; }
+  th.sortable button:hover { color: var(--ink-2); }
+  th.sortable button:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: -2px; }
+  /* Sıralanabilirlik durağan hâlde de görünür: sönük bir ↕ olmadan başlıkların
+     tıklanabilir olduğu ancak denenerek anlaşılırdı. */
+  th.sortable .ind { font-size: 9px; opacity: 0.35; }
+  th[aria-sort] .ind { opacity: 1; color: var(--ink); }
+  th[aria-sort] button { color: var(--ink); }
+  table.grid tbody tr.data.isolated { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent, var(--ink-muted)); }
+  /* Eğri filtresi RENKLE anlatılıyordu (kartta çerçeve, satırda sol şerit): renk
+     ayrımı olmayan bir okuyucu için hiçbir şey söylemiyordu. İşaret bir METİN
+     etiketidir ve ekran okuyucuya da düşer. */
+  .iso-mark {
+    display: inline-flex; align-items: center; gap: 3px; margin-left: 7px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+    padding: 1.5px 6px; border-radius: 3px;
+    color: var(--ink); background: var(--surface-2); border: 1px solid var(--accent, var(--ink-muted));
+  }
+  /* Dokunma hedefi tabanı bu bağlantıya da uygulanır (21px'ti). Tablo satırı
+     bir miktar uzar ama söz koşulsuzdur: "hiçbir tıklanabilir öğe bundan kısa
+     değil". */
+  .mt-name {
+    display: inline-flex; align-items: center; gap: 0; min-height: var(--touch);
+    text-decoration: none; color: var(--ink);
+  }
+  .mt-name:hover, .mt-name:focus-visible { text-decoration: underline; outline: none; }
+  .mt-name:focus-visible { box-shadow: 0 0 0 2px var(--ink-muted); border-radius: 4px; }
+  .mt-rank { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  /* Blok ayracı TABLONUN İÇİNDE bir satırdır, ayrı bir tablo değil: her bloğa
+     kendi <thead>'ini vermek üç başlık satırı demekti ve tek satırlık bir blokta
+     başlık satırın kendisinden uzun görünüyordu. Bloklar yine BİRLEŞMEZ — ayrı
+     <tbody>, ayrı sıralama. */
+  table.grid tr.mt-sep td {
+    text-align: left; white-space: normal; padding: 20px 7px 6px;
+    border-bottom: 1px solid var(--grid);
+  }
+  table.grid tbody:first-child tr.mt-sep td { padding-top: 6px; }
+  .mt-block-head {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin: 16px 0 6px; padding-bottom: 5px; border-bottom: 1px solid var(--grid);
+  }
+  .mt-block-name { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
+  .mt-block-note { font-size: 12px; color: var(--ink-dim); }
+  /* Dar ekran karşılığı: TABLONUN aynı satırları, kart değil LİSTE. Kalın bir kart
+     düzeni kullanmak, aşağıdaki tez kartlarının bir kopyası gibi okunur ve okuyucu
+     telefonda aynı modelleri iki kez gezerdi. */
+  .mt-list { display: grid; gap: 6px; }
+  .mt-item {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: baseline;
+    background: var(--surface); border: 1px solid var(--hair); border-radius: 8px; padding: 9px 11px;
+  }
+  .mt-item.isolated { background: var(--surface-2); border-color: var(--accent, var(--ink-muted)); }
+  .mt-item .mt-rank { font-size: 12px; white-space: nowrap; }
+  .mt-item .mt-eq { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 650; font-size: 13.5px; }
+  .mt-item .mt-eq small { display: block; font-size: 11.5px; font-weight: 600; }
+  .mt-item .mt-sub {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 4px;
+    font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums;
+  }
+  .mt-item .mt-sub span { color: var(--ink-dim); }
+
+  /* ---------------- grafik filtre şeridi ---------------- */
+  /* Filtrenin DURUMU grafiğin yanında yazılı durur. Eskiden tek göstergesi lejandaki
+     bir düğmenin sönük görünmesiydi: filtre açıkken sayfanın geri kalanı bunu hiçbir
+     yerde söylemiyordu ve grafik "bozuk" gibi okunabiliyordu. */
+  .filterbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin-bottom: 10px; min-height: var(--touch);
+  }
+  .filterbar .chip { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; }
+  .filterbar .chip i { width: 14px; height: 0; border-top-width: 2px; display: inline-block; }
+  .filterbar .hint { color: var(--ink-muted); font-size: 12px; }
   /* Referans ve kontrol satırları grafikte nötr; kartta da öyle görünürler. Çıpa
      ayrıca KESİKLİ kenarlıkla ayrışır: aynı sütunda yarışmıyor (kural 15). */
   .mcard.reference { border-style: dashed; background: rgba(255,255,255,0.028); }
@@ -95,10 +233,10 @@
     font-variant-numeric: tabular-nums; line-height: 1.1;
   }
   .mcard-eq .eq-pct { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .mcard-eq .eq-base { color: var(--ink-muted); font-size: 11px; width: 100%; }
+  .mcard-eq .eq-base { color: var(--ink-dim); font-size: 11.5px; width: 100%; }
   /* Dokunma hedefi en az 44px (mobil öncelikli tasarım sözü). */
   .mcard details > summary {
-    list-style: none; cursor: pointer; color: var(--ink-muted); font-size: 12px;
+    list-style: none; cursor: pointer; color: var(--ink-dim); font-size: 12.5px;
     display: flex; align-items: center; gap: 6px; min-height: 44px; user-select: none;
   }
   .mcard details > summary::-webkit-details-marker { display: none; }
@@ -115,9 +253,9 @@
   .mcard-more:hover, .mcard-more:focus-visible { border-color: var(--axis); color: var(--ink); outline: none; }
   .mcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   .mcard-name { font-weight: 650; font-size: 14px; overflow-wrap: anywhere; }
-  .mcard-rank { color: var(--ink-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .mcard-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-  .mcard-row span { color: var(--ink-muted); }
+  .mcard-rank { color: var(--ink-dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mcard-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .mcard-row span { color: var(--ink-dim); }
   .mcard-spark { margin-top: auto; }
   .mcard-spark svg { display: block; width: 100%; height: 34px; overflow: visible; }
 
@@ -125,14 +263,14 @@
   .tipbox {
     margin-top: 10px; border: 1px solid var(--hair); border-left: 3px solid var(--ink-muted);
     border-radius: 8px; background: var(--surface-2); padding: 10px 12px;
-    font-size: 12px; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere;
+    font-size: 12.5px; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere;
   }
   .tipbox.warn { border-left-color: var(--warning); }
 
   /* ---------------- grafik ---------------- */
   .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
   .lg {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2);
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2);
     border: 1px solid var(--hair); background: var(--surface-2); border-radius: 999px;
     padding: 0 12px; cursor: pointer; min-height: var(--touch); font-family: inherit;
   }
@@ -145,7 +283,7 @@
   .tip {
     position: absolute; pointer-events: none; z-index: 5; min-width: 120px; max-width: 86%;
     background: #000; border: 1px solid var(--axis); border-radius: 8px; padding: 8px 10px;
-    font-size: 11.5px; color: var(--ink-2); box-shadow: 0 6px 22px rgba(0,0,0,0.6);
+    font-size: 12px; color: var(--ink-2); box-shadow: 0 6px 22px rgba(0,0,0,0.6);
     font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .09s;
   }
   .tip.show { opacity: 1; }
@@ -170,10 +308,10 @@
   }
 
   /* ---------------- korelasyon ---------------- */
-  table.heat { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 10.5px; }
+  table.heat { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 11.5px; }
   table.heat th, table.heat td { padding: 2px; text-align: center; }
   table.heat th.col { height: 84px; vertical-align: bottom; padding-bottom: 6px; }
-  table.heat th.col span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); color: var(--ink-muted); font-weight: 500; }
+  table.heat th.col span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); color: var(--ink-dim); font-weight: 500; }
   /* Satır etiketi KIRPILMAZ: `overflow: hidden` ile kesmek "downtrend_rally"yi
      "downtrend_ra" yapıp hangi modelin satırı olduğunu okunamaz kılıyordu. */
   table.heat th.rowh {
@@ -184,7 +322,7 @@
     width: 100%; height: 28px; display: flex; align-items: center; justify-content: center;
     border-radius: 3px; font-variant-numeric: tabular-nums;
   }
-  .scale { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11px; color: var(--ink-muted); flex-wrap: wrap; }
+  .scale { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--ink-dim); flex-wrap: wrap; }
   .scale .bar { height: 8px; width: 140px; max-width: 40vw; border-radius: 4px; }
   .pairs { display: grid; gap: 6px; }
   .pair {
@@ -215,7 +353,10 @@
     .wide { display: block; }
     .narrow { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .tip { transition: none; }
+    .mcard { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -240,6 +381,29 @@
   <!-- ======================= SEVİYE 1 — GENEL BAKIŞ ======================= -->
   <main id="level-overview">
 
+    <!-- Bölüm menüsü. Sayfa uzun ve iki seviyeli; bir bölüme gitmenin tek yolu
+         kaydırmak olduğunda "Korelasyon nerede" sorusunun cevabı okumakla bulunur.
+
+         Linkler GERÇEK anchor'dır (orta tık, yeni sekme, ekran okuyucu listesi çalışır)
+         ama tık JS'te yakalanır ve adres çubuğuna HİÇ yazılmaz: bu sayfada hash bir
+         YÖNLENDİRME sözleşmesidir (`#model=<ad>`, bkz. route()). Bir bölüm bağlantısının
+         oraya yazması geri tuşunu bölüm geçmişiyle doldurur ve model detayından dönüşü
+         bozardı — menü bir gezinme kolaylığıdır, ikinci bir yönlendirici değil.
+
+         Menü `#level-overview` İÇİNDEDİR: model detayına geçildiğinde main gizlenir ve
+         menü onunla birlikte kaybolur. Detayın kendi gezinmesi "← tüm modeller"dir. -->
+    <nav class="secnav" id="secnav" aria-label="Bölümler">
+      <a href="#sec-summary" data-sec="sec-summary">Özet</a>
+      <a href="#sec-ls" data-sec="sec-ls">Long vs Short</a>
+      <a href="#sec-models" data-sec="sec-models">Modeller</a>
+      <a href="#sec-equity" data-sec="sec-equity">Özsermaye</a>
+      <a href="#sec-corr" data-sec="sec-corr">Korelasyon</a>
+      <!-- Scalp katmanının yükü ayrı bir fetch'tir ve hiç olmayabilir (katman koşmadı,
+           fork). Bölüm gizliyken menü girdisi de gizlidir: var olmayan bir bölüme
+           götüren bir link, menüyü bir vaatten ibaret bırakırdı. -->
+      <a href="#sec-scalp" data-sec="sec-scalp" id="secnav-scalp" hidden>Scalp</a>
+    </nav>
+
     <section id="sec-summary">
       <h2>Özet</h2>
       <div class="sum-grid" id="summary"></div>
@@ -247,12 +411,18 @@
 
     <section id="sec-ls">
       <h2>Long vs Short</h2>
-      <p class="note">
-        Projenin ana sorusu. Tüm <b>yarışmacı</b> modellerin işlemleri tek havuzda toplanır
-        (referans çıpası havuzda yoktur: stop'suz işlemin R'si yoktur). Havuz işlem başına
-        oy verir — model başına ortalama R'lerin ortalaması, 2 işlemlik bir modeli 200
-        işlemlik bir modelle eşitlerdi.
-      </p>
+      <p class="note">Projenin ana sorusu: <b>short işlemler long işlemlerden daha mı başarılı?</b></p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Tüm <b>yarışmacı</b> modellerin işlemleri tek havuzda toplanır
+            (referans çıpası havuzda yoktur: stop'suz işlemin R'si yoktur). Havuz işlem
+            başına oy verir — model başına ortalama R'lerin ortalaması, 2 işlemlik bir
+            modeli 200 işlemlik bir modelle eşitlerdi.
+          </p>
+        </div>
+      </details>
       <div class="ls-grid" id="ls"></div>
       <div class="verdict card" id="verdict"></div>
     </section>
@@ -260,24 +430,61 @@
     <section id="sec-models">
       <h2>Modeller</h2>
       <p class="note">
-        Her kartın ana sayısı aynı sorunun cevabı: <b>10.000 $ ile başlayan hesap şimdi
-        nerede</b>, ve yüzde olarak ne kadar. Bu sayı her model için AYNI birimdir — ort. R
-        öyle değildir, çünkü çıpanın ve dış sistem kopyasının 1R'si yarışmacılarınkiyle aynı
-        şeyi ölçmez (kural 15/15b). Tek bakışta kıyaslanabilen satır bu yüzden budur.
-        <b>Ort. R birincil metrik olmayı sürdürür</b> ve sıralamayı (kartın sağ üstündeki
-        rütbe) o belirler; işlem sayısı, MDD, özsermaye kıvrımı ve kabul rozetleriyle birlikte
-        <b>detaylar</b> altında durur. Rozetler: <b>Ö</b> örneklem, <b>E</b> edge — model
-        ancak ikisi de yeşilken doğrulanmış sayılır; <b>⚠ B</b> kapı değildir, yalnızca bu
-        satırı başkasıyla kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate
-        alınması gerektiğini söyler. <b>REFERANS</b> çıpası (kural 15) sıralamaya hiç girmez
-        ve ort. R hücresinde <code>—</code> gösterir: stop'u olmayanın 1R'si yoktur.
+        Hepsi tek tabloda: <b>10.000 $ ile başlayan hesap şimdi nerede</b> ve sıralamayı
+        belirleyen <b>ort. R</b> yan yana. Kolon başlığına tıklayarak sıralayabilirsiniz.
+      </p>
+      <details class="howto">
+        <summary>Nasıl okunur? — birim, sıralama, bloklar ve rozetler</summary>
+        <div class="howto-body">
+          <p class="note">
+            <b>Özsermaye/getiri</b> her model için AYNI birimdir — ort. R öyle değildir, çünkü
+            çıpanın ve dış sistem kopyasının 1R'si yarışmacılarınkiyle aynı şeyi ölçmez
+            (kural 15/15b). Tek bakışta kıyaslanabilen kolon bu yüzden odur. <b>Ort. R
+            birincil metrik olmayı sürdürür</b> ve <b>rütbe</b> kolonunu o belirler.
+          </p>
+          <p class="note">
+            <b>Bloklar birleşmez.</b> Yarışmacılar, örneklem kapısını (Ö) geçmeyenler ve
+            referans satırları ayrı ayrı sıralanır: 4 işlemlik bir ortalamayı 200 işlemlik
+            bir ortalamayla aynı sütunda sıralamak, kapının tam olarak reddettiği kıyastır.
+            Seçtiğiniz sıralama her bloğun <b>içinde</b> uygulanır ve blok sınırlarını
+            kaldırmaz. Rütbe kolonu satırın tablodaki YERİNİ değil, ort. R'den gelen
+            ölçülmüş rütbesini gösterir — başka bir kolona göre sıraladığınızda da değişmez.
+          </p>
+          <p class="note">
+            Rozetler: <b>Ö</b> örneklem, <b>E</b> edge — model ancak ikisi de yeşilken
+            doğrulanmış sayılır. <b>⚠ B</b> kapı değildir, yalnızca bu satırı başkasıyla
+            kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate alınması
+            gerektiğini söyler. Rozet kolonu SIRALANMAZ: iki ayrı kapının durumunu tek bir
+            sıra değerine indirmek, geçilmemiş bir kapıyı bir puana çevirirdi.
+            <b>REFERANS</b> çıpası (kural 15) sıralamaya hiç girmez ve ort. R hücresinde
+            <code>—</code> gösterir: stop'u olmayanın 1R'si yoktur.
+          </p>
+        </div>
+      </details>
+      <!-- Sıralama kontrolü DAR ekran içindir: orada tıklanacak bir kolon başlığı
+           yoktur. İki yüzey de aynı state'i (sortState) yazar. -->
+      <div class="controls narrow" id="model-sort"></div>
+      <div class="card wide" id="model-table"></div>
+      <div class="narrow" id="model-table-cards"></div>
+
+      <h3 class="sub">Tez gruplarına göre</h3>
+      <p class="note">
+        Aynı modeller, bu kez <b>hangi soruyu sorduklarına</b> göre kümelenmiş: iki trend
+        modelini yan yana okumak, ortalamaya dönüş modelinin yanında okumaktan başka bir şey
+        söyler. Kart ayrıca tablonun taşımadığı detayı taşır — özsermaye kıvrımı, rozet
+        gerekçeleri, açık pozisyon sayısı ve eğri filtresi.
       </p>
       <div id="groups"></div>
     </section>
 
     <section id="sec-equity">
       <h2>Özsermaye eğrileri</h2>
-      <p class="note">Bir modele tıklayınca yalnız o kalır; tekrar tıklayınca hepsi döner. Kesikli gri çizgi başlangıç sermayesidir.</p>
+      <p class="note">
+        <b>Modeller</b> bölümündeki bir karta ya da aşağıdaki lejanda tıklayınca yalnız o
+        model kalır; tekrar tıklayınca hepsi döner. Kesikli gri çizgi başlangıç sermayesidir.
+      </p>
+      <!-- Filtrenin durumu: kart, lejand ve bu şerit TEK bir state'i (isolated) çizer. -->
+      <div class="filterbar" id="equity-filter"></div>
       <div class="card">
         <div class="chart-wrap" id="equity-wrap">
           <svg id="equity" role="img" aria-label="Model özsermaye eğrileri"></svg>
@@ -289,13 +496,18 @@
 
     <section id="sec-corr">
       <h2>Getiri korelasyonu</h2>
-      <p class="note">
-        Bar getirilerinin Pearson korelasyonu, çift bazında örtüşen barlar üzerinden. Yüksek
-        korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki kopyasıdır.
-        Örtüşme yetersizse hücre boş kalır (0 "ilişkisiz" demek olurdu). Dar ekranda matris
-        yerine en güçlü çiftler listelenir: 11 kolonluk bir matris telefonda ancak yatay
-        kaydırmayla sığardı.
-      </p>
+      <p class="note">Bar getirilerinin Pearson korelasyonu, çift bazında örtüşen barlar üzerinden.</p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Yüksek korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki
+            kopyasıdır. Örtüşme yetersizse hücre boş kalır (0 "ilişkisiz" demek olurdu). Dar
+            ekranda matris yerine en güçlü çiftler listelenir: 11 kolonluk bir matris
+            telefonda ancak yatay kaydırmayla sığardı.
+          </p>
+        </div>
+      </details>
       <div class="card">
         <div class="wide" id="corr-matrix"></div>
         <div class="narrow" id="corr-pairs"></div>
@@ -308,52 +520,87 @@
 
     <section id="sec-scalp" hidden>
       <h2>Scalp katmanı — 15 dakika</h2>
-      <p class="note">
-        <b>Bu tablo yukarıdakiyle AYNI YARIŞ DEĞİLDİR.</b> Scalp modelleri 15 dakikalık barda,
-        sabit 14 sembollük bir evrende ve kendi defterlerinde koşar
-        (<code>data/metrics_scalp.json</code>); 4 saatlik modellerle aynı tabloda sıralamak,
-        zaman dilimi farkını bir performans farkı gibi gösterirdi. Katman İÇİ kıyas ise tam
-        olarak tasarımın amacıdır ve üç eksende okunur:
-      </p>
-      <p class="note">
-        <b>Adaptasyonun katkısı</b> — <b>scalp_bandit</b> kollar arasındaki tahsisi öğrenir,
-        <b>scalp_fixed</b> aynı kolları eşit ağırlıkla oynar.<br>
-        <b>Çıkış yönetiminin katkısı</b> — <b>scalp_managed</b>, scalp_fixed'in ikizidir:
-        aynı kol, aynı tur, aynı çekiliş; tek farkı üç aşamalı çıkış yönetimi (1R'da stop
-        girişe, 1.5R'da yarısı kapanır ve stop oraya çekilir, sonra kazancın en çok yarısını
-        geri veren takip).<br>
-        <b>Ev kurallarının katkısı</b> — <b>vwap_managed</b>, kopya modelin sinyalini ev
-        kurallarıyla (risk boyutlandırma, %1 stop tabanı, 1.5R kapısı) oynar.
-      </p>
+      <!-- Bu uyarı KATLANMAZ: bölümün tamamının nasıl okunacağını belirleyen şey o.
+           Panele koymak, kapalı bir panelin arkasında "bu ayrı bir yarış" demek olurdu. -->
+      <p class="note"><b>Bu tablo yukarıdakiyle AYNI YARIŞ DEĞİLDİR</b> — ayrı bar, ayrı evren, ayrı defter.</p>
+      <details class="howto">
+        <summary>Nasıl okunur? — katman farkı ve ölçüm eksenleri</summary>
+        <div class="howto-body">
+          <p class="note">
+            Scalp modelleri 15 dakikalık barda, sabit 14 sembollük bir evrende ve kendi
+            defterlerinde koşar (<code>data/metrics_scalp.json</code>); 4 saatlik modellerle
+            aynı tabloda sıralamak, zaman dilimi farkını bir performans farkı gibi
+            gösterirdi. Katman İÇİ kıyas ise tam olarak tasarımın amacıdır ve üç eksende
+            okunur:
+          </p>
+          <p class="note">
+            <b>Adaptasyonun katkısı</b> — <b>scalp_bandit</b> kollar arasındaki tahsisi
+            öğrenir, <b>scalp_fixed</b> aynı kolları eşit ağırlıkla oynar.<br>
+            <b>Çıkış yönetiminin katkısı</b> — <b>scalp_managed</b>, scalp_fixed'in ikizidir:
+            aynı kol, aynı tur, aynı çekiliş; tek farkı üç aşamalı çıkış yönetimi (1R'da stop
+            girişe, 1.5R'da yarısı kapanır ve stop oraya çekilir, sonra kazancın en çok
+            yarısını geri veren takip).<br>
+            <b>Ev kurallarının katkısı</b> — <b>vwap_managed</b>, kopya modelin sinyalini ev
+            kurallarıyla (risk boyutlandırma, %1 stop tabanı, 1.5R kapısı) oynar.
+          </p>
+        </div>
+      </details>
       <p class="note" id="scalp-stamp"></p>
       <div class="card wide" id="scalp-models"></div>
       <div class="rows narrow" id="scalp-models-cards"></div>
       <div id="scalp-replicas"></div>
+
+      <!-- Örneklem kapısı dipnotu BİR KEZ, kırılımların hepsinden önce. Eskiden her
+           kırılım kartının altına ayrı ayrı basılıyordu: üç kırılım × model sayısı kadar
+           aynı cümle. Tekrar eden bir uyarı okunmaz hâle gelir ve tam da okunması
+           gereken şeydi — `Ö` işareti üç kırılımda da aynı anlamı taşır. -->
+      <p class="note" id="breakdown-gate-note" hidden></p>
+
       <h3 class="sub">Kol kırılımı</h3>
-      <p class="note">
-        Hangi kolun kaç işlem yaptığı ve ne ürettiği. Tahsisi öğrenen modelde kol dağılımının
-        eşitten sapması beklenir; kontrol modelinde sapmaması. Taban tahsis (%5) hiçbir kolun
-        sıfıra düşmemesini garanti eder — susturulan kol bir daha ölçülemez.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Hangi kolun kaç işlem yaptığı ve ne ürettiği. Tahsisi öğrenen modelde kol
+            dağılımının eşitten sapması beklenir; kontrol modelinde sapmaması. Taban tahsis
+            (%5) hiçbir kolun sıfıra düşmemesini garanti eder — susturulan kol bir daha
+            ölçülemez.
+          </p>
+        </div>
+      </details>
       <div id="scalp-arms"></div>
+
       <h3 class="sub">Sembol kırılımı</h3>
-      <p class="note">
-        Kayma varsayımı (<code>slippage_base</code>) evrendeki her sembol için tek bir sayıdır.
-        İnce kitapta işlem gören bir sembolün <code>cost_per_r</code> kolonu diğerlerinden
-        belirgin biçimde ayrışıyorsa, varsayım orada tutmuyor demektir ve o satırın sonucu
-        yorumlanmadan önce bu bilinmelidir.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Kayma varsayımı (<code>slippage_base</code>) evrendeki her sembol için tek bir
+            sayıdır. İnce kitapta işlem gören bir sembolün <code>cost_per_r</code> kolonu
+            diğerlerinden belirgin biçimde ayrışıyorsa, varsayım orada tutmuyor demektir ve o
+            satırın sonucu yorumlanmadan önce bu bilinmelidir.
+          </p>
+        </div>
+      </details>
       <div id="scalp-symbols"></div>
+
       <h3 class="sub">Çıkış kuralı kırılımı</h3>
-      <p class="note">
-        Üç aşamalı çıkış yönetiminin katkısı (modeller 13/14/15), üç aşamanın kaç kez
-        tetiklendiği bilinmeden okunamaz. <code>stop</code> = ilk stop aldı (hiç hareket
-        etmedi), <code>stop:breakeven</code> / <code>stop:partial</code> /
-        <code>stop:giveback</code> = o kuralın çektiği stop aldı,
-        <code>signal:time_stop</code> = zaman stop'u, <code>tp</code> = hedef.
-        <b>Birimi DİLİMDİR, pozisyon değil:</b> kısmi çıkışlı bir pozisyon iki gruba birden
-        düşer, yani buradaki işlem sayıları model tablosundan büyük olabilir.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur? — kod sözlüğü ve birim</summary>
+        <div class="howto-body">
+          <p class="note">
+            Üç aşamalı çıkış yönetiminin katkısı (modeller 13/14/15), üç aşamanın kaç kez
+            tetiklendiği bilinmeden okunamaz. <code>stop</code> = ilk stop aldı (hiç hareket
+            etmedi), <code>stop:breakeven</code> / <code>stop:partial</code> /
+            <code>stop:giveback</code> = o kuralın çektiği stop aldı,
+            <code>signal:time_stop</code> = zaman stop'u, <code>tp</code> = hedef.
+          </p>
+          <p class="note">
+            <b>Birimi DİLİMDİR, pozisyon değil:</b> kısmi çıkışlı bir pozisyon iki gruba
+            birden düşer, yani buradaki işlem sayıları model tablosundan büyük olabilir.
+          </p>
+        </div>
+      </details>
       <div id="scalp-exit-rules"></div>
     </section>
 
@@ -376,21 +623,31 @@
 
     <section id="sec-detail-ls">
       <h2>Bu modelin long / short kırılımı</h2>
-      <p class="note">
-        Yön bazlı Sharpe tek bakiyeyi bölerek değil, o yöndeki işlemlerin <b>R cinsinden</b>
-        dizisinden gelir; hesap düzeyi Sharpe ayrı durur ve iki yönün toplamı değildir.
-        Maliyet ölçeği kolonları (stop mesafesi, R başına maliyet) yön bazında burada okunur.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Yön bazlı Sharpe tek bakiyeyi bölerek değil, o yöndeki işlemlerin <b>R cinsinden</b>
+            dizisinden gelir; hesap düzeyi Sharpe ayrı durur ve iki yönün toplamı değildir.
+            Maliyet ölçeği kolonları (stop mesafesi, R başına maliyet) yön bazında burada okunur.
+          </p>
+        </div>
+      </details>
       <div class="ls-grid" id="detail-ls"></div>
     </section>
 
     <section id="sec-detail-open">
       <h2>Açık pozisyonlar</h2>
-      <p class="note">
-        Gerçekleşmemiş K/Z <b>çıkış maliyeti hariçtir</b>: pozisyon kapanmadı, çıkış fiyatı ve
-        komisyonu bilinmiyor (brüt fiyat farkı − giriş komisyonu + funding). Güncel fiyat
-        turun <code>as_of</code> barının kapanışıdır.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur? — gerçekleşmemiş K/Z</summary>
+        <div class="howto-body">
+          <p class="note">
+            Gerçekleşmemiş K/Z <b>çıkış maliyeti hariçtir</b>: pozisyon kapanmadı, çıkış fiyatı
+            ve komisyonu bilinmiyor (brüt fiyat farkı − giriş komisyonu + funding). Güncel fiyat
+            turun <code>as_of</code> barının kapanışıdır.
+          </p>
+        </div>
+      </details>
       <div id="detail-open"></div>
     </section>
 
@@ -464,6 +721,10 @@ let STYLE = {};
 let DATA = null;
 let MODELS = {};              // model -> metrics satırı
 let FLAGS = {};               // model -> acceptance bayrakları
+/* Eğri izolasyonu: TEK state. Üç yüzey (model kartı, grafik lejandı, grafik
+   başındaki filtre şeridi) bunu okur ve yalnızca setIsolated() yazar — ikinci bir
+   "seçili model" değişkeni, iki yüzeyin bir gün farklı şey göstermesi demekti. */
+let RANK = {};                // model -> rütbe (yalnızca Ö kapısını geçen yarışmacılar)
 let isolated = null;          // seviye 1 eğri izolasyonu
 let overviewScroll = 0;       // detaydan dönüşte okuyucunun bıraktığı yer
 let entryWasDetail = false;   // sayfaya doğrudan #model=... ile mi girildi
@@ -497,11 +758,15 @@ function render(d) {
   for (const f of ((d.acceptance || {}).models || [])) FLAGS[f.model] = f;
 
   renderHeader(d);
+  computeRanks(d);
   renderSummary(d);
   renderLongShort(d);
+  renderModelTable();
   renderGroups(d);
   renderEquity(d);
   renderCorrelation(d);
+  setupCardFilter();
+  setupSectionNav();
   loadScalp();
 
   window.addEventListener("hashchange", route);
@@ -513,6 +778,89 @@ function render(d) {
   route();
 }
 
+
+/* ------------------------------------------------------------------ *
+ * BÖLÜM MENÜSÜ (yapışkan)
+ *
+ * İki iş yapar: bir bölüme götürür ve okuyucunun HANGİ bölümde olduğunu
+ * söyler. İkincisi olmadan yapışkan bir menü yalnızca yer kaplar.
+ *
+ * Tık hash'e YAZMAZ (preventDefault): bu sayfada hash bir yönlendirme
+ * sözleşmesidir (`#model=<ad>`) ve bir bölüm bağlantısının oraya yazması geri
+ * tuşunu bölüm geçmişiyle doldururdu — üstelik route() her hashchange'de
+ * seviye değiştirdiği için bölüm linki sayfayı baştan çizerdi. href yine de
+ * gerçek bir anchor'dır: orta tık, "yeni sekmede aç" ve ekran okuyucunun
+ * bağlantı listesi çalışmaya devam eder.
+ * ------------------------------------------------------------------ */
+const REDUCED_MOTION = window.matchMedia
+  ? window.matchMedia("(prefers-reduced-motion: reduce)")
+  : { matches: false };
+
+function setupSectionNav() {
+  const nav = el("secnav");
+  if (!nav) return;
+  const links = Array.from(nav.querySelectorAll("a[data-sec]"));
+  // Menünün kendi yüksekliği CSS'te tanımlı (--secnav-h) ve `scroll-margin-top`
+  // oradan beslenir; aktiflik ölçütü de aynı sayıyı kullanmalı, yoksa bir bölüm
+  // "aktif" olurken başlığı hâlâ menünün altında kalırdı.
+  const navHeight = () => nav.getBoundingClientRect().height || 53;
+
+  function visibleSection(link) {
+    if (link.hidden) return null;
+    const sec = el(link.dataset.sec);
+    return sec && !sec.hidden ? sec : null;
+  }
+
+  function markActive(active) {
+    for (const link of links) {
+      if (link === active) link.setAttribute("aria-current", "true");
+      else link.removeAttribute("aria-current");
+    }
+  }
+
+  function spy() {
+    // Detay seviyesindeyken menü de gizlidir; gizli öğenin kutusu 0'dır ve
+    // ölçmek ilk bölümü yanlışlıkla aktif gösterirdi.
+    if (el("level-overview").hidden) return;
+    const probe = navHeight() + 24;
+    let active = null;
+    let first = null;
+    for (const link of links) {
+      const sec = visibleSection(link);
+      if (!sec) continue;
+      if (!first) first = link;
+      if (sec.getBoundingClientRect().top <= probe) active = link;
+    }
+    markActive(active || first);
+  }
+
+  nav.addEventListener("click", (ev) => {
+    const link = ev.target.closest ? ev.target.closest("a[data-sec]") : null;
+    // Değiştirici tuşlar tarayıcıya bırakılır: "yeni sekmede aç" bir gezinme
+    // değil, okuyucunun kendi kararıdır.
+    if (!link || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button) return;
+    const sec = visibleSection(link);
+    if (!sec) return;
+    ev.preventDefault();
+    sec.scrollIntoView({ behavior: REDUCED_MOTION.matches ? "auto" : "smooth", block: "start" });
+    markActive(link);
+  });
+
+  let queued = false;
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; spy(); });
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  sectionNavRefresh = spy;
+  spy();
+}
+
+/* Scalp bölümü ikinci bir fetch'ten sonra görünür olabilir; menü o anda kendini
+   yeniden ölçmeli, yoksa yeni bölüm menüde var olup aktiflik hesabında yok olurdu. */
+let sectionNavRefresh = () => {};
 
 /* ------------------------------------------------------------------ *
  * SCALP KATMANI (15 dakika) — AYRI yük, AYRI bölüm
@@ -552,6 +900,8 @@ function scalpRow(model) {
 
 function renderScalp(d) {
   el("sec-scalp").hidden = false;
+  el("secnav-scalp").hidden = false;
+  sectionNavRefresh();
   /* Kopya modeller (is_replica) yarışmacı DEĞİLDİR: sabit teminat ve kendi kaldıraçlarıyla
      koşarlar, yani 1R'leri yarışmacılarınkiyle aynı birim değildir. Aynı tabloya koymak
      okuyucuya olmayan bir kıyas sunardı — bu yüzden ayrı bir bölümde dururlar. Ölçüt
@@ -595,14 +945,17 @@ function renderScalp(d) {
 
   el("scalp-replicas").innerHTML = replicas.length
     ? '<h3 class="sub">Referans (dış sistem)</h3>' +
-      '<p class="note">Bu satır <b>yarışmacı değildir</b> ve ortalama R sıralamasına girmez: ' +
-      "sabit teminat ve kendi kaldıracıyla koşar, yani 1R'si yukarıdaki modellerinkiyle " +
-      "aynı birim değildir. Maliyet ölçeği kolonları (<code>cost/R</code>, " +
-      "<code>stop %</code>) bu yüzden boştur — R başına maliyet ancak ortak risk birimiyle " +
-      'koşan satırlar arasında bir kıyas ölçüsüdür. Taşıdığı bilgi sıralamada değil, ' +
-      '<b>hesap düzeyi getirisinde</b>: dış sistem bizim maliyet, kayma, funding ve ' +
-      'likidasyon varsayımlarımız altında ne yapardı? Likidasyon modellemesi korunur — ' +
-      'kapatmak kopyayı haksız biçimde iyi gösterirdi.</p>' +
+      /* Uyarının KENDİSİ görünür kalır (satır yarışmacı değil); gerekçesi katlanır. */
+      '<p class="note">Bu satır <b>yarışmacı değildir</b> ve ortalama R sıralamasına girmez.</p>' +
+      '<details class="howto"><summary>Nasıl okunur? — neden ayrı, neden boş kolonlar</summary>' +
+      '<div class="howto-body"><p class="note">' +
+      "Kopya sabit teminat ve kendi kaldıracıyla koşar, yani 1R'si yukarıdaki " +
+      'modellerinkiyle aynı birim değildir. Maliyet ölçeği kolonları (<code>cost/R</code>, ' +
+      '<code>stop %</code>) bu yüzden boştur — R başına maliyet ancak ortak risk birimiyle ' +
+      'koşan satırlar arasında bir kıyas ölçüsüdür.</p><p class="note">' +
+      'Taşıdığı bilgi sıralamada değil, <b>hesap düzeyi getirisinde</b>: dış sistem bizim ' +
+      'maliyet, kayma, funding ve likidasyon varsayımlarımız altında ne yapardı? Likidasyon ' +
+      'modellemesi korunur — kapatmak kopyayı haksız biçimde iyi gösterirdi.</p></div></details>' +
       '<div class="card wide"><table class="grid"><thead><tr>' +
       SCALP_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
       replicas.map((m) => '<tr class="data">' + scalpRow(m).map(([cls, v]) =>
@@ -613,6 +966,16 @@ function renderScalp(d) {
   // Kapı, kırılımı ÜRETEN yükten okunur (base yükünün değil): iki katmanın eşiği
   // bugün aynı olsa da birinden okuyup diğerine uygulamak sessiz bir bağ olurdu.
   const gate = num((d.acceptance || {}).min_trades);
+  /* Kapı dipnotu BİR KEZ, üç kırılımın hepsinden önce (eskiden her kırılım
+     kartının altına ayrı basılıyordu: aynı cümlenin on iki kopyası). `Ö` işareti
+     üç kırılımda da aynı anlamı taşır, yani tekrar bilgi taşımıyordu — yalnızca
+     okunmama olasılığını artırıyordu. */
+  const gateNote = el("breakdown-gate-note");
+  gateNote.hidden = gate === null || gate === undefined;
+  if (!gateNote.hidden) {
+    gateNote.innerHTML = "Aşağıdaki üç kırılımda <b>Ö</b> = örneklem kapısının altında (n &lt; " +
+      gate + "): satır gizlenmez ve solgun çizilir, ama ortalaması bir ölçüm değil gürültüdür.";
+  }
   renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol", gate);
   renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol", gate);
   renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı", gate);
@@ -623,7 +986,9 @@ const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "ort. R aralığı", "kazanma", "
 /* Kırılım grubu, örneklem kapısını (acceptance.min_trades) MODEL SATIRIYLA aynı
    ölçütle geçmek zorundadır. Geçmeyen satır gizlenmez — base katmanının ölçütü zaten
    "n=30'a ulaşılabiliyor mu" (karar 33) — ama SOLGUN çizilir ve işlem sayısının yanına
-   kapı işareti konur. Gerekçe projenin kendi geçmişidir: karar 27 (saat hipotezi) ve
+   kapı işareti konur; işaretin AÇIKLAMASI bölüm başına tek bir dipnottadır
+   (#breakdown-gate-note), kart başına değil — aynı cümleyi her kartın altında
+   tekrarlamak onu okunmaz kılıyordu. Gerekçe projenin kendi geçmişidir: karar 27 (saat hipotezi) ve
    karar 28 (kayıp serisi) tam olarak bir kırılım grubunun ortalamasına bakıp kural
    yazma denemeleriydi; ikisi de daha uzun örneklemde çürüdü. Grup ortalamasını
    örneklemsiz göstermek o hatayı arayüzün içine yerleştirmek olurdu. */
@@ -642,7 +1007,7 @@ function renderBreakdown(hostId, byModel, label, gate) {
     /* Kırılım her zaman tablo: satır sayısı az (5 kol / 14 sembol) ve kolonlar dar,
        dar ekranda da okunur. Kaydırma kabı yalnızca gerekirse devreye girer. */
     return '<div class="card"><b>' + esc(model) + "</b>" +
-      '<div style="overflow-x:auto"><table class="grid"><thead><tr><th>' + esc(label) + "</th>" +
+      '<div class="tablewrap fade"><table class="grid"><thead><tr><th>' + esc(label) + "</th>" +
       BREAKDOWN_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
       names.map((name) => {
         const g = groups[name] || {};
@@ -655,9 +1020,7 @@ function renderBreakdown(hostId, byModel, label, gate) {
           "<td>" + pct(g.win_rate) + "</td>" +
           '<td class="' + signClass(g.total_r) + '">' + fmtSigned(g.total_r, 1) + "</td>" +
           "<td>" + fmt(g.cost_per_r, 3) + "</td></tr>";
-      }).join("") + "</tbody></table></div></div>" +
-      (gate ? '<p class="note">Ö = örneklem kapısının altında (n &lt; ' + gate +
-        "): satır gizlenmez ama ortalaması bir ölçüm değil gürültüdür.</p>" : "");
+      }).join("") + "</tbody></table></div></div>";
   }).join("");
 }
 
@@ -684,13 +1047,20 @@ function route() {
     document.title = model + " — Paper Trading";
     return;
   }
+  // Kaydırma YALNIZCA detaydan dönüşte geri alınır. Koşulsuz yapıldığında ilk
+  // açılışta da tetikleniyordu; bölüm menüsü geldikten sonra bu, menüden bir
+  // bölüme gidip başka bir sebeple route() çalıştığında okuyucuyu başa atardı.
+  const wasDetail = !detail.hidden;
   detail.hidden = true;
   overview.hidden = false;
   document.title = "Paper Trading — model karşılaştırması";
   // Grafik gizliyken çizilemez (genişliği 0'dır): geri dönüşte yeniden çizilir.
   equityChart.redraw();
-  window.scrollTo(0, overviewScroll);
-  overviewScroll = 0;
+  if (wasDetail) {
+    window.scrollTo(0, overviewScroll);
+    overviewScroll = 0;
+  }
+  sectionNavRefresh();
 }
 
 /* ---------------------------- başlık ---------------------------- */
@@ -936,6 +1306,27 @@ function badges(flags, interactive) {
   return '<span class="badges">' + gates + warning + "</span>";
 }
 
+/* Rütbe TEK yerde hesaplanır: kıyas tablosu ile tez kartları aynı haritayı okur.
+   İki yerde hesaplansaydı biri bir gün ötekinden başka bir "#1" gösterirdi.
+
+   Yarışmacı sırası: ortalama R. Kart sıralaması gruba göre olduğu için rütbe
+   sayıyla taşınır — gruplama, "kim önde" sorusunun cevabını gizlememeli.
+
+   ÖRNEKLEM KAPISINI (Ö) geçmeyen model RÜTBE ALMAZ. Rozet "kapı geçilmedi" derken
+   satırın "#1" yazması, okuyucunun ikincisini okuması demekti; üstelik 4 işlemlik bir
+   ortalamayı 200 işlemlik bir ortalamayla aynı sırada göstermek, kapının tam olarak
+   reddettiği kıyastır. Satır GİZLENMEZ — base katmanının ölçütü (karar 33) "model
+   n=30'a ulaşabiliyor mu"dur — yalnızca rütbe yerine kapıya uzaklığı gösterir. */
+function computeRanks(d) {
+  const ranked = competitors(d)
+    .filter((model) => (FLAGS[model] || {}).sample !== false)
+    .map((model) => ({ model, value: num(((MODELS[model] || {}).total || {}).avg_r) }))
+    .filter((row) => row.value !== null)
+    .sort((a, b) => b.value - a.value);
+  RANK = {};
+  ranked.forEach((row, index) => { RANK[row.model] = index + 1; });
+}
+
 /* ---------------------- model kartları ---------------------- */
 function sparkline(points, color, dashed) {
   const values = (points || []).map((p) => num(p[1])).filter((v) => v !== null);
@@ -973,22 +1364,7 @@ function renderGroups(d) {
   const openCount = {};
   for (const p of (d.open_positions || [])) openCount[p.model] = (openCount[p.model] || 0) + 1;
 
-  // Yarışmacı sırası: ortalama R. Kart sıralaması gruba göre olduğu için rütbe
-  // sayıyla taşınır — gruplama, "kim önde" sorusunun cevabını gizlememeli.
-  //
-  // ÖRNEKLEM KAPISINI (Ö) geçmeyen model RÜTBE ALMAZ. Rozet "kapı geçilmedi" derken
-  // kartın "#1" yazması, okuyucunun ikincisini okuması demekti; üstelik 4 işlemlik bir
-  // ortalamayı 200 işlemlik bir ortalamayla aynı sırada göstermek, kapının tam olarak
-  // reddettiği kıyastır. Kart GİZLENMEZ — base katmanının ölçütü (karar 33) "model
-  // n=30'a ulaşabiliyor mu"dur — yalnızca rütbe yerine kapıya uzaklığı gösterir.
-  const ranked = competitors(d)
-    .filter((model) => (FLAGS[model] || {}).sample !== false)
-    .map((model) => ({ model, value: num((MODELS[model].total || {}).avg_r) }))
-    .filter((row) => row.value !== null)
-    .sort((a, b) => b.value - a.value);
-  const rank = {};
-  ranked.forEach((row, index) => { rank[row.model] = index + 1; });
-
+  const rank = RANK;
   const sections = GROUPS.map((g) => ({ ...g, models: g.models.filter((m) => present.has(m)) }))
     .filter((g) => g.models.length);
   const leftovers = [...present].filter((m) => !grouped.has(m) && !benchmarks.includes(m));
@@ -1016,6 +1392,8 @@ function renderGroups(d) {
       '<span class="group-note">' + esc(g.note) + "</span></div>" +
       '<div class="mcards">' + cards.join("") + "</div></div>";
   }).join("");
+  // Kartlar yeniden çizildi: aktif filtre varsa işareti geri koy.
+  applyIsolationMarks();
 
   // Rütbesizliğin SEBEBİ görünür olmalı: "—" tek başına "ölçülemedi" ile "kapıya 4
   // işlem kaldı"yı aynı işarete indirger.
@@ -1069,14 +1447,30 @@ function renderGroups(d) {
     ];
     if (open) folded.push(["açık", String(open)]);
 
-    return '<div class="mcard' + (isReferenceGroup || isBenchmark ? " reference" : "") + '"' +
-      ' style="border-top-color:' + (st.color || "var(--ink-muted)") + '">' +
+    /* Eğrisi olmayan model izole edilemez: grafiğin görünen seri kümesi boşalır ve
+       sayfa "filtreledim ama hiçbir şey yok" gösterirdi. Kart yine durur (kural 33'ün
+       ölçütü "model n'e ulaşabiliyor mu"), yalnızca filtre kapalıdır. */
+    const filterable = ((DATA.equity || {})[model] || []).length > 0;
+    const accent = st.color || "var(--ink-muted)";
+    const filterBtn =
+      '<button type="button" class="mcard-filter" aria-pressed="false"' +
+      (filterable ? "" : " disabled") +
+      ' title="' + esc(filterable
+        ? "Özsermaye eğrisinde yalnız bu modeli göster"
+        : "Bu modelin henüz özsermaye kaydı yok: eğride izole edilemez") + '">' +
+      '<i></i>eğride yalnız bu</button>';
+
+    return '<div class="mcard' + (isReferenceGroup || isBenchmark ? " reference" : "") +
+      (filterable ? "" : " nofilter") + '" data-model="' + esc(model) + '"' +
+      ' style="--accent:' + accent + '">' +
       '<div class="mcard-top"><div class="mcard-name"><span class="swatch' + (st.dash ? " dashed" : "") +
         '" style="background:' + (st.color || "var(--ink-muted)") + ";color:" + (st.color || "var(--ink-muted)") +
         '"></span>' + esc(model) + tag + "</div>" +
       '<div class="mcard-rank"' + (rankHint(model) ? ' title="' + esc(rankHint(model)) + '"' : "") + ">" +
         (rank[model] ? "#" + rank[model] : rankLabel(model)) + "</div></div>" +
       '<div class="mcard-eq">' + hero + "</div>" +
+      filterBtn +
+      '<span class="iso-mark" hidden>◉ eğride yalnız bu model</span>' +
       "<details><summary>detaylar</summary>" +
         '<div class="mcard-fold">' +
           '<div class="mcard-row">' +
@@ -1089,6 +1483,371 @@ function renderGroups(d) {
       "</details>" +
       "</div>";
   }
+}
+
+/* ======================= KIYAS TABLOSU (birincil tarama) =======================
+ *
+ * Kartlar tezlere göre gruplu durur ve o gruplama bir bilgidir; ama "kim önde"
+ * sorusu için okuyucunun beş grubu gezip sayıları kafasında birleştirmesi
+ * gerekiyordu. Tablo taramayı tek ekrana indirir, kartlar DETAY olarak altında
+ * kalır (kıvrım, rozet gerekçesi, açık pozisyon, eğri filtresi).
+ *
+ * Hiçbir sayı BURADA HESAPLANMAZ (kural 7): her hücre `core/metrics.py`nin
+ * ürettiği alanı biçimlendirir, rütbe de kartlarla aynı `RANK` haritasından gelir.
+ *
+ * BLOKLAR BİRLEŞMEZ. Yarışmacılar, Ö kapısını geçmeyenler, referans çıpası ve dış
+ * sistem kopyası ayrı ayrı sıralanır — CLAUDE.md'nin kuralı budur ve tam olarak
+ * "4 işlemlik bir ortalamayı 200 işlemlik bir ortalamayla aynı sütunda sıralamak"
+ * durumunu engeller. Kullanıcının seçtiği sıralama her bloğun İÇİNDE uygulanır;
+ * blok sınırları bir kullanıcı tercihiyle kalkmaz.
+ * ============================================================================ */
+
+/* Sıralama: TEK state, TEK yazar (setSort) — eğri izolasyonuyla aynı kural.
+   `dir` varsayılan yönüdür: -1 büyükten küçüğe (iyi olan üstte), +1 tersi. */
+const TABLE_COLUMNS = [
+  {
+    key: "rank", label: "rütbe", dir: 1, left: true,
+    // Rütbenin KENDİSİ sıralanır, ort. R değil: ikisi yarışmacı bloğunda aynı
+    // sırayı verir, ama rütbe kapıyı geçmeyende tanımsızdır ve öyle kalmalıdır.
+    get: (m) => RANK[m] ?? null,
+    cell: (m) => '<span class="mt-rank">' + rankCell(m) + "</span>",
+  },
+  {
+    key: "name", label: "model", dir: 1, left: true,
+    get: (m) => m,
+    cell: (m) => {
+      const st = STYLE[m] || {};
+      return '<a class="mt-name" href="' + modelHref(m) + '"><span class="swatch' +
+        (st.dash ? " dashed" : "") + '" style="background:' + (st.color || "var(--ink-muted)") +
+        ";color:" + (st.color || "var(--ink-muted)") + '"></span>' + esc(m) + "</a>" + modelTag(m) +
+        '<span class="iso-mark" hidden>◉ eğride</span>';
+    },
+  },
+  {
+    key: "equity", label: "özsermaye", dir: -1,
+    get: (m) => num(((MODELS[m] || {}).account || {}).final_equity),
+    cell: (m) => {
+      const v = num(((MODELS[m] || {}).account || {}).final_equity);
+      return v === null ? DASH : "$" + v.toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    },
+  },
+  {
+    key: "return", label: "getiri", dir: -1,
+    get: (m) => num(((MODELS[m] || {}).account || {}).total_return),
+    cell: (m) => {
+      const v = ((MODELS[m] || {}).account || {}).total_return;
+      return '<span class="' + signClass(v) + '">' + pctSigned(v) + "</span>";
+    },
+  },
+  {
+    key: "avg_r", label: "ort. R", dir: -1,
+    // Çıpanın ort. R'si YOKTUR (stop'suz sinyalin 1R'si yok, kural 15): `—` yazmak
+    // "ölçtük, sıfır çıktı" demekten farklıdır ve sıralamada da sona gider.
+    get: (m) => (MODELS[m] || {}).is_benchmark ? null : num(((MODELS[m] || {}).total || {}).avg_r),
+    cell: (m) => {
+      if ((MODELS[m] || {}).is_benchmark) return DASH;
+      const v = ((MODELS[m] || {}).total || {}).avg_r;
+      return '<span class="' + signClass(v) + '">' + fmtSigned(v) + "</span>";
+    },
+  },
+  {
+    key: "trades", label: "işlem", dir: -1,
+    get: (m) => num(((MODELS[m] || {}).total || {}).trades),
+    cell: (m) => String(num(((MODELS[m] || {}).total || {}).trades) ?? 0),
+  },
+  {
+    key: "mdd", label: "MDD", dir: -1,
+    // max_drawdown NEGATİF gelir (-0.049 = %-4.9): sıfıra yakın olan daha iyidir,
+    // yani "iyi olan üstte" büyükten küçüğe sıralamaktır.
+    get: (m) => num(((MODELS[m] || {}).account || {}).max_drawdown),
+    cell: (m) => pct(((MODELS[m] || {}).account || {}).max_drawdown, 2),
+  },
+  {
+    // Rozetler SIRALANMAZ: "Ö ve E" bir sayı değil iki ayrı kapının durumudur ve
+    // onları tek bir sıra değerine indirmek, geçilmemiş bir kapıyı bir puana
+    // çevirirdi. Kolon yine de tabloda durur — tarama görünümünün asıl işi bu.
+    key: "flags", label: "rozet", dir: 0, sortable: false,
+    get: () => null,
+    cell: (m) => badges(FLAGS[m], false),
+  },
+];
+
+let sortState = { key: "rank", dir: 1 };   // varsayılan = mevcut rütbe mantığı
+
+function modelTag(model) {
+  const m = MODELS[model] || {};
+  if (m.is_benchmark) return '<span class="tag">REFERANS</span>';
+  if (m.is_replica) return '<span class="tag">KOPYA</span>';
+  const control = (DATA.acceptance || {}).control_model || null;
+  return model === control ? '<span class="tag">KONTROL</span>' : "";
+}
+
+/* Rütbesizliğin SEBEBİ görünür olmalı: `—` tek başına "ölçülemedi" ile "kapıya 4
+   işlem kaldı"yı aynı işarete indirger. */
+function rankCell(model) {
+  if (RANK[model]) return "#" + RANK[model];
+  const f = FLAGS[model];
+  if (!f) return DASH;                              // çıpa/kopya: yarışmacı değil
+  return f.sample === false ? "n=" + f.measured_trades : DASH;
+}
+
+function setSort(key) {
+  const col = TABLE_COLUMNS.find((c) => c.key === key);
+  if (!col || col.sortable === false) return;
+  sortState = sortState.key === key
+    ? { key, dir: -sortState.dir }                   // aynı kolona tekrar: yön döner
+    : { key, dir: col.dir };
+  renderModelTable();
+}
+
+function sortModels(models) {
+  const col = TABLE_COLUMNS.find((c) => c.key === sortState.key) || TABLE_COLUMNS[0];
+  return models.slice().sort((a, b) => {
+    const va = col.get(a), vb = col.get(b);
+    // null "ÖLÇÜLMEDİ" demektir, bir sıra değeri değil: yön ne olursa olsun sona
+    // gider. Yönle birlikte dönseydi ölçülemeyen satırlar bir tıkla başa çıkardı.
+    if (va === null && vb === null) return a.localeCompare(b, "tr");
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    if (typeof va === "string") return sortState.dir * va.localeCompare(vb, "tr");
+    if (va === vb) return a.localeCompare(b, "tr");  // eşitlikte kararlı ve tekrarlanabilir
+    return sortState.dir * (va > vb ? 1 : -1);
+  });
+}
+
+/* Blokların TANIMI tek yerde: tablo da dar ekran listesi de bunu okur. */
+function tableBlocks() {
+  const names = Object.keys(MODELS);
+  const isRef = (m) => !!(MODELS[m] || {}).is_benchmark || (DATA.benchmarks || []).includes(m);
+  const isRep = (m) => !!(MODELS[m] || {}).is_replica || (DATA.replicas || []).includes(m);
+  const comp = names.filter((m) => !isRef(m) && !isRep(m));
+  return [
+    { key: "ranked", models: comp.filter((m) => RANK[m]) },
+    {
+      key: "gated", label: "Örneklem kapısını geçmeyenler",
+      note: "sıralamaya girmez: bu kadar işlemle ortalama R bir ölçüm değil gürültüdür",
+      models: comp.filter((m) => !RANK[m]),
+    },
+    {
+      key: "ref", label: "Referans (çıpa)",
+      note: "yarışmacı değil zemin (kural 15): ort. R sütununda — gösterir, stop'u olmayanın 1R'si yoktur",
+      models: names.filter(isRef),
+    },
+    {
+      key: "replica", label: "Referans (dış sistem)",
+      note: "dış bir sistemin kopyası (kural 15b): 1R'si sabit teminattan gelir, yarışmacılarla aynı sütunda sıralanmaz",
+      models: names.filter(isRep),
+    },
+  ].filter((b) => b.models.length);
+}
+
+function renderModelTable() {
+  const host = el("model-table");
+  const list = el("model-table-cards");
+  if (!host || !list) return;
+  const blocks = tableBlocks();
+  if (!blocks.length) {
+    host.innerHTML = '<p class="empty">Henüz model yok.</p>';
+    list.innerHTML = "";
+    el("model-sort").innerHTML = "";
+    return;
+  }
+
+  const head = "<thead><tr>" + TABLE_COLUMNS.map((c) => {
+    const pad = c.left ? " mt-left" : "";
+    if (c.sortable === false) return '<th scope="col" class="' + pad.trim() + '">' + esc(c.label) + "</th>";
+    const active = sortState.key === c.key;
+    const arrow = active ? (sortState.dir > 0 ? "▲" : "▼") : "↕";
+    return '<th scope="col" class="sortable' + pad + '"' +
+      (active ? ' aria-sort="' + (sortState.dir > 0 ? "ascending" : "descending") + '"' : "") +
+      '><button type="button" data-sort="' + esc(c.key) + '" title="' +
+      esc(c.label + " sütununa göre sırala") + '">' + esc(c.label) +
+      '<span class="ind" aria-hidden="true">' + arrow + "</span></button></th>";
+  }).join("") + "</tr></thead>";
+
+  // TEK tablo, blok başına bir <tbody>: başlık bir kez yazılır (yani `aria-sort`
+  // da bir kez), bloklar ayracın altında ayrı ayrı sıralanır.
+  host.innerHTML = '<div class="tablewrap fade"><table class="grid">' + head +
+    blocks.map((b) => {
+      const sep = b.label
+        ? '<tr class="mt-sep"><td colspan="' + TABLE_COLUMNS.length + '">' +
+          '<span class="mt-block-name">' + esc(b.label) + "</span> " +
+          '<span class="mt-block-note">' + esc(b.note || "") + "</span></td></tr>"
+        : "";
+      const rows = sortModels(b.models).map((m) => {
+        const st = STYLE[m] || {};
+        return '<tr class="data" data-model="' + esc(m) + '" style="--accent:' +
+          (st.color || "var(--ink-muted)") + '">' +
+          TABLE_COLUMNS.map((c) => '<td class="' + (c.left ? "mt-left" : "") + '">' + c.cell(m) + "</td>").join("") +
+          "</tr>";
+      }).join("");
+      return "<tbody>" + sep + rows + "</tbody>";
+    }).join("") + "</table></div>";
+
+  /* Dar ekran: AYNI satırlar, aynı sırayla, liste düzeninde. Kalın bir kart düzeni
+     aşağıdaki tez kartlarının kopyası gibi okunur ve telefonda aynı modeller iki
+     kez gezilirdi. */
+  list.innerHTML = blocks.map((b) => {
+    const items = sortModels(b.models).map((m) => {
+      const st = STYLE[m] || {};
+      const account = (MODELS[m] || {}).account || {};
+      const total = (MODELS[m] || {}).total || {};
+      const equityCell = TABLE_COLUMNS.find((c) => c.key === "equity").cell(m);
+      const avgCell = TABLE_COLUMNS.find((c) => c.key === "avg_r").cell(m);
+      const sub = [
+        ["ort. R", avgCell],
+        ["işlem", String(num(total.trades) ?? 0)],
+        ["MDD", pct(account.max_drawdown, 2)],
+      ];
+      return '<div class="mt-item" data-model="' + esc(m) + '" style="--accent:' +
+        (st.color || "var(--ink-muted)") + '">' +
+        '<span class="mt-rank">' + rankCell(m) + "</span>" +
+        "<div>" + TABLE_COLUMNS.find((c) => c.key === "name").cell(m) + "</div>" +
+        '<div class="mt-eq">' + equityCell +
+          '<small class="' + signClass(account.total_return) + '">' + pctSigned(account.total_return) + "</small></div>" +
+        '<div class="mt-sub">' +
+          sub.map(([k, v]) => "<div><span>" + esc(k) + "</span> " + v + "</div>").join("") +
+          "<div>" + badges(FLAGS[m], false) + "</div>" +
+        "</div></div>";
+    }).join("");
+    return (b.label ? blockHead(b) : "") + '<div class="mt-list">' + items + "</div>";
+  }).join("");
+
+  // Dar ekranda tıklanacak bir kolon başlığı yok: sıralama açılır listeden seçilir.
+  // İki yüzey de setSort'u çağırır — ikinci bir sıralama state'i olmaz.
+  el("model-sort").innerHTML =
+    '<label class="field"><span>sırala</span><select id="model-sort-key">' +
+    TABLE_COLUMNS.filter((c) => c.sortable !== false).map((c) =>
+      '<option value="' + esc(c.key) + '"' + (sortState.key === c.key ? " selected" : "") + ">" +
+      esc(c.label) + "</option>").join("") +
+    "</select></label>" +
+    '<button type="button" class="linkbtn" id="model-sort-dir">' +
+    (sortState.dir > 0 ? "▲ artan" : "▼ azalan") + "</button>";
+
+  host.querySelectorAll("th.sortable button").forEach((b) =>
+    b.addEventListener("click", () => setSort(b.dataset.sort)));
+  el("model-sort-key").addEventListener("change", (ev) => {
+    // Kolon DEĞİŞİYORSA o kolonun kendi varsayılan yönü geçerlidir (setSort'un
+    // kuralı); aynı kolon seçilirse yön dönmemeli, bu yüzden erken çıkılır.
+    if (ev.target.value !== sortState.key) setSort(ev.target.value);
+  });
+  el("model-sort-dir").addEventListener("click", () => {
+    sortState = { key: sortState.key, dir: -sortState.dir };
+    renderModelTable();
+  });
+
+  applyIsolationMarks();
+}
+
+const blockHead = (b) =>
+  '<div class="mt-block-head"><span class="mt-block-name">' + esc(b.label) + "</span>" +
+  '<span class="mt-block-note">' + esc(b.note || "") + "</span></div>";
+
+/* ------------------------- eğri izolasyonu (filtre) -------------------------
+ *
+ * Sayfa metni "bir modele tıklayınca yalnız o kalır" diyordu ama bunu YALNIZCA
+ * grafiğin altındaki küçük lejand düğmesi yapıyordu; model kartı hiçbir şey
+ * yapmıyordu. Artık iki giriş de aynı kapıdan geçer.
+ *
+ * TEK YAZAR: setIsolated. Kart sınıfı, lejand düğmesinin aria-pressed'ı, grafiğin
+ * `isolate` seçeneği ve filtre şeridi hep buradan tazelenir — her yüzeyin kendi
+ * "seçili model" kopyasını tutması, iki yüzeyin bir gün farklı şey göstermesiydi.
+ * ------------------------------------------------------------------------- */
+const canIsolate = (model) => ((DATA && DATA.equity ? DATA.equity[model] : null) || []).length > 0;
+
+function setIsolated(model) {
+  const next = model && canIsolate(model) ? model : null;
+  if (next === isolated) return;
+  isolated = next;
+  renderEquity(DATA);          // lejand + grafik + filtre şeridi
+  applyIsolationMarks();
+}
+
+/* Kartlar YENİDEN ÇİZİLMEZ, yalnızca işaretlenir: innerHTML'i tazelemek açık
+   "detaylar" bölümlerini kapatır ve klavye odağını kartın dışına atardı.
+
+   Kıyas tablosunun satırları da aynı işareti alır. Filtreyi tablodan KURMAK
+   mümkün değildir (tablo bir tarama görünümüdür, orada her satıra bir düğme
+   koymak sekiz kolonu dokuza çıkarırdı) ama filtrenin hangi satır olduğunu
+   GÖSTERMEK gerekir: lejanddan filtreleyip tabloya bakan okuyucu, aradığı satırı
+   aramak zorunda kalmamalı. */
+function applyIsolationMarks() {
+  const mark = (node, on) => {
+    const tag = node.querySelector(".iso-mark");
+    if (tag) tag.hidden = !on;
+  };
+  document.querySelectorAll("#groups .mcard[data-model]").forEach((node) => {
+    const on = node.dataset.model === isolated;
+    node.classList.toggle("isolated", on);
+    mark(node, on);
+    const btn = node.querySelector(".mcard-filter");
+    if (!btn || btn.disabled) return;
+    btn.setAttribute("aria-pressed", String(on));
+    btn.title = on
+      ? "Filtreyi kaldır: tüm modelleri göster"
+      : "Özsermaye eğrisinde yalnız bu modeli göster";
+  });
+  document.querySelectorAll("#model-table tr[data-model], #model-table-cards [data-model]")
+    .forEach((node) => {
+      const on = node.dataset.model === isolated;
+      node.classList.toggle("isolated", on);
+      mark(node, on);
+    });
+}
+
+/* Filtre grafiğin yanında YAZILI durur. Tek göstergesi lejanddaki bir düğmenin
+   sönükleşmesi olduğunda, filtre açık unutulmuş bir grafik "veri kayboldu" gibi
+   okunuyordu. */
+function renderEquityFilter() {
+  const host = el("equity-filter");
+  if (!host) return;
+  if (!DATA || !Object.keys(DATA.equity || {}).length) { host.innerHTML = ""; return; }
+
+  if (!isolated) {
+    host.innerHTML = '<span class="hint">Tüm modeller gösteriliyor — bir model kartına ' +
+      "ya da aşağıdaki lejanda tıklayarak tek modele indirebilirsiniz.</span>";
+    return;
+  }
+  const st = STYLE[isolated] || {};
+  host.innerHTML =
+    '<span class="chip"><i style="border-top-color:' + (st.color || "#888") +
+      ";border-top-style:" + (st.dash ? "dashed" : "solid") + '"></i>' +
+      "Filtrelendi: <b>" + esc(isolated) + "</b></span>" +
+    '<button type="button" class="linkbtn" id="equity-clear">✕ Hepsini göster</button>';
+  el("equity-clear").addEventListener("click", () => setIsolated(null));
+}
+
+/* Kart yüzeyine tık: fare için bir KISAYOL (erişilebilir yol kartın içindeki
+   `.mcard-filter` düğmesidir). Delegasyon `#groups` üzerinde bir kez bağlanır —
+   kart başına dinleyici, renderGroups her çağrıldığında birikirdi. */
+function setupCardFilter() {
+  el("groups").addEventListener("click", (ev) => {
+    const node = ev.target.closest ? ev.target.closest(".mcard[data-model]") : null;
+    if (!node) return;
+    const onButton = !!ev.target.closest(".mcard-filter");
+    // Kartın KENDİ etkileşimli öğeleri kendi işlerini yapar: "detaylar" açılır
+    // başlığı katlamayı açar, "model detayı →" detay seviyesine gider.
+    if (!onButton && ev.target.closest("a, button, summary")) return;
+    // Metin seçiliyorsa tık bir komut değil, bir seçimin bitişidir.
+    if (!onButton && String(window.getSelection() || "").length) return;
+    const model = node.dataset.model;
+    if (!canIsolate(model)) return;
+
+    const turningOn = isolated !== model;
+    setIsolated(turningOn ? model : null);
+    // Etkiyi GÖSTER: grafik tamamen ekran dışındaysa oraya götür. Görünürken
+    // kaydırmak, okuyucunun yerini sebepsiz değiştirmek olurdu.
+    if (turningOn) revealEquity();
+  });
+}
+
+function revealEquity() {
+  const sec = el("sec-equity");
+  if (!sec || sec.hidden) return;
+  const box = sec.getBoundingClientRect();
+  const onScreen = box.top < window.innerHeight - 80 && box.bottom > 80;
+  if (onScreen) return;
+  sec.scrollIntoView({ behavior: REDUCED_MOTION.matches ? "auto" : "smooth", block: "start" });
 }
 
 /* --------------------------- eğri grafikleri --------------------------- */
@@ -1128,6 +1887,7 @@ function renderEquity(d) {
     // SVGElement onu uygulamaz — atama sessizce bir JS alanı yaratır, öznitelik yazılmaz.
     equityChart.clear();
     legend.innerHTML = '<p class="empty">Henüz özsermaye kaydı yok.</p>';
+    renderEquityFilter();
     return;
   }
 
@@ -1138,12 +1898,14 @@ function renderEquity(d) {
       '<i style="border-top-color:' + (st.color || "#888") + ";border-top-style:" + (st.dash ? "dashed" : "solid") + '"></i>' +
       esc(m) + "</button>";
   }).join("");
+  // Lejand da kart da AYNI kapıdan geçer (setIsolated); burada `isolated`a doğrudan
+  // yazmak, iki girişin iki ayrı tazeleme yolu olması demekti.
   legend.querySelectorAll(".lg").forEach((b) => b.addEventListener("click", () => {
-    isolated = isolated === b.dataset.model ? null : b.dataset.model;
-    renderEquity(d);
+    setIsolated(isolated === b.dataset.model ? null : b.dataset.model);
   }));
 
   equityChart.show(equity, names, { isolate: isolated });
+  renderEquityFilter();
 }
 
 function paintLines(svg, tip, state) {
@@ -1153,7 +1915,7 @@ function paintLines(svg, tip, state) {
   const wrap = svg.parentElement;
   const W = Math.max(300, wrap.clientWidth);
   const H = W < 560 ? 260 : 340;
-  const M = { t: 10, r: 12, b: 26, l: W < 560 ? 46 : 58 };
+  const M = { t: 10, r: 12, b: 28, l: W < 560 ? 48 : 60 };
   const iw = W - M.l - M.r, ih = H - M.t - M.b;
 
   const visible = names.filter((m) => !isolate || m === isolate);
@@ -1180,12 +1942,14 @@ function paintLines(svg, tip, state) {
   for (const v of ticks) {
     const yy = y(v).toFixed(1);
     out += '<line x1="' + M.l + '" x2="' + (W - M.r) + '" y1="' + yy + '" y2="' + yy + '" stroke="var(--grid)" stroke-width="1"/>';
-    out += '<text x="' + (M.l - 8) + '" y="' + yy + '" fill="var(--ink-muted)" font-size="10" text-anchor="end" dominant-baseline="middle">' + Math.round(v).toLocaleString("tr-TR") + "</text>";
+    // Eksen etiketi 10px/--ink-muted idi: yoğun bir grafiğin üstünde AA eşiğinin
+    // altında kalan en küçük metin buydu. Eksen ÇİZGİLERİ hâlâ --grid/--axis.
+    out += '<text x="' + (M.l - 8) + '" y="' + yy + '" fill="var(--ink-dim)" font-size="11" text-anchor="end" dominant-baseline="middle">' + Math.round(v).toLocaleString("tr-TR") + "</text>";
   }
   const xt = 3;
   for (let i = 0; i <= xt; i++) {
     const t = tMin + (tMax - tMin) * (i / xt);
-    out += '<text x="' + x(t).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--ink-muted)" font-size="10" text-anchor="' +
+    out += '<text x="' + x(t).toFixed(1) + '" y="' + (H - 6) + '" fill="var(--ink-dim)" font-size="11" text-anchor="' +
       (i === 0 ? "start" : i === xt ? "end" : "middle") + '">' + new Date(t).toISOString().slice(5, 10) + "</text>";
   }
   out += '<line x1="' + M.l + '" x2="' + (W - M.r) + '" y1="' + (M.t + ih) + '" y2="' + (M.t + ih) + '" stroke="var(--axis)" stroke-width="1"/>';
@@ -1262,9 +2026,14 @@ function heatColor(v) {
   // Diverging: iki zıt kutup + NÖTR gri orta nokta. Orta noktaya renk vermek
   // "ilişkisiz"i bir şeymiş gibi gösterirdi.
   if (v === null) return "transparent";
+  // KUTUPLAR koyulaştırıldı (#3987e5/#e66767 -> #235ca8/#9e3838). Gerekçe ölçüm:
+  // eski kutuplarda hücre METNİ hiçbir mürekkeple AA'ya ulaşmıyordu — beyaz en
+  // kötü 3.23, beyaz/siyah'ın iyisi bile 4.43 veriyordu (mid-luminance tuzağı).
+  // Koyu kutupta beyaz metin her v için en kötü 6.63. HUE DEĞİŞMEDİ: pozitif
+  // mavi, negatif kırmızı, orta nokta nötr gri — diverging okuma aynı.
   const t = Math.min(Math.abs(v), 1);
   const mid = [56, 56, 53];
-  const pole = v >= 0 ? [57, 135, 229] : [230, 103, 103];
+  const pole = v >= 0 ? [35, 92, 168] : [158, 56, 56];
   const c = mid.map((m, i) => Math.round(m + (pole[i] - m) * t));
   return "rgb(" + c.join(",") + ")";
 }
@@ -1293,10 +2062,11 @@ function renderCorrelation(d) {
       // söylemez; renklendirmek ısı haritasının en parlak hücrelerini bilgisiz
       // kılardı. Nötr bırakılır.
       if (i === j) {
-        return '<td><div style="background:var(--surface-2);color:var(--ink-muted)">1</div></td>';
+        return '<td><div style="background:var(--surface-2);color:var(--ink-dim)">1</div></td>';
       }
-      const ink = v !== null && Math.abs(v) > 0.45 ? "#fff" : "var(--ink-2)";
-      return '<td><div title="' + title + '" style="background:' + heatColor(v) + ";color:" + ink +
+      // Eşiğe bağlı mürekkep seçimi KALDIRILDI: 0.45 eşiği sayıyı tam da rengin
+      // koyulaşmaya başladığı yerde --ink-2'de bırakıyordu (3.98 kontrast).
+      return '<td><div title="' + title + '" style="background:' + heatColor(v) + ';color:#fff' +
         (v === null ? ";border:1px dashed var(--grid)" : "") + '">' +
         (v === null ? "" : v.toFixed(2)) + "</div></td>";
     }).join("") + "</tr>").join("");
