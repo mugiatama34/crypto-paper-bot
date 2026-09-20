@@ -253,6 +253,121 @@ def test_a_round_without_signals_sends_nothing(tmp_path: Path, telegram: _FakeRe
 
 
 # --------------------------------------------------------------------------- #
+# Bildirim kadrosu: hangi modeller mesaj üretir (ÖLÇÜM değil, BİLDİRİM ayarı)
+# --------------------------------------------------------------------------- #
+def test_muted_model_produces_no_message(tmp_path: Path, telegram: _FakeRequests) -> None:
+    """`--mute` susturulan modelin sinyalini bildirmez — ama modelin kendisine DOKUNMAZ:
+    koşmaya, deftere yazmaya ve tabloda görünmeye devam eder."""
+    code, _ = _run(
+        tmp_path,
+        _payload([_signal(model="vwap_clone"), _signal(model="scalp_fixed", symbol="ETH-USDT-SWAP")]),
+        args=["--mute", "vwap_clone"],
+    )
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "scalp_fixed" in message and "vwap_clone" not in message
+
+
+def test_allow_list_notifies_only_the_named_models(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """`--models` izin listesidir: 4 saatlik katmanda yalnızca `trend` istendiğinde
+    çıpanın ve kontrolün sinyalleri telefona düşmemeli."""
+    code, _ = _run(
+        tmp_path,
+        _payload([
+            _signal(model="trend"),
+            _signal(model="buyhold", symbol="ETH-USDT-SWAP"),
+            _signal(model="random_ctrl", symbol="SOL-USDT-SWAP"),
+        ]),
+        args=["--models", "trend"],
+    )
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "trend" in message
+    assert "buyhold" not in message and "random_ctrl" not in message
+
+
+def test_roster_also_filters_the_rejection_followup(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Kadro İKİ mesaj türünü de kapsar: susturulmuş bir modelin reddi de bildirilmez,
+    yoksa "sessize aldım ama hâlâ mesaj geliyor" olurdu."""
+    prior = AS_OF - BAR
+    code, _ = _run(
+        tmp_path,
+        _payload(rejected=[_reject(model="vwap_clone", bar=prior)]),
+        state={"vwap_clone|BTC-USDT-SWAP|long": prior.isoformat()},
+        args=["--mute", "vwap_clone"],
+    )
+
+    assert code == 0
+    assert telegram.calls == []
+
+
+def test_a_model_outside_the_allow_list_is_logged_not_silent(
+    tmp_path: Path, telegram: _FakeRequests, caplog: pytest.LogCaptureFixture
+) -> None:
+    """İzin listesi genişleme körlüğü yaratır: kadroya eklenen bir model sessizce
+    bildirilmez. Bu yüzden atlama LOGLANIR (kural 14'ün "atlama sessiz olamaz"ı)."""
+    with caplog.at_level("INFO"):
+        _run(
+            tmp_path,
+            _payload([_signal(model="trend"), _signal(model="meanrev", symbol="ETH-USDT-SWAP")]),
+            args=["--models", "trend"],
+        )
+
+    assert any("meanrev" in record.message and "kadro" in record.message
+               for record in caplog.records)
+
+
+def test_headline_carries_the_timeframe_not_a_hardcoded_layer_name(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Script İKİ katmanda koşuyor: sabit bir "SCALP" başlığı 4 saatlik bir sinyali
+    yanlış etiketlerdi. Zaman dilimi yükten okunur (`settings.timeframe`), katman
+    adından türetilmez — ikinci bir eşleme tablosu config'le ayrışabilirdi."""
+    _run(tmp_path, _payload([_signal()], settings={"timeframe": "4H"}))
+
+    (message,) = _messages(telegram)
+    assert "YENİ SİNYAL · 4H" in message
+    assert "SCALP" not in message
+
+
+def test_headline_survives_a_payload_without_a_timeframe(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Okunamayan zaman dilimi mesajı düşürmez: başlık zaman dilimsiz yazılır."""
+    _run(tmp_path, _payload([_signal()], settings={}))
+
+    (message,) = _messages(telegram)
+    assert "YENİ SİNYAL" in message
+
+
+def test_the_two_roster_modes_cannot_be_combined() -> None:
+    """Kesiştiklerinde "hangisi kazanır" sorusunun cevabı bir yazım tercihine kalırdı."""
+    with pytest.raises(SystemExit):
+        telegram_signals.main(["--models", "trend", "--mute", "buyhold"])
+
+
+# --------------------------------------------------------------------------- #
+# Katman -> yol türetimi
+# --------------------------------------------------------------------------- #
+def test_layer_picks_its_own_metrics_and_state_paths() -> None:
+    """`--layer base` tek başına doğru dosya ÇİFTİNİ seçer.
+
+    Durum dosyasının katman başına ayrı olması şart: susturma penceresi BAR
+    cinsindendir (4H'de 16 saat, 15m'de 1 saat) ve paylaşılan bir dosya bir katmanın
+    damgasını ötekinin penceresinde okuturdu.
+    """
+    assert telegram_signals.metrics_path_for("base") == Path("docs/data/metrics.json")
+    assert telegram_signals.metrics_path_for("scalp") == Path("docs/data/metrics_scalp.json")
+    assert telegram_signals.state_path_for("base") != telegram_signals.state_path_for("scalp")
+
+
+# --------------------------------------------------------------------------- #
 # Ret takibi: "bildirdiğim sinyale ne oldu"
 # --------------------------------------------------------------------------- #
 def test_rejected_signal_we_notified_gets_a_followup(
@@ -389,7 +504,7 @@ def test_signal_and_followup_are_separate_messages(
     )
 
     signal_msg, reject_msg = _messages(telegram)
-    assert "SCALP SİNYALİ" in signal_msg and "ETH-USDT-SWAP" in signal_msg
+    assert "YENİ SİNYAL" in signal_msg and "ETH-USDT-SWAP" in signal_msg
     assert "SİNYAL AÇILAMADI" in reject_msg and "BTC-USDT-SWAP" in reject_msg
     assert "dolmayabilir" not in reject_msg
 
@@ -406,7 +521,7 @@ def test_payload_without_the_rejected_section_is_handled(
 
     assert code == 0
     (message,) = _messages(telegram)
-    assert "SCALP SİNYALİ" in message
+    assert "YENİ SİNYAL" in message
 
 
 # --------------------------------------------------------------------------- #
@@ -496,7 +611,7 @@ def test_dry_run_prints_and_leaves_the_state_alone(
     assert code == 0
     assert telegram.calls == []
     assert not state_path.exists()
-    assert "SCALP SİNYALİ" in capsys.readouterr().out
+    assert "YENİ SİNYAL" in capsys.readouterr().out
 
 
 def test_a_corrupt_state_file_does_not_silence_the_notification(
@@ -530,7 +645,7 @@ def test_more_than_five_signals_collapse_into_one_batch(tmp_path: Path, telegram
     _run(tmp_path, _payload(signals))
 
     (message,) = _messages(telegram)
-    assert "6 yeni sinyal" in message
+    assert "6 sinyal" in message
     for index in range(6):
         assert f"SYM{index}-USDT-SWAP" in message
     # Toplu mesajda da İKİ uyarı satırı birden durur: altı sinyali tek mesaja indirgemek

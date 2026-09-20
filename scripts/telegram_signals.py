@@ -66,10 +66,35 @@ from core.tags import find_tag  # noqa: E402 — sys.path yukarıda kuruluyor
 # ve durum dosyası PAYLAŞILMAZ (bkz. modül docstring).
 from scripts.telegram_report import dashboard_url  # noqa: E402
 
-METRICS_PATH = Path("docs/data/metrics_scalp.json")
-STATE_PATH = Path("state/telegram_scalp.json")
 API_TEMPLATE = "https://api.telegram.org/bot{token}/sendMessage"
 DEFAULT_LAYER = "scalp"
+
+
+def metrics_path_for(layer: str) -> Path:
+    """Katmanın rapor dosyası. `config.yaml > layers.<ad>.metrics_file` ile aynı ADLANDIRMA
+    kuralını izler (`base` -> `metrics.json`, ötekiler -> `metrics_<ad>.json`).
+
+    Config OKUNMAZ: bu bir bildirim script'idir ve `core/config.py`yi import etmesi,
+    ölçümün tek kapısını bildirim yoluna bağlamak olurdu. Yanlış dosyaya bakma riski
+    ayrıca kapatılmıştır — raporun KENDİ `layer` alanı doğrulanır (bkz. `_run`), yani
+    ad kuralı bir gün ayrışsa bile script sessizce başka bir katmanı bildirmez.
+    """
+    return Path("docs/data/metrics.json" if layer == "base" else f"docs/data/metrics_{layer}.json")
+
+
+def state_path_for(layer: str) -> Path:
+    """Katmanın bildirim durumu. KATMAN BAŞINA AYRIDIR ve bu şart:
+
+    susturma penceresi BAR cinsindendir (`DEDUPE_BARS`), yani 4 saatlik bir katmanda 16
+    saat, 15 dakikalıkta 1 saat demektir. Tek dosyayı paylaşsalardı bir katmanın damgası
+    ötekinin penceresini hesaplarken okunur ve iki ölçüm birbirinin bildirimini susturur
+    ya da açardı — `ledgers/` ↔ `ledgers_scalp/` ayrımının aynı gerekçesi.
+    """
+    return Path(f"state/telegram_{layer}.json")
+
+
+METRICS_PATH = metrics_path_for(DEFAULT_LAYER)
+STATE_PATH = state_path_for(DEFAULT_LAYER)
 
 # Rapor bu yaştan eskiyse bildirim yollanmaz: tur düşmüşse depodaki rapor bir önceki
 # turdan kalır ve o turun sinyalleri artık "yeni" değildir. Script turun hemen ardından
@@ -135,12 +160,14 @@ def _run(args: argparse.Namespace) -> int:
 
     as_of = _stamp(payload.get("as_of"))
     state = _load_state(Path(args.state))
+    roster = _roster_from(args)
+    logger.info("bildirim kadrosu (%s katmanı): %s", layer, roster.describe())
 
-    signals = _last_bar_signals(payload, as_of=as_of)
+    signals = _last_bar_signals(payload, as_of=as_of, roster=roster)
     # Ret takibi, durum dosyası GÜNCELLENMEDEN önce seçilir: eşleşme "bu sinyali daha
     # önce bildirmiştik" koşuludur ve bu turda bildirilenler o koşulu sağlamaz — onların
     # dolumu bir sonraki barda, yani bir sonraki turda denenecek (kural 13).
-    rejects = _followup_rejects(payload, state=state)
+    rejects = _followup_rejects(payload, state=state, roster=roster)
 
     span = _bar_span(signals, rejects)
     fresh = _without_recent(signals, state=state.sent, bar_span=span) if signals else []
@@ -158,7 +185,7 @@ def _run(args: argparse.Namespace) -> int:
 
     # SIRA: önce sinyal, sonra ret. Aynı turda ikisi birden çıkarsa okuyucu önce yeni
     # fırsatı, sonra eski sinyalin sonucunu görür; tersi, cevabı sorudan önce koyardı.
-    messages = build_messages(fresh)
+    messages = build_messages(fresh, timeframe=timeframe_of(payload))
     reject_messages = build_reject_messages(rejects)
     if args.dry_run:
         # Durum dosyasına YAZILMAZ: yollanmamış bir mesajı "bildirildi" saymak, gerçek
@@ -232,10 +259,65 @@ def _send(*, token: str, chat_id: str, message: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Bildirim kadrosu — hangi modeller mesaj üretir
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class Roster:
+    """Bir katmanın hangi modellerinin bildirileceği. BİLDİRİM ayarıdır, ÖLÇÜM değil.
+
+    Katmanın `models` listesine (config.yaml) DOKUNMAZ: susturulan model koşmaya,
+    deftere yazmaya ve tabloda görünmeye devam eder — yalnızca telefona düşmez. Ayrım
+    şarttır, çünkü kadro bir ölçüm kararıdır (hangi model yarışıyor) ve onu bir bildirim
+    tercihi yüzünden değiştirmek, gürültüyü azaltmak için ölçümü daraltmak olurdu.
+
+    İKİ kip vardır ve BİRLİKTE KULLANILAMAZ (`ValueError`), çünkü ikisi birbirinin
+    zıddı bir varsayılana dayanır ve kesiştiklerinde "hangisi kazanır" sorusunun
+    cevabı bir yazım tercihine kalırdı:
+
+    - `allow` (izin listesi) — YALNIZCA bu modeller. Katmanın kadrosuna bir model
+      eklendiğinde o model SESSİZCE bildirilmez; bu, tek bir modeli izlerken istenen
+      şeydir (4 saatlik katmanda yalnızca `trend`) ama genişleme körlüğü yaratır, bu
+      yüzden liste dışında kalan her model `logger.info` ile YAZILIR.
+    - `mute` (susturma listesi) — bunlar HARİÇ hepsi. Yeni bir model eklendiğinde
+      bildirilmeye BAŞLAR, yani hata yönü gürültüdür, sessizlik değil — projenin
+      "atlama sessiz olamaz" tercihi budur.
+
+    Boş bırakılırsa herkes bildirilir (bugünkü davranış).
+    """
+
+    allow: frozenset[str] = frozenset()
+    mute: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        if self.allow and self.mute:
+            raise ValueError("--models ile --mute birlikte kullanılamaz")
+
+    def wants(self, model: Any) -> bool:
+        name = str(model or "")
+        return name not in self.mute if not self.allow else name in self.allow
+
+    def describe(self) -> str:
+        if self.allow:
+            return "yalnızca " + ", ".join(sorted(self.allow))
+        if self.mute:
+            return "şunlar hariç hepsi: " + ", ".join(sorted(self.mute))
+        return "tüm modeller"
+
+
+def _roster_from(args: argparse.Namespace) -> Roster:
+    return Roster(allow=frozenset(_names(args.models)), mute=frozenset(_names(args.mute)))
+
+
+def _names(value: str | None) -> list[str]:
+    """Virgülle ayrılmış model adları; boş parçalar atılır."""
+    return [part.strip() for part in str(value or "").split(",") if part.strip()]
+
+
+# --------------------------------------------------------------------------- #
 # Sinyal seçimi
 # --------------------------------------------------------------------------- #
 def _last_bar_signals(
-    payload: Mapping[str, Any], *, as_of: datetime | None
+    payload: Mapping[str, Any], *, as_of: datetime | None, roster: Roster = Roster()
 ) -> list[dict[str, Any]]:
     """Turun SON barında (`as_of`) üretilmiş sinyaller.
 
@@ -253,11 +335,19 @@ def _last_bar_signals(
 
     signals: list[dict[str, Any]] = []
     for model in (payload.get("round") or {}).get("models") or ():
+        name = model.get("model")
+        if not roster.wants(name):
+            # Sessiz olmaz: kadro dışı bir modelin sinyal ÜRETTİĞİ loglanır, yoksa
+            # bir gün eklenen model neden bildirilmediğini hiçbir yere yazmazdı.
+            if model.get("emitted"):
+                logger.info("%s bildirim kadrosunda değil: %d sinyali atlanıyor",
+                            name, len(model.get("emitted") or ()))
+            continue
         for item in model.get("emitted") or ():
             bar = _stamp(item.get("bar"))
             if bar is None or bar != as_of:
                 continue
-            signals.append({**item, "model": item.get("model") or model.get("model")})
+            signals.append({**item, "model": item.get("model") or name})
     # Sıra deterministik: aynı rapor iki kez okunduğunda mesaj da birebir aynı olsun.
     signals.sort(key=lambda item: (str(item.get("model")), str(item.get("symbol"))))
     return signals
@@ -316,7 +406,7 @@ def _without_recent(
 
 
 def _followup_rejects(
-    payload: Mapping[str, Any], *, state: NotifyState
+    payload: Mapping[str, Any], *, state: NotifyState, roster: Roster = Roster()
 ) -> list[dict[str, Any]]:
     """Turda açılamayan emirlerden, DAHA ÖNCE BİLDİRDİKLERİMİZ.
 
@@ -339,6 +429,8 @@ def _followup_rejects(
     """
     rejects: list[dict[str, Any]] = []
     for model in (payload.get("round") or {}).get("models") or ():
+        if not roster.wants(model.get("model")):
+            continue
         for item in model.get("rejected") or ():
             row = {**item, "model": item.get("model") or model.get("model")}
             key, bar = _key(row), _stamp(row.get("bar"))
@@ -474,8 +566,26 @@ def _pruned(
 # --------------------------------------------------------------------------- #
 # Mesaj
 # --------------------------------------------------------------------------- #
+def timeframe_of(payload: Mapping[str, Any]) -> str:
+    """Raporun kendi zaman dilimi (`settings.timeframe`).
+
+    Başlıkta durur çünkü script artık İKİ katmanda koşuyor ve "SCALP SİNYALİ" sabiti
+    4 saatlik bir sinyali yanlış etiketlerdi. Katman ADINDAN değil yükten okunur:
+    okuyucunun umursadığı şey katmanın adı değil, işlemin hangi hızda olduğudur — ve
+    zaman dilimi zaten config'te tek kaynaktan gelir, burada ikinci bir eşleme tablosu
+    kurmak onunla ayrışabilirdi. Okunamazsa başlık zaman dilimsiz yazılır.
+    """
+    return str((payload.get("settings") or {}).get("timeframe") or "").strip()
+
+
+def _headline(timeframe: str) -> str:
+    return "⚡ YENİ SİNYAL" + (f" · {_esc(timeframe)}" if timeframe else "")
+
+
 def build_messages(
     signals: Sequence[Mapping[str, Any]],
+    *,
+    timeframe: str = "",
 ) -> list[tuple[str, list[Mapping[str, Any]]]]:
     """Bildirilecek mesajlar: 5'e kadar tek tek, fazlasında TEK toplu mesaj.
 
@@ -488,13 +598,13 @@ def build_messages(
     alt çizgi italik açar.
     """
     if len(signals) > MAX_SINGLE_MESSAGES:
-        return [(_batch_message(signals), list(signals))]
-    return [(_single_message(signal), [signal]) for signal in signals]
+        return [(_batch_message(signals, timeframe), list(signals))]
+    return [(_single_message(signal, timeframe), [signal]) for signal in signals]
 
 
-def _single_message(signal: Mapping[str, Any]) -> str:
+def _single_message(signal: Mapping[str, Any], timeframe: str = "") -> str:
     lines = [
-        "<b>⚡ SCALP SİNYALİ</b>",
+        "<b>" + _headline(timeframe) + "</b>",
         f"<b>{_esc(signal.get('model'))}</b> / {_esc(_arm(signal))}",
         f"{_esc(signal.get('symbol'))} · <b>{_esc(_direction(signal))}</b>",
         f"bar {_esc(_clock(signal.get('bar')))} UTC · kapanış <code>{_price(signal.get('close'))}</code>",
@@ -510,11 +620,11 @@ def _single_message(signal: Mapping[str, Any]) -> str:
     return _clipped("\n".join(lines))
 
 
-def _batch_message(signals: Sequence[Mapping[str, Any]]) -> str:
+def _batch_message(signals: Sequence[Mapping[str, Any]], timeframe: str = "") -> str:
     """Tek mesajda tüm sinyaller. `reason` metni GİRMEZ: mesaj sınırı 4096 karakterdir
     ve altı sinyalin gerekçesi tek başına onu aşabilirdi; gerekçe dashboard'da durur."""
     lines = [
-        f"<b>⚡ SCALP SİNYALİ — {len(signals)} yeni sinyal</b>",
+        f"<b>{_headline(timeframe)} — {len(signals)} sinyal</b>",
         f"bar {_esc(_clock(signals[0].get('bar')))} UTC",
         "",
     ]
@@ -726,11 +836,23 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Scalp katmanının yeni sinyallerini Telegram'a bildirir."
     )
-    parser.add_argument("--metrics", default=str(METRICS_PATH), help="katmanın rapor dosyası")
-    parser.add_argument("--state", default=str(STATE_PATH), help="susturma penceresi durumu")
+    # Yol varsayılanları KATMANDAN türer (bkz. metrics_path_for / state_path_for), bu
+    # yüzden `--layer base` tek başına doğru dosya çiftini seçer: üç bayrağı elle
+    # hizalamak, bir katmanın ötekinin durum dosyasına yazması demekti.
+    parser.add_argument("--metrics", default=None, help="katmanın rapor dosyası")
+    parser.add_argument("--state", default=None, help="susturma penceresi durumu")
     parser.add_argument(
         "--layer", default=DEFAULT_LAYER,
         help=f"raporun ait olması gereken katman (varsayılan {DEFAULT_LAYER})",
+    )
+    # Kadro: BİLDİRİM ayarı, ölçüm değil (bkz. Roster). İkisi birlikte verilemez.
+    parser.add_argument(
+        "--models", default=None,
+        help="YALNIZCA bu modeller bildirilsin (virgülle ayrılmış); --mute ile birlikte olmaz",
+    )
+    parser.add_argument(
+        "--mute", default=None,
+        help="bu modeller bildirilmesin (virgülle ayrılmış); --models ile birlikte olmaz",
     )
     parser.add_argument(
         "--max-age-minutes", type=float, default=MAX_REPORT_AGE_MINUTES,
@@ -741,7 +863,21 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.metrics is None:
+        args.metrics = str(metrics_path_for(args.layer))
+    if args.state is None:
+        args.state = str(state_path_for(args.layer))
+    # Çakışma BURADA yakalanır ve argparse'ın kendi hatasına çevrilir (çıkış kodu 2,
+    # traceback yok). Sessizce birini seçmek, kullanıcının yazdığı iki kuraldan birini
+    # yok saymak olurdu; "her yolda 0 döner" sözü ise ÇALIŞMA ZAMANI içindir (ağ,
+    # Telegram, bozuk JSON) — yanlış yazılmış bir bayrak bir arıza değil bir yazım
+    # hatasıdır ve bilinmelidir.
+    try:
+        _roster_from(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    return args
 
 
 if __name__ == "__main__":
