@@ -1,12 +1,15 @@
 """`scripts/probe_funding_archive.py`nin SAF mantığı: ağ erişimi yok, defter yok.
 
-Sınanan şey probe'un beş sözleşmesidir:
+Sınanan şey probe'un YEDİ sözleşmesidir:
 (1) şema ↔ gerçek yargısı MEKANİKTİR ve ölçütü "DOSYA döndü mü"dür, "istek başarılı
     mı" değil — 200 dönen bir HTML sayfası şemayı doğrulamaz;
 (2) belirsiz bir sonuç sessizce "şema uymuyor"a düşmez;
-(3) örnek satır maskelemesi BEYAZ listedir — tanınmayan kolon GİZLENİR;
-(4) şablondaki tanınmayan yer tutucu sessiz geçilmez;
-(5) ölçümün parçası değildir — R/PnL üreten modülleri import etmez ve kaynağında
+(3) LİSTELEME başarısızlığı "şema uymuyor" DEĞİLDİR — ayrı bir sınıftır, çünkü ilk
+    adım düşünce ikinci adım hiç denenmez;
+(4) dosya adı UYDURULMAZ: `{file}` taşıyan bir şablon boş adla açılamaz;
+(5) örnek satır maskelemesi BEYAZ listedir — tanınmayan kolon GİZLENİR;
+(6) şablondaki tanınmayan yer tutucu sessiz geçilmez;
+(7) ölçümün parçası değildir — R/PnL üreten modülleri import etmez ve kaynağında
     bir oran alanı OKUNMAZ.
 """
 
@@ -22,15 +25,20 @@ import pytest
 from scripts.probe_funding_archive import (
     MASK,
     SampleReport,
+    classify_listing,
     classify_response,
     classify_schema_match,
     describe_payload,
     detect_stamp_format,
+    extract_file_names,
     mask_row,
     modal_interval,
+    month_candidates,
     render_url,
     symbol_variants,
 )
+
+NOW = pd.Timestamp("2026-09-20T00:00:00")
 
 
 def _zip(csv_text: str, *, name: str = "sample.csv") -> bytes:
@@ -58,6 +66,93 @@ def test_render_url_expands_every_known_placeholder():
         date=pd.Timestamp("2022-03-01"),
     )
     assert url == "https://h/202203/BTCUSDT-swaprate-2022-03.zip"
+
+
+def test_listing_placeholders_expand():
+    url = render_url(
+        "https://h/priapi?t={epoch_ms}&path=cdn/{msg_type}/monthly/{month}",
+        date=pd.Timestamp("2022-03-01"), msg_type="swaprate", month_style="dash", now=NOW,
+    )
+    assert url == f"https://h/priapi?t={int(NOW.value // 1_000_000)}&path=cdn/swaprate/monthly/2022-03"
+
+
+def test_month_placeholder_has_two_spellings_and_both_are_tried():
+    """Ay yazımı iki adımda ayrışıyor; hangisinin tuttuğunu SEÇMEK bir tahmin olurdu."""
+    assert month_candidates(pd.Timestamp("2022-03-01")) == ("2022-03", "202203")
+    tpl = "https://h/{month}"
+    assert render_url(tpl, date=pd.Timestamp("2022-03-01"), month_style="dash") == "https://h/2022-03"
+    assert render_url(tpl, date=pd.Timestamp("2022-03-01"), month_style="compact") == "https://h/202203"
+
+
+def test_file_name_is_never_invented():
+    """Ad listelemeden gelir; boş adla açmak, tahmini şemanın yerine koymak olurdu."""
+    with pytest.raises(ValueError, match="listelemeden gelir"):
+        render_url("https://s/{yyyymm}/{file}", date=pd.Timestamp("2022-03-01"))
+
+
+def test_file_name_from_listing_is_used_verbatim():
+    url = render_url(
+        "https://s/{msg_type}/monthly/{yyyymm}/{file}",
+        date=pd.Timestamp("2022-03-01"), msg_type="swaprate",
+        file="BTC-USDT-SWAP-swaprate-2022-03-01.zip",
+    )
+    assert url.endswith("/swaprate/monthly/202203/BTC-USDT-SWAP-swaprate-2022-03-01.zip")
+
+
+# --------------------------------------------------------------------------- #
+# Listeleme — dosya adlarının TEK kaynağı, yapı VARSAYILMADAN gezilir
+# --------------------------------------------------------------------------- #
+def test_file_names_are_found_without_assuming_the_json_shape():
+    """`data[0].fileList` gibi bir yol varsaymak, başka biçimde 'dosya yok' derdi."""
+    body = {"code": "0", "data": [{"fileList": ["a-2022-03-01.zip", "b-2022-03-02.zip"]}]}
+    assert extract_file_names(body) == ("a-2022-03-01.zip", "b-2022-03-02.zip")
+
+
+def test_file_names_are_found_at_any_depth_and_deduplicated():
+    body = {"x": {"y": [{"z": "f.csv"}, {"z": "f.csv"}, "g.zip"]}}
+    assert extract_file_names(body) == ("f.csv", "g.zip")
+
+
+def test_non_file_strings_are_not_collected():
+    assert extract_file_names({"msg": "ok", "path": "cdn/okex/traderecords"}) == ()
+
+
+def test_listing_success_requires_file_names_not_just_two_hundred():
+    assert classify_listing(
+        status=200, content_type="application/json", error="", parsed=True, names=("a.zip",)
+    ) == "dosya-listesi"
+    assert classify_listing(
+        status=200, content_type="application/json", error="", parsed=True, names=()
+    ) == "json-ama-dosya-yok"
+
+
+def test_listing_that_returns_html_is_its_own_class():
+    assert classify_listing(
+        status=200, content_type="text/html", error="", parsed=False, names=()
+    ) == "sayfa-döndü"
+
+
+def test_listing_that_is_not_json_is_its_own_class():
+    assert classify_listing(
+        status=200, content_type="text/plain", error="", parsed=False, names=()
+    ) == "json-değil"
+
+
+def test_listing_failure_classes_are_never_the_schema_verdict():
+    """Kritik ayrım: listeleme düşerse indirme HİÇ denenmez, yani şema sınanmamıştır."""
+    failures = {
+        classify_listing(status=200, content_type="text/html", error="", parsed=False, names=()),
+        classify_listing(status=403, content_type="", error="", parsed=False, names=()),
+        classify_listing(status=404, content_type="", error="", parsed=False, names=()),
+        classify_listing(status=None, content_type="", error="Timeout", parsed=False, names=()),
+        classify_listing(
+            status=200, content_type="application/json", error="", parsed=True, names=()
+        ),
+    }
+    for verdict in failures:
+        assert verdict != "dosya-listesi"
+        assert not verdict.startswith("uymuyor")
+        assert verdict != "uyuyor"
 
 
 def test_unknown_placeholder_raises_instead_of_producing_a_half_url():
@@ -169,6 +264,23 @@ def test_zip_structure_is_reported_without_any_rate():
     # Kolon ADI meta veridir ve raporlanır; DEĞER hiçbir alanda görünmez.
     assert "0.00010000" not in str(report.preview)
     assert "0.00025000" not in str(report)
+
+
+def test_symbol_column_is_read_so_the_in_file_hypothesis_can_be_tested():
+    """Sembol URL'de olmayabilir; aylık dosya tüm sembolleri taşıyor olabilir."""
+    multi = (
+        "instrument_id,funding_time,realized_rate\n"
+        "BTC-USDT-SWAP,1646092800000,0.0001\n"
+        "ETH-USDT-SWAP,1646092800000,0.0002\n"
+        "BTC-USDT-SWAP,1646121600000,0.0003\n"
+    )
+    report = describe_payload(
+        multi.encode("utf-8"), url="https://h/a.csv", status=200, content_type="text/csv"
+    )
+    assert report.symbol_column == "instrument_id"
+    assert report.symbols == ("BTC-USDT-SWAP", "ETH-USDT-SWAP")
+    # Sembol ADI meta veridir ve raporlanır; ORAN yine hiçbir alanda yok.
+    assert "0.0002" not in str(report.preview)
 
 
 def test_plain_csv_payload_needs_no_container():

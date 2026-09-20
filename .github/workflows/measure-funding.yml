@@ -9,6 +9,8 @@
 #      kümesinin URL ŞEMASI tutuyor mu, dosya biçimi nedir?* Verilen şemayı DOĞRULAR,
 #      sıfırdan aramaz; şemaya UYDURMAZ — çelişki çıkarsa gerçeği raporlar. Kolon
 #      ADLARINI ve damga biçimini basar, bir ORAN basmaz (maskeleme BEYAZ listedir).
+#      Şema İKİ ADIMLIDIR (listeleme → indirme, ayrı host'lar) ve listelemenin
+#      başarısızlığı "şema uymuyor" DEĞİLDİR: indirme hiç denenmemiş olur.
 #   B) DAĞILIM ÖLÇÜMÜ (`scripts/measure_funding.py`) — *hangi eşikte kaç olay var?*
 #
 # Sıra tesadüf değil: (B) bugün hâlâ bekliyor, çünkü arşiv docs/backtest.md > 6f'nin
@@ -55,16 +57,18 @@ on:
         type: boolean
         required: false
         default: false
-      archive_url_template:
-        description: "A-3'ün SINANACAK URL şeması; yer tutucu: {symbol} {yyyy} {mm} {yyyymm} {yyyy-mm} {dd} {yyyymmdd} {yyyy-mm-dd}"
+      archive_listing_template:
+        description: "A-3 ADIM 1: dosya ADLARINI veren listeleme URL'i; yer tutucu: {msg_type} {month} {epoch_ms} {yyyy} {mm} {yyyymm} {yyyy-mm}"
         required: false
         default: ""
-      archive_granularity:
-        description: "A-3'ün BİLDİRİLEN granülaritesi (probe onu sınar, varsaymaz)"
-        type: choice
+      archive_download_template:
+        description: "A-3 ADIM 2: indirme URL'i; {file} listelemeden doldurulur (UYDURULMAZ)"
         required: false
-        default: "monthly"
-        options: ["monthly", "daily"]
+        default: ""
+      archive_msg_type:
+        description: "A-3'ün veri kümesi türü (fonlama: swaprate)"
+        required: false
+        default: "swaprate"
       archive_sample_date:
         description: "A-3'ün örnek dosya tarihi (YYYY-MM)"
         required: false
@@ -128,26 +132,34 @@ jobs:
       # betiğin işi onu DOĞRULAMAK, sıfırdan aramak değil. Şemaya uydurma yoktur:
       # gözlem çelişirse rapor gerçeği yazar (betiğin kendi sözü, modül başlığında).
       #
+      # Şema İKİ ADIMLIDIR ve bu yüzden İKİ şablon girdisi vardır: listeleme dosya
+      # ADINI verir, indirme onu kullanır. Tek girdiye indirmek, betiğin dosya adını
+      # tahmin etmesini gerektirirdi — sınanan şemanın yerine bir tahmin geçerdi.
+      # İki adım AYRI host'lardadır (www.okx.com ↔ static.okx.com).
+      #
       # Girdiler komut metnine gömülmez, ortam değişkeninden okunur — workflow_dispatch
       # girdisi kabuk enjeksiyonu için bir kapıdır (probe adımının aynı gerekçesi) ve
       # bir URL şablonu tam olarak o kapıdan geçecek biçimdedir.
       #
-      # Şablon boşsa adım HATA ile biter: varsayılan bir şema UYDURMAK, bu betiğin
+      # Şablonlar boşsa adım HATA ile biter: varsayılan bir şema UYDURMAK, bu betiğin
       # kapatmak için var olduğu şeydir.
       - name: Probe funding archive schema (A-3 — read-only, metadata only)
         if: ${{ inputs.run_archive }}
         env:
-          ARCHIVE_URL_TEMPLATE: ${{ inputs.archive_url_template }}
-          ARCHIVE_GRANULARITY: ${{ inputs.archive_granularity }}
+          ARCHIVE_LISTING_TEMPLATE: ${{ inputs.archive_listing_template }}
+          ARCHIVE_DOWNLOAD_TEMPLATE: ${{ inputs.archive_download_template }}
+          ARCHIVE_MSG_TYPE: ${{ inputs.archive_msg_type }}
           ARCHIVE_SAMPLE_DATE: ${{ inputs.archive_sample_date }}
         run: |
-          if [ -z "$ARCHIVE_URL_TEMPLATE" ]; then
-            echo "archive_url_template BOŞ — sınanacak bir şema yok, varsayılan uydurulmaz." >&2
+          if [ -z "$ARCHIVE_LISTING_TEMPLATE" ] || [ -z "$ARCHIVE_DOWNLOAD_TEMPLATE" ]; then
+            echo "archive_listing_template / archive_download_template BOŞ — sınanacak" >&2
+            echo "bir şema yok ve varsayılan uydurulmaz (iki adımın ikisi de gerekli)." >&2
             exit 2
           fi
           python scripts/probe_funding_archive.py \
-            --url-template "$ARCHIVE_URL_TEMPLATE" \
-            --granularity "$ARCHIVE_GRANULARITY" \
+            --listing-template "$ARCHIVE_LISTING_TEMPLATE" \
+            --download-template "$ARCHIVE_DOWNLOAD_TEMPLATE" \
+            --msg-type "$ARCHIVE_MSG_TYPE" \
             --sample-date "$ARCHIVE_SAMPLE_DATE"
 
       # B) Dönem A sınırları betikte KAPIDIR (scripts/backtest_ema.py'den ithal edilir);
