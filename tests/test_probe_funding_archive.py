@@ -28,6 +28,7 @@ from scripts.probe_funding_archive import (
     _listing_line,
     SampleReport,
     classify_listing,
+    classify_not_found_scope,
     classify_response,
     classify_schema_match,
     describe_payload,
@@ -37,6 +38,7 @@ from scripts.probe_funding_archive import (
     modal_interval,
     month_candidates,
     render_url,
+    strip_query_param,
     symbol_variants,
 )
 
@@ -254,6 +256,58 @@ def test_successful_listing_does_not_dump_a_body():
     )
     text = "\n".join(_listing_line(probe))
     assert "a.zip" in text and "gövde:" not in text
+
+
+# --------------------------------------------------------------------------- #
+# 404'ün KAPSAMI — rota ↔ parametre, MEKANİK ayrım
+# --------------------------------------------------------------------------- #
+def _lp(status: int | None, body: str, *, error: str = "") -> ListingProbe:
+    return ListingProbe(
+        label="x", url="https://h/x", status=status, content_type="application/json",
+        size=len(body), parsed=False, names=(), body_head=body, error=error,
+    )
+
+
+GENERIC = '{"code":404,"msg":"Not Found"}'
+
+
+def test_identical_signatures_mean_the_route_is_missing():
+    """Uç nokta `path` DEĞERİNİ okumuyorsa saçma path de aynı cevabı verir."""
+    probes = (_lp(404, GENERIC), _lp(404, GENERIC), _lp(404, GENERIC))
+    assert classify_not_found_scope(*probes) == "rota"
+
+
+def test_a_different_body_means_the_route_exists_and_reads_the_param():
+    probes = (_lp(404, GENERIC), _lp(404, '{"code":51000,"msg":"param"}'), _lp(404, GENERIC))
+    assert classify_not_found_scope(*probes) == "parametre"
+
+
+def test_a_different_status_also_means_the_route_exists():
+    probes = (_lp(404, GENERIC), _lp(404, GENERIC), _lp(400, GENERIC))
+    assert classify_not_found_scope(*probes) == "parametre"
+
+
+def test_any_request_error_is_inconclusive_not_a_route_verdict():
+    """Belirsizlik sessizce 'rota'ya DÜŞMEZ — `classify_depth_floor`ın aynı kuralı."""
+    probes = (_lp(404, GENERIC), _lp(None, "", error="Timeout"), _lp(404, GENERIC))
+    assert classify_not_found_scope(*probes) == "belirsiz"
+
+
+def test_missing_status_is_inconclusive():
+    probes = (_lp(404, GENERIC), _lp(None, ""), _lp(404, GENERIC))
+    assert classify_not_found_scope(*probes) == "belirsiz"
+
+
+def test_strip_query_param_removes_only_the_named_key():
+    url = "https://h/api?t=123&path=cdn/x&z=1"
+    stripped = strip_query_param(url, "path")
+    assert "path=" not in stripped
+    assert "t=123" in stripped and "z=1" in stripped
+
+
+def test_strip_query_param_is_a_noop_when_the_key_is_absent():
+    url = "https://h/api?t=123"
+    assert strip_query_param(url, "path") == url
 
 
 # --------------------------------------------------------------------------- #

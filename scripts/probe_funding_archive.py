@@ -82,6 +82,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -133,6 +134,11 @@ SAMPLE_MAX_BYTES = 64 * 1024 * 1024   # bir aylık fonlama dosyası bunun çok a
 SAMPLE_ROWS = 5
 LISTING_BODY_HEAD = 400   # başarısız listelemede ham gövdenin raporlanan başı
 LISTED_NAMES_SHOWN = 8
+
+# 404'ün KAPSAM testi (ayırt edici): aynı uç noktaya üç istek. Bilerek var olmayan bir
+# değer; amacı "bu değeri uç nokta DEĞERLENDİRİYOR mu" sorusunu sormaktır.
+NONSENSE_MSG_TYPE = "BURASI-YOK-PROBE"
+PATH_PARAM = "path"
 
 _PLACEHOLDER = re.compile(r"\{([a-zA-Z0-9_\-]+)\}")
 
@@ -266,6 +272,46 @@ def extract_file_names(payload: Any) -> tuple[str, ...]:
     walk(payload)
     # Sıra korunur (listelemenin kendi sırası bir bilgidir), yinelenen ad atılır.
     return tuple(dict.fromkeys(found))
+
+
+def strip_query_param(url: str, key: str) -> str:
+    """URL'den TEK bir sorgu parametresini çıkarır; diğerleri aynen kalır."""
+    parts = urlsplit(url)
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != key]
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(kept), parts.fragment)
+    )
+
+
+def _signature(probe: "ListingProbe") -> tuple[int | None, str]:
+    return (probe.status, (probe.body_head or "").strip())
+
+
+def classify_not_found_scope(
+    real: "ListingProbe", nonsense: "ListingProbe", absent: "ListingProbe"
+) -> str:
+    """404 ROTA düzeyinde mi, PARAMETRE düzeyinde mi? — MEKANİK ayrım.
+
+    Kural, test koşmadan ÖNCE yazıldı (aynı gerekçe `classify_depth_floor` ve
+    `select_primary_family`): sonucu bir insanın okuyup "bana rota gibi göründü"
+    demesi, kuralın kapatmak için var olduğu serbestliği geri açardı.
+
+    Ölçüt "uç nokta `path` DEĞERİNİ değerlendiriyor mu"dur:
+
+    1. Üç isteğin de imzası (durum + gövde) AYNIYSA → uç nokta değeri hiç
+       okumuyor demektir, yani 404 **ROTA** düzeyindedir: `/priapi/.../orderRecord`
+       diye bir yol yok.
+    2. Herhangi biri FARKLI imza döndürüyorsa → rota VAR ve parametreyi
+       değerlendiriyor; 404 **PARAMETRE** düzeyindedir (`path` değeri yanlış).
+    3. Bir istek hata verirse → **belirsiz**; sessizce (1)'e düşmez.
+    """
+    probes = (real, nonsense, absent)
+    if any(p.error for p in probes):
+        return "belirsiz"
+    if any(p.status is None for p in probes):
+        return "belirsiz"
+    signatures = {_signature(p) for p in probes}
+    return "rota" if len(signatures) == 1 else "parametre"
 
 
 def classify_listing(
@@ -728,6 +774,55 @@ def format_listing(probes: Sequence[ListingProbe], *, template: str) -> list[str
     return lines
 
 
+def format_scope(
+    real: ListingProbe, nonsense: ListingProbe, absent: ListingProbe
+) -> list[str]:
+    verdict = classify_not_found_scope(real, nonsense, absent)
+    lines = [
+        "",
+        "=" * 78,
+        "1b) 404'ÜN KAPSAMI — rota mı, parametre mi? (MEKANİK, kural önce yazıldı)",
+        "=" * 78,
+        "  Ölçüt: uç nokta `path` DEĞERİNİ değerlendiriyor mu? Üç istek, aynı uç nokta.",
+        "",
+    ]
+    for probe in (real, nonsense, absent):
+        lines += _listing_line(probe)
+    lines += ["", f"  >>> MEKANİK AYRIM: 404 **{verdict.upper()}** düzeyinde"]
+    if verdict == "rota":
+        lines += [
+            "      Üç istek de AYNI imzayı döndürdü: uç nokta `path` değerini hiç",
+            "      okumuyor. Yani bu adda bir rota YOK — şablonun parametreleri değil,",
+            "      UÇ NOKTANIN KENDİSİ tutmuyor.",
+        ]
+    elif verdict == "parametre":
+        lines += [
+            "      İmzalar AYRIŞTI: rota VAR ve parametreyi değerlendiriyor. 404,",
+            "      `path` DEĞERİNİN yanlış olmasından geliyor.",
+        ]
+    else:
+        lines += [
+            "      En az bir istek hata verdi. Belirsiz bir sonuç sessizce 'rota'ya",
+            "      DÜŞMEZ — ayrım yapılmadı.",
+        ]
+    lines += [
+        "",
+        "  ⚠ BURADAN SONRA TAHMİN TURU YOKTUR ve bu bir kuraldır, bir tercih değil.",
+        "  Rota çıkarsa BAŞKA ROTA ADI DENENMEZ: ikincil kaynağın çürüdüğü noktadan",
+        "  sonra ad denemek körlemesine aramadır ve bu belgede aynı sınıf kanıt iki kez",
+        "  çürüdü (karar 50). Sıradaki adım DOĞRUDAN GÖZLEMDİR — tarayıcının ağ",
+        "  sekmesinden gerçek istek.",
+        "",
+        "  OKUMA NOTU — 'rota yok' ile 'rota hiç olmadı' AYNI ŞEY DEĞİL: ikincil kaynak",
+        "  yanlış değil BAYAT olabilir. priapi rotaları sürüm ve ad değiştirir, yani bir",
+        "  zamanlar çalışmış bir yol bugün bulunmayabilir. Bunun pratik sonucu şudur:",
+        "  İNDİRME host'u (static.okx.com/cdn/...) hâlâ geçerli olabilir — ikisi ayrı",
+        "  sistemdir. Ama dosya ADI bilinmeden indirme denenemez, yani bu bir çıkış yolu",
+        "  DEĞİL, yalnızca doğrudan gözlemde nereye bakılacağını daraltan bir nottur.",
+    ]
+    return lines
+
+
 def format_download(probe: UrlProbe | None, *, template: str, file: str) -> list[str]:
     lines = ["", "=" * 78, "2) İNDİRME — adı LİSTELEMEDEN gelen dosya", "=" * 78,
              f"  şablon: {template}"]
@@ -947,6 +1042,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             chosen = probe
     lines += format_listing(listing_probes, template=args.listing_template)
 
+    # --- 1b) 404 KAPSAM TESTİ: yalnızca listeleme BAŞARISIZ olduğunda --------
+    # Başarılı bir listelemede sorulacak bir şey yok; test, başarısızlığın SEBEBİNİ
+    # ayırmak için var (rota ↔ parametre) ve sonucu tarayıcı gözlemi gelse bile
+    # kayda değer kalır.
+    scope_verdict = ""
+    if chosen is None and not args.no_scope_test:
+        real_url = render_url(
+            args.listing_template, date=sample_date, msg_type=args.msg_type,
+            month_style="compact", symbol=sample_symbol,
+        )
+        nonsense_url = render_url(
+            args.listing_template, date=sample_date, msg_type=NONSENSE_MSG_TYPE,
+            month_style="compact", symbol=sample_symbol,
+        )
+        absent_url = strip_query_param(real_url, PATH_PARAM)
+        real = probe_listing(real_url, label="gerçek path")
+        nonsense = probe_listing(nonsense_url, label="saçma path")
+        absent = probe_listing(absent_url, label="path YOK")
+        lines += format_scope(real, nonsense, absent)
+        scope_verdict = classify_not_found_scope(real, nonsense, absent)
+
     # --- 2) İNDİRME: adı listelemeden gelir, UYDURULMAZ ----------------------
     download_probe: UrlProbe | None = None
     chosen_file = ""
@@ -1012,6 +1128,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Bu bir 'şema uymuyor' yargısı DEĞİLDİR; ilk adım düştüğü için ikinci adım",
             "hakkında gözlem yok. Sıradaki iş ham gözleme bakmaktır (1. bölüm).",
         ]
+        if scope_verdict:
+            lines.append(f"404'ÜN KAPSAMI: {scope_verdict.upper()} düzeyinde (1b).")
+            if scope_verdict == "rota":
+                lines.append(
+                    "Bu ad taşıyan bir rota yok. TAHMİN TURU YOK: sıradaki adım doğrudan"
+                )
+                lines.append("gözlemdir (tarayıcı ağ sekmesi), başka bir rota adı değil.")
         exit_code = 3
     elif download_probe is None or download_probe.verdict != "dosya":
         lines += [
@@ -1054,6 +1177,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--sample-symbol", default=None)
     parser.add_argument("--sample-date", default=ARCHIVE_CLAIMED_START, help="YYYY-MM ya da tarih")
     parser.add_argument("--no-sample", action="store_true", help="örnek dosyayı indirme")
+    parser.add_argument(
+        "--no-scope-test", action="store_true",
+        help="listeleme başarısızsa 404'ün rota/parametre ayrımını yapma",
+    )
     return parser.parse_args(argv)
 
 
