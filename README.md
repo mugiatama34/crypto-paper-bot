@@ -58,7 +58,8 @@ barı kendi sinyalini de üretir.
 4 saatlik değil. Gerekçe ölçüldü (docs/decisions.md > 39): `5 0,4,8,12,16,20` iken turların
 %35'i telafi yapıyor ve barların **%26'sı sinyalsiz** geçiyordu, üstelik kaybolan bar hep
 00:00 ya da 08:00 barıydı — yani kayıp gürültü değil YANLILIK. Saatlik kadans her 4H barına
-dört bağımsız şans verir ve ölçüm kuralına dokunmaz (`signals_per_bar` base'de KAPALI
+dört bağımsız şans vermeyi HEDEFLER; ölçülen teslim 0.97'dir (karar 39-DOĞRULAMA) ve
+ölçüm kuralına dokunmaz (`signals_per_bar` base'de KAPALI
 kalır). Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü commit
 edilseler HEAD'deki tur denetim izini boş bir turla ezerlerdi. Koşudan sonra `ledgers/` ve
 `docs/data/` commit edilir (değişiklik yoksa boş commit atılmaz). **Defter bu yüzden depoya
@@ -86,7 +87,7 @@ ayrımı taşır: beklenen tekrar `INFO`, arıza `WARNING`.
 | Modeller | bkz. [Model listesi](#model-listesi) — tek kaynak `config.yaml > models` | bkz. [Model listesi](#model-listesi) — tek kaynak `config.yaml > layers.scalp.models` |
 | Defter | `ledgers/` | `ledgers_scalp/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` |
-| Cron | `run.yml` — **saatlik** (`5 * * * *`), her 4H barına dört şans (karar 39) | `run-scalp.yml` — cron YOK, dış tetikleyici (~15 dk) |
+| Cron | `run.yml` — **saatlik** (`5 * * * *`); hedef bar başına 4 şans, ölçülen 0.97 (karar 39-DOĞRULAMA) | `run-scalp.yml` — cron YOK, dış tetikleyici (~15 dk) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) |
 | Stop tavanı | 3×ATR | 8×ATR |
 | Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi |

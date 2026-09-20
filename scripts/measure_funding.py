@@ -52,16 +52,24 @@ gitmek dönem B'ye dokunmaz.
 
 ⚠ **İLK KOŞUNUN SONUCU: OKX bu pencereyi VERMİYOR** (koşu #35441623091). 13 sembolün
 hepsinde dönem A penceresinde SIFIR kayıt bulundu. Sebep bu aracın filtresi değil,
-kaynağın sınırıdır: `/api/v5/public/funding-rate-history` sayfalaması ~3-4 sayfada
-(~300-400 kayıt, ~3-4 ay) tükeniyor ve 2022-2024'e hiç ulaşmıyor. Projenin canlı yolu da
-bunu zaten varsayıyor: `data.funding_history_periods` 180 (60 gün).
+kaynağın sınırıdır: `/api/v5/public/funding-rate-history` **~3 aylık KAYAN bir pencere**
+tutuyor (283 kayıt, en eski 2026-06-17) ve dönem A'nın tamamı o pencerenin ~26 ay
+dışında kalıyor — ölçen `scripts/probe_funding_depth.py`, kayıt karar 50 ve
+docs/backtest.md > 6f. Projenin canlı yolu da bunu zaten varsayıyor:
+`data.funding_history_periods` 180 (60 gün).
+
+⚠ **Bu başlık bir zamanlar sebebi "~300-400 kayıtlık sayfalama tavanı" diye yazıyordu ve
+o okuma ÇÜRÜDÜ** (karar 51): `limit=400` kabul ediliyor ama o kadar kayıt YOK, yani kısıt
+bir sayfa boyu değil pencerenin kendisidir; `fetch_history` de kayıp vermiyor —
+ulaşılabilen azami derinliğin tamamına ulaşıyor. Yanlış olan teşhisin içeriği değil
+ÜRETİLME BİÇİMİYDİ: mekanizma log'un zaman damgalarından geri hesaplanmıştı, ölçülmemişti.
 
 Bu bir ARAÇ hatası değil, bir VERİ bulgusudur ve tam olarak aracın cevaplamak için
 yazıldığı sorunun cevabıdır: *bu veriyle ölçülebilir mi?* — **OKX public REST ile
 HAYIR.** Araçta düzeltilen şey sonucun kendisi değil, SUNULUŞUDUR: koşu sıfır kodla
 bitiyordu, yani "ölçtük ve bulamadık" ile "hiç ölçemedik" aynı hücreye yazılıyordu
 (`core/metrics.py`nin "veri yoksa `nan`, `0.0` değil" kuralının çıkış kodundaki
-karşılığı). İki şey eklendi: **(a0) ÇEKİM İZİ** bölümü (borsanın sayfalama tabanını
+karşılığı). İki şey eklendi: **(a0) ÇEKİM İZİ** bölümü (kaynağın gerçekte verdiği en eski damgayı
 gösterir — üç ayrı sebebi ayırt eder: sembol listelenmemiş / borsa o kadar geriye
 vermiyor / sayfalamamız bozuk) ve bir **VERİ KAPISI** (pencerede hiçbir sembolde kayıt
 yoksa çıkış kodu 3).
@@ -395,7 +403,7 @@ class FetchTrace:
     penceresinde "0 kayıt" verdi ve rapor bunu `nan` dolu bir tabloyla, SIFIR çıkış
     koduyla bildirdi. O tabloda eksik olan tek bilgi, çekimin gerçekte NEREYE kadar
     gidebildiğiydi — `coverage` yalnızca pencerenin İÇİNE bakar, oysa teşhis pencerenin
-    DIŞINDA duruyordu (borsanın sayfalama tabanı). İz, "sembol listelenmemiş", "borsa o
+    DIŞINDA duruyordu (kaynağın verdiği en eski damga). İz, "sembol listelenmemiş", "borsa o
     kadar geriye vermiyor" ve "sayfalamamız bozuk" durumlarını birbirinden ayırır.
     """
 

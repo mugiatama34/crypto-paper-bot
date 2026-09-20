@@ -364,6 +364,13 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 |---|---|---|---|---|---|
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, commit `e912efd` (TADİLAT-1: `93cd891`) | A: 2022-01-01 → 2024-12-30 (sinyal kesimi 06-30), B: 2024-07-21 → 2026-09-18 | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | **P1 TUTTU** (1.549 / 1.206) ama **hipotez DÜŞTÜ**: ortalama R A −0.0015 / B −0.0165 (C-1), çıpa da geçilemedi (C-3) → **BLOKE**, §6d > SONUÇ |
+| 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 49 |
+
+**3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
+model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
+sicilde durmasının sebebi paydanın kendisi değil, **kaç denemenin yapıldığının
+görünmesidir** — düşen bir denemeyi silmek, sicilin engellemek için var olduğu yayın
+yanlılığının ta kendisidir.
 
 **Sicildeki 2. satır bu paydaya AİT DEĞİLDİR:** `ema_trend` hipotezi dış bir sistemden geldi, ev içi arama uzayından seçilmedi (bkz. §6d > Çoklu karşılaştırma). İki payda ayrı tutulur.
 
@@ -957,6 +964,319 @@ AYRIŞTIRILMASI hiç test edilmedi.** Sırası gelirse kendi ön-kaydıyla gelir
 
 ---
 
+### SONUÇ — kural koşuldu, TUR KAPANDI (varyant kurulmadı)
+
+Koşu: `diagnose-ema-exits` #35435506689, commit `d0332da`, 2026-09-19. Ham çıktı
+artifact'te (`diagnose-ema-exits`, 14 gün); özet yük koşunun log'una basıldı.
+**Bu bölüm sonucu KAYDEDER, kuralları değiştirmez** — yukarıdaki hiçbir eşik, öncelik
+sırası ya da dal tanımı koşudan sonra dokunulmadı.
+
+**Determinizm kapısı GEÇTİ.** Teşhis koşusu, karara giren koşunun (`backtest-ema`
+#35391881083) dönem A sayılarını birebir üretti: 369 pozisyon, 130 tp, 239 stop,
+ortalama R −0.0014889765, azami tutuş 129 bar. `missing_bars = 0`,
+`unchecked_position_bars = 0`. Yani yol istatistiği okunabilir.
+
+**Kuralın uygulanması (bir kez çalıştı):**
+
+| dal | aile | ölçülen | eşik | sonuç |
+|---|---|---|---|---|
+| M2 | kuyruk (trailing / hedefsiz) | **+0.153R** | ≥ +0.25R | tetiklemedi |
+| M1 | geri dönüş (breakeven + kısmi) | **0.552R** | ≥ 1.0R | tetiklemedi |
+| M4 | oyalanma (zaman stop'u) | **0.667×** | ≥ 2.0× | tetiklemedi |
+
+**SEÇİLEN: 4. dal — tur kapanır, varyant kurulmaz.**
+
+#### Ölçülen yol (kayıt)
+
+| çıkış | n | tutuş: medyan / p75 / p90 / azami (bar) | MFE\* medyan | MAE\* medyan |
+|---|---|---|---|---|
+| `tp` | 130 | 9 / 15.8 / 22 / 129 | +1.62R | −0.41R |
+| `stop` | 239 | 6 / 12 / 20 / 43 | +0.55R | −0.77R |
+
+\* kapanış barı HARİÇ (kural 13b): bir çıkış kuralının karar anında görebileceği hareket.
+
+Stop'la kapananların MFE dağılımı (kapanış barı hariç, n=222 — kapanıştan önce barı
+olan pozisyonlar): `%46.8` hiç +0.5R'ye ulaşamadı, `%24.3` 0.5–1.0R, `%16.7` 1.0–1.5R,
+`%12.2` 1.5–2.0R. Hedefe varanların MAE'si: `%34.7` −0.25R'den derine hiç inmedi,
+`%17.7` −0.75R'nin altına indi.
+
+TP sonrası İŞARETLİ hareketin medyanı ufuklar arasında işaret değiştiriyor:
+5 bar −0.10R, 10 bar −0.23R, **20 bar +0.15R**, 40 bar −0.37R. Kural yalnızca 20 barlık
+ufka bakar (o ufuk koşudan önce sabitlenmişti) ve orada da eşiğin altında kalıyor;
+diğer üç ufkun negatif olması, +0.15R'nin kararlı bir sürüklenme DEĞİL gürültü
+olduğunu söylüyor — martingal ile uyumlu. Azami YÜKSELİŞ ölçüsü (20 barda medyan
++1.46R) bu tabloda bir bulgu değildir: sürüklenmesiz bir yürüyüşte de aynı mertebede
+çıkar ve kural bu yüzden ona bakmıyor.
+
+#### Ne öğrenildi (bir kural değil, bir kayıt)
+
+- **Zaman stop'unun ön kabulü TERSİNE çıktı.** Kaybedenler kazananlardan DAHA HIZLI
+  ölüyor (medyan 6 ↔ 9 bar, p90 20 ↔ 22 bar). Bir zaman stop'u bu dağılımda önce
+  kazananları keserdi; "oyalanan kaybedenleri kes" tezinin dayanağı bu veride yok.
+- **Kaybedenlerin yarısı hiç kâra geçmiyor:** medyan MFE +0.55R ve `%46.8`'i +0.5R'yi
+  bile görmüyor. Breakeven'ın koruyacağı bir kâr çoğu kayıpta hiç oluşmamış.
+- **Hedefte kesilen kuyruk ölçülebilir değil:** çıkış sonrası işaretli hareket sıfır
+  etrafında salınıyor. "TP'ler erken kesiyor" iddiası bu pencerede desteklenmiyor.
+- Üçü birlikte, §6e'nin 4. dalının tanımladığı durumdur: **yolda çıkışın sömürebileceği
+  bir yapı yok.** Kenar sinyalin kendisinde ve küçük (brüt +0.057R ↔ friksiyon 0.057R);
+  onu çıkış geometrisini oynatarak büyütmenin bu veride bir dayanağı yok.
+
+Açık kalan tek kaldıraç friksiyondur ve o, çıkış ekseninde değil **stop mesafesi**
+ekseninde durur (yukarıdaki KAYIT). O eksen kendi ön-kaydıyla gelir; bu tur onu
+denemedi ve denemeyecek.
+
+---
+
+## 6f. ÖN-KAYIT — dönem A fonlama arşivi (karar 50'nin açık işi)
+
+**Bu bir TEZİN ön-kaydı değil, bir VERİ YOLUNUN ön-kaydıdır.** Sabitlenen şey bir modelin
+performansı hakkında bir tahmin değil, *"dönem A'nın fonlama dağılımı hangi veriyle
+sorulacak"* sorusunun cevabıdır. Bu yüzden §6c'nin sicil tablosuna **girmez** ve BH
+paydasına eklenmez: sicil bir modelin performansı hakkında iddia taşıyan satırları sayar
+ve bu satırın öyle bir iddiası yoktur (§6c'nin "ölçüm katmanı hipotez DEĞİLDİR" ayrımı).
+Arşivle beslenen bir TEZ geldiğinde o tez kendi satırını açar.
+
+**Neden şimdi yazılıyor.** Karar 50 arşiv işinin sırasını bağlayıcı kıldı (önce arşiv,
+sonra örtüşme kanıtı, ancak sonra kullanım) ve "engelin tam mekanizması … girmesi gereken
+yer arşiv işinin ön-kaydıdır" dedi. Burası o yer. Kapılar veri GÖRÜLMEDEN sabitleniyor;
+tersi §7.1'in yasakladığı şeyin ta kendisidir. Belge, `scripts/probe_funding_depth.py`
+hiç koşmadan commit edilir — probe'un ürettiği hiçbir sayı bu sayfadaki hiçbir eşiği
+seçmedi.
+
+### Adımlar ve sıra (bağlayıcı)
+
+| Adım | Soru | Nerede cevaplanır |
+|---|---|---|
+| **A** | OKX'in KENDİ yolu dönem A'ya ulaşıyor mu? | `scripts/probe_funding_depth.py` log'u |
+| **B** | Ulaşmıyorsa hangi arşiv? | aday sırası aşağıda SABİT |
+| **C** | Arşiv canlı seriyle tutarlı mı? | 60 günlük örtüşmede üç koşul |
+
+**A geçerse B ve C DÜŞER.** OKX-içi bir yol bir kaynak değişikliği değildir: kural 5'in
+"tüm modeller aynı veriyi görür" şartı zaten sağlanır ve karar 50'nin örtüşme kanıtı
+konusuz kalır. Bu yüzden probe'un sırası da A-2 (OKX'in tarihsel veri portalı) ile başlar:
+portal erişilebilir ve fonlama veri kümesi taşıyorsa aşağıdaki (a)/(b) ayrımı bile
+gereksizdir.
+
+### Adım A — iki hipotez, tek ayrım
+
+PR #37'nin izi `BTC-USDT-SWAP` için **4 sayfa / 312 kayıt / en eski 2026-06-11** verdi ve
+"kısa sayfa" (12 < 100) ile durdu. Kısa sayfa İKİ ayrı şeyin imzasıdır ve iz ikisini
+ayırt etmiyor:
+
+- **(a) borsa tabanı** — uç nokta bu yoldan gerçekten ~3-4 ay veriyor;
+- **(b) yürüyüş tabanı** — `fetch_history`nin `after`-yürüyüşü sunucu tarafı bir pencereyi
+  tüketiyor ve doğrudan parametrelenmiş bir istek daha geriye ulaşıyor.
+
+312 kayıt, bir ikincil kaynağın bildirdiği 400 kayıtlık tavanın **altında** durdu; bu (b)
+lehine bir işarettir ama kanıt değildir — kanıt tek bir istektir.
+
+**Ayrım MEKANİKTİR ve kodda yazılıdır** (`probe_funding_depth.py::classify_depth_floor`).
+Gerekçe `diagnose_ema_exits.py::select_primary_family`in aynısıdır: sonucu bir insanın
+okuyup "bana (b) gibi göründü" demesi, kuralın kapatmak için var olduğu serbestliği geri
+açardı. Kural, probe koşmadan önce şudur:
+
+1. Yürüyüşün ulaştığı en eski damgadan **doğrudan** bir `after` isteği daha eski kayıt
+   döndürüyorsa → **(b) yürüyüş tabanı.**
+2. Döndürmüyorsa, dönem A kesimine (2024-06-30) **doğrudan** atlayan bir `after` isteği
+   kayıt döndürüyorsa → yine **(b).**
+3. İkisi de boşsa → **(a) borsa tabanı.**
+4. Herhangi bir istek hata verirse → **belirsiz** (probe hata koduyla biter; belirsiz bir
+   sonuç "(a) çıktı" diye okunamaz).
+
+### SONUÇ — Adım A KOŞULDU: (a) borsa tabanı
+
+Koşu: `measure-funding` #35463452072, `main` @ `b542954`, 2026-09-19 19:09 UTC.
+Semboller: `BTC-USDT-SWAP`, `SUI-USDT-SWAP` (biri en derin kitap, öteki dönem A'yı
+KISMEN kapsayan bir listeleme — ikisi farklı şey sınıyor).
+
+| Ölçüm | BTC-USDT-SWAP | SUI-USDT-SWAP |
+|---|---|---|
+| `limit=100` | 100 kayıt | 100 kayıt |
+| `limit=200` | **200 kayıt** | **200 kayıt** |
+| `limit=300` | 283 kayıt | 283 kayıt |
+| `limit=400` | 283 kayıt | 284 kayıt |
+| yürüyüş (`fetch_history`) | 283 kayıt, en eski 2026-06-17 16:00 | 283 kayıt, en eski 2026-06-17 16:00 |
+| `after=<yürüyüş tabanı>` | **0 kayıt** | **0 kayıt** |
+| `after=2024-06-30` | **0 kayıt** | **0 kayıt** |
+| `before=2024-06-30` | 100 kayıt, 2026-06-17 → 2026-07-20 | aynı |
+
+**Mekanik ayrım (`classify_depth_floor`): (a) BORSA TABANI, iki sembolde de.** Üç
+bağımsız kanıt aynı yeri gösteriyor: (1) `limit=300` ile `limit=400` aynı 283 kaydı
+veriyor, yani sayfa boyu bağlamıyor; (2) yürüyüş de tam olarak aynı 283'e ulaşıyor;
+(3) tabanın altını isteyen iki `after` isteği de boş dönüyor. `before=2024-06-30` ise
+pencerenin EN ESKİ ucundan başlıyor (2026-06-17) — 2024'e bakan bir istek bile tabanın
+altına inemiyor. Uç nokta **~3 aylık KAYAN bir pencere** tutuyor ve dönem A'nın (2022-01
+→ 2024-06) tamamı o pencerenin ~26 ay dışında.
+
+**⚠ DÜZELTME — "400 kayıt tavanı" hipotezi YANLIŞTI.** Bu bölüm ilk yazıldığında
+"312 kayıt, bir ikincil kaynağın bildirdiği 400 kayıtlık tavanın ALTINDA durdu; bu (b)
+lehine bir işarettir" diyordu. Probe onu çürüttü: `limit=400` KABUL EDİLİYOR ama ortada
+yalnızca 283 kayıt var — yani 400 bir kayıt tavanı değil, **kısıt ~3 aylık kayan bir
+penceredir.** PR #37'nin 312 kaydı da bir tavanın altında durmuş değildi; o gün pencere
+o kadardı. İki koşunun karşılaştırması bunu doğruluyor: #37'de en eski damga 2026-06-11,
+bugün 2026-06-17 — pencere İLERİ kaydı. SUI'de taban tek koşunun içinde bile bir damga
+oynadı (`limit=300` → 16:00, `limit=400` → 08:00), yani bu bir arşiv değil canlı bir
+penceredir. **Yanlış hipotezin çürütülüşü sonucun kendisi kadar kayda değerdir:** yazılı
+durmazsa ileride biri aynı izi yeniden sürer ve probe boşuna tekrar koşturulur.
+
+**`fetch_history` KAYIP VERMİYOR.** Yürüyüş (`limit=100`, 3 sayfa) tek istekle
+ulaşılabilen azami derinliğin (283) TAMAMINI alıyor. Kodda onarılacak bir şey yok —
+veri orada değil. `limit>100`ün kabul edilmesi yalnızca istek SAYISINI düşürürdü (3 → 2)
+ve derinliği değiştirmez; bu yüzden canlı yolun `--request-limit` varsayılanı
+DEĞİŞTİRİLMEDİ (kural 5'in okuduğu seriye dokunmayan bir kazanç, dokunma riskini
+karşılamıyor).
+
+**Alternatif uç nokta adı YOK:** `/api/v5/public/history-funding-rate` HTTP 404.
+İkincil kaynağın verdiği ad gerçek değil; `/api/v5/public/funding-rate-history` tek yol.
+
+**A-2 — probe'un ölçtüğü (2026-09-19):** portal
+(`https://www.okx.com/en-us/historical-data`) HTTP 200 döndü ve HTML'inde hem `funding`
+hem `2022` geçiyor — ama bu **hiçbir şey kanıtlamıyor** ve probe da öyle raporladı:
+59 KB'lık bir sayfa, veri kümesi listesi büyük olasılıkla JS ile yükleniyor, o iki kelime
+menü/altbilgi metninden gelebilir. Bir YOKLUK KANITI da değildi. Probe A-2'yi **açık**
+bıraktı ve elle kapatılmasını istedi.
+
+**A-2 KAPANDI (2026-09-20): OKX-İÇİ BİR YOL YOK.** Portalın sunduğu olarak anılan veri
+kümeleri **tick bazlı işlem verisi ve OHLCV mum verisi**; fonlama oranı geçmişi
+listelenmiyor ve fonlama için aynı kaynaklar **REST API'yi** işaret ediyor — yani
+probe'un tabanına çarptığı uç noktanın ta kendisi. İki bağımsız yol aynı yere çıkıyor:
+ölçüm uç noktanın ~3 ayda bittiğini gösterdi, kaynak taraması da portalın o boşluğu
+dolduracak bir veri kümesi sunmadığını.
+
+⚠ **Kanıt SINIFI yazılı olsun:** bu bir **ikincil kaynak taraması**, portalın indirme
+listesinin doğrudan görüntüsü DEĞİL. Aynı sınıf kanıt bu belgede bir kez çürüdü (yukarıdaki
+"400 kayıt tavanı"). Aradaki fark kaydedilmeye değer: orada tek bir ikincil iddia bir
+ÖLÇÜMLE çelişiyordu, burada ikincil kaynaklar ile doğrudan ölçüm **aynı yöne** işaret
+ediyor. Yine de portalın indirme listesine doğrudan bakan bir gözlem bunu tersine
+çevirebilir; o gözlem gelirse **A-2 yeniden açılır** ve Adım B düşer.
+
+**ADIM A KAPANDI → ADIM B AÇILDI (2026-09-20).** A-1 (a) borsa tabanı, A-2'de OKX-içi yol
+yok. §6f'nin SABİT aday sırası devreye giriyor: **Bybit.** Bunun iki sonucu var ve ikisi de
+şimdiden yazılı:
+
+1. **C kapısı üç koşullu biçimiyle koşacak** (C-a/b/c), karar 50'nin literal "aynı oran"
+   şartıyla değil — çünkü aday başka bir borsadır ve orada o şart sağlanamadığı için değil
+   ANLAMSIZ olduğu için geçersizdir (yukarısı).
+2. **Cross-venue muafiyeti artık teorik değil, KULLANILACAK.** Bedeli iki yere yazılır:
+   §8'in "iddia edilmeyecekler" satırı ZATEN yazılı (bu bölümle aynı commit dizisinde);
+   §5'in kabul edilen sapmalar listesine girecek satır ise **arşiv gerçekten kullanıldığında**
+   eklenir — bugün henüz kullanılmıyor, yalnızca adayı seçilmiş durumda.
+
+**Adım B BAŞLAMADI, yalnızca AÇILDI:** aday belli, arşiv kurulmadı. Arşivin kurulması ayrı
+bir iştir ve kurulduktan sonra bile **C kapısı geçilmeden hiçbir yerde kullanılamaz** —
+ne bir dağılım raporunda, ne bir eşik seçiminde, ne bir backtest'te (karar 50'nin sırası).
+
+### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(AÇILDI: 2026-09-20)*
+
+1. **Bybit** — `/v5/market/funding/history`
+2. **Binance** — `data.binance.vision` aylık `fundingRate` dökümleri (sembol eşleme gerekir:
+   `BTCUSDT` ↔ `BTC-USDT-SWAP`)
+3. **Ücretli kaynaklar** (Tardis.dev, CoinAPI, CryptoHFTData) — **kapsam dışı**
+
+**Bybit'in önceliği kapsamadan DEĞİL, venue tercihinden gelir:** hesabın tutulduğu yer
+zaten Bybit'tir — `fee_rate` Bybit'in taker oranıdır ve `scripts/measure_slippage.py`
+kitabı Bybit'ten okur. Sıranın tek gerekçesi budur ve **bağlayıcıdır: Binance daha iyi
+kapsama verse bile Bybit seçilir.** Kasıtlı; aksi hâlde arşiv kapsamaya bakılarak seçilir
+ve kapsama sonuçla korelasyonlu olabilir (§7.2'nin "post-hoc filtre yok" kuralının kaynak
+seçimine uygulanmış hâli).
+
+Bybit C kapısında düşerse sıradaki aday Binance'tir — ama bu bir SEÇİM değil bir
+DÜŞMEDİR: Bybit'in hangi koşulda düştüğü yazılır ve Binance kendi C kapısından baştan
+geçmek zorundadır.
+
+### Adım C — örtüşme kapısı (veri görülmeden sabitlendi)
+
+**Pencere:** arşiv ile canlı serinin kesiştiği **son 60 gün** (`data.funding_history_periods`
+= 180 periyot, karar 50). **Evren:** `ema` katmanının 13 sembolü — üçü de bu pencerede
+mevcuttur (aşağıdaki listeleme notu C'yi etkilemez). **Üç koşul, ÜÇÜ BİRDEN:**
+
+| Kapı | Ölçü | Geçme koşulu |
+|---|---|---|
+| **C-a** | damga hizası | iki serinin damga kümeleri **≥ %95** örtüşür (Jaccard, damga bazında) |
+| **C-b** | olay kümesi | p95 eşiğinin ürettiği olay kümelerinin **Jaccard ≥ 0.70** |
+| **C-c** | işaret uyumu | ortak damgaların **≥ %95**'inde oranın İŞARETİ aynı |
+
+Üç sayı da bu commit'te sabittir ve koşudan sonra §7.1/§7.4 gereği değiştirilmez.
+
+**C-b'nin eşiği STATİKTİR, kayan değil:** ölçümün kendi kuralı 270 periyotluk kayan
+pencere + `shift(1)`tir ve o pencere 60 güne SIĞMAZ. C-b'de p95, örtüşme penceresinin
+kendi dağılımından hesaplanır. Bu bilinçli bir sapmadır, yalnızca C kapısında geçerlidir
+ve dağılım raporunun kuralını DEĞİŞTİRMEZ.
+
+**C-b'nin örneklemi küçüktür ve bu yazılı olsun:** 60 gün = sembol başına ~180 damga, p95
+≈ 9 olay, 13 sembolde ≈ 117 olay. `Jaccard ≥ 0.70`, iki kümenin her birinin ~%82'sinin
+ortak olması demektir — yani ≈117 olayda her iki tarafta ~21 olayın kayması tolere edilir.
+Kapı bu çözünürlükte okunmalıdır: geçmesi "seriler aynı" demek değil, "olay kümeleri bu
+örneklemde ayırt edilemiyor" demektir.
+
+⚠ **C, karar 50'nin LİTERAL şartından daha zayıftır ve bu sessizce geçilmiyor.** Karar 50
+"aynı zaman damgası, aynı oran" dedi. O şart **aynı borsanın** arşivi için doğrudur ve
+adım A geçerse aynen uygulanır — C-a/b/c'nin yerine birebir eşitlik aranır. Ama B'nin
+adayları BAŞKA borsalardır ve başka bir borsanın fonlama oranı tanım gereği başka bir
+sayıdır: "aynı oran" orada sağlanamadığı için değil, **anlamsız olduğu için** geçersizdir.
+Cross-venue bir arşivde ölçülebilen şey "aynı veri" değil **"aynı olgu"**dur ve yukarıdaki
+üç koşul tam olarak onu ölçer.
+
+**Bedeli de yazılı:** cross-venue bir arşivle seçilen bir eşik, OKX mumlarıyla koşacak bir
+backtest'e uygulandığında bir **cross-venue varsayımı** taşır — §5c'nin "maliyet modeli
+varsayımdır, gözlem değil" maddesiyle aynı statü. Arşiv kullanılırsa bu sapma §5'in kabul
+edilen sapmalar listesine girer ve §8'in "iddia edilmeyecekler" listesine bir satır ekler:
+*eşiğin OKX'te de aynı olayları seçtiği gösterilmedi, yalnızca ayırt edilemediği.*
+
+### Örneklem bütçesi — n hesabı 13 DEĞİL ~10.6 sembol üzerinden
+
+Dönem A (2022-01-01 → 2024-06-30, 912 gün) boyunca `ema` katmanının 13 sembolünün üçü
+pencereyi tam göremez. Bu bir arşiv kusuru değil bir **listeleme tarihidir** ve
+`measure_funding.py::coverage` ayrımı zaten yapar (beklenen sayı sembolün KENDİ ilk
+kaydından sayılır):
+
+| Sembol | Listeleme (ikincil kaynak; probe'un kapsam tablosu DOĞRULAYACAK) | Dönem A payı |
+|---|---|---|
+| PENGU | perp 2024-12-18 | **0.00** — dönem A 2024-06-30'da biter |
+| ETHFI | 2024-03-18 | ~0.11 (≈3.4 ay / 30) |
+| SUI | 2023-05 | ~0.47 (≈14 ay / 30) |
+| diğer 10 | 2022-01-01 öncesi (VARSAYIM, doğrulanacak) | 1.00 |
+
+**Etkin sembol sayısı ≈ 10 + 0.47 + 0.11 + 0.00 = 10.58.** Beklenen damga sayısı
+`912 × 3 × 10.58 ≈ 29.000` — 13 sembol varsayımının (`13 × 912 × 3 ≈ 35.600`) **%81'i.**
+
+**ÖN-KAYIT: bu tezle ilgili her n hesabı, güç hesabı ve "kaç olay beklenir" beklentisi
+10.6 sembol üzerinden kurulur.** 13 üzerinden kurulmuş bir beklenti olay sayısını ~%20
+fazla sayar; fonlama ekstremleri zaten seyrekse bu fark tezi ölçülebilir taraftan
+ölçülemez tarafa itebilir — ve `acceptance.min_trades` (30) kapısına ulaşıp ulaşılamadığı
+tam olarak bu sayıya bağlıdır. Sayı koşudan SONRA "aslında 13'tü" diye düzeltilemez
+(§7.1).
+
+**Bu üç satır C kapısını ETKİLEMEZ** (örtüşme penceresi son 60 gündür, orada üçü de
+vardır). Etkilediği şey dönem A'nın TEZİDİR. Kapsama tablosunda bu üç sembolün düşük
+`completeness` değeri **arşiv kusuru olarak okunamaz**; hangi arşiv gelirse gelsin dönem
+A'da 13/13 mümkün değildir.
+
+### Ölçüm adımının varsayılanı KAPALI — gerekçesi burada durur
+
+`measure-funding.yml`in dağılım adımı (`run_measure`) **varsayılan olarak `false`**;
+probe (`run_probe`) varsayılan olarak `true`. Gerekçe bu bölümün tamamıdır: bugünkü veri
+yolu 60 gün veriyor ve dönem A 30 ay — ölçümü elle açmadan koşturmak, 30 aylık bir soruya
+60 günlük bir pencereyle cevap arayıp neredeyse boş bir rapor üretmek demektir. Boş bir
+rapor zararsız değildir: "ölçtük, olay yok" ile "ölçemedik" aynı log'a benzer ve karar
+50'nin tam olarak ayırmak istediği şey budur (engellenmiş tez ↔ düşmüş tez).
+
+**Bu bir kapı DEĞİL bir varsayılandır:** kimse engellenmiyor, tek kutu işaretlenerek
+koşuluyor. Arşiv bu bölümün kapılarını geçtiğinde varsayılan `true`ya döner ve o
+değişikliğin gerekçesi de buraya yazılır — "bu neden kapalıydı" sorusunun cevabı
+workflow'un git geçmişinde değil, ön-kayıtta durmalı.
+
+### Bu ön-kayıt neyi SEÇMİYOR
+
+**Eşiği.** Hangi persentil, hangi yön (pozitif/negatif kuyruk), hangi kümeleme kuralı bir
+olay sayar — hiçbiri burada yok, çünkü hiçbiri veri görülmeden seçilemez ve
+`measure_funding.py`nin raporu da onları önermez (§7). Eşik, arşiv C kapısını geçtikten ve
+dağılım GÖRÜLDÜKTEN sonra **ayrı bir ön-kayıtla** seçilir ve o ön-kayıt §6c'nin siciline
+kendi satırını açar. Bu belge yalnızca **hangi veriyle** sorulacağını sabitler, **ne
+sorulacağını** değil.
+
+---
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
@@ -985,6 +1305,17 @@ Bunlar eksiklik değil, kapsam dışıdır; sonuç okunurken iddia edilmeyecek �
 - Rejim değişimi (geçmişte kârlı olan gelecekte kârlı değildir)
 - Kayma varsayımının ince kitaplı sembollerde tutup tutmadığı
   (`breakdowns.symbol > cost_per_r` ipucu verir ama kanıt değildir)
+- **§6f'nin C kapısının GEÇMESİ, iki serinin AYNI olduğu anlamına gelmez.** Geçmesi
+  "olay kümeleri bu örneklemde AYIRT EDİLEMİYOR" demektir — 60 günde sembol başına ~180
+  damga, p95 ≈ 9 olay, 13 sembolde ≈ 117 olay, ve `Jaccard ≥ 0.70` her iki tarafta ~21
+  olayın kaymasına izin verir. Bu satır buraya, ileride birinin kapıyı "arşiv
+  doğrulandı" diye okuyacağı için yazıldı: kapı bir doğrulama değil, bir AYIRT
+  EDİLEMEZLİK ölçüsüdür ve örneklemi küçüktür.
+- **Cross-venue bir arşivle seçilen bir eşiğin OKX'te de aynı olayları seçtiği**
+  (§6f > Adım C). Gösterilen şey yalnızca ayırt edilemediğidir; "aynı oran" şartı başka
+  bir borsada anlamsızdır ve bu sapma arşiv kullanılırsa §5'e yazılır. Satır arşiv
+  gelmeden önce buraya kondu — sonradan eklenseydi, sonucu gördükten sonra yazılmış bir
+  uyarı olurdu.
 
 ---
 

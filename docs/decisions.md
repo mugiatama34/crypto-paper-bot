@@ -3809,57 +3809,286 @@ sebebi bilinmeden silmek, "ölçtük ve tutmadı" ile "hiç ölçemedik"i aynı 
 olurdu (kural: veri yoksa `nan`, `0.0` değil). Eşikler de kurcalanmadı: bir kolu
 tetikleyene kadar eşik gevşetmek, docs/backtest.md > 7'nin yasakladığı sonuca bakarak
 parametre oynatmanın ta kendisidir.
+## 49. Çıkış varyantı turu: hipotez teşhis aşamasında düştü, tur KAPANDI
+
+**Soru dışarıdan geldi ve makuldü:** `ema_trend` bloke edilmişti (karar 47), kenar
+giriş sinyalinde görünüyordu (dönem B'de ödeme oranı 1.61, kazanma oranı %34.7) ve
+"çıkış geometrisi kenarı yiyor" tezi, çıkış mekanizması varyantlarını denemeyi
+öneriyordu. Bu kayıt, o turun neden hiç kurulmadığını yazar.
+
+**Hipotezin öncülü YAPI düzeyinde yanlıştı.** Tez, ters sinyalde pozisyonun çevrildiği
+bir mekanizma varsayıyordu — kaynak sistemde (TradingView `strategy.entry`) gerçekten
+öyle, ama repo implementasyonunda öyle değil: `strategies/ema_trend.py`
+`manage_positions`ı uygulamaz, yani çıkış evreni `{tp, stop, liquidation}`tır ve
+likidasyon iki dönemde de 0'dır. Ölçülen ters sinyal çıkışı payı **%0** (doğrulama
+ölçütü >%30). Ödeme oranının hedefin (2R) altında kalmasının gerçek sebebi de başkaydı:
+dolum kuralı (kural 13) emri SONRAKİ barın açılışından doldurur, yani kesişim barından
+sonraki boşluk girişi yukarı kaydırır — hedefte kapanan pozisyon 2.0R değil **1.93R**,
+stop'ta kapanan −1.00R değil **−1.05R** yazar. Kapı işini yaptı: hipotez düştü ve
+varyant kurulmadı.
+
+**Yerine geçen soru ölçülebilirdi, ama ancak YOL verisiyle.** Sürüklenmesiz bir
+yürüyüşte hedefe (+3×ATR) stop'tan (−1.5×ATR) önce varma olasılığı %33.3'tür; ölçülen
+%35.2 (A) ve %34.7 (B). Yani sapma var, küçük (1.4–1.9 puan) ve nerede yoğunlaştığı
+bilinmiyordu — brüt kenar +0.057R/+0.041R, friksiyon 0.057R. Şeklini ölçmeden varyant
+tanımlamak tahmin olurdu; tahminle tanımlanan varyant ise ilk kapıda "kurtarmak için
+ayar arama"ya dönerdi (docs/backtest.md > 7.1).
+
+**Ölçüm ayrı bir araçla ve salt okunur yapıldı** (`scripts/diagnose_ema_exits.py`,
+Adım 0b): ikinci bir backtest değil (`run_backtest`i çağırır, pencereyi
+`backtest_ema.py`den ithal eder), metrik hesaplamaz (kural 7), dönem B parametresi
+YOKTUR — B, varyantların OOS penceresiydi ve yol istatistiğini bir kez görmek, ondan
+sonra seçilen her eşiği B'ye bakarak seçilmiş yapardı. Determinizm kapısı içindedir ve
+geçti: karara giren koşunun dönem A sayıları birebir yeniden üretildi (369 pozisyon,
+130 tp, 239 stop, ort. R −0.0014889765).
+
+**Seçim kuralı koşudan ÖNCE yazıldı, KODA konuldu ve bir kez çalıştı.** Dört dal
+(kuyruk / geri dönüş / oyalanma / hiçbiri), yazılı öncelik sırası ve gerekçelendirilmiş
+eşikler (docs/backtest.md > 6e). Kuralın metin değil FONKSİYON olmasının sebebi, tek
+işinin "sonucu görüp seçmedik"i kanıtlamak olmasıydı: teşhis çıktısını bir insanın
+okuyup dalı seçmesi, kuralın kapatmak için var olduğu serbestliği geri açardı. Ölçülen:
+M2 +0.153R (eşik +0.25R), M1 0.552R (eşik 1.0R), M4 0.667× (eşik 2.0×). **Hiçbiri
+tetiklemedi -> 4. dal: tur kapandı.**
+
+**Üç şey öğrenildi ve üçü de kayıttır, kural değil:**
+
+1. **Zaman stop'unun ön kabulü tersine çıktı:** kaybedenler kazananlardan daha HIZLI
+   ölüyor (medyan 6 ↔ 9 bar). Bir zaman stop'u bu dağılımda önce kazananları keserdi.
+2. **Kaybedenlerin yarısı hiç kâra geçmiyor** (medyan MFE +0.55R; %46.8'i +0.5R'yi bile
+   görmüyor), yani breakeven'ın koruyacağı kâr çoğu kayıpta hiç oluşmuyor.
+3. **Hedefte kesilen kuyruk ölçülemiyor:** çıkış sonrası İŞARETLİ hareketin medyanı
+   ufuklar arasında işaret değiştiriyor (5 bar −0.10R, 10 bar −0.23R, 20 bar +0.15R,
+   40 bar −0.37R). Azami yükseliş ölçüsü büyük çıkar ama sürüklenmesiz bir yürüyüşte de
+   büyüktür — bu yüzden kural ona değil işaretli ölçüye bakar.
+
+**Güç hesabı da bu turdan önce yazıldı ve turun ne vaat edebileceğini sınırlıyordu.**
+`ema_trend`in R dağılımı iki noktalıdır (sd 1.42), n≈370'te SE ≈ 0.074, yani MDE
++0.20R. Gerçekçi bir çıkış iyileştirmesi (0.02–0.06R) bunun üçte biri ile beşte biri
+arasındadır. Bunun iki sonucu vardı ve ikisi de ön-kayda girdi: (a) mevcut sonuç
+"model negatif kanıtlandı" değil **"sıfır kanıtlandı"** demektir (BLOKE verdikti yine de
+değişmez — C-3'ten de kalıyordu ve kanıtlanmamış bir kenara sermaye ayrılmaz);
+(b) eksen istatistiği eşleştirilmiş ΔR olacaktı (varyantlar girişi ve stop'u miras
+aldığı için aynı yolu paylaşırlar; ρ≈0.8 beklentisiyle MDE ≈ +0.13R). Tur kapandığı
+için ikisi de kullanılmadı ama ön-kayıtta duruyor: bir sonraki tur aynı çıtayı bulacak.
+
+**Sicile 3. satır olarak yazıldı** (docs/backtest.md > 6c), düştüğü hâlde — hatta tam
+da düştüğü için. Satır BH paydasına girmez (hipotez bir model koşusuna hiç dönüşmedi,
+düzeltilecek bir `p` yok) ama sicilde durur: kaç denemenin yapıldığı görünmezse,
+kalan sonuçlar olduğundan anlamlı görünür.
+
+**Açık kalan tek kaldıraç friksiyondur ve bu turun konusu DEĞİLDİ.** `cost_per_r ≈ 2c /
+stop%` özdeşliği R başına friksiyonu stop MESAFESİNE bağlar, hedefe değil: 1.5×ATR'den
+3.0×ATR'ye geçmek onu kabaca yarıya indirir. Bu ayrı bir geometri eksenidir; çıkış
+ekseniyle birlikte oynatılsaydı aradaki fark iki değişkenin toplamı olurdu (13 ↔ 14
+çiftinin düştüğü hata). Kaynak sistemde SL 2.5 denemesi çökmüştü ama orada hedef de
+stop'la birlikte kaymıştı — stop ile hedefin AYRIŞTIRILMASI hiç test edilmedi. Sırası
+gelirse kendi ön-kaydıyla gelir (docs/backtest.md > 6e > KAYIT).
+
+## 50. Fonlama tezi BIRAKILMADI, ENGELLENDİ — engel veri yolu, tezin kendisi değil
+
+**Ayrım kaydın sebebidir.** Bir tez ölçülüp düştüğünde (karar 36, karar 49) sonucu sicile
+girer ve kapanır. Bu tez ÖLÇÜLEMEDİ: `scripts/measure_funding.py` dönem A'nın dağılımını
+soruyordu ve soruyu soramadan **veri yolunda** durdu. İkisini aynı rafa koymak — "denendi,
+olmadı" — yanlış olurdu: düşmüş bir tezi yeniden açmak yeni kanıt ister, engellenmiş bir
+tezi açmaksa yalnızca yolun onarılmasını.
+
+**Tez duruyor:** fonlama oranı kalabalıklaşmanın ölçülebilir bir işaretidir ve ekstremleri
+bir kenar taşıyabilir. Bu kayıt o iddia hakkında hiçbir şey söylemiyor — ne lehte ne
+aleyhte. Söylediği tek şey, iddianın bugünkü veri yoluyla SINANAMADIĞIdır.
+
+**Açık iş, iki parçalı ve sırası bağlayıcı:**
+
+1. **Dönem A için fonlama arşivi.** Ölçümün istediği pencere yıllarla ölçülür; canlı
+   yolun verdiği pencere 60 gündür (aşağısı). Arşiv ayrı bir depo alanıdır ve
+   `data/cache/`e YAZILMAZ — `core/data.py::fetch_funding` o önbelleği
+   `data.funding_history_periods` ile budar, yani aynı dosyaya iki saklama kuralıyla
+   yazmak canlı turun okuduğu seriyi bu aracın penceresine bağlardı
+   (`scripts/measure_funding.py`nin zaten uyguladığı ayrım).
+2. **Damga bazlı tutarlılık kanıtı, 60 günlük ÖRTÜŞMEDE.** Arşiv ile canlı serinin
+   kesiştiği pencerede her damga birebir eşleşmelidir: aynı zaman damgası, aynı oran.
+   **Kanıt geçmeden arşiv KULLANILMAZ** — ne bir dağılım raporunda, ne bir eşik
+   seçiminde, ne bir backtest'te. Gerekçe kural 5'in aynısıdır: iki kaynaktan beslenen
+   bir seri, ölçümün hangi veriyi gördüğünü belirsiz bırakır; ve sessizce ayrışan bir
+   arşiv, sonucu veriye değil indirme tarihine bağlardı.
+
+Sıra bir tercih değil: örtüşme kanıtı olmadan arşivin doğruluğu hakkında söylenebilecek
+tek şey "başka bir kaynaktan geldi"dir.
+
+**`data.funding_history_periods = 180` (≈60 gün) artık BİLİNÇLİ BİR KISITTIR.** Bugüne
+kadar bir uygulama ayrıntısı gibi duruyordu; bundan sonra öyle okunmayacak. Tavanın
+bağladığı yerler:
+
+- **Backtest:** kaydı olmayan anda `core/funding.py::rate_at` None döner ve maliyet
+  İŞLENMEZ (uydurma yok). 4 yıllık bir pencerede bu, eski dönemi sistematik olarak
+  İYİMSER yapar — `ema_trend` koşusunda gerçekten böyle oldu ve
+  docs/backtest.md > 6d'nin kabul edilen sapmalar listesinde 3. madde olarak duruyor.
+- **Her türlü fonlama-persentili tezi:** göreli bir eşik (p99 gibi) sembolün kendi
+  geçmiş dağılımını ister; 180 periyot o dağılımı tanımlamaya yetmez. Açık işin 1.
+  parçası tam olarak budur.
+- **`funding_spike_fade` kolu bu sığ pencereyle BESLENDİ** — katmanın tüm ömrü boyunca,
+  istisnasız. Kol `MarketData.funding[sembol]` serisini okur ve o seri hiçbir zaman 180
+  periyottan derin olmadı.
+
+⚠ **Bu, kolun neden hiç tetiklemediğinin AÇIKLAMASI DEĞİLDİR** ve öyle okunmamalıdır.
+Kolun kendi geriye bakışı `FUNDING_LOOKBACK = 8` periyottur (≈2.7 gün): taban oranı son
+8 damganın ortalamasıdır, yani kol 9 kayıtla çalışabilir ve 180'lik tavan onu susturmaz.
+Karar 48'in tespiti yerinde duruyor: **`funding_spike_fade`in sessizliğinin sebebi hâlâ
+BİLİNMİYOR** (`ScalpModel` `take_survey` uygulamıyor, yani hangi kapıda elendiği hiçbir
+yere yazılmıyor) ve bu açık bir iştir. Sığ pencereyi o boşluğa cevap diye koymak, karar
+34'ün dersinin tersini yapmak olurdu: ölçülmemiş bir sebebi ölçülmüş gibi kaydetmek.
+
+**Ölçüm aracının çıktısı YALNIZCA log'dur** (`.github/workflows/measure-funding.yml`
+artifact bile üretmez), yani koşunun kendisi kalıcı bir iz bırakmaz. Engelin tam
+mekanizması — hangi uç noktanın nereye kadar sayfalayabildiği — bu kayda girmiyor;
+girmesi gereken yer arşiv işinin ön-kaydıdır.
+
+**ÖLÇÜLDÜ (2026-09-19).** O ön-kayıt açıldı (docs/backtest.md > 6f) ve mekanizma
+`scripts/probe_funding_depth.py` ile ölçüldü (`measure-funding` #35463452072). Sonuç
+**(a) borsa tabanı**, iki sembolde de: uç nokta `/api/v5/public/funding-rate-history`
+**~3 aylık KAYAN bir pencere** tutuyor (283 kayıt, en eski 2026-06-17), dönem A'nın
+tamamı o pencerenin ~26 ay dışında ve doğrudan `after=2024-06-30` isteği BOŞ dönüyor.
+Sayılar ve üç bağımsız doğrulama §6f > "SONUÇ — Adım A KOŞULDU"da; log süreli olduğu
+için kalıcı kayıt oradadır, burada değil.
+
+Üç yan bulgu ve biri bir DÜZELTMEdir:
+
+1. **`fetch_history` kayıp vermiyor** — yürüyüş, tek istekle ulaşılabilen azami
+   derinliğin tamamına ulaşıyor. Tavanı büyütmenin yolu kodda değil, bu kaydın 1.
+   maddesindeki arşivdedir; yani yukarıdaki "açık iş" olduğu gibi duruyor.
+2. **`/api/v5/public/history-funding-rate` diye bir uç nokta YOK** (HTTP 404).
+3. ⚠ **"400 kayıt tavanı" hipotezi ÇÜRÜDÜ.** `limit=400` kabul ediliyor ama yalnızca
+   283 kayıt var: kısıt bir sayfa boyu değil, kayan pencerenin kendisi. PR #37'nin
+   "312 kayıt, 400'ün altında durdu, demek ki taban bizde olabilir" okuması yanlıştı.
+   Çürütme buraya YAZILIYOR çünkü yanlış bir izin kaydı, doğru sonucun kaydı kadar
+   iş görür: yazılmazsa aynı iz yeniden sürülür ve probe boşuna tekrar koşturulur.
+
+**Tez hâlâ ENGELLENMİŞ, ama engel artık ÖLÇÜLDÜ.** Bu kaydın başındaki ayrım yerinde
+duruyor: ölçülüp düşmüş bir tez değil, veri yolunda duran bir tez. Değişen tek şey,
+yolun nerede ve neden bittiğinin artık tahmin değil ölçüm olmasıdır.
+
+**A-2 de KAPANDI (2026-09-20): OKX-içi bir yol yok.** Tarihsel veri portalının sunduğu
+olarak anılan kümeler tick bazlı işlem verisi ve OHLCV mumları; fonlama geçmişi
+listelenmiyor ve fonlama için aynı kaynaklar REST API'yi işaret ediyor — probe'un
+tabanına çarptığı uç nokta. Kanıt SINIFI kayda geçiyor: bu bir ikincil kaynak taraması,
+portalın indirme listesinin doğrudan görüntüsü değil; doğrudan bir gözlem bunu tersine
+çevirirse A-2 yeniden açılır. Bugünkü hâliyle iki bağımsız yol (doğrudan ölçüm + kaynak
+taraması) aynı yöne işaret ediyor.
+
+**Bu kaydın 1. maddesindeki "açık iş" artık BAŞLAYABİLİR.** Adım A kapandı, yani
+docs/backtest.md > 6f'nin sabit aday sırası devreye girdi: **Bybit.** Sıra veriye
+bakılarak değil venue tercihiyle seçilmişti ve bağlayıcıdır. **2. madde — damga bazlı
+tutarlılık kanıtı — aynen geçerli ve hâlâ ÖN KOŞUL:** arşiv kurulsa bile C kapısı
+geçilmeden hiçbir yerde kullanılmaz. Tek fark, cross-venue bir adayda o kanıtın literal
+"aynı oran" biçimiyle değil §6f'nin üç koşuluyla (damga hizası, p95 olay kümesi Jaccard,
+işaret uyumu) verilecek olmasıdır — gerekçe ve bedeli §6f > Adım C'de yazılı.
 
 ---
 
-## 49. Fonlama tezi dönem A'da ÖLÇÜLEMEZ: kaynak o kadar geriye vermiyor
+## 39-DOĞRULAMA: tahmin kıl payı tuttu, ama onarımın DAYANDIĞI MEKANİZMA çürüdü
 
-**Sonuç:** `scripts/measure_funding.py` koşuldu (`measure-funding` #35441623091) ve
-cevabı verdi — **dönem A'da (2022-01-01 → 2024-06-30) fonlama verisi YOK.** 13 sembolün
-hepsinde pencerede sıfır kayıt. Bu bir araç hatası değil, aracın cevaplamak için
-yazıldığı sorunun cevabıdır: *4H'de bir fonlama-ekstremi tezi bu veriyle ölçülebilir mi?*
-— **OKX public REST ile HAYIR.**
+Karar 39'un ön-kayıtlı tahmini: *`bars_processed` dağılımı 1'e yakınsamalı, sinyalsiz bar
+oranı belirgin düşmeli, 00:00/08:00 yanlılığı kaybolmalı.* Onarım 2026-09-16T20:26'da
+canlıya indi; ölçüm penceresi 2026-09-17T00:00 → 09-19T00:00 (elle tetiklenen 16:00 turu
+DIŞLANDI — karışık kadans).
 
-**Sebep kaynağın sayfalama tabanıdır, bizim filtremiz değil.** `/api/v5/public/funding-rate-history`
-istek başına en çok 100 kayıt verir ve sayfalama ~3-4 sayfada tükenir (~300-400 kayıt ≈
-3-4 ay). Koşuda her sembol ~0.47 saniye sürdü; `exchange.min_request_interval_sec` 0.15
-olduğuna göre sembol başına ~3 istek yapıldı ve orada durdu. Yani çekim 2026 ortasına
-kadar indi, dönem A'ya 1600 günden fazla mesafe kaldı.
+| | ÖNCE | SONRA |
+|---|---:|---:|
+| tur | 20 | 12 |
+| işlenen bar | 27 | 14 |
+| telafi barı (sinyalsiz) | 7 | 2 |
+| **sinyalsiz bar oranı** | **%25.9** | **%14.3** |
+| telafi yapan tur oranı | %35 | %16.7 |
+| `missing_bars` | 0 | 0 |
+| kaybolan saatler | 00:00 (4×), 08:00 (3×) | 20:00 (1×), 04:00 (1×) |
 
-Bu, projenin canlı yolunun zaten varsaydığı şeydi ve kimse bağını kurmamıştı:
-`data.funding_history_periods` **180**'dir (60 gün). Derin fonlama geçmişi bu depoda hiç
-var olmadı; `strategies/scalp/arms.py::funding_spike_fade`in beslendiği seri de her zaman
-bu sığ pencereydi.
+**Nokta tahmini iyileşti ama n=14 ile bu fark KANITLANMIŞ DEĞİLDİR** — 2/14 ile 7/27
+arasındaki farkı ayırt edecek örneklem yok. Yanlılık iddiası ise önceki veride güçlüydü
+(7 kaybın 7'si tam iki saatte; kayıplar altı bar-saatine düzgün dağılsaydı olasılık
+≈ (2/6)⁷ ≈ 0.0005) ve o desen artık YOK — ama n=2 ile yokluğu da kanıtlanmaz.
 
-**Asıl kusur sonuç değil, sonucun SUNULUŞUYDU.** Koşu **yeşil** bitti: `nan` dolu bir
-dağılım tablosu, her eşikte "0 olay" yazan bir sayım ve sıfır çıkış kodu. Yani "ölçtük ve
-bulamadık" ile "hiç ölçemedik" aynı hücreye yazıldı — `core/metrics.py`nin "veri yoksa
-`nan`, `0.0` değil" kuralının tam olarak yasakladığı şey, bu kez çıkış kodunda. Bu hâliyle
-rapor okunsaydı "dönem A'da fonlama ekstremi yok" diye okunurdu; doğrusu "dönem A'da
-fonlama VERİSİ yok"tur ve ikisi aynı cümle değildir.
+### Asıl bulgu: "bara dört şans" diye bir şey olmadı
 
-**İki onarım yapıldı** (ikisi de sayıya değil, sayının denetlenebilirliğine dokunur):
+Karar 39-UYGULAMA şunu yazmıştı: *"Saatlik cron her 4H barına DÖRT bağımsız şans verir."*
+Ölçüldü ve **yanlış:**
+
+| | |
+|---|---|
+| zamanlanmış koşu | 14 (2026-09-16T23:37 → 09-19T07:16) |
+| pencere | 55.6 saat |
+| beklenen (saatlik cron) | ~56 |
+| **teslim oranı** | **%23** |
+| tetiklemeler arası aralık | medyan **4.1 saat** (min 2.5, max 6.2) |
+| **4H bar başına düşen tetikleme** | **0.97** — varsayılan: 4 |
+
+GitHub, cron ne yazarsa yazsın bu depoya kabaca **4 saatte bir** zamanlanmış olay
+teslim ediyor. Saatlik cron, tetikleme SAYISINI artırmadı.
+
+### O hâlde iyileşme nereden geldi
+
+Eski cron (`5 0,4,8,12,16,20`) de bar başına ~1 tetikleme veriyordu, ama o tetiklemeler
+bar kapanışına **ÇİVİLİYDİ** (:05). Düşen tetikleme her zaman aynı bar-saatini vuruyordu
+— yanlılığın kaynağı buydu. Saatlik cron'da teslim edilen ~1 tetikleme **serbest fazda**
+geziniyor; hangi bar penceresine düşeceği turdan tura değişiyor.
+
+Yani onarım **oranı değil, KAYBIN CİNSİNİ** değiştirdi: sistematik (yanlı) kayıp,
+rastgele (yansız) kayba döndü. Bu ölçüm için gerçek bir kazanımdır — yanlı kayıp seans
+kırılımını kalıcı olarak bozar, yansız kayıp yalnızca örneklemi seyreltir — ama
+karar 39-UYGULAMA'nın vaat ettiği şey bu değildi ve o cümle yanlıştı.
+
+İki kaybın ikisi de bu mekanizmayla birebir açıklanıyor: 09-16T20:00 barı (kapanış 00:00)
+23:37 ile 04:43 tetiklemeleri arasında kaldı; 09-18T04:00 barı (kapanış 08:00) 07:20 ile
+12:55 arasında kaldı. İkisinde de aradaki boşluk bir bar penceresini tamamen yuttu.
+
+### Ne yapılmadı ve neden
+
+Hiçbir ayar değiştirilmedi. Kanıtlanmış alternatif ortada duruyor: **`run-scalp.yml`in
+cron'u YOKTUR** ve depo dışı bir tetikleyiciyle ~15 dakikada bir koşuyor, hiç aksamadan
+(bu ölçüm penceresinde scalp katmanı tek bar kaçırmadı). `run.yml`i de aynı yola almak
+sinyalsiz bar oranını sıfıra yaklaştırır.
+
+Ama bu bir **KADANS KARARIDIR ve kullanıcınındır:** dış tetikleyici depo dışında bir
+bağımlılık demektir ve onun da düşmesi mümkündür — fark, düştüğünde görünür olmasıdır.
+Öneri sunulmuştur, tek taraflı uygulanmamıştır.
+
+**Ön-kayıt sicili (§6c) DEĞİŞMEDİ:** bu bir kural hipotezi değil, bir altyapı ölçümüdür ve
+bir modelin performansı hakkında iddia taşımaz (karar 40'ın ölçütü).
+
+---
+
+## 51. Boş bir rapor YEŞİL dönemişti: `measure_funding.py`nin çıkış kodu kusuru
+
+**Bu kayıt karar 50'nin BULGUSU hakkında değildir** — veri yolunun tıkalı olduğu, engelin
+mekanizması ve açık iş orada yazılı ve orası tek kaynaktır. Burada kayda geçen şey aracın
+o bulguyu nasıl SUNDUĞUDUR ve bu ayrı bir kusurdur.
+
+**Kusur.** İlk koşu (`measure-funding` #35441623091) 13 sembolün hepsinde dönem A
+penceresinde sıfır kayıt buldu ve bunu `nan` dolu bir dağılım tablosu, her eşikte "0 olay"
+yazan bir sayım ve **çıkış kodu 0** ile bildirdi. Yani *"ölçtük ve bulamadık"* ile *"hiç
+ölçemedik"* aynı hücreye yazıldı — `core/metrics.py`nin "veri yoksa `nan`, `0.0` değil"
+kuralının tam olarak yasakladığı şey, bu kez çıkış kodunda. O hâliyle rapor **"dönem A'da
+fonlama ekstremi yok"** diye okunurdu; doğrusu **"dönem A'da fonlama VERİSİ yok"**tur ve
+ikisi aynı cümle değildir.
+
+**İki onarım, ikisi de sayıya değil sayının DENETLENEBİLİRLİĞİNE dokunur:**
 
 - **(a0) ÇEKİM İZİ** — sembol başına kaç sayfa çekildi, pencere filtresinden ÖNCE kaç ham
   kayıt görüldü, bunların en eskisi/en yenisi hangi tarihti ve sayfalama NEDEN durdu.
   Gerekçe: `coverage` yalnızca pencerenin İÇİNE bakar, oysa teşhis pencerenin DIŞINDA
-  duruyordu. İz üç sebebi ayırt eder — sembol listelenmemiş (`boş sayfa`, PENGU/ETHFI),
-  borsa o kadar geriye vermiyor (`kısa sayfa — sayfalama TABANI`), sayfalamamız bozuk
-  (`imleç ilerlemedi`). İlk koşuda bu üçü tek bir "0 kayıt" satırına çökmüştü.
+  duruyordu. İz üç sebebi ayırt eder — sembol listelenmemiş (`boş sayfa`), kaynak o kadar
+  geriye vermiyor (`kısa sayfa`), sayfalamamız bozuk (`imleç ilerlemedi`). İlk koşuda bu
+  üçü tek bir "0 kayıt" satırına çökmüştü.
 - **VERİ KAPISI** — pencerede hiçbir sembolde kayıt yoksa çıkış kodu **3**. Yeşil bir koşu
   okunabilir bir rapor demektir.
 
-**Ne YAPILMADI ve neden.** Başka bir veri kaynağına (üçüncü taraf fonlama arşivi ya da
-başka bir borsa) geçilmedi. Bu AYRI bir karardır ve yeni bir veri varsayımı demektir;
-`scripts/measure_slippage.py`nin kitabı Bybit'ten okuma tercihi, böyle bir seçimin
-yazılı bir gerekçe istediğini gösteriyor. Üstelik burada bedel daha ağırdır: fonlama
-serisi canlı ölçümün İÇİNDEDİR (`core/funding.py` her açık pozisyona uygular), yani
-kaynağı değiştirmek backtest ile canlıyı farklı fonlama varsayımlarına ayırma riskini
-taşır — karar 25'te `fee_rate`in defteri tarihli olarak bölmesiyle aynı sınıf hata.
+⚠ **Bu turda üretilen MEKANİZMA okuması YANLIŞTI ve karar 50 onu çürüttü.** Koşu log'undan
+"sembol başına ~3 istek, 312 kayıt, 400'ün altında durdu" okunup sebep bir **sayfalama
+tavanı** sanılmıştı — yani tabanın BİZDE olabileceği ihtimali açık bırakılmıştı.
+`scripts/probe_funding_depth.py` ölçtü: `limit=400` kabul ediliyor ama o kadar kayıt YOK;
+kısıt bir sayfa boyu değil, uç noktanın tuttuğu **~3 aylık kayan pencerenin kendisidir** ve
+`fetch_history` ulaşılabilen azami derinliğin tamamına ulaşıyor, kayıp vermiyor.
 
-**Bir sonraki tez için bağlayıcı sonuç:** fonlama-ekstremi tezi, bugünkü veri yoluyla
-dönem A üzerinde ön-kayıtlı olarak sınanamaz. Üç seçenek var ve üçü de ayrı bir karar
-gerektirir: (1) tezi ileriye dönük olarak kâğıtta biriktirmek (veri 60 günle sınırlı),
-(2) dönem A için ayrı bir fonlama arşivi getirmek ve canlı yolla tutarlılığını
-kanıtlamak, (3) tezi bırakmak. Bu karar sonuca bakılarak verilemez çünkü **görülecek bir
-sonuç yok** — bu, ön-kayıt disiplininin bozulma riski olmayan ender durumlardan biridir.
+**Dersin kendisi kaydın sebebidir:** yanlış olan şey teşhisin içeriği değil, teşhisin
+ÜRETİLME BİÇİMİYDİ. Sayı log'un satır zaman damgalarından ve bir throttle sabitinden geri
+hesaplanmıştı — yani ölçülmemiş bir mekanizma, ölçülmüş bir sayıdan türetilmişti. Doğru
+yol karar 50'nin yaptığıdır: soruyu soran ayrı bir probe yazmak ve ön-kaydını koşudan önce
+commit etmek. Bir araç kendi teşhisini üretemez; teşhis de ölçülür.
