@@ -691,8 +691,14 @@ def _listing_line(probe: ListingProbe) -> list[str]:
         shown = ", ".join(probe.names[:LISTED_NAMES_SHOWN])
         more = f" … (+{len(probe.names) - LISTED_NAMES_SHOWN})" if len(probe.names) > LISTED_NAMES_SHOWN else ""
         lines.append(f"  {'':<30} {len(probe.names)} dosya: {shown}{more}")
-    elif probe.verdict in ("json-ama-dosya-yok", "json-değil", "sayfa-döndü"):
-        lines.append(f"  {'':<30} gövde başı: {probe.body_head or '(boş)'}")
+        return lines
+    # BAŞARISIZ her listelemede ham gövde ve TAM URL basılır — sınıf ayrımı yapılmadan.
+    # İlk sürüm gövdeyi yalnızca birkaç sınıfta basıyordu ve 404 onlardan değildi; koşu
+    # "102 baytlık bir JSON" deyip İÇİNDEKİNİ söylemedi. Bir HATA GÖVDESİ, başarısızlığın
+    # sebebini taşıyan tek yerdir: onu sınıfa göre gizlemek, "gerçeği raporla" sözünü
+    # tam da sözün gerektiği anda bozar.
+    lines.append(f"  {'':<30} istek: {probe.url}")
+    lines.append(f"  {'':<30} gövde: {probe.body_head or '(boş)'}")
     return lines
 
 

@@ -24,6 +24,8 @@ import pytest
 
 from scripts.probe_funding_archive import (
     MASK,
+    ListingProbe,
+    _listing_line,
     SampleReport,
     classify_listing,
     classify_response,
@@ -226,6 +228,32 @@ def test_pages_everywhere_name_the_real_reason():
     assert classify_schema_match(["sayfa-döndü", "sayfa-döndü"]).startswith("uymuyor")
     assert "sayfa" in classify_schema_match(["sayfa-döndü"])
     assert "giriş" in classify_schema_match(["giriş-gerekli"])
+
+
+def test_failed_listing_always_reports_the_raw_body_and_url():
+    """Hata GÖVDESİ sebebin tek taşıyıcısıdır; sınıfa göre gizlenirse söz bozulur.
+
+    İlk sürüm gövdeyi yalnızca birkaç sınıfta basıyordu ve 404 onlardan değildi —
+    koşu "102 baytlık JSON" deyip içindekini söylemedi.
+    """
+    for status, ctype in ((404, "application/json"), (403, ""), (200, "text/html")):
+        probe = ListingProbe(
+            label="ay=2022-03", url="https://h/x?path=y", status=status,
+            content_type=ctype, size=102, parsed=False, names=(),
+            body_head='{"msg":"nope","code":"51000"}', error="",
+        )
+        text = "\n".join(_listing_line(probe))
+        assert "https://h/x?path=y" in text
+        assert '{"msg":"nope","code":"51000"}' in text
+
+
+def test_successful_listing_does_not_dump_a_body():
+    probe = ListingProbe(
+        label="ay=2022-03", url="https://h/x", status=200, content_type="application/json",
+        size=900, parsed=True, names=("a.zip",), body_head="{...}", error="",
+    )
+    text = "\n".join(_listing_line(probe))
+    assert "a.zip" in text and "gövde:" not in text
 
 
 # --------------------------------------------------------------------------- #
