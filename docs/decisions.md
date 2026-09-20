@@ -3964,6 +3964,20 @@ için kalıcı kayıt oradadır, burada değil.
 
 **Tez hâlâ ENGELLENMİŞ, ama engel artık ÖLÇÜLDÜ.** Bu kaydın başındaki ayrım yerinde
 duruyor: ölçülüp düşmüş bir tez değil, veri yolunda duran bir tez. Değişen tek şey,
-yolun nerede ve neden bittiğinin artık tahmin değil ölçüm olmasıdır. **A-2 (OKX'in
-tarihsel veri portalı) HENÜZ KAPANMADI** — erişilebilir çıktı ama içeriği doğrulanmadı —
-ve o kapanmadan arşiv adımına geçilmez.
+yolun nerede ve neden bittiğinin artık tahmin değil ölçüm olmasıdır.
+
+**A-2 de KAPANDI (2026-09-20): OKX-içi bir yol yok.** Tarihsel veri portalının sunduğu
+olarak anılan kümeler tick bazlı işlem verisi ve OHLCV mumları; fonlama geçmişi
+listelenmiyor ve fonlama için aynı kaynaklar REST API'yi işaret ediyor — probe'un
+tabanına çarptığı uç nokta. Kanıt SINIFI kayda geçiyor: bu bir ikincil kaynak taraması,
+portalın indirme listesinin doğrudan görüntüsü değil; doğrudan bir gözlem bunu tersine
+çevirirse A-2 yeniden açılır. Bugünkü hâliyle iki bağımsız yol (doğrudan ölçüm + kaynak
+taraması) aynı yöne işaret ediyor.
+
+**Bu kaydın 1. maddesindeki "açık iş" artık BAŞLAYABİLİR.** Adım A kapandı, yani
+docs/backtest.md > 6f'nin sabit aday sırası devreye girdi: **Bybit.** Sıra veriye
+bakılarak değil venue tercihiyle seçilmişti ve bağlayıcıdır. **2. madde — damga bazlı
+tutarlılık kanıtı — aynen geçerli ve hâlâ ÖN KOŞUL:** arşiv kurulsa bile C kapısı
+geçilmeden hiçbir yerde kullanılmaz. Tek fark, cross-venue bir adayda o kanıtın literal
+"aynı oran" biçimiyle değil §6f'nin üç koşuluyla (damga hizası, p95 olay kümesi Jaccard,
+işaret uyumu) verilecek olmasıdır — gerekçe ve bedeli §6f > Adım C'de yazılı.

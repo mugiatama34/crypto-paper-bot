@@ -1129,19 +1129,44 @@ karşılamıyor).
 **Alternatif uç nokta adı YOK:** `/api/v5/public/history-funding-rate` HTTP 404.
 İkincil kaynağın verdiği ad gerçek değil; `/api/v5/public/funding-rate-history` tek yol.
 
-**A-2 DÜŞMEDİ, ASKIDA.** Portal (`https://www.okx.com/en-us/historical-data`) HTTP 200
-döndü ve HTML'inde hem `funding` hem `2022` geçiyor — ama bu **hiçbir şey kanıtlamıyor**
-ve probe da öyle raporluyor: 59 KB'lık bir sayfa, veri kümesi listesi büyük olasılıkla
-JS ile yükleniyor, o iki kelime menü/altbilgi metninden gelebilir. Bu bir YOKLUK KANITI
-da değildir.
+**A-2 — probe'un ölçtüğü (2026-09-19):** portal
+(`https://www.okx.com/en-us/historical-data`) HTTP 200 döndü ve HTML'inde hem `funding`
+hem `2022` geçiyor — ama bu **hiçbir şey kanıtlamıyor** ve probe da öyle raporladı:
+59 KB'lık bir sayfa, veri kümesi listesi büyük olasılıkla JS ile yükleniyor, o iki kelime
+menü/altbilgi metninden gelebilir. Bir YOKLUK KANITI da değildi. Probe A-2'yi **açık**
+bıraktı ve elle kapatılmasını istedi.
 
-**Bu yüzden Adım B HENÜZ AÇILMADI ve cross-venue muafiyeti HENÜZ KULLANILMADI.** Sıradaki
-iş A-2'yi elle kapatmaktır: portalın gerçekten bir fonlama veri kümesi sunup sunmadığı,
-sunuyorsa hangi tarihten itibaren. Sunuyorsa yol OKX-içidir, karar 50 LİTERAL hâliyle
-korunur (birebir damga+oran eşitliği) ve C'nin üç koşullu cross-venue biçimi hiç
-gerekmez. Ancak A-2 de kapandıktan SONRA Adım B'nin sabit aday sırası devreye girer.
+**A-2 KAPANDI (2026-09-20): OKX-İÇİ BİR YOL YOK.** Portalın sunduğu olarak anılan veri
+kümeleri **tick bazlı işlem verisi ve OHLCV mum verisi**; fonlama oranı geçmişi
+listelenmiyor ve fonlama için aynı kaynaklar **REST API'yi** işaret ediyor — yani
+probe'un tabanına çarptığı uç noktanın ta kendisi. İki bağımsız yol aynı yere çıkıyor:
+ölçüm uç noktanın ~3 ayda bittiğini gösterdi, kaynak taraması da portalın o boşluğu
+dolduracak bir veri kümesi sunmadığını.
 
-### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi
+⚠ **Kanıt SINIFI yazılı olsun:** bu bir **ikincil kaynak taraması**, portalın indirme
+listesinin doğrudan görüntüsü DEĞİL. Aynı sınıf kanıt bu belgede bir kez çürüdü (yukarıdaki
+"400 kayıt tavanı"). Aradaki fark kaydedilmeye değer: orada tek bir ikincil iddia bir
+ÖLÇÜMLE çelişiyordu, burada ikincil kaynaklar ile doğrudan ölçüm **aynı yöne** işaret
+ediyor. Yine de portalın indirme listesine doğrudan bakan bir gözlem bunu tersine
+çevirebilir; o gözlem gelirse **A-2 yeniden açılır** ve Adım B düşer.
+
+**ADIM A KAPANDI → ADIM B AÇILDI (2026-09-20).** A-1 (a) borsa tabanı, A-2'de OKX-içi yol
+yok. §6f'nin SABİT aday sırası devreye giriyor: **Bybit.** Bunun iki sonucu var ve ikisi de
+şimdiden yazılı:
+
+1. **C kapısı üç koşullu biçimiyle koşacak** (C-a/b/c), karar 50'nin literal "aynı oran"
+   şartıyla değil — çünkü aday başka bir borsadır ve orada o şart sağlanamadığı için değil
+   ANLAMSIZ olduğu için geçersizdir (yukarısı).
+2. **Cross-venue muafiyeti artık teorik değil, KULLANILACAK.** Bedeli iki yere yazılır:
+   §8'in "iddia edilmeyecekler" satırı ZATEN yazılı (bu bölümle aynı commit dizisinde);
+   §5'in kabul edilen sapmalar listesine girecek satır ise **arşiv gerçekten kullanıldığında**
+   eklenir — bugün henüz kullanılmıyor, yalnızca adayı seçilmiş durumda.
+
+**Adım B BAŞLAMADI, yalnızca AÇILDI:** aday belli, arşiv kurulmadı. Arşivin kurulması ayrı
+bir iştir ve kurulduktan sonra bile **C kapısı geçilmeden hiçbir yerde kullanılamaz** —
+ne bir dağılım raporunda, ne bir eşik seçiminde, ne bir backtest'te (karar 50'nin sırası).
+
+### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(AÇILDI: 2026-09-20)*
 
 1. **Bybit** — `/v5/market/funding/history`
 2. **Binance** — `data.binance.vision` aylık `fundingRate` dökümleri (sembol eşleme gerekir:
