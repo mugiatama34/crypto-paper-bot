@@ -1083,7 +1083,90 @@ açardı. Kural, probe koşmadan önce şudur:
 4. Herhangi bir istek hata verirse → **belirsiz** (probe hata koduyla biter; belirsiz bir
    sonuç "(a) çıktı" diye okunamaz).
 
-### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi
+### SONUÇ — Adım A KOŞULDU: (a) borsa tabanı
+
+Koşu: `measure-funding` #35463452072, `main` @ `b542954`, 2026-09-19 19:09 UTC.
+Semboller: `BTC-USDT-SWAP`, `SUI-USDT-SWAP` (biri en derin kitap, öteki dönem A'yı
+KISMEN kapsayan bir listeleme — ikisi farklı şey sınıyor).
+
+| Ölçüm | BTC-USDT-SWAP | SUI-USDT-SWAP |
+|---|---|---|
+| `limit=100` | 100 kayıt | 100 kayıt |
+| `limit=200` | **200 kayıt** | **200 kayıt** |
+| `limit=300` | 283 kayıt | 283 kayıt |
+| `limit=400` | 283 kayıt | 284 kayıt |
+| yürüyüş (`fetch_history`) | 283 kayıt, en eski 2026-06-17 16:00 | 283 kayıt, en eski 2026-06-17 16:00 |
+| `after=<yürüyüş tabanı>` | **0 kayıt** | **0 kayıt** |
+| `after=2024-06-30` | **0 kayıt** | **0 kayıt** |
+| `before=2024-06-30` | 100 kayıt, 2026-06-17 → 2026-07-20 | aynı |
+
+**Mekanik ayrım (`classify_depth_floor`): (a) BORSA TABANI, iki sembolde de.** Üç
+bağımsız kanıt aynı yeri gösteriyor: (1) `limit=300` ile `limit=400` aynı 283 kaydı
+veriyor, yani sayfa boyu bağlamıyor; (2) yürüyüş de tam olarak aynı 283'e ulaşıyor;
+(3) tabanın altını isteyen iki `after` isteği de boş dönüyor. `before=2024-06-30` ise
+pencerenin EN ESKİ ucundan başlıyor (2026-06-17) — 2024'e bakan bir istek bile tabanın
+altına inemiyor. Uç nokta **~3 aylık KAYAN bir pencere** tutuyor ve dönem A'nın (2022-01
+→ 2024-06) tamamı o pencerenin ~26 ay dışında.
+
+**⚠ DÜZELTME — "400 kayıt tavanı" hipotezi YANLIŞTI.** Bu bölüm ilk yazıldığında
+"312 kayıt, bir ikincil kaynağın bildirdiği 400 kayıtlık tavanın ALTINDA durdu; bu (b)
+lehine bir işarettir" diyordu. Probe onu çürüttü: `limit=400` KABUL EDİLİYOR ama ortada
+yalnızca 283 kayıt var — yani 400 bir kayıt tavanı değil, **kısıt ~3 aylık kayan bir
+penceredir.** PR #37'nin 312 kaydı da bir tavanın altında durmuş değildi; o gün pencere
+o kadardı. İki koşunun karşılaştırması bunu doğruluyor: #37'de en eski damga 2026-06-11,
+bugün 2026-06-17 — pencere İLERİ kaydı. SUI'de taban tek koşunun içinde bile bir damga
+oynadı (`limit=300` → 16:00, `limit=400` → 08:00), yani bu bir arşiv değil canlı bir
+penceredir. **Yanlış hipotezin çürütülüşü sonucun kendisi kadar kayda değerdir:** yazılı
+durmazsa ileride biri aynı izi yeniden sürer ve probe boşuna tekrar koşturulur.
+
+**`fetch_history` KAYIP VERMİYOR.** Yürüyüş (`limit=100`, 3 sayfa) tek istekle
+ulaşılabilen azami derinliğin (283) TAMAMINI alıyor. Kodda onarılacak bir şey yok —
+veri orada değil. `limit>100`ün kabul edilmesi yalnızca istek SAYISINI düşürürdü (3 → 2)
+ve derinliği değiştirmez; bu yüzden canlı yolun `--request-limit` varsayılanı
+DEĞİŞTİRİLMEDİ (kural 5'in okuduğu seriye dokunmayan bir kazanç, dokunma riskini
+karşılamıyor).
+
+**Alternatif uç nokta adı YOK:** `/api/v5/public/history-funding-rate` HTTP 404.
+İkincil kaynağın verdiği ad gerçek değil; `/api/v5/public/funding-rate-history` tek yol.
+
+**A-2 — probe'un ölçtüğü (2026-09-19):** portal
+(`https://www.okx.com/en-us/historical-data`) HTTP 200 döndü ve HTML'inde hem `funding`
+hem `2022` geçiyor — ama bu **hiçbir şey kanıtlamıyor** ve probe da öyle raporladı:
+59 KB'lık bir sayfa, veri kümesi listesi büyük olasılıkla JS ile yükleniyor, o iki kelime
+menü/altbilgi metninden gelebilir. Bir YOKLUK KANITI da değildi. Probe A-2'yi **açık**
+bıraktı ve elle kapatılmasını istedi.
+
+**A-2 KAPANDI (2026-09-20): OKX-İÇİ BİR YOL YOK.** Portalın sunduğu olarak anılan veri
+kümeleri **tick bazlı işlem verisi ve OHLCV mum verisi**; fonlama oranı geçmişi
+listelenmiyor ve fonlama için aynı kaynaklar **REST API'yi** işaret ediyor — yani
+probe'un tabanına çarptığı uç noktanın ta kendisi. İki bağımsız yol aynı yere çıkıyor:
+ölçüm uç noktanın ~3 ayda bittiğini gösterdi, kaynak taraması da portalın o boşluğu
+dolduracak bir veri kümesi sunmadığını.
+
+⚠ **Kanıt SINIFI yazılı olsun:** bu bir **ikincil kaynak taraması**, portalın indirme
+listesinin doğrudan görüntüsü DEĞİL. Aynı sınıf kanıt bu belgede bir kez çürüdü (yukarıdaki
+"400 kayıt tavanı"). Aradaki fark kaydedilmeye değer: orada tek bir ikincil iddia bir
+ÖLÇÜMLE çelişiyordu, burada ikincil kaynaklar ile doğrudan ölçüm **aynı yöne** işaret
+ediyor. Yine de portalın indirme listesine doğrudan bakan bir gözlem bunu tersine
+çevirebilir; o gözlem gelirse **A-2 yeniden açılır** ve Adım B düşer.
+
+**ADIM A KAPANDI → ADIM B AÇILDI (2026-09-20).** A-1 (a) borsa tabanı, A-2'de OKX-içi yol
+yok. §6f'nin SABİT aday sırası devreye giriyor: **Bybit.** Bunun iki sonucu var ve ikisi de
+şimdiden yazılı:
+
+1. **C kapısı üç koşullu biçimiyle koşacak** (C-a/b/c), karar 50'nin literal "aynı oran"
+   şartıyla değil — çünkü aday başka bir borsadır ve orada o şart sağlanamadığı için değil
+   ANLAMSIZ olduğu için geçersizdir (yukarısı).
+2. **Cross-venue muafiyeti artık teorik değil, KULLANILACAK.** Bedeli iki yere yazılır:
+   §8'in "iddia edilmeyecekler" satırı ZATEN yazılı (bu bölümle aynı commit dizisinde);
+   §5'in kabul edilen sapmalar listesine girecek satır ise **arşiv gerçekten kullanıldığında**
+   eklenir — bugün henüz kullanılmıyor, yalnızca adayı seçilmiş durumda.
+
+**Adım B BAŞLAMADI, yalnızca AÇILDI:** aday belli, arşiv kurulmadı. Arşivin kurulması ayrı
+bir iştir ve kurulduktan sonra bile **C kapısı geçilmeden hiçbir yerde kullanılamaz** —
+ne bir dağılım raporunda, ne bir eşik seçiminde, ne bir backtest'te (karar 50'nin sırası).
+
+### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(AÇILDI: 2026-09-20)*
 
 1. **Bybit** — `/v5/market/funding/history`
 2. **Binance** — `data.binance.vision` aylık `fundingRate` dökümleri (sembol eşleme gerekir:

@@ -3940,7 +3940,48 @@ yere yazılmıyor) ve bu açık bir iştir. Sığ pencereyi o boşluğa cevap di
 **Ölçüm aracının çıktısı YALNIZCA log'dur** (`.github/workflows/measure-funding.yml`
 artifact bile üretmez), yani koşunun kendisi kalıcı bir iz bırakmaz. Engelin tam
 mekanizması — hangi uç noktanın nereye kadar sayfalayabildiği — bu kayda girmiyor;
-girmesi gereken yer arşiv işinin ön-kaydıdır ve o iş başladığında oraya yazılacak.
+girmesi gereken yer arşiv işinin ön-kaydıdır.
+
+**ÖLÇÜLDÜ (2026-09-19).** O ön-kayıt açıldı (docs/backtest.md > 6f) ve mekanizma
+`scripts/probe_funding_depth.py` ile ölçüldü (`measure-funding` #35463452072). Sonuç
+**(a) borsa tabanı**, iki sembolde de: uç nokta `/api/v5/public/funding-rate-history`
+**~3 aylık KAYAN bir pencere** tutuyor (283 kayıt, en eski 2026-06-17), dönem A'nın
+tamamı o pencerenin ~26 ay dışında ve doğrudan `after=2024-06-30` isteği BOŞ dönüyor.
+Sayılar ve üç bağımsız doğrulama §6f > "SONUÇ — Adım A KOŞULDU"da; log süreli olduğu
+için kalıcı kayıt oradadır, burada değil.
+
+Üç yan bulgu ve biri bir DÜZELTMEdir:
+
+1. **`fetch_history` kayıp vermiyor** — yürüyüş, tek istekle ulaşılabilen azami
+   derinliğin tamamına ulaşıyor. Tavanı büyütmenin yolu kodda değil, bu kaydın 1.
+   maddesindeki arşivdedir; yani yukarıdaki "açık iş" olduğu gibi duruyor.
+2. **`/api/v5/public/history-funding-rate` diye bir uç nokta YOK** (HTTP 404).
+3. ⚠ **"400 kayıt tavanı" hipotezi ÇÜRÜDÜ.** `limit=400` kabul ediliyor ama yalnızca
+   283 kayıt var: kısıt bir sayfa boyu değil, kayan pencerenin kendisi. PR #37'nin
+   "312 kayıt, 400'ün altında durdu, demek ki taban bizde olabilir" okuması yanlıştı.
+   Çürütme buraya YAZILIYOR çünkü yanlış bir izin kaydı, doğru sonucun kaydı kadar
+   iş görür: yazılmazsa aynı iz yeniden sürülür ve probe boşuna tekrar koşturulur.
+
+**Tez hâlâ ENGELLENMİŞ, ama engel artık ÖLÇÜLDÜ.** Bu kaydın başındaki ayrım yerinde
+duruyor: ölçülüp düşmüş bir tez değil, veri yolunda duran bir tez. Değişen tek şey,
+yolun nerede ve neden bittiğinin artık tahmin değil ölçüm olmasıdır.
+
+**A-2 de KAPANDI (2026-09-20): OKX-içi bir yol yok.** Tarihsel veri portalının sunduğu
+olarak anılan kümeler tick bazlı işlem verisi ve OHLCV mumları; fonlama geçmişi
+listelenmiyor ve fonlama için aynı kaynaklar REST API'yi işaret ediyor — probe'un
+tabanına çarptığı uç nokta. Kanıt SINIFI kayda geçiyor: bu bir ikincil kaynak taraması,
+portalın indirme listesinin doğrudan görüntüsü değil; doğrudan bir gözlem bunu tersine
+çevirirse A-2 yeniden açılır. Bugünkü hâliyle iki bağımsız yol (doğrudan ölçüm + kaynak
+taraması) aynı yöne işaret ediyor.
+
+**Bu kaydın 1. maddesindeki "açık iş" artık BAŞLAYABİLİR.** Adım A kapandı, yani
+docs/backtest.md > 6f'nin sabit aday sırası devreye girdi: **Bybit.** Sıra veriye
+bakılarak değil venue tercihiyle seçilmişti ve bağlayıcıdır. **2. madde — damga bazlı
+tutarlılık kanıtı — aynen geçerli ve hâlâ ÖN KOŞUL:** arşiv kurulsa bile C kapısı
+geçilmeden hiçbir yerde kullanılmaz. Tek fark, cross-venue bir adayda o kanıtın literal
+"aynı oran" biçimiyle değil §6f'nin üç koşuluyla (damga hizası, p95 olay kümesi Jaccard,
+işaret uyumu) verilecek olmasıdır — gerekçe ve bedeli §6f > Adım C'de yazılı.
+
 ---
 
 ## 39-DOĞRULAMA: tahmin kıl payı tuttu, ama onarımın DAYANDIĞI MEKANİZMA çürüdü
