@@ -1,24 +1,32 @@
-# Fonlama veri yolunun ELLE tetiklenen, SALT OKUNUR işleri. İKİ adım, İKİ ayrı soru:
+# Fonlama veri yolunun ELLE tetiklenen, SALT OKUNUR işleri. ÜÇ adım, ÜÇ ayrı soru:
 #
 #   A) DERİNLİK PROBE'u (`scripts/probe_funding_depth.py`) — *dönem A'nın fonlama
 #      geçmişine OKX'in kendi yollarından ULAŞILABİLİYOR MU?* Bir dağılım göstermez,
 #      bir eşik önermez; yalnızca meta veri (durum, kayıt sayısı, zaman damgası) basar.
+#      CEVAPLANDI (karar 50): REST yolu ~3 aylık kayan bir pencere veriyor, dönem A
+#      onun ~26 ay dışında. A-2 ise GEÇTİ: portal fonlama geçmişi sunuyor.
+#   A-3) ARŞİV ŞEMA PROBE'u (`scripts/probe_funding_archive.py`) — *portal veri
+#      kümesinin URL ŞEMASI tutuyor mu, dosya biçimi nedir?* Verilen şemayı DOĞRULAR,
+#      sıfırdan aramaz; şemaya UYDURMAZ — çelişki çıkarsa gerçeği raporlar. Kolon
+#      ADLARINI ve damga biçimini basar, bir ORAN basmaz (maskeleme BEYAZ listedir).
 #   B) DAĞILIM ÖLÇÜMÜ (`scripts/measure_funding.py`) — *hangi eşikte kaç olay var?*
 #
-# Sıra tesadüf değil: (B) bugün veri yolunda duruyor (karar 50) ve (A) tam olarak o
-# engelin teşhisidir. Bu yüzden probe VARSAYILAN OLARAK AÇIK, ölçüm VARSAYILAN OLARAK
-# KAPALIDIR — arşiv işi docs/backtest.md > 6f'nin kapılarını geçmeden (B)'yi koşturmak,
-# 60 günlük bir pencereyle 30 aylık bir soruyu cevaplamaya çalışmaktır.
+# Sıra tesadüf değil: (B) bugün hâlâ bekliyor, çünkü arşiv docs/backtest.md > 6f'nin
+# C kapısını (aynı damga → aynı oran) geçmeden hiçbir yerde kullanılamaz. Bu yüzden
+# derinlik probe'u AÇIK, arşiv probe'u ve ölçüm KAPALI varsayılanla gelir: (A-3) bir
+# şema girdisi olmadan koşamaz, (B) ise kapı geçilmeden koşturulursa 30 aylık bir
+# soruya 60 günlük bir pencereyle cevap arar.
 #
 # Neden probe üçüncü bir workflow değil: bu dosya zaten "fonlama verisi, salt okunur,
 # cron yok, contents: read" işidir ve probe tam olarak buradaki ölçümün önünü açmaya
 # çalışıyor. Ayrı bir dosya, bir soruyu onu cevaplayacak araçtan ayırırdı.
 #
 # `backtest-ema.yml`den ayrı kalmasının gerekçesi ise DEĞİŞMEDİ: o ön-kayıtlı bir SIRAYI
-# koşar (dönem A → embargo → dönem B) ve karara giren sayıları üretir. Buradaki iki adım
+# koşar (dönem A → embargo → dönem B) ve karara giren sayıları üretir. Buradaki ÜÇ adım
 # da karar üretmez ve dönem B'ye DOKUNMAZ — ölçüm betiği `--end` dönem A kesimini aşarsa
-# hata koduyla biter, probe ise yalnızca damga sayar, oran OKUMAZ (kaynağında oran alanının
-# adı bile geçmez; test: tests/test_probe_funding_depth.py).
+# hata koduyla biter, iki probe ise yalnızca meta veri okur: derinlik probe'u damga sayar,
+# arşiv probe'u kolon ADI ve damga biçimi raporlar. İkisinin kaynağında da bir oran alanı
+# OKUNMAZ (test: tests/test_probe_funding_depth.py, tests/test_probe_funding_archive.py).
 #
 # Hiçbir adım bir şeye YAZMAZ — defter, metrics, config, state, commit, push: hiçbiri yok.
 # `permissions: contents: read` bunu niyetle değil YETKİYLE garanti eder (aynı gerekçe
@@ -42,6 +50,25 @@ on:
         description: "Probe'un sembolleri (boşlukla ayrılmış)"
         required: false
         default: "BTC-USDT-SWAP SUI-USDT-SWAP"
+      run_archive:
+        description: "A-3) Arşiv şema probe'unu koş (archive_url_template ZORUNLU)"
+        type: boolean
+        required: false
+        default: false
+      archive_url_template:
+        description: "A-3'ün SINANACAK URL şeması; yer tutucu: {symbol} {yyyy} {mm} {yyyymm} {yyyy-mm} {dd} {yyyymmdd} {yyyy-mm-dd}"
+        required: false
+        default: ""
+      archive_granularity:
+        description: "A-3'ün BİLDİRİLEN granülaritesi (probe onu sınar, varsaymaz)"
+        type: choice
+        required: false
+        default: "monthly"
+        options: ["monthly", "daily"]
+      archive_sample_date:
+        description: "A-3'ün örnek dosya tarihi (YYYY-MM)"
+        required: false
+        default: "2022-03"
       run_measure:
         description: "B) Dağılım ölçümünü koş (arşiv kapıları geçilmeden ANLAMSIZDIR)"
         type: boolean
@@ -96,6 +123,32 @@ jobs:
           PROBE_SYMBOLS: ${{ inputs.probe_symbols }}
         run: |
           python scripts/probe_funding_depth.py --symbols $PROBE_SYMBOLS
+
+      # A-3) Arşiv şema probe'u. Şema bir GÖZLEMDİR ve buraya girdi olarak gelir;
+      # betiğin işi onu DOĞRULAMAK, sıfırdan aramak değil. Şemaya uydurma yoktur:
+      # gözlem çelişirse rapor gerçeği yazar (betiğin kendi sözü, modül başlığında).
+      #
+      # Girdiler komut metnine gömülmez, ortam değişkeninden okunur — workflow_dispatch
+      # girdisi kabuk enjeksiyonu için bir kapıdır (probe adımının aynı gerekçesi) ve
+      # bir URL şablonu tam olarak o kapıdan geçecek biçimdedir.
+      #
+      # Şablon boşsa adım HATA ile biter: varsayılan bir şema UYDURMAK, bu betiğin
+      # kapatmak için var olduğu şeydir.
+      - name: Probe funding archive schema (A-3 — read-only, metadata only)
+        if: ${{ inputs.run_archive }}
+        env:
+          ARCHIVE_URL_TEMPLATE: ${{ inputs.archive_url_template }}
+          ARCHIVE_GRANULARITY: ${{ inputs.archive_granularity }}
+          ARCHIVE_SAMPLE_DATE: ${{ inputs.archive_sample_date }}
+        run: |
+          if [ -z "$ARCHIVE_URL_TEMPLATE" ]; then
+            echo "archive_url_template BOŞ — sınanacak bir şema yok, varsayılan uydurulmaz." >&2
+            exit 2
+          fi
+          python scripts/probe_funding_archive.py \
+            --url-template "$ARCHIVE_URL_TEMPLATE" \
+            --granularity "$ARCHIVE_GRANULARITY" \
+            --sample-date "$ARCHIVE_SAMPLE_DATE"
 
       # B) Dönem A sınırları betikte KAPIDIR (scripts/backtest_ema.py'den ithal edilir);
       # workflow girdisi olarak açılmazlar. Açılsalardı dönem B'ye bakmak bir yazım

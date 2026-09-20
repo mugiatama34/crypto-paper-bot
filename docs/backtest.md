@@ -1207,6 +1207,20 @@ bakan biri için bir pencere kısaltması her zaman aynı görünür.
 ne uzatılır ne kısaltılır.** İki aylık eksik uç, dönem A'nın TEZİ hakkında bir eksiklik
 olarak raporlanır; "aslında 2022-01'den başlıyordu" diye düzeltilemez (§7.1).
 
+⚠ **BU KESİM `scripts/backtest_ema.py::PERIOD_A_START`i DEĞİŞTİRMEZ ve o sabit
+2022-01-01 KALIR.** İki şey karıştırılırsa ölçüm bozulur:
+
+| | nedir | kim okur |
+|---|---|---|
+| `PERIOD_A_START` = 2022-01-01 | **`ema_trend`in backtest PENCERESİ** — ön-kayıtlı (§6d), karara giren koşu (#35391881083) onunla koştu ve `diagnose_ema_exits.py`nin determinizm kapısı o sayılara bağlı | `backtest_ema.py`, `diagnose_ema_exits.py`, `measure_funding.py` |
+| arşiv kapsamı = 2022-03 | **veri kaynağının nereden BAŞLADIĞI** — portalın veri kümesinin kendi ucu | fonlama tezi, bu bölümün n bütçesi |
+
+Biri bir modelin ölçüldüğü pencere, öteki bir veri kaynağının kapsamı. Kapsam pencereyi
+**DARALTIR** (fonlama tezi 28 ay görür) ama pencerenin **TANIMINI değiştirmez** — sabiti
+oynatmak, zaten koşmuş ve karara girmiş bir backtest'in penceresini geriye dönük
+kaydırmak olurdu (§7.3'ün tam olarak yasakladığı şey) ve determinizm kapısını kırardı.
+Fonlama tezi kendi kapsamını kendi raporunda söyler; sabitin işi o değildir.
+
 ### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(DÜŞTÜ: 2026-09-20, A-2 geçti)*
 
 ⚠ **Bu adım HİÇ KULLANILMADI.** Aşağıdaki sıra duruyor çünkü değeri sonucunda değil
