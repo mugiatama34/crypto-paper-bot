@@ -4052,3 +4052,125 @@ bağımlılık demektir ve onun da düşmesi mümkündür — fark, düştüğü
 
 **Ön-kayıt sicili (§6c) DEĞİŞMEDİ:** bu bir kural hipotezi değil, bir altyapı ölçümüdür ve
 bir modelin performansı hakkında iddia taşımaz (karar 40'ın ölçütü).
+
+## 51. Kayma varsayımı ÖLÇÜLDÜ: sembole bağlı kayma GEREKMİYOR, ama varsayım MUHAFAZAKÂR
+
+Karar 35/36'nın bıraktığı tek açık kaldıraç maliyetti ve maliyetin ölçülmemiş tek parçası
+kaymaydı (`slippage_base = 0.0005`; komisyon borsanın ilan ettiği sayıdır, ölçülecek bir
+şey yok). `scripts/measure_slippage.py` bunun için yazılmıştı; bu karar onun ilk
+sonucudur — ve sonucun kendisinden önce **ölçümün üç kez başarısız olduğunu** kaydeder,
+çünkü üçü de projenin kendi kurallarının araç tarafındaki karşılığıdır.
+
+### Ölçümün önündeki üç arıza
+
+| # | Koşu | İstemci / borsa | Sonuç |
+|---|---|---|---|
+| 1 | 35494493976 | urllib / bybit | 13 sembol × 20 örnek = **260 örneğin tamamı 403**, iş **YEŞİL** bitti |
+| 2 | 35495055558 | urllib / okx | aynı, 403 |
+| 3 | 35496446561 | requests / bybit | yine 403 |
+| 4 | 35496515602 | requests / okx | **okudu** |
+
+**(a) Araç, hiç ölçüm yapamadığı hâlde başarı bildiriyordu.** Koşu #1'in tablosu baştan
+sona `—` bastı ve `exit 0` döndü: "ölçüldü, varsayım tuttu" ile "hiç ölçülemedi" aynı
+rozeti taşıdı. `main` artık `samples` toplamı 0 iken hata koduyla biter (koşu #3 bunu
+canlıda doğruladı). Kısmi ölçüm düşürmez — eksik satır zaten `—` ile durur ve `samples`
+kolonu kaç örnek toplandığını satır satır söyler. Bu, kural 14/15'in "atlama sessiz
+olamaz" şartının araç tarafındaki karşılığıdır.
+
+**(b) Dosya İKİNCİ bir HTTP istemcisi taşıyordu.** `core/data.py` istekleri
+`requests.Session` ile atar ve aynı runner'lardan aynı borsayı saatlerdir okur; bu dosya
+çıplak `urllib` kullanıyordu ve OKX onun `Python-urllib/3.11` User-Agent'ını 403 ile
+kesiyor. Koşu #2 (boş) ↔ koşu #4 (dolu) farkı tam olarak budur.
+
+⚠ Bu teşhis önce **iki borsa için birden** iddia edildi ve **Bybit'te yanlıştı:** koşu #3
+`requests` ile aynı 403'ü verdi. Oradaki engel istemci değil **runner'ın IP'sidir** — yani
+doğru borsa (`fee_rate`in ödendiği yer) bu tetikleyiciden okunamıyor. Varsayılan `bybit`
+KALDI: varsayılanı `okx` yapmak, aracı sessizce daha zayıf bir soruyu cevaplar hâle
+getirirdi.
+
+**(c) Kitabın BİRİMİ yanlış okunuyordu.** Koşu #4 ilk gerçek tabloyu üretti ve tablo kendi
+hatasını gösterdi: BTC ve ETH emri en iyi seviyede dolmuş gibi göründü (kat 0.00), ADA
+3.70'e fırladı, DOGE ve PENGU'nun kitabı "derinlik yetmedi" sayıldı. Üçü aynı hatanın üç
+yüzüdür — OKX perpetual kitabında miktar birimi **kontrattır** ve çarpan sembolden sembole
+değişir (BTC 0.01, ADA 10, DOGE 1000). `price × size` demek, impact'i **tam olarak
+ölçülmek istenen eksende** bozuyordu. `ctVal` artık borsadan okunur; bulunamayan sembolde
+betik hata koduyla biter. (Yarı spread kolonu etkilenmedi: yalnızca fiyat kullanır.)
+
+### Ölçüm (koşu 35496667190, OKX kitabı, 2026-09-20 07:22–07:32 UTC, sembol başına 20 örnek)
+
+Emir boyu DEFTERDEN gelir (sembol başına medyan notional). `varsayım%` = 2 ×
+`slippage_base` = **0.1000**.
+
+| sembol | notional | yarıSpread% | turMaliyet% | kat |
+|---|---|---|---|---|
+| BTC | 3000 | 0.0001 | 0.0001 | 0.00 |
+| ETH | 2999 | 0.0002 | 0.0004 | 0.00 |
+| XRP | 2966 | 0.0036 | 0.0072 | 0.07 |
+| SOL | 2902 | 0.0046 | 0.0092 | 0.09 |
+| DOGE | 3950 | 0.0059 | 0.0117 | 0.12 |
+| BNB | 3711 | 0.0067 | 0.0133 | 0.13 |
+| LINK | 3865 | 0.0042 | 0.0284 | 0.28 |
+| SUI | 4340 | 0.0061 | 0.0280 | 0.28 |
+| ADA | 3114 | 0.0227 | 0.0454 | 0.45 |
+| AVAX | 3470 | 0.0051 | 0.0469 | 0.47 |
+| PENGU | 2381 | 0.0065 | 0.0478 | 0.48 |
+| NEAR | 3145 | 0.0145 | 0.0560 | 0.56 |
+| ETHFI | 3192 | 0.0106 | 0.1141 | **1.14** |
+
+**Kat dağılımı: min 0.00 · medyan 0.28 · maks 1.14.**
+
+### İki sonuç
+
+**1. Sembole bağlı kayma GEREKMİYOR ve uygulanmadı.** Aracın kendi ölçütü buydu: yayılım
+darsa tek bir düz sayı savunulabilir kalır. Yayılım dar değil (0.00–1.14) ama **yönü tek
+taraflı**: 13 sembolün 12'sinde ölçülen tur maliyeti varsayımın ALTINDA. Tek bir düz
+sayının yanlış olduğu yer yok; yalnızca fazla ödettiği yerler var. 13 ayrı varsayım
+koymak, hiçbirinin yanlış yönde olmadığı bir tabloda defteri tarihli olarak bölmek olurdu
+(karar 25'te `fee_rate`in böldüğü gibi) ve geriye dönük uygulanamazdı (kural 1).
+
+**2. İnce kitap korkusu PENGU'da ÇÜRÜDÜ, ETHFI'de kıl payı doğrulandı.** Bu ölçümün
+sorduğu asıl soru karar 44'ün sembol kırılımındandı: PENGU ve ETHFI'nin `cost_per_r`
+ayrışması "varsayım orada tutmuyor" mu demekti? Cevap **hayır** — PENGU 0.48×, yani
+varsayımın yarısından az. ETHFI 1.14× ile tek aşan satır ve o da kıl payı. Demek ki karar
+44'teki ayrışma kaymanın PAYINDAN değil, `cost_per_r = maliyet% / stop%` özdeşliğinin
+**PAYDASINDAN** geliyor. Bu, o satırların yeniden okunmasını gerektirir.
+
+### Ne yapılmadı ve neden — ama bu bir KALDIRAÇTIR
+
+Medyanda ölçülen tur kayması **0.028%**, varsayım **0.100%**: aradaki **0.072 puan**
+modelin fazladan ödettiği friksiyonun ÜST SINIRIDIR (üst sınır, çünkü short stop dolumları
+ayrı ve DAHA BÜYÜK bir varsayımdan geçer — `slippage_short_stop` 0.0015 — ve bu araç onu
+ÖLÇMEZ: boşlukta dolan bir stop, duran bir kitaptaki piyasa emriyle aynı olay değildir).
+
+Karşılaştırma için karar 36: `scalp_patient`in başabaş açığı brüt %0.263 ↔ maliyet %0.284,
+yani **0.021 puan.** Üst sınır bu açığın ~3.4 katıdır. Yani *"maliyet% ↓"* kaldıracı,
+karar 35'in tablosunda "HENÜZ DENENMEDİ" yazan satır, ölçülen büyüklükte gerçekten
+işaret değiştirebilecek tek kaldıraçtır.
+
+**Buna rağmen `config.yaml` DEĞİŞMEDİ** ve bu karar onu değiştirme yetkisi vermez:
+
+- **Yanlış borsa.** Ölçüm OKX'in kitabıdır; maliyeti ödeyen taraf Bybit'tir ve kitabı bu
+  tetikleyiciden okunamıyor (arıza b). Mutlak seviyeyi Bybit için söylemek, `fee_rate`in
+  kapattığı ayrımı kayma tarafında yeniden açmak olurdu.
+- **Tek pencere.** 10 dakika, tek seans. Aracın kendi gerekçesi "spread seansa göre
+  değişir" der ve 20 örnek mikro gürültüyü söndürür, SEANS etkisini değil.
+- **Bu bir KURAL değişikliğidir** (karar 42'nin üç katmanı) ve kurallar geriye dönük
+  uygulanamaz: defteri tarihli olarak böler.
+
+**Meşru yol zaten tanımlı ve açık:** `scripts/backtest.py`nin `--slippage-base` bayrağı
+bir KOŞUL ayarıdır (docs/backtest.md > 5g), her kullanımı `manifest.json > deviations`a
+yazılır ve maliyet override'ı ayrıca bağırır. Yani sorunun cevabı — *"ölçülen kaymayla
+koşsaydı `scalp_patient`in işareti değişir miydi?"* — canlı deftere hiç dokunmadan,
+harness'ta bir DUYARLILIK koşusuyla alınır. Kural 13'ün dolum varsayımı için yazdığı
+şartın aynısı: *"duyarlılık ancak harness'ta koşulur."*
+
+### Açık kalanlar
+
+- **`slippage_short_stop` (0.0015) hâlâ ölçülmemiştir** ve bu araç onu ölçemez. Boşlukta
+  dolan stop, ayrı bir veri tipi (mum içi boşluk dağılımı) ister.
+- **Bybit kitabı bu tetikleyiciden okunamıyor.** Adım B'nin (karar 50) Bybit yolu açılırsa
+  aynı soru doğru borsada sorulabilir.
+
+**Ön-kayıt sicili (§6c) DEĞİŞMEDİ:** bu bir kural hipotezi değil, bir varsayımın
+kalibrasyon ölçümüdür ve hiçbir modelin performansı hakkında iddia taşımaz (karar 40'ın
+ölçütü).
