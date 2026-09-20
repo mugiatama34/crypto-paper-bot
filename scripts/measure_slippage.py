@@ -175,13 +175,15 @@ class BookError(RuntimeError):
     """Kitap çekilemedi."""
 
 
-# İstek `requests` ile atılır, `urllib` ile DEĞİL — ve bu bir stil tercihi değil, ÖLÇÜLMÜŞ
-# bir arızanın onarımıdır (karar 51). Çıplak `urllib` `Python-urllib/3.11` User-Agent'ı
-# gönderir ve iki borsanın önündeki CDN de onu 403 ile keser: koşu #1 (bybit) ve #2 (okx)
-# 13 sembolün 260 örneğinin TAMAMINI böyle kaybetti. Projenin canlı veri yolu
-# (`core/data.py::_default_session`) zaten `requests.Session` kullanıyor ve aynı
-# runner'lardan aynı borsayı saatlerdir okuyor — yani engel borsada değil, bu dosyanın
-# İKİNCİ bir HTTP istemcisi kullanmasındaydı.
+# İstek `requests` ile atılır, `urllib` ile DEĞİL — bir stil tercihi değil, ÖLÇÜLMÜŞ bir
+# arızanın onarımı (karar 51). Çıplak `urllib` `Python-urllib/3.11` User-Agent'ı gönderir
+# ve OKX bunu 403 ile keser; koşu #2 (urllib/okx) 13 sembolün 260 örneğinin TAMAMINI
+# kaybetti, koşu #4 (requests/okx) aynı evreni sorunsuz okudu. Projenin canlı veri yolu
+# (`core/data.py::_default_session`) zaten `requests.Session` kullanıyor — bu dosyanın
+# İKİNCİ bir HTTP istemcisi taşıması baştan gereksizdi.
+#
+# BYBIT'İ AÇMAZ ve bu ölçüldü: koşu #3 (requests/bybit) aynı 403'ü verdi. Oradaki engel
+# istemci değil runner'ın IP'sidir, yani `--venue bybit` bu tetikleyiciden koşmaz.
 _SESSION = requests.Session()
 
 
@@ -205,7 +207,35 @@ def fetch_book_bybit(symbol: str, *, timeout: float) -> Book:
     return _book_from_levels(result.get("b") or [], result.get("a") or [], symbol=symbol)
 
 
-def fetch_book_okx(symbol: str, *, rest_base: str, timeout: float) -> Book:
+def fetch_contract_sizes_okx(*, rest_base: str, timeout: float) -> dict[str, float]:
+    """OKX perpetual'larının `ctVal`i: bir KONTRAT kaç birim taban varlık eder.
+
+    Kitap miktarları OKX'te COIN DEĞİL KONTRAT cinsindendir ve çarpan sembolden sembole
+    değişir (BTC 0.01, ADA 10, DOGE 1000, ...). Çarpmadan `price × size` demek, impact'i
+    tam olarak ölçülmek istenen eksende — sembolden sembole — bozar: koşu #4'te BTC ve
+    ETH emri en iyi seviyede dolmuş GİBİ göründü (kat 0.00), ADA 3.70'e fırladı, DOGE ve
+    PENGU'nun kitabı 'yetmedi' sayıldı. Üçü de aynı hatanın üç yüzüdür (karar 51).
+
+    Bybit'e uygulanmaz: lineer perpetual kitabı zaten taban varlık cinsindendir.
+    """
+    payload = _get_json(
+        f"{rest_base.rstrip('/')}/api/v5/public/instruments",
+        {"instType": "SWAP"},
+        timeout=timeout,
+    )
+    if str(payload.get("code", "0")) != "0":
+        raise BookError(f"okx enstrüman listesi: {payload.get('msg')}")
+    sizes: dict[str, float] = {}
+    for row in payload.get("data") or []:
+        inst_id, ct_val = row.get("instId"), row.get("ctVal")
+        if inst_id and ct_val:
+            sizes[str(inst_id)] = float(ct_val)
+    return sizes
+
+
+def fetch_book_okx(
+    symbol: str, *, rest_base: str, timeout: float, contract_size: float
+) -> Book:
     """OKX kitabı — kıyas için. Maliyeti ödeyen taraf burası DEĞİLDİR (bkz. modül başlığı)."""
     payload = _get_json(
         f"{rest_base.rstrip('/')}/api/v5/market/books",
@@ -217,13 +247,18 @@ def fetch_book_okx(symbol: str, *, rest_base: str, timeout: float) -> Book:
     data = payload.get("data") or []
     if not data:
         raise BookError(f"okx {symbol}: boş kitap")
-    return _book_from_levels(data[0].get("bids") or [], data[0].get("asks") or [], symbol=symbol)
+    return _book_from_levels(
+        data[0].get("bids") or [], data[0].get("asks") or [],
+        symbol=symbol, size_multiplier=contract_size,
+    )
 
 
-def _book_from_levels(bids: Sequence[Any], asks: Sequence[Any], *, symbol: str) -> Book:
+def _book_from_levels(
+    bids: Sequence[Any], asks: Sequence[Any], *, symbol: str, size_multiplier: float = 1.0
+) -> Book:
     def parse(levels: Sequence[Any]) -> tuple[tuple[float, float], ...]:
         return tuple(
-            (float(level[0]), float(level[1]))
+            (float(level[0]), float(level[1]) * size_multiplier)
             for level in levels
             if len(level) >= 2 and float(level[1]) > 0.0
         )
@@ -396,8 +431,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             return fetch_book_bybit(symbol, timeout=timeout)
     else:
         rest_base = str(get_setting(config, "exchange.rest_base"))
+        contract_sizes = fetch_contract_sizes_okx(rest_base=rest_base, timeout=timeout)
+        missing_ct = [symbol for symbol in symbols if symbol not in contract_sizes]
+        if missing_ct:
+            # Varsayılan 1.0'a düşmek, impact'i o sembolde sessizce çarpanı kadar
+            # yanlış ölçmek olurdu — ölçümün sorduğu şey tam olarak sembolden sembole
+            # farktır (kural: sessiz varsayılan yok).
+            logger.error("ctVal bulunamayan sembol(ler): %s", ", ".join(missing_ct))
+            return 2
+
         def fetch(symbol: str) -> Book:
-            return fetch_book_okx(symbol, rest_base=rest_base, timeout=timeout)
+            return fetch_book_okx(
+                symbol, rest_base=rest_base, timeout=timeout,
+                contract_size=contract_sizes[symbol],
+            )
 
     results = measure(
         symbols, notionals=notionals, fetch=fetch,

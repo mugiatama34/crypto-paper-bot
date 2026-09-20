@@ -13,6 +13,7 @@ import pytest
 
 from scripts.measure_slippage import (
     Book,
+    _book_from_levels,
     format_results,
     half_spread_pct,
     impact_pct,
@@ -138,6 +139,21 @@ def test_measure_survives_a_symbol_whose_book_fails() -> None:
     )
     assert results[0].samples == 0
     assert results[0].half_spread_pct is None
+
+
+def test_okx_contract_size_scales_the_book_depth() -> None:
+    """OKX kitabı KONTRAT sayar, coin değil: `ctVal` ile çarpılmazsa derinlik yanlış olur.
+
+    Çarpan sembolden sembole değişir (BTC 0.01, ADA 10, DOGE 1000), yani hatayı yapmak
+    impact'i tam olarak ölçülmek istenen eksende bozar — koşu #4'te BTC'nin kat'ı 0.00,
+    ADA'nınki 3.70 çıktı ve DOGE'nin kitabı 'yetmedi' sayıldı (karar 51).
+    """
+    levels = [["100.0", "2"]]
+    scaled = _book_from_levels(levels, [["101.0", "2"]], symbol="X", size_multiplier=10.0)
+    assert scaled.bids[0] == (100.0, 20.0)
+
+    raw = _book_from_levels(levels, [["101.0", "2"]], symbol="X")
+    assert raw.bids[0] == (100.0, 2.0)
 
 
 def test_a_venue_that_blocks_every_symbol_leaves_nothing_measured() -> None:
