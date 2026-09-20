@@ -164,7 +164,7 @@ def build_message(payload: Mapping[str, Any]) -> str:
     lines.append("")
     lines.extend(_benchmark_block(payload, competitors))
 
-    link = _dashboard_url()
+    link = dashboard_url()
     if link:
         lines.append("")
         lines.append(f'<a href="{_esc(link)}">Dashboard</a>')
@@ -400,8 +400,14 @@ def _ranked(competitors: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [dict(row) for _, row in measured]
 
 
-def _dashboard_url() -> str:
-    """GitHub Pages adresi, `GITHUB_REPOSITORY` varsa. Yoksa mesaja link eklenmez."""
+def dashboard_url() -> str:
+    """GitHub Pages adresi, `GITHUB_REPOSITORY` varsa. Yoksa mesaja link eklenmez.
+
+    PUBLIC, çünkü `scripts/telegram_signals.py` de aynı adresi kurar (kendi mesajında
+    "Pozisyonlar & işlemler" sayfasına link verir). İki kopya, bir gün depo taşındığında
+    ya da Pages yolu değiştiğinde bir mesajın doğru, ötekinin kırık link taşıması
+    demekti — ikisi ayrı script ama adres tek bir şeydir.
+    """
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     if "/" not in repository:
         return ""

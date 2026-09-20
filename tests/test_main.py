@@ -355,6 +355,49 @@ def test_sizing_failure_reports_a_different_code(
     assert "duplicate_position" not in report["rejections"]
 
 
+def test_rejected_orders_are_reported_with_their_identity(sandbox: Sandbox) -> None:
+    """Ret SAYISI "kaç tane"yi, ret KAYDI "hangileri"ni söyler; yükte ikisi de olmalı.
+
+    Sayı tek başına, bildirilen bir sinyalin başına ne geldiğini cevaplayamaz: sinyalin
+    adı `emitted`da, ölümü ise bir sayaçtaydı ve ikisini bağlayan hiçbir kayıt yoktu.
+    """
+    main_module.main([])
+    sandbox.advance_to(31)
+    main_module.main([])  # dolum burada
+
+    sandbox.advance_to(32)
+    main_module.main([])
+
+    report = {item["model"]: item for item in sandbox.metrics()["round"]["models"]}["buyhold"]
+    rejected = {row["symbol"]: row for row in report["rejected"]}
+    # Sayı ile kayıt aynı olayı anlatır ve tutarlıdır.
+    assert len(report["rejected"]) == sum(report["rejections"].values())
+    assert set(rejected) == set(SYMBOLS[:2])
+
+    row = rejected[SYMBOLS[0]]
+    assert row["code"] == "duplicate_position"
+    assert row["direction"] == "long"
+    # Gerekçe METNİ core/portfolio.py'den gelir, burada yeniden yazılmaz: ikinci bir
+    # Türkçe etiket tablosu, kural değiştiğinde sessizce eskiyen bir kopya olurdu.
+    assert row["detail"]
+    # İki damga da gerekir ve AYRIDIR: `bar` sinyalin barı (bildirim onu saklar, eşleşme
+    # oradan kurulur), `at` dolumun denendiği bar (okunabilirlik).
+    assert row["bar"] < row["at"]
+
+
+def test_rejected_list_covers_only_signals_not_exits(sandbox: Sandbox) -> None:
+    """Liste yalnızca AÇILIŞ emirlerini taşır: çıkış emrinin düşmesi bir sinyal kaybı
+    değildir ve ikisini aynı listede toplamak "hangi sinyal açılamadı"yı bulanıklaştırırdı.
+    Kaybolan bilgi yok — çıkış kodları `rejections` SAYISINDA durmaya devam eder."""
+    main_module.main([])
+    sandbox.advance_to(31)
+    main_module.main([])
+
+    for item in sandbox.metrics()["round"]["models"]:
+        for row in item["rejected"]:
+            assert row["code"] not in {"exit_already_closed"}
+
+
 def test_queued_first_round_has_no_rejections(sandbox: Sandbox) -> None:
     """İlk tur da signals=2/filled=0'dır ama sebebi ret değil, kural 13'ün kuyruğudur."""
     main_module.main([])

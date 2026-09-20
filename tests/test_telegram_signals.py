@@ -56,10 +56,41 @@ def _signal(
     return payload
 
 
-def _payload(signals: Sequence[dict[str, Any]] = (), **overrides: Any) -> dict[str, Any]:
-    by_model: dict[str, list[dict[str, Any]]] = {}
+def _reject(
+    *,
+    model: str = "scalp_bandit",
+    symbol: str = "BTC-USDT-SWAP",
+    direction: str = "long",
+    bar: datetime = AS_OF,
+    code: str = "max_short_positions",
+    detail: str = "short kotası dolu (max_short_positions=3)",
+    **overrides: Any,
+) -> dict[str, Any]:
+    """`core/engine.py::RejectedOrder`ın yükteki hâli (bkz. tests/test_main.py)."""
+    payload: dict[str, Any] = {
+        "model": model,
+        "symbol": symbol,
+        "direction": direction,
+        "bar": bar.isoformat(),
+        "at": (bar + BAR).isoformat(),
+        "code": code,
+        "detail": detail,
+        "reason": "RSI(2) dönüşü | arm=rsi2_reversal",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _payload(
+    signals: Sequence[dict[str, Any]] = (),
+    rejected: Sequence[dict[str, Any]] = (),
+    **overrides: Any,
+) -> dict[str, Any]:
+    by_model: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for signal in signals:
-        by_model.setdefault(str(signal["model"]), []).append(signal)
+        by_model.setdefault(str(signal["model"]), {}).setdefault("emitted", []).append(signal)
+    for item in rejected:
+        by_model.setdefault(str(item["model"]), {}).setdefault("rejected", []).append(item)
     payload: dict[str, Any] = {
         "layer": "scalp",
         "as_of": AS_OF.isoformat(),
@@ -69,8 +100,13 @@ def _payload(signals: Sequence[dict[str, Any]] = (), **overrides: Any) -> dict[s
         "round": {
             "as_of": AS_OF.isoformat(),
             "models": [
-                {"model": model, "signals": len(emitted), "emitted": emitted}
-                for model, emitted in by_model.items()
+                {
+                    "model": model,
+                    "signals": len(sections.get("emitted", [])),
+                    "emitted": sections.get("emitted", []),
+                    "rejected": sections.get("rejected", []),
+                }
+                for model, sections in by_model.items()
             ],
         },
     }
@@ -158,12 +194,219 @@ def test_message_carries_the_mandatory_fill_warning(tmp_path: Path, telegram: _F
     )
 
 
+def test_message_warns_that_the_order_may_never_fill(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """İKİNCİ zorunlu uyarı: sinyal bir emir DEĞİL, bir emir denemesidir.
+
+    Gerçekleşmiş bir yanlış okumanın kapısı (bkz. `_warning` docstring'i): bildirilen bir
+    sinyalin emri dolum barında `max_short_positions` ile reddedildi, deftere hiçbir satır
+    girmedi ve okuyucu sitede işlemi arayıp bulamadı. Fiyat uyarısı tek başına bunu
+    SÖYLEMEZ — o girişin fiyatının farklı olacağını söyler, hiç olmayabileceğini değil.
+    """
+    _run(tmp_path, _payload([_signal()]))
+
+    (message,) = _messages(telegram)
+    assert "Bu bir sinyaldir, açılmış bir işlem DEĞİL" in message
+    # Ret sebeplerinin üçü de adıyla geçer: okuyucu "neden olmadı"yı mesajdan tahmin
+    # edebilmeli, sebep kodlarını koddan okumak zorunda kalmamalı.
+    assert "kotası dolu" in message and "nakit yetmezse" in message
+    # İki uyarı AYRI satırlardadır: tek satıra birleştirmek ikisini tek bir çekince gibi
+    # okutur ve dolum FİYATI ile dolumun KENDİSİ aynı şeymiş gibi görünürdü.
+    assert "Senin girişin farklı bir fiyattan olacak." in message
+
+
+def test_warning_links_to_the_positions_page_when_the_repository_is_known(
+    tmp_path: Path, telegram: _FakeRequests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Link, mesajı cevabın durduğu yere bağlar: ret sebebi tur raporundadır, defterde
+    değil — "işlemi bulamadım" sorusu tam olarak orada cevaplanır."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    _run(tmp_path, _payload([_signal()]))
+
+    (message,) = _messages(telegram)
+    assert "https://owner.github.io/repo/positions.html" in message
+
+
+def test_warning_has_no_link_when_the_repository_is_unknown(
+    tmp_path: Path, telegram: _FakeRequests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Uydurma bir adres kırık bir linkten daha kötüdür: `GITHUB_REPOSITORY` yoksa mesaj
+    sayfayı ADIYLA söyler, olmayan bir URL üretmez."""
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    _run(tmp_path, _payload([_signal()]))
+
+    (message,) = _messages(telegram)
+    assert "github.io" not in message
+    # `&amp;`, süs değil: mesaj HTML parse_mode ile gider ve çıplak bir `&` Telegram'a
+    # 400 döndürtür — link olmayan yol da gönderilebilir olmak zorunda.
+    assert "Pozisyonlar &amp; işlemler sayfası" in message
+    assert "Pozisyonlar & işlemler" not in message
+
+
 def test_a_round_without_signals_sends_nothing(tmp_path: Path, telegram: _FakeRequests) -> None:
     """Kapanış, funding ve bar ilerlemesi mesaj üretmez — tetikleyen tek olay yeni sinyaldir."""
     code, _ = _run(tmp_path, _payload([]))
 
     assert code == 0
     assert telegram.calls == []
+
+
+# --------------------------------------------------------------------------- #
+# Ret takibi: "bildirdiğim sinyale ne oldu"
+# --------------------------------------------------------------------------- #
+def test_rejected_signal_we_notified_gets_a_followup(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Bildirilen bir sinyalin emri düştüyse okuyucu bunu ÖĞRENMELİ.
+
+    Sinyal ile dolum ayrı barlardadır (kural 13): mesaj gittiğinde emir henüz
+    denenmemiştir. Takip bildirimi olmadan "sinyal geldi ama işlem yok" hâli, okuyucu
+    için sessiz bir boşluktur — ve tam olarak bu, sessizliği arıza sandıran şeydi.
+    """
+    prior = AS_OF - BAR
+    code, _ = _run(
+        tmp_path,
+        _payload(rejected=[_reject(bar=prior)]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+    )
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "SİNYAL AÇILAMADI" in message
+    assert "BTC-USDT-SWAP" in message
+    # Sebep METNİ core/portfolio.py'den gelir; script koddan Türkçe'ye çeviren ikinci
+    # bir tablo TUTMAZ (iki kopya, kota adı değiştiğinde sessizce eskir).
+    assert "short kotası dolu (max_short_positions=3)" in message
+    assert "defterde hiçbir satır girmedi" in message or "AÇMADI" in message
+
+
+def test_rejection_of_a_signal_we_never_notified_is_silent(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Ret, sistemin OLAĞAN işleyişidir: çıpa her turda iki `duplicate_position` alır
+    (kural 15) ve kotası dolu bir model her barda ret yazar. Hepsini bildirmek, susturma
+    penceresinin engellemek için var olduğu gürültünün kendisi olurdu."""
+    code, _ = _run(tmp_path, _payload(rejected=[_reject(code="duplicate_position")]))
+
+    assert code == 0
+    assert telegram.calls == []
+
+
+def test_followup_matches_on_the_signal_bar_not_just_the_symbol(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Eşleşme sinyalin BARINDAN kurulur: aynı (model, sembol, yön) için BAŞKA bir barın
+    reddi, bildirdiğimiz sinyalin sonucu değildir ve onun yerine geçemez."""
+    code, _ = _run(
+        tmp_path,
+        _payload(rejected=[_reject(bar=AS_OF - 9 * BAR)]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": (AS_OF - BAR).isoformat()},
+    )
+
+    assert code == 0
+    assert telegram.calls == []
+
+
+def test_followup_is_not_repeated(tmp_path: Path, telegram: _FakeRequests) -> None:
+    """Aynı rapor iki kez okunursa (elle koşu, --force) ikinci mesaj yeni bilgi taşımaz."""
+    prior = AS_OF - BAR
+    state_path = tmp_path / "state" / "telegram_scalp.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({
+            "sent": {"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+            "rejected": {"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+        }),
+        encoding="utf-8",
+    )
+    metrics = tmp_path / "metrics_scalp.json"
+    metrics.write_text(json.dumps(_payload(rejected=[_reject(bar=prior)])), encoding="utf-8")
+
+    telegram_signals.main(["--metrics", str(metrics), "--state", str(state_path)])
+
+    assert telegram.calls == []
+
+
+def test_followup_state_is_separate_from_the_mute_window(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """İki defter AYRI tutulur: bir RET bildirimi, sinyalin susturma penceresini
+    ilerletmemeli — ilerletseydi aynı kurulumun bir sonraki gerçek sinyali susardı."""
+    prior = AS_OF - BAR
+    _, state_path = _run(
+        tmp_path,
+        _payload(rejected=[_reject(bar=prior)]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+    )
+
+    saved = json.loads(state_path.read_text(encoding="utf-8"))
+    key = "scalp_bandit|BTC-USDT-SWAP|long"
+    assert saved["rejected"][key] == prior.isoformat()
+    assert saved["sent"][key] == prior.isoformat()   # ret bildirimi pencereyi OYNATMADI
+
+
+def test_a_round_with_only_rejections_still_reports(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Sinyalsiz ama retli bir tur sessiz kalmamalı: eski akış "yeni sinyal yok" deyip
+    erken dönüyordu ve bildirdiğimiz sinyalin sonucu hiç söylenmezdi."""
+    prior = AS_OF - BAR
+    code, _ = _run(
+        tmp_path,
+        _payload(rejected=[_reject(bar=prior)]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+    )
+
+    assert code == 0
+    assert len(telegram.calls) == 1
+
+
+def test_many_rejections_collapse_into_one_batch(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    prior = AS_OF - BAR
+    rejects = [_reject(symbol=f"SYM{index}-USDT-SWAP", bar=prior) for index in range(6)]
+    state = {f"scalp_bandit|SYM{index}-USDT-SWAP|long": prior.isoformat() for index in range(6)}
+    _run(tmp_path, _payload(rejected=rejects), state=state)
+
+    (message,) = _messages(telegram)
+    assert "6 sinyal" in message
+    for index in range(6):
+        assert f"SYM{index}-USDT-SWAP" in message
+
+
+def test_signal_and_followup_are_separate_messages(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Sinyal mesajı ile ret mesajı BİRLEŞTİRİLMEZ: ikisi farklı olaylardır ve sinyal
+    mesajının 'bu emir dolmayabilir' uyarısı, dolmadığı bilinen bir emirde anlamsızdır."""
+    prior = AS_OF - BAR
+    _run(
+        tmp_path,
+        _payload([_signal(symbol="ETH-USDT-SWAP")], rejected=[_reject(bar=prior)]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+    )
+
+    signal_msg, reject_msg = _messages(telegram)
+    assert "SCALP SİNYALİ" in signal_msg and "ETH-USDT-SWAP" in signal_msg
+    assert "SİNYAL AÇILAMADI" in reject_msg and "BTC-USDT-SWAP" in reject_msg
+    assert "dolmayabilir" not in reject_msg
+
+
+def test_payload_without_the_rejected_section_is_handled(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Bu bölümden ÖNCE üretilmiş bir yük: alan yoktur ve yokluğu bir hata değildir."""
+    payload = _payload([_signal()])
+    for model in payload["round"]["models"]:
+        model.pop("rejected", None)
+
+    code, _ = _run(tmp_path, payload)
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "SCALP SİNYALİ" in message
 
 
 # --------------------------------------------------------------------------- #
@@ -290,8 +533,10 @@ def test_more_than_five_signals_collapse_into_one_batch(tmp_path: Path, telegram
     assert "6 yeni sinyal" in message
     for index in range(6):
         assert f"SYM{index}-USDT-SWAP" in message
-    # Toplu mesajda da uyarı satırı durur.
+    # Toplu mesajda da İKİ uyarı satırı birden durur: altı sinyali tek mesaja indirgemek
+    # çekinceleri değil yalnızca gerekçe metinlerini kısaltır.
     assert "Senin girişin farklı bir fiyattan olacak." in message
+    assert "Bu bir sinyaldir, açılmış bir işlem DEĞİL" in message
 
 
 def test_batch_message_stays_within_the_telegram_limit(tmp_path: Path, telegram: _FakeRequests) -> None:

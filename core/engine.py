@@ -214,6 +214,47 @@ class EmittedSignal:
 
 
 @dataclass(frozen=True, kw_only=True)
+class RejectedOrder:
+    """Doldurulamamış bir AÇILIŞ emrinin salt okunur denetim kaydı — `EmittedSignal`in eşi.
+
+    `ModelReport.rejections` bir SAYIDIR ("short kotası dolu: 1") ve hangi sinyalin
+    düştüğünü söylemez. Sayı, "beklenen tekrar mı arıza mı" sorusuna yeter (kural 15'in
+    sorduğu tek soru buydu) ama "Telegram'da bildirilen DOGE short'una ne oldu"ya
+    yetmez: sinyalin adı `emitted`da, ölümü ise yalnızca bir sayaçta duruyordu ve
+    ikisini bağlayan hiçbir kayıt yoktu.
+
+    `bar` emri üreten sinyalin barı (`PendingOrder.created_at` = `EmittedSignal.bar`),
+    `at` dolumun DENENDİĞİ bar (= `EmittedSignal.fills_at`). İkisi ayrı durur ve ikisi de
+    gerekir: eşleşme `bar` üzerinden kurulur — bildirim o damgayı saklar —, okunabilirlik
+    ise `at`ten gelir ("03:30'da açılamadı").
+
+    `detail` sebebin İNSAN OKUNUR hâlidir ve `core/portfolio.py`nin ÜRETTİĞİ metindir
+    (`OpenResult.rejected`), burada yeniden yazılmaz: kuralın kendisi orada duruyor ve
+    ikinci bir Türkçe etiket tablosu, kota adı değiştiğinde sessizce eskiyen bir kopya
+    olurdu. `code` ise makine tarafıdır (`RejectReason`) ve gruplama onunla yapılır.
+
+    **YALNIZCA açılış emirleri kaydedilir.** Çıkış emirlerinin düşmesi (`missing_bar`,
+    `exit_already_closed`) bir SİNYALİN kaybı değildir ve listeye girseydi "hangi sinyal
+    açılamadı" sorusunun cevabı iki ayrı olay türünü aynı listede toplardı; o iki kod
+    `rejections` SAYISINDA durmaya devam eder, yani hiçbir bilgi kaybolmaz.
+
+    Kayıt ölçüme GİRMEZ (kural 15): hiçbir dolumu, fiyatı ya da sırayı değiştirmez.
+    """
+
+    model: str
+    symbol: str
+    direction: Direction
+    bar: pd.Timestamp
+    at: pd.Timestamp
+    code: str
+    detail: str = ""
+    # Sinyalin kendi gerekçesi (`arm=` etiketi dâhil): bildirim mesajı kolu buradan okur
+    # ve `emitted` kaydıyla aynı metni gösterir — iki yüzeyde iki ayrı kol adı, aynı
+    # sinyali iki farklı kurulum gibi gösterirdi.
+    reason: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
 class ModelReport:
     model: str
     bars_processed: int = 0
@@ -244,6 +285,11 @@ class ModelReport:
     # Turda kuyruğa GİREN sinyallerin dökümü (bkz. EmittedSignal). `signals` sayısıyla
     # aynı kümedir: band elemesinden (kural 14) geçmiş, bekleyen emre dönüşmüş sinyaller.
     emitted: tuple[EmittedSignal, ...] = ()
+    # Turda DOLDURULAMAYAN açılış emirlerinin dökümü (bkz. RejectedOrder). `rejections`
+    # ile aynı olayları anlatır ama kimliğiyle: o "kaç tane", bu "hangileri". İkisi de
+    # durur, çünkü `rejections` çıkış emirlerinin düşmesini de sayar ve bu liste yalnızca
+    # açılışları taşır — sayıyı listeden geri üretmek o iki kodu kaybetmek olurdu.
+    rejected: tuple[RejectedOrder, ...] = ()
     # Modelin kendi tarama sayımı (Strategy.take_survey): eleme sebebi -> sembol sayısı,
     # turun İŞLENEN TÜM barları boyunca toplanmış. `rejections` "emir neden dolmadı"yı,
     # bu ise "sinyal neden hiç üretilmedi"yi sayar; ikisi turun iki ayrı aşamasıdır ve
@@ -304,6 +350,7 @@ class _ModelRun:
     # okumak demekti; turda kapanan işlemler zaten `trades` üzerinden eklenir.
     history_rows: list[dict[str, str]] | None = None
     rejections: dict[str, int] = field(default_factory=dict)
+    rejected: list[RejectedOrder] = field(default_factory=list)
     emitted: list[EmittedSignal] = field(default_factory=list)
     # Bar bazında toplanır: `signals_per_bar` açıkken bir tur birden çok bar işler ve her
     # barın kendi taraması vardır. Son barınkini saklamak, telafi edilen barlarda kolun
@@ -317,6 +364,28 @@ class _ModelRun:
 
     def reject(self, code: str) -> None:
         self.rejections[code] = self.rejections.get(code, 0) + 1
+
+    def reject_open(
+        self, order: PendingOrder, *, code: str, detail: str, ts: pd.Timestamp
+    ) -> None:
+        """Bir AÇILIŞ emrinin düşüşü: hem sayılır hem kimliğiyle kaydedilir.
+
+        Sayı ile kaydın ikisi de tutulur (bkz. RejectedOrder): `rejections` çıkış
+        emirlerinin düşüşünü de sayar, bu liste yalnızca sinyalleri taşır.
+        """
+        self.reject(code)
+        self.rejected.append(
+            RejectedOrder(
+                model=self.strategy.name,
+                symbol=order.symbol,
+                direction=order.direction,
+                bar=order.created_at,
+                at=ts,
+                code=code,
+                detail=detail,
+                reason=order.reason,
+            )
+        )
 
     def note_unchecked(self, symbol: str) -> None:
         """Barı olmadığı için bu barda kontrol edilemeyen bir açık pozisyon."""
@@ -411,6 +480,7 @@ class Engine:
                     missing_bars=run.missing_bars,
                     unchecked_position_bars=run.unchecked_position_bars,
                     rejections=dict(sorted(run.rejections.items())),
+                    rejected=tuple(run.rejected),
                     emitted=tuple(run.emitted),
                     survey=dict(sorted(run.survey.items())),
                     stop_exits=run.stop_exits,
@@ -667,11 +737,18 @@ class Engine:
             if bar is None:
                 # Emir bir sonraki barda doldurulamadıysa iptal edilir: kural 13'ün
                 # "bir sonraki barın açılışı" tanımı gecikmeli bir dolumu kabul etmez.
+                detail = f"{ts} barında sembol verisi yok, emir iptal"
                 logger.warning(
                     "%s %s %s emri iptal [missing_bar]: %s barında sembol verisi yok",
                     model, order.symbol, order.kind, ts,
                 )
-                run.reject("missing_bar")
+                # Açılış emri bir SİNYALDİR ve kimliğiyle kaydedilir; çıkış emrinin
+                # düşmesi bir sinyal kaybı değildir ve yalnızca sayılır (bkz.
+                # RejectedOrder docstring'i).
+                if order.kind == "open":
+                    run.reject_open(order, code="missing_bar", detail=detail, ts=ts)
+                else:
+                    run.reject("missing_bar")
                 continue
 
             if order.kind == "exit":
@@ -722,7 +799,7 @@ class Engine:
             )
             if result.position is None:
                 code = result.reason_code or "unknown"
-                run.reject(code)
+                run.reject_open(order, code=code, detail=result.rejected, ts=ts)
                 # Boyutlandırma arızası (sıfır boyut, yetersiz nakit) bakılması gereken tek
                 # gruptur; beklenen bir tekrar değildir. Seviye farkı, logu okuyanın ikisini
                 # gözle ayırmasını sağlar — sayılabilir hâli tur raporundaki `rejections`.
