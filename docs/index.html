@@ -240,6 +240,29 @@
   <!-- ======================= SEVİYE 1 — GENEL BAKIŞ ======================= -->
   <main id="level-overview">
 
+    <!-- Bölüm menüsü. Sayfa uzun ve iki seviyeli; bir bölüme gitmenin tek yolu
+         kaydırmak olduğunda "Korelasyon nerede" sorusunun cevabı okumakla bulunur.
+
+         Linkler GERÇEK anchor'dır (orta tık, yeni sekme, ekran okuyucu listesi çalışır)
+         ama tık JS'te yakalanır ve adres çubuğuna HİÇ yazılmaz: bu sayfada hash bir
+         YÖNLENDİRME sözleşmesidir (`#model=<ad>`, bkz. route()). Bir bölüm bağlantısının
+         oraya yazması geri tuşunu bölüm geçmişiyle doldurur ve model detayından dönüşü
+         bozardı — menü bir gezinme kolaylığıdır, ikinci bir yönlendirici değil.
+
+         Menü `#level-overview` İÇİNDEDİR: model detayına geçildiğinde main gizlenir ve
+         menü onunla birlikte kaybolur. Detayın kendi gezinmesi "← tüm modeller"dir. -->
+    <nav class="secnav" id="secnav" aria-label="Bölümler">
+      <a href="#sec-summary" data-sec="sec-summary">Özet</a>
+      <a href="#sec-ls" data-sec="sec-ls">Long vs Short</a>
+      <a href="#sec-models" data-sec="sec-models">Modeller</a>
+      <a href="#sec-equity" data-sec="sec-equity">Özsermaye</a>
+      <a href="#sec-corr" data-sec="sec-corr">Korelasyon</a>
+      <!-- Scalp katmanının yükü ayrı bir fetch'tir ve hiç olmayabilir (katman koşmadı,
+           fork). Bölüm gizliyken menü girdisi de gizlidir: var olmayan bir bölüme
+           götüren bir link, menüyü bir vaatten ibaret bırakırdı. -->
+      <a href="#sec-scalp" data-sec="sec-scalp" id="secnav-scalp" hidden>Scalp</a>
+    </nav>
+
     <section id="sec-summary">
       <h2>Özet</h2>
       <div class="sum-grid" id="summary"></div>
@@ -247,12 +270,18 @@
 
     <section id="sec-ls">
       <h2>Long vs Short</h2>
-      <p class="note">
-        Projenin ana sorusu. Tüm <b>yarışmacı</b> modellerin işlemleri tek havuzda toplanır
-        (referans çıpası havuzda yoktur: stop'suz işlemin R'si yoktur). Havuz işlem başına
-        oy verir — model başına ortalama R'lerin ortalaması, 2 işlemlik bir modeli 200
-        işlemlik bir modelle eşitlerdi.
-      </p>
+      <p class="note">Projenin ana sorusu: <b>short işlemler long işlemlerden daha mı başarılı?</b></p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Tüm <b>yarışmacı</b> modellerin işlemleri tek havuzda toplanır
+            (referans çıpası havuzda yoktur: stop'suz işlemin R'si yoktur). Havuz işlem
+            başına oy verir — model başına ortalama R'lerin ortalaması, 2 işlemlik bir
+            modeli 200 işlemlik bir modelle eşitlerdi.
+          </p>
+        </div>
+      </details>
       <div class="ls-grid" id="ls"></div>
       <div class="verdict card" id="verdict"></div>
     </section>
@@ -261,17 +290,30 @@
       <h2>Modeller</h2>
       <p class="note">
         Her kartın ana sayısı aynı sorunun cevabı: <b>10.000 $ ile başlayan hesap şimdi
-        nerede</b>, ve yüzde olarak ne kadar. Bu sayı her model için AYNI birimdir — ort. R
-        öyle değildir, çünkü çıpanın ve dış sistem kopyasının 1R'si yarışmacılarınkiyle aynı
-        şeyi ölçmez (kural 15/15b). Tek bakışta kıyaslanabilen satır bu yüzden budur.
-        <b>Ort. R birincil metrik olmayı sürdürür</b> ve sıralamayı (kartın sağ üstündeki
-        rütbe) o belirler; işlem sayısı, MDD, özsermaye kıvrımı ve kabul rozetleriyle birlikte
-        <b>detaylar</b> altında durur. Rozetler: <b>Ö</b> örneklem, <b>E</b> edge — model
-        ancak ikisi de yeşilken doğrulanmış sayılır; <b>⚠ B</b> kapı değildir, yalnızca bu
-        satırı başkasıyla kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate
-        alınması gerektiğini söyler. <b>REFERANS</b> çıpası (kural 15) sıralamaya hiç girmez
-        ve ort. R hücresinde <code>—</code> gösterir: stop'u olmayanın 1R'si yoktur.
+        nerede</b>, ve yüzde olarak ne kadar. Sıralamayı ise <b>ort. R</b> belirler.
       </p>
+      <details class="howto">
+        <summary>Nasıl okunur? — birim, sıralama ve rozetler</summary>
+        <div class="howto-body">
+          <p class="note">
+            Hesap düzeyi getirisi her model için AYNI birimdir — ort. R öyle değildir, çünkü
+            çıpanın ve dış sistem kopyasının 1R'si yarışmacılarınkiyle aynı şeyi ölçmez
+            (kural 15/15b). Tek bakışta kıyaslanabilen satır bu yüzden budur.
+          </p>
+          <p class="note">
+            <b>Ort. R birincil metrik olmayı sürdürür</b> ve sıralamayı (kartın sağ üstündeki
+            rütbe) o belirler; işlem sayısı, MDD, özsermaye kıvrımı ve kabul rozetleriyle
+            birlikte kartın <b>detaylar</b> katlanır bölümünde durur.
+          </p>
+          <p class="note">
+            Rozetler: <b>Ö</b> örneklem, <b>E</b> edge — model ancak ikisi de yeşilken
+            doğrulanmış sayılır. <b>⚠ B</b> kapı değildir, yalnızca bu satırı başkasıyla
+            kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate alınması
+            gerektiğini söyler. <b>REFERANS</b> çıpası (kural 15) sıralamaya hiç girmez ve
+            ort. R hücresinde <code>—</code> gösterir: stop'u olmayanın 1R'si yoktur.
+          </p>
+        </div>
+      </details>
       <div id="groups"></div>
     </section>
 
@@ -289,13 +331,18 @@
 
     <section id="sec-corr">
       <h2>Getiri korelasyonu</h2>
-      <p class="note">
-        Bar getirilerinin Pearson korelasyonu, çift bazında örtüşen barlar üzerinden. Yüksek
-        korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki kopyasıdır.
-        Örtüşme yetersizse hücre boş kalır (0 "ilişkisiz" demek olurdu). Dar ekranda matris
-        yerine en güçlü çiftler listelenir: 11 kolonluk bir matris telefonda ancak yatay
-        kaydırmayla sığardı.
-      </p>
+      <p class="note">Bar getirilerinin Pearson korelasyonu, çift bazında örtüşen barlar üzerinden.</p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Yüksek korelasyonla yarışan iki model bağımsız iki ölçüm değil, aynı ölçümün iki
+            kopyasıdır. Örtüşme yetersizse hücre boş kalır (0 "ilişkisiz" demek olurdu). Dar
+            ekranda matris yerine en güçlü çiftler listelenir: 11 kolonluk bir matris
+            telefonda ancak yatay kaydırmayla sığardı.
+          </p>
+        </div>
+      </details>
       <div class="card">
         <div class="wide" id="corr-matrix"></div>
         <div class="narrow" id="corr-pairs"></div>
@@ -308,52 +355,87 @@
 
     <section id="sec-scalp" hidden>
       <h2>Scalp katmanı — 15 dakika</h2>
-      <p class="note">
-        <b>Bu tablo yukarıdakiyle AYNI YARIŞ DEĞİLDİR.</b> Scalp modelleri 15 dakikalık barda,
-        sabit 14 sembollük bir evrende ve kendi defterlerinde koşar
-        (<code>data/metrics_scalp.json</code>); 4 saatlik modellerle aynı tabloda sıralamak,
-        zaman dilimi farkını bir performans farkı gibi gösterirdi. Katman İÇİ kıyas ise tam
-        olarak tasarımın amacıdır ve üç eksende okunur:
-      </p>
-      <p class="note">
-        <b>Adaptasyonun katkısı</b> — <b>scalp_bandit</b> kollar arasındaki tahsisi öğrenir,
-        <b>scalp_fixed</b> aynı kolları eşit ağırlıkla oynar.<br>
-        <b>Çıkış yönetiminin katkısı</b> — <b>scalp_managed</b>, scalp_fixed'in ikizidir:
-        aynı kol, aynı tur, aynı çekiliş; tek farkı üç aşamalı çıkış yönetimi (1R'da stop
-        girişe, 1.5R'da yarısı kapanır ve stop oraya çekilir, sonra kazancın en çok yarısını
-        geri veren takip).<br>
-        <b>Ev kurallarının katkısı</b> — <b>vwap_managed</b>, kopya modelin sinyalini ev
-        kurallarıyla (risk boyutlandırma, %1 stop tabanı, 1.5R kapısı) oynar.
-      </p>
+      <!-- Bu uyarı KATLANMAZ: bölümün tamamının nasıl okunacağını belirleyen şey o.
+           Panele koymak, kapalı bir panelin arkasında "bu ayrı bir yarış" demek olurdu. -->
+      <p class="note"><b>Bu tablo yukarıdakiyle AYNI YARIŞ DEĞİLDİR</b> — ayrı bar, ayrı evren, ayrı defter.</p>
+      <details class="howto">
+        <summary>Nasıl okunur? — katman farkı ve ölçüm eksenleri</summary>
+        <div class="howto-body">
+          <p class="note">
+            Scalp modelleri 15 dakikalık barda, sabit 14 sembollük bir evrende ve kendi
+            defterlerinde koşar (<code>data/metrics_scalp.json</code>); 4 saatlik modellerle
+            aynı tabloda sıralamak, zaman dilimi farkını bir performans farkı gibi
+            gösterirdi. Katman İÇİ kıyas ise tam olarak tasarımın amacıdır ve üç eksende
+            okunur:
+          </p>
+          <p class="note">
+            <b>Adaptasyonun katkısı</b> — <b>scalp_bandit</b> kollar arasındaki tahsisi
+            öğrenir, <b>scalp_fixed</b> aynı kolları eşit ağırlıkla oynar.<br>
+            <b>Çıkış yönetiminin katkısı</b> — <b>scalp_managed</b>, scalp_fixed'in ikizidir:
+            aynı kol, aynı tur, aynı çekiliş; tek farkı üç aşamalı çıkış yönetimi (1R'da stop
+            girişe, 1.5R'da yarısı kapanır ve stop oraya çekilir, sonra kazancın en çok
+            yarısını geri veren takip).<br>
+            <b>Ev kurallarının katkısı</b> — <b>vwap_managed</b>, kopya modelin sinyalini ev
+            kurallarıyla (risk boyutlandırma, %1 stop tabanı, 1.5R kapısı) oynar.
+          </p>
+        </div>
+      </details>
       <p class="note" id="scalp-stamp"></p>
       <div class="card wide" id="scalp-models"></div>
       <div class="rows narrow" id="scalp-models-cards"></div>
       <div id="scalp-replicas"></div>
+
+      <!-- Örneklem kapısı dipnotu BİR KEZ, kırılımların hepsinden önce. Eskiden her
+           kırılım kartının altına ayrı ayrı basılıyordu: üç kırılım × model sayısı kadar
+           aynı cümle. Tekrar eden bir uyarı okunmaz hâle gelir ve tam da okunması
+           gereken şeydi — `Ö` işareti üç kırılımda da aynı anlamı taşır. -->
+      <p class="note" id="breakdown-gate-note" hidden></p>
+
       <h3 class="sub">Kol kırılımı</h3>
-      <p class="note">
-        Hangi kolun kaç işlem yaptığı ve ne ürettiği. Tahsisi öğrenen modelde kol dağılımının
-        eşitten sapması beklenir; kontrol modelinde sapmaması. Taban tahsis (%5) hiçbir kolun
-        sıfıra düşmemesini garanti eder — susturulan kol bir daha ölçülemez.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Hangi kolun kaç işlem yaptığı ve ne ürettiği. Tahsisi öğrenen modelde kol
+            dağılımının eşitten sapması beklenir; kontrol modelinde sapmaması. Taban tahsis
+            (%5) hiçbir kolun sıfıra düşmemesini garanti eder — susturulan kol bir daha
+            ölçülemez.
+          </p>
+        </div>
+      </details>
       <div id="scalp-arms"></div>
+
       <h3 class="sub">Sembol kırılımı</h3>
-      <p class="note">
-        Kayma varsayımı (<code>slippage_base</code>) evrendeki her sembol için tek bir sayıdır.
-        İnce kitapta işlem gören bir sembolün <code>cost_per_r</code> kolonu diğerlerinden
-        belirgin biçimde ayrışıyorsa, varsayım orada tutmuyor demektir ve o satırın sonucu
-        yorumlanmadan önce bu bilinmelidir.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Kayma varsayımı (<code>slippage_base</code>) evrendeki her sembol için tek bir
+            sayıdır. İnce kitapta işlem gören bir sembolün <code>cost_per_r</code> kolonu
+            diğerlerinden belirgin biçimde ayrışıyorsa, varsayım orada tutmuyor demektir ve o
+            satırın sonucu yorumlanmadan önce bu bilinmelidir.
+          </p>
+        </div>
+      </details>
       <div id="scalp-symbols"></div>
+
       <h3 class="sub">Çıkış kuralı kırılımı</h3>
-      <p class="note">
-        Üç aşamalı çıkış yönetiminin katkısı (modeller 13/14/15), üç aşamanın kaç kez
-        tetiklendiği bilinmeden okunamaz. <code>stop</code> = ilk stop aldı (hiç hareket
-        etmedi), <code>stop:breakeven</code> / <code>stop:partial</code> /
-        <code>stop:giveback</code> = o kuralın çektiği stop aldı,
-        <code>signal:time_stop</code> = zaman stop'u, <code>tp</code> = hedef.
-        <b>Birimi DİLİMDİR, pozisyon değil:</b> kısmi çıkışlı bir pozisyon iki gruba birden
-        düşer, yani buradaki işlem sayıları model tablosundan büyük olabilir.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur? — kod sözlüğü ve birim</summary>
+        <div class="howto-body">
+          <p class="note">
+            Üç aşamalı çıkış yönetiminin katkısı (modeller 13/14/15), üç aşamanın kaç kez
+            tetiklendiği bilinmeden okunamaz. <code>stop</code> = ilk stop aldı (hiç hareket
+            etmedi), <code>stop:breakeven</code> / <code>stop:partial</code> /
+            <code>stop:giveback</code> = o kuralın çektiği stop aldı,
+            <code>signal:time_stop</code> = zaman stop'u, <code>tp</code> = hedef.
+          </p>
+          <p class="note">
+            <b>Birimi DİLİMDİR, pozisyon değil:</b> kısmi çıkışlı bir pozisyon iki gruba
+            birden düşer, yani buradaki işlem sayıları model tablosundan büyük olabilir.
+          </p>
+        </div>
+      </details>
       <div id="scalp-exit-rules"></div>
     </section>
 
@@ -376,21 +458,31 @@
 
     <section id="sec-detail-ls">
       <h2>Bu modelin long / short kırılımı</h2>
-      <p class="note">
-        Yön bazlı Sharpe tek bakiyeyi bölerek değil, o yöndeki işlemlerin <b>R cinsinden</b>
-        dizisinden gelir; hesap düzeyi Sharpe ayrı durur ve iki yönün toplamı değildir.
-        Maliyet ölçeği kolonları (stop mesafesi, R başına maliyet) yön bazında burada okunur.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur?</summary>
+        <div class="howto-body">
+          <p class="note">
+            Yön bazlı Sharpe tek bakiyeyi bölerek değil, o yöndeki işlemlerin <b>R cinsinden</b>
+            dizisinden gelir; hesap düzeyi Sharpe ayrı durur ve iki yönün toplamı değildir.
+            Maliyet ölçeği kolonları (stop mesafesi, R başına maliyet) yön bazında burada okunur.
+          </p>
+        </div>
+      </details>
       <div class="ls-grid" id="detail-ls"></div>
     </section>
 
     <section id="sec-detail-open">
       <h2>Açık pozisyonlar</h2>
-      <p class="note">
-        Gerçekleşmemiş K/Z <b>çıkış maliyeti hariçtir</b>: pozisyon kapanmadı, çıkış fiyatı ve
-        komisyonu bilinmiyor (brüt fiyat farkı − giriş komisyonu + funding). Güncel fiyat
-        turun <code>as_of</code> barının kapanışıdır.
-      </p>
+      <details class="howto">
+        <summary>Nasıl okunur? — gerçekleşmemiş K/Z</summary>
+        <div class="howto-body">
+          <p class="note">
+            Gerçekleşmemiş K/Z <b>çıkış maliyeti hariçtir</b>: pozisyon kapanmadı, çıkış fiyatı
+            ve komisyonu bilinmiyor (brüt fiyat farkı − giriş komisyonu + funding). Güncel fiyat
+            turun <code>as_of</code> barının kapanışıdır.
+          </p>
+        </div>
+      </details>
       <div id="detail-open"></div>
     </section>
 
@@ -502,6 +594,7 @@ function render(d) {
   renderGroups(d);
   renderEquity(d);
   renderCorrelation(d);
+  setupSectionNav();
   loadScalp();
 
   window.addEventListener("hashchange", route);
@@ -513,6 +606,89 @@ function render(d) {
   route();
 }
 
+
+/* ------------------------------------------------------------------ *
+ * BÖLÜM MENÜSÜ (yapışkan)
+ *
+ * İki iş yapar: bir bölüme götürür ve okuyucunun HANGİ bölümde olduğunu
+ * söyler. İkincisi olmadan yapışkan bir menü yalnızca yer kaplar.
+ *
+ * Tık hash'e YAZMAZ (preventDefault): bu sayfada hash bir yönlendirme
+ * sözleşmesidir (`#model=<ad>`) ve bir bölüm bağlantısının oraya yazması geri
+ * tuşunu bölüm geçmişiyle doldururdu — üstelik route() her hashchange'de
+ * seviye değiştirdiği için bölüm linki sayfayı baştan çizerdi. href yine de
+ * gerçek bir anchor'dır: orta tık, "yeni sekmede aç" ve ekran okuyucunun
+ * bağlantı listesi çalışmaya devam eder.
+ * ------------------------------------------------------------------ */
+const REDUCED_MOTION = window.matchMedia
+  ? window.matchMedia("(prefers-reduced-motion: reduce)")
+  : { matches: false };
+
+function setupSectionNav() {
+  const nav = el("secnav");
+  if (!nav) return;
+  const links = Array.from(nav.querySelectorAll("a[data-sec]"));
+  // Menünün kendi yüksekliği CSS'te tanımlı (--secnav-h) ve `scroll-margin-top`
+  // oradan beslenir; aktiflik ölçütü de aynı sayıyı kullanmalı, yoksa bir bölüm
+  // "aktif" olurken başlığı hâlâ menünün altında kalırdı.
+  const navHeight = () => nav.getBoundingClientRect().height || 53;
+
+  function visibleSection(link) {
+    if (link.hidden) return null;
+    const sec = el(link.dataset.sec);
+    return sec && !sec.hidden ? sec : null;
+  }
+
+  function markActive(active) {
+    for (const link of links) {
+      if (link === active) link.setAttribute("aria-current", "true");
+      else link.removeAttribute("aria-current");
+    }
+  }
+
+  function spy() {
+    // Detay seviyesindeyken menü de gizlidir; gizli öğenin kutusu 0'dır ve
+    // ölçmek ilk bölümü yanlışlıkla aktif gösterirdi.
+    if (el("level-overview").hidden) return;
+    const probe = navHeight() + 24;
+    let active = null;
+    let first = null;
+    for (const link of links) {
+      const sec = visibleSection(link);
+      if (!sec) continue;
+      if (!first) first = link;
+      if (sec.getBoundingClientRect().top <= probe) active = link;
+    }
+    markActive(active || first);
+  }
+
+  nav.addEventListener("click", (ev) => {
+    const link = ev.target.closest ? ev.target.closest("a[data-sec]") : null;
+    // Değiştirici tuşlar tarayıcıya bırakılır: "yeni sekmede aç" bir gezinme
+    // değil, okuyucunun kendi kararıdır.
+    if (!link || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button) return;
+    const sec = visibleSection(link);
+    if (!sec) return;
+    ev.preventDefault();
+    sec.scrollIntoView({ behavior: REDUCED_MOTION.matches ? "auto" : "smooth", block: "start" });
+    markActive(link);
+  });
+
+  let queued = false;
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; spy(); });
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  sectionNavRefresh = spy;
+  spy();
+}
+
+/* Scalp bölümü ikinci bir fetch'ten sonra görünür olabilir; menü o anda kendini
+   yeniden ölçmeli, yoksa yeni bölüm menüde var olup aktiflik hesabında yok olurdu. */
+let sectionNavRefresh = () => {};
 
 /* ------------------------------------------------------------------ *
  * SCALP KATMANI (15 dakika) — AYRI yük, AYRI bölüm
@@ -552,6 +728,8 @@ function scalpRow(model) {
 
 function renderScalp(d) {
   el("sec-scalp").hidden = false;
+  el("secnav-scalp").hidden = false;
+  sectionNavRefresh();
   /* Kopya modeller (is_replica) yarışmacı DEĞİLDİR: sabit teminat ve kendi kaldıraçlarıyla
      koşarlar, yani 1R'leri yarışmacılarınkiyle aynı birim değildir. Aynı tabloya koymak
      okuyucuya olmayan bir kıyas sunardı — bu yüzden ayrı bir bölümde dururlar. Ölçüt
@@ -595,14 +773,17 @@ function renderScalp(d) {
 
   el("scalp-replicas").innerHTML = replicas.length
     ? '<h3 class="sub">Referans (dış sistem)</h3>' +
-      '<p class="note">Bu satır <b>yarışmacı değildir</b> ve ortalama R sıralamasına girmez: ' +
-      "sabit teminat ve kendi kaldıracıyla koşar, yani 1R'si yukarıdaki modellerinkiyle " +
-      "aynı birim değildir. Maliyet ölçeği kolonları (<code>cost/R</code>, " +
-      "<code>stop %</code>) bu yüzden boştur — R başına maliyet ancak ortak risk birimiyle " +
-      'koşan satırlar arasında bir kıyas ölçüsüdür. Taşıdığı bilgi sıralamada değil, ' +
-      '<b>hesap düzeyi getirisinde</b>: dış sistem bizim maliyet, kayma, funding ve ' +
-      'likidasyon varsayımlarımız altında ne yapardı? Likidasyon modellemesi korunur — ' +
-      'kapatmak kopyayı haksız biçimde iyi gösterirdi.</p>' +
+      /* Uyarının KENDİSİ görünür kalır (satır yarışmacı değil); gerekçesi katlanır. */
+      '<p class="note">Bu satır <b>yarışmacı değildir</b> ve ortalama R sıralamasına girmez.</p>' +
+      '<details class="howto"><summary>Nasıl okunur? — neden ayrı, neden boş kolonlar</summary>' +
+      '<div class="howto-body"><p class="note">' +
+      "Kopya sabit teminat ve kendi kaldıracıyla koşar, yani 1R'si yukarıdaki " +
+      'modellerinkiyle aynı birim değildir. Maliyet ölçeği kolonları (<code>cost/R</code>, ' +
+      '<code>stop %</code>) bu yüzden boştur — R başına maliyet ancak ortak risk birimiyle ' +
+      'koşan satırlar arasında bir kıyas ölçüsüdür.</p><p class="note">' +
+      'Taşıdığı bilgi sıralamada değil, <b>hesap düzeyi getirisinde</b>: dış sistem bizim ' +
+      'maliyet, kayma, funding ve likidasyon varsayımlarımız altında ne yapardı? Likidasyon ' +
+      'modellemesi korunur — kapatmak kopyayı haksız biçimde iyi gösterirdi.</p></div></details>' +
       '<div class="card wide"><table class="grid"><thead><tr>' +
       SCALP_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
       replicas.map((m) => '<tr class="data">' + scalpRow(m).map(([cls, v]) =>
@@ -613,6 +794,16 @@ function renderScalp(d) {
   // Kapı, kırılımı ÜRETEN yükten okunur (base yükünün değil): iki katmanın eşiği
   // bugün aynı olsa da birinden okuyup diğerine uygulamak sessiz bir bağ olurdu.
   const gate = num((d.acceptance || {}).min_trades);
+  /* Kapı dipnotu BİR KEZ, üç kırılımın hepsinden önce (eskiden her kırılım
+     kartının altına ayrı basılıyordu: aynı cümlenin on iki kopyası). `Ö` işareti
+     üç kırılımda da aynı anlamı taşır, yani tekrar bilgi taşımıyordu — yalnızca
+     okunmama olasılığını artırıyordu. */
+  const gateNote = el("breakdown-gate-note");
+  gateNote.hidden = gate === null || gate === undefined;
+  if (!gateNote.hidden) {
+    gateNote.innerHTML = "Aşağıdaki üç kırılımda <b>Ö</b> = örneklem kapısının altında (n &lt; " +
+      gate + "): satır gizlenmez ve solgun çizilir, ama ortalaması bir ölçüm değil gürültüdür.";
+  }
   renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol", gate);
   renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol", gate);
   renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı", gate);
@@ -623,7 +814,9 @@ const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "ort. R aralığı", "kazanma", "
 /* Kırılım grubu, örneklem kapısını (acceptance.min_trades) MODEL SATIRIYLA aynı
    ölçütle geçmek zorundadır. Geçmeyen satır gizlenmez — base katmanının ölçütü zaten
    "n=30'a ulaşılabiliyor mu" (karar 33) — ama SOLGUN çizilir ve işlem sayısının yanına
-   kapı işareti konur. Gerekçe projenin kendi geçmişidir: karar 27 (saat hipotezi) ve
+   kapı işareti konur; işaretin AÇIKLAMASI bölüm başına tek bir dipnottadır
+   (#breakdown-gate-note), kart başına değil — aynı cümleyi her kartın altında
+   tekrarlamak onu okunmaz kılıyordu. Gerekçe projenin kendi geçmişidir: karar 27 (saat hipotezi) ve
    karar 28 (kayıp serisi) tam olarak bir kırılım grubunun ortalamasına bakıp kural
    yazma denemeleriydi; ikisi de daha uzun örneklemde çürüdü. Grup ortalamasını
    örneklemsiz göstermek o hatayı arayüzün içine yerleştirmek olurdu. */
@@ -655,9 +848,7 @@ function renderBreakdown(hostId, byModel, label, gate) {
           "<td>" + pct(g.win_rate) + "</td>" +
           '<td class="' + signClass(g.total_r) + '">' + fmtSigned(g.total_r, 1) + "</td>" +
           "<td>" + fmt(g.cost_per_r, 3) + "</td></tr>";
-      }).join("") + "</tbody></table></div></div>" +
-      (gate ? '<p class="note">Ö = örneklem kapısının altında (n &lt; ' + gate +
-        "): satır gizlenmez ama ortalaması bir ölçüm değil gürültüdür.</p>" : "");
+      }).join("") + "</tbody></table></div></div>";
   }).join("");
 }
 
@@ -684,13 +875,20 @@ function route() {
     document.title = model + " — Paper Trading";
     return;
   }
+  // Kaydırma YALNIZCA detaydan dönüşte geri alınır. Koşulsuz yapıldığında ilk
+  // açılışta da tetikleniyordu; bölüm menüsü geldikten sonra bu, menüden bir
+  // bölüme gidip başka bir sebeple route() çalıştığında okuyucuyu başa atardı.
+  const wasDetail = !detail.hidden;
   detail.hidden = true;
   overview.hidden = false;
   document.title = "Paper Trading — model karşılaştırması";
   // Grafik gizliyken çizilemez (genişliği 0'dır): geri dönüşte yeniden çizilir.
   equityChart.redraw();
-  window.scrollTo(0, overviewScroll);
-  overviewScroll = 0;
+  if (wasDetail) {
+    window.scrollTo(0, overviewScroll);
+    overviewScroll = 0;
+  }
+  sectionNavRefresh();
 }
 
 /* ---------------------------- başlık ---------------------------- */

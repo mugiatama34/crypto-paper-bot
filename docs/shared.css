@@ -87,6 +87,75 @@ h1 span { color: var(--ink-muted); font-weight: 400; }
 .nav a:focus-visible { box-shadow: 0 0 0 2px var(--ink-muted); }
 .nav a[aria-current="page"] { background: var(--surface-2); color: var(--ink); border-color: var(--ink-muted); }
 
+/* ---------------- bölüm menüsü (yapışkan) ----------------
+   Sayfa içi gezinme. `.nav` sayfalar ARASI, bu ise sayfa İÇİ gider; ikisi ayrı
+   öğedir çünkü biri adres değiştirir, öteki yalnızca kaydırır.
+
+   Yapışkanlık kaydırma kabına değil SAYFAYA bağlıdır: menünün kendisi dar ekranda
+   kendi içinde yatay kayar (çok bölümlü bir satır telefona sığmaz), ama sayfa
+   kaymaz — bir bölüm adını ekran dışında bırakmak onu hiç göstermemektir.
+
+   Yükseklik bir değişkendir (`--secnav-h`): bölüm başlıkları menünün altında
+   kalmasın diye `scroll-margin-top` aynı sayıdan beslenir. İki yerde yazılı bir
+   yükseklik, bir gün başlığı menünün altına gizlerdi. */
+:root { --secnav-h: 53px; }
+
+.secnav {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; gap: 6px; align-items: center;
+  margin: 0 -16px 4px; padding: 4px 16px;
+  background: var(--plane); border-bottom: 1px solid var(--grid);
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.secnav::-webkit-scrollbar { display: none; }
+.secnav a {
+  display: inline-flex; align-items: center; min-height: var(--touch);
+  padding: 0 13px; border-radius: 999px; white-space: nowrap;
+  color: var(--ink-muted); text-decoration: none; font: 600 12px/1 var(--font);
+  border: 1px solid transparent;
+}
+.secnav a:hover { color: var(--ink-2); }
+.secnav a:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: -2px; }
+/* Aktif bölüm: okuyucunun NEREDE olduğunu söyler, nereye gidebileceğini değil. */
+.secnav a[aria-current="true"] {
+  color: var(--ink); background: var(--surface-2); border-color: var(--hair);
+}
+
+/* Başlık yapışkan menünün altında kalmasın: hash ile ya da menüden bir bölüme
+   gidildiğinde kaydırma bu kadar erken durur. */
+section[id] { scroll-margin-top: calc(var(--secnav-h) + 12px); }
+
+/* ---------------- "Nasıl okunur?" panelleri ----------------
+   Metodoloji metni SİLİNMEZ, KATLANIR: bu sayfada bir sayının nasıl okunacağı
+   sayının kendisi kadar önemlidir ve her gerekçe bir kararın kaydıdır. Ama
+   varsayılan olarak açık durduklarında ölçümün kendisi — tablolar ve grafikler —
+   ekranın altına itiliyordu. Panel kapalı başlar; metin bir tık uzaktadır ve
+   sayfa kaynağında (yani Ctrl+F ile ve ekran okuyucuda) yerinde durur.
+
+   `<details>` bilinçli: açık/kapalı durumu tarayıcının kendi işidir, JS gerekmez
+   ve script çalışmasa bile panel açılır — "build adımı yok" sözünün aynısı. */
+.howto {
+  border: 1px solid var(--hair); border-radius: var(--radius);
+  background: var(--surface); margin: 0 0 10px; max-width: 78ch;
+}
+.howto > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+  min-height: var(--touch); padding: 0 12px;
+  color: var(--ink-2); font: 600 12px/1.35 var(--font);
+}
+.howto > summary::-webkit-details-marker { display: none; }
+.howto > summary::before {
+  content: "▸"; font-size: 10px; color: var(--ink-muted); transition: transform .12s ease;
+}
+.howto[open] > summary::before { transform: rotate(90deg); }
+.howto[open] > summary { border-bottom: 1px solid var(--grid); }
+.howto > summary:hover { color: var(--ink); }
+.howto > summary:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: -2px; border-radius: var(--radius); }
+.howto-body { display: grid; gap: 8px; padding: 11px 12px 12px; }
+.howto-body .note { margin: 0; max-width: none; }
+
 section { margin-top: 26px; }
 h2 {
   font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -260,4 +329,8 @@ footer a {
 }
 @media (min-width: 900px) {
   .row-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .howto > summary::before { transition: none; }
 }
