@@ -158,6 +158,56 @@ def test_message_carries_the_mandatory_fill_warning(tmp_path: Path, telegram: _F
     )
 
 
+def test_message_warns_that_the_order_may_never_fill(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """İKİNCİ zorunlu uyarı: sinyal bir emir DEĞİL, bir emir denemesidir.
+
+    Gerçekleşmiş bir yanlış okumanın kapısı (bkz. `_warning` docstring'i): bildirilen bir
+    sinyalin emri dolum barında `max_short_positions` ile reddedildi, deftere hiçbir satır
+    girmedi ve okuyucu sitede işlemi arayıp bulamadı. Fiyat uyarısı tek başına bunu
+    SÖYLEMEZ — o girişin fiyatının farklı olacağını söyler, hiç olmayabileceğini değil.
+    """
+    _run(tmp_path, _payload([_signal()]))
+
+    (message,) = _messages(telegram)
+    assert "Bu bir sinyaldir, açılmış bir işlem DEĞİL" in message
+    # Ret sebeplerinin üçü de adıyla geçer: okuyucu "neden olmadı"yı mesajdan tahmin
+    # edebilmeli, sebep kodlarını koddan okumak zorunda kalmamalı.
+    assert "kotası dolu" in message and "nakit yetmezse" in message
+    # İki uyarı AYRI satırlardadır: tek satıra birleştirmek ikisini tek bir çekince gibi
+    # okutur ve dolum FİYATI ile dolumun KENDİSİ aynı şeymiş gibi görünürdü.
+    assert "Senin girişin farklı bir fiyattan olacak." in message
+
+
+def test_warning_links_to_the_positions_page_when_the_repository_is_known(
+    tmp_path: Path, telegram: _FakeRequests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Link, mesajı cevabın durduğu yere bağlar: ret sebebi tur raporundadır, defterde
+    değil — "işlemi bulamadım" sorusu tam olarak orada cevaplanır."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    _run(tmp_path, _payload([_signal()]))
+
+    (message,) = _messages(telegram)
+    assert "https://owner.github.io/repo/positions.html" in message
+
+
+def test_warning_has_no_link_when_the_repository_is_unknown(
+    tmp_path: Path, telegram: _FakeRequests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Uydurma bir adres kırık bir linkten daha kötüdür: `GITHUB_REPOSITORY` yoksa mesaj
+    sayfayı ADIYLA söyler, olmayan bir URL üretmez."""
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    _run(tmp_path, _payload([_signal()]))
+
+    (message,) = _messages(telegram)
+    assert "github.io" not in message
+    # `&amp;`, süs değil: mesaj HTML parse_mode ile gider ve çıplak bir `&` Telegram'a
+    # 400 döndürtür — link olmayan yol da gönderilebilir olmak zorunda.
+    assert "Pozisyonlar &amp; işlemler sayfası" in message
+    assert "Pozisyonlar & işlemler" not in message
+
+
 def test_a_round_without_signals_sends_nothing(tmp_path: Path, telegram: _FakeRequests) -> None:
     """Kapanış, funding ve bar ilerlemesi mesaj üretmez — tetikleyen tek olay yeni sinyaldir."""
     code, _ = _run(tmp_path, _payload([]))
@@ -290,8 +340,10 @@ def test_more_than_five_signals_collapse_into_one_batch(tmp_path: Path, telegram
     assert "6 yeni sinyal" in message
     for index in range(6):
         assert f"SYM{index}-USDT-SWAP" in message
-    # Toplu mesajda da uyarı satırı durur.
+    # Toplu mesajda da İKİ uyarı satırı birden durur: altı sinyali tek mesaja indirgemek
+    # çekinceleri değil yalnızca gerekçe metinlerini kısaltır.
     assert "Senin girişin farklı bir fiyattan olacak." in message
+    assert "Bu bir sinyaldir, açılmış bir işlem DEĞİL" in message
 
 
 def test_batch_message_stays_within_the_telegram_limit(tmp_path: Path, telegram: _FakeRequests) -> None:

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Scalp katmanının ANLIK sinyal bildirimi: yeni sinyal üretildiğinde Telegram mesajı.
 
-`scripts/telegram_report.py` ile KARIŞTIRILMAMALIDIR ve ona hiç dokunmaz: o, 4 saatlik
-katmanın günde bir kez (as_of 20:00) yolladığı PERFORMANS özetidir; bu ise scalp
-katmanının her turunda çalışan ve yalnızca YENİ SİNYAL olayını bildiren ayrı bir
-script'tir. İkisi ayrı workflow'larda, ayrı rapor dosyalarını okuyarak koşar.
+`scripts/telegram_report.py` ile KARIŞTIRILMAMALIDIR ve onun davranışına hiç dokunmaz:
+o, 4 saatlik katmanın günde bir kez (as_of 20:00) yolladığı PERFORMANS özetidir; bu ise
+scalp katmanının her turunda çalışan ve yalnızca YENİ SİNYAL olayını bildiren ayrı bir
+script'tir. İkisi ayrı workflow'larda, ayrı rapor dosyalarını okuyarak koşar. Ortak olan
+TEK şey GitHub Pages adresidir (`dashboard_url`) ve o bilinçli olarak paylaşılır: iki
+mesaj da aynı siteye link verir, iki kopya ise depo taşındığında birinin kırık link
+taşıması demekti. Mesaj üretimi, filtreler ve durum dosyası paylaşılmaz.
 
 **Tetikleyen tek olay: yeni sinyal.** Pozisyon kapanışı, funding tahakkuku ve bar
 ilerlemesi mesaj üretmez — bunlar zaten defterde ve dashboard'da durur, anlık bildirim
@@ -55,6 +58,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # durur (bkz. core/tags.py): burada kendi regex'ini kurmak, ayıraç bir gün değiştiğinde
 # mesajın sessizce "kol yok" demeye başlaması demekti.
 from core.tags import find_tag  # noqa: E402 — sys.path yukarıda kuruluyor
+
+# Dashboard adresi günlük özetle AYNI yerden kurulur: iki script ayrı işler yapar ama
+# adres tek bir şeydir ve ikinci bir kopya, depo taşındığında bir mesajın kırık link
+# taşıması demekti. İçe aktarılan tek şey adres yardımcısıdır — mesaj üretimi, filtreler
+# ve durum dosyası PAYLAŞILMAZ (bkz. modül docstring).
+from scripts.telegram_report import dashboard_url  # noqa: E402
 
 METRICS_PATH = Path("docs/data/metrics_scalp.json")
 STATE_PATH = Path("state/telegram_scalp.json")
@@ -417,18 +426,51 @@ def _batch_message(signals: Sequence[Mapping[str, Any]]) -> str:
 
 
 def _warning(signal: Mapping[str, Any]) -> str:
-    """ZORUNLU uyarı satırı: bildirim ile dolum arasındaki fiyat farkı.
+    """İKİ ZORUNLU uyarı satırı. İkisi de opsiyonel değildir ve AYRI şeyler söyler.
 
-    Bu satır opsiyonel değildir. Sinyal, üretildiği barın KAPANIŞINDA duyurulur; emir ise
-    bir SONRAKİ barın açılışından dolar (kural 13). Mesajı okuyan kişi o arada piyasadan
+    **(a) Fiyat farkı.** Sinyal, üretildiği barın KAPANIŞINDA duyurulur; emir ise bir
+    SONRAKİ barın açılışından dolar (kural 13). Mesajı okuyan kişi o arada piyasadan
     girerse fiyatı botunkiyle aynı olmaz — uyarı olmadan mesaj, defterdeki sonucun
     tekrarlanabileceği izlenimini verirdi.
+
+    **(b) Emir hiç dolmayabilir.** Bu satır sonradan eklendi ve sebebi ölçülmüş bir
+    yanlış okumadır: 2026-09-20 03:15 barında `scalp_patient` için bir DOGE short
+    sinyali bildirildi, dolum barında (03:30) `max_short_positions` kotası doluydu,
+    emir reddedildi ve deftere hiçbir satır girmedi — okuyucu sitede işlemi arayıp
+    bulamadı ve sessizliği bir ARIZA sandı. Sinyal bir emir DEĞİL, bir emir
+    DENEMESİDİR: kota, nakit ve açılış boşluğu kapıları onu dolum anında reddedebilir
+    (bkz. `core/portfolio.py::RejectReason`). (a) girişin FİYATININ farklı olacağını
+    söyler; (b) girişin HİÇ OLMAYABİLECEĞİNİ — birini söyleyip ötekini söylememek,
+    reddedilen her sinyali açıklanamayan bir boşluk hâline getirirdi.
+
+    Satır nereye bakılacağını da söyler: ret sebebi tur raporuna sayılarak düşer
+    (`rejections`) ve "Pozisyonlar & işlemler" sayfasının SON TUR bölümünde görünür.
+    `GITHUB_REPOSITORY` yoksa link eklenmez — uydurma bir adres, kırık bir linkten
+    daha kötüdür.
     """
     fills_at = _clock(signal.get("fills_at"))
-    return (
+    lines = [
         f"⚠️ Bot bu emri bir sonraki bar açılışından dolduracak ({_esc(fills_at)} UTC). "
-        "Senin girişin farklı bir fiyattan olacak."
-    )
+        "Senin girişin farklı bir fiyattan olacak.",
+        "",
+        "ℹ️ Bu bir sinyaldir, açılmış bir işlem DEĞİL: dolum anında pozisyon/short kotası "
+        "dolu olursa, nakit yetmezse ya da bar stop'un ötesinde açarsa bot bu işlemi hiç "
+        "açmaz ve defterde satırı olmaz.",
+    ]
+    link = _positions_url()
+    if link:
+        lines.append(f'Ne olduğu bir sonraki turda: <a href="{_esc(link)}">son tur ve ret sebepleri</a>')
+    else:
+        # `&amp;`: mesaj HTML parse_mode ile gider ve çıplak bir `&` Telegram'a 400
+        # döndürtür — yani link YOKSA mesajın tamamı düşerdi.
+        lines.append("Ne olduğu bir sonraki turda: Pozisyonlar &amp; işlemler sayfası, SON TUR bölümü.")
+    return "\n".join(lines)
+
+
+def _positions_url() -> str:
+    """Defter sayfasının adresi. Adres kökü günlük özetle ORTAK (bkz. import)."""
+    base = dashboard_url()
+    return base + "positions.html" if base else ""
 
 
 def _arm(signal: Mapping[str, Any]) -> str:

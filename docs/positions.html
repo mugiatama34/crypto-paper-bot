@@ -68,6 +68,20 @@
   .measure-h span { color: var(--ink-dim); font-size: 11.5px; }
   .measure-note { margin-top: -2px; }
 
+  /* SON TUR bölümü: turun denetim izi (sinyal / dolum / ret), defterin kendisi DEĞİL.
+     Bu yüzden tablo değil liste: satırları filtrelenecek, sayfalanacak ya da
+     sıralanacak bir kayıt kümesi değil, tek bir turun özetidir. */
+  .round-line { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  .round-counts { color: var(--ink-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .round-counts b { color: var(--ink-2); font-weight: 600; }
+  .sigs { margin-top: 6px; display: grid; gap: 4px; }
+  .sig {
+    font-size: 12px; color: var(--ink-2); display: flex; flex-wrap: wrap;
+    gap: 3px 8px; align-items: baseline; font-variant-numeric: tabular-nums;
+  }
+  .sig .sig-sym { font-weight: 600; overflow-wrap: anywhere; }
+  .sig .sig-meta { color: var(--ink-dim); font-size: 11.5px; }
+
   @media (min-width: 480px) {
     .wide { display: block; }
     .narrow { display: none; }
@@ -94,6 +108,12 @@
     <section id="sec-filters">
       <h2>Filtre</h2>
       <div class="filters" id="filters"></div>
+    </section>
+
+    <section id="sec-round">
+      <h2>Son tur — üretilen sinyaller ve açılamayan emirler</h2>
+      <p class="note" id="round-note"></p>
+      <div id="round-host"></div>
     </section>
 
     <section id="sec-open">
@@ -374,8 +394,155 @@ const matchesScope = (row) =>
   (view.model === "all" || modelKey(row) === view.model);
 
 function renderAll() {
+  renderRound();
   renderOpen();
   renderClosed();
+}
+
+/* ================================================================== *
+ * SON TUR — sinyal, dolum, ret
+ * ==================================================================
+ * Bu bölüm DEFTER DEĞİL, turun DENETİM İZİDİR (CLAUDE.md kural 15:
+ * `rejections` / `emitted` / `survey` ölçüme girmez, yalnızca kaydeder).
+ *
+ * Neden var: bir sinyalin üretilmesi ile bir pozisyonun açılması AYRI
+ * olaylardır — emir bir sonraki barın açılışından dolar (kural 13) ve o
+ * anda kota, nakit ya da açılış boşluğu kapıları onu reddedebilir. Ret
+ * hâlinde deftere hiçbir satır girmez, yani bu sayfanın öteki iki tablosu
+ * da BOŞ kalır. Sayı yükte hep vardı (`round.models[].rejections`) ama
+ * hiçbir sayfa okumuyordu: "sinyal geldi, işlem yok" sorusunun cevabı
+ * üretiliyor ama gösterilmiyordu ve sessizlik bir ARIZA gibi okunuyordu.
+ *
+ * SINIRI AÇIKÇA SÖYLENİR: yük her turda ÜZERİNE YAZILIR, yani burada
+ * yalnızca EN SON tur durur. Daha eski turların sayıları depo geçmişindeki
+ * `metrics_*.json` sürümlerindedir. Bunu yazmamak, boş bir "son tur"
+ * bölümünü "hiç ret olmadı" diye okuturdu.
+ * ------------------------------------------------------------------ */
+
+/* Ret sebebi kodları `core/portfolio.py::RejectReason`dan gelir; etiketler
+   burada durur çünkü bu sayfadan başka okuyanı yok (shared.js iki sayfanın
+   ORTAK'ıdır, tek sayfanın değil). Kod tanınmıyorsa ham kod gösterilir:
+   uydurma bir etiket, yeni bir sebebi sessizce eski bir sebep gibi
+   okuturdu. */
+const REJECT_LABELS = {
+  duplicate_position: "aynı sembol+yönde zaten pozisyon var",
+  max_positions: "pozisyon kotası dolu",
+  max_short_positions: "short kotası dolu",
+  max_direction_positions: "modelin yön kotası dolu",
+  portfolio_risk_cap: "modelin portföy risk tavanı aşılırdı",
+  gap_past_stop: "bar stop'un ötesinde açtı",
+  zero_size: "boyutlandırma sıfır adet üretti",
+  insufficient_cash: "nakit marj + komisyonu karşılamadı",
+};
+
+/* Boyutlandırmanın ARIZA hâlleri (core/portfolio.py::SIZING_FAILURES). Ayrım
+   kozmetik değil: kota dolu olması BEKLENEN bir sonuçtur (çıpa her turda
+   `duplicate_position` alır, kural 15), sıfır boyut ise bakılması gereken tek
+   gruptur — motor da log seviyesini buna göre ayırır (INFO ↔ WARNING). Hepsini
+   aynı renkte göstermek, o ayrımı arayüzde geri silmek olurdu. */
+const REJECT_FAULTS = new Set(["zero_size", "insufficient_cash"]);
+
+const rejectLabel = (code) => REJECT_LABELS[code] || String(code);
+
+function roundCards() {
+  const cards = [];
+  for (const layer of LAYERS) {
+    const payload = PAYLOADS[layer.key];
+    if (!payload) continue;
+    if (view.layer !== "all" && view.layer !== layer.key) continue;
+    const round = payload.round;
+    if (!round) { cards.push({ layer, round: null, rows: [] }); continue; }
+
+    let only = null;
+    if (view.model !== "all") {
+      const parts = String(view.model).split("::");
+      if (parts[0] !== layer.key) continue;   // seçili model başka katmanda
+      only = parts[1];
+    }
+    const rows = (round.models || [])
+      .map((m) => ({ ...m, model: m.model || m.name }))
+      .filter((m) => only === null || m.model === only)
+      // Olay YAŞAMAMIŞ model satırı gizlenir: turun büyük çoğunluğunda hiçbir
+      // model sinyal üretmez ve hepsini "0 · 0" diye listelemek, gerçekten bir
+      // şey olan tek satırı on satırın arasında kaybederdi.
+      .filter((m) => (num(m.signals) || 0) > 0 || (num(m.filled) || 0) > 0 ||
+                     Object.keys(m.rejections || {}).length > 0);
+    cards.push({ layer, round, rows });
+  }
+  return cards;
+}
+
+function renderRound() {
+  const cards = roundCards();
+  const host = el("round-host");
+
+  el("round-note").innerHTML =
+    "Bir <b>sinyal</b> bir işlem değildir: emir bir SONRAKİ barın açılışından dolar " +
+    "(kural 13) ve o anda kota, nakit ya da açılış boşluğu kapıları onu reddedebilir. " +
+    "Reddedilen emir deftere hiç girmez — yukarıdaki iki tabloda da görünmez, " +
+    "<b>sebebi yalnızca burada durur</b>. " +
+    "<b>Bu bölüm son turu gösterir</b>, geçmişi değil: tur raporu her turda üzerine " +
+    "yazılır (<code>docs/data/metrics_*.json &gt; round</code>); daha eski turların " +
+    "sayıları depo geçmişindeki sürümlerindedir. Sayılar bir <b>denetim izidir</b>, " +
+    "ölçüme girmez (kural 15).";
+
+  if (!cards.length) {
+    host.innerHTML = '<p class="empty">Bu kapsamda tur kaydı yok.</p>';
+    return;
+  }
+
+  host.innerHTML = cards.map(({ layer, round, rows }) => {
+    const head = '<div class="measure-h"><b>' + esc(layer.label) + "</b> <span>" +
+      (round ? "son tur " + esc(fullTs(round.as_of)) : "yükte tur kaydı yok") + "</span></div>";
+
+    if (!round) {
+      // Bu bölümden ÖNCE üretilmiş bir yük. "Hiç sinyal yok" demek, eksikliği bir
+      // ölçüm sonucu gibi gösterirdi (bkz. hasExitState'in aynı gerekçesi).
+      return '<div class="measure">' + head +
+        '<p class="empty">Bu katmanın yükü <code>round</code> bölümünden önce üretilmiş: ' +
+        "tur kaydı bir SONRAKİ turda gelir. Sayı uydurulmaz.</p></div>";
+    }
+    if (!rows.length) {
+      return '<div class="measure">' + head +
+        '<p class="empty">Son turda bu kapsamda sinyal üretilmedi ve hiçbir emir ' +
+        "reddedilmedi.</p></div>";
+    }
+
+    const list = rows.map((m) => {
+      const signals = num(m.signals) || 0;
+      const filled = num(m.filled) || 0;
+      const rejections = m.rejections || {};
+      const badges = Object.keys(rejections).sort().map((code) => {
+        const count = num(rejections[code]) || 0;
+        const cls = REJECT_FAULTS.has(code) ? "warn" : "info";
+        return '<span class="badge ' + cls + '" title="' + esc("ret kodu: " + code) + '">' +
+          esc(rejectLabel(code)) + (count > 1 ? " ×" + count : "") + "</span>";
+      }).join("");
+
+      // `emitted` turun TÜM barlarını taşır (scalp'te `signals_per_bar` açık, bkz.
+      // CLAUDE.md > Telafi edilen barlarda sinyal): bar damgası bu yüzden satırda
+      // durur — hangi barın kapanışına ait olduğu sonradan geri hesaplanamaz.
+      const emitted = (m.emitted || []).map((e) =>
+        '<div class="sig">' + dirBadge(e.direction) +
+        '<span class="sig-sym">' + esc(e.symbol) + "</span>" +
+        '<span class="sig-meta">bar ' + esc(shortTs(e.bar)) +
+        " → dolum " + esc(shortTs(e.fills_at)) +
+        " · stop " + esc(price(e.stop_price)) +
+        " · hedef " + esc(price(e.target_price)) + "</span></div>").join("");
+
+      return '<article class="row">' +
+        '<div class="round-line">' +
+          '<div class="row-model">' + modelCell({ model: m.model, layer: layer.key }) + "</div>" +
+          '<div class="round-counts">sinyal <b>' + signals + "</b> · dolan <b>" + filled +
+            "</b></div>" +
+          (badges ? '<span class="badges">' + badges + "</span>" : "") +
+        "</div>" +
+        (emitted ? '<div class="sigs">' + emitted + "</div>" : "") +
+        "</article>";
+    }).join("");
+
+    return '<div class="measure">' + head + '<div class="rows">' + list + "</div></div>";
+  }).join("");
 }
 
 /* ================================================================== *
