@@ -83,7 +83,7 @@ bu yüzden `ema` katmanı kendi kıyas hedefini (`trend`), kontrolünü (`random
 | `ledgers_scalp/` | Scalp katmanının defteri. İki katman asla aynı defteri paylaşmaz: paylaşsalardı 15 dakikalık turlar 4 saatlik modellerin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı. |
 | `ledgers_ema/` | `ema` katmanının defteri. Üç katman asla aynı defteri paylaşmaz: paylaşsalardı bir katmanın turu diğerinin `last_processed_bar` değerini ileri taşır ve iki ölçüm birbirinin bakiyesini bozardı (aynı gerekçe `ledgers_scalp/`). Bugün BOŞTUR — katmanın tetikleyicisi yok. |
 | `.github/workflows/run-scalp.yml` | Scalp katmanının periyodik turu (`main.py --layer scalp`). Dosyada cron YOKTUR, yalnızca `workflow_dispatch`; gözlenen kadans ~15 dakikadır (her koşu bir 15m barı işler) ve tetikleyici depo dışındadır. Ayrı cron, ayrı concurrency grubu, ayrı commit kapsamı (`ledgers_scalp` + `docs/data/metrics_scalp.json`). `run.yml`e dokunmaz. Defter commit'inden SONRA anlık sinyal bildirimi (`scripts/telegram_signals.py`) ve onun durum dosyasının kendi commit'i gelir; ikisi de `continue-on-error` — bildirim katmanı ölçümü düşüremez. 15 dakikalık cron ölçüldü ve tetiklemelerin ~%91'i düşüyordu; saatlik kadans `signals_per_bar` sayesinde sinyal kaybı üretmez (bkz. "Telafi edilen barlarda sinyal"). |
-| `.github/workflows/run.yml` | Base katmanının periyodik turu. Cron **SAATLİKTİR**, 4 saatlik değil: tek tetikleme başına tek bar, GitHub'ın düşen cron'uyla birleşince barların %26'sını sinyalsiz bırakıyordu (karar 39). Saatlik kadans her 4H barına dört şans verir ve ölçüm kuralına DOKUNMAZ — `signals_per_bar` kapalı kalır. Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü `main.py` her koşuda `generated_at`i tazeler ve commit edilseler HEAD'deki `round` denetim izini (`emitted`/`survey`/`rejections`) BOŞ bir turla ezerlerdi — ayrıca `as_of` dört tur sabit kaldığı için günlük Telegram özeti dört kez giderdi. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
+| `.github/workflows/run.yml` | Base katmanının periyodik turu. Cron **SAATLİKTİR**, 4 saatlik değil: tek tetikleme başına tek bar, GitHub'ın düşen cron'uyla birleşince barların %26'sını sinyalsiz bırakıyordu (karar 39). Saatlik kadansın AMACI her 4H barına dört bağımsız şans vermekti; **ölçüldü ve GitHub o kadar teslim etmiyor** — zamanlanmış olaylar bu depoya kabaca 4 saatte bir geliyor (teslim oranı %23, bar başına 0.97 tetikleme; karar 39-DOĞRULAMA). Saatlik cron yine de kayıp ORANINI yarıya indirdi ve asıl kazanımı KAYBIN CİNSİNİ değiştirmesi oldu: eski cron bar kapanışına çiviliydi ve hep aynı bar-saatini düşürüyordu (yanlılık), saatlik cron'un teslim edilen tetiklemesi serbest fazda gezinir (yansız). Ölçüm kuralına DOKUNMAZ — `signals_per_bar` kapalı kalır. Turların dörtte üçü yeni bar bulamaz; onları `advanced` kapısı süzer, çünkü `main.py` her koşuda `generated_at`i tazeler ve commit edilseler HEAD'deki `round` denetim izini (`emitted`/`survey`/`rejections`) BOŞ bir turla ezerlerdi — ayrıca `as_of` dört tur sabit kaldığı için günlük Telegram özeti dört kez giderdi. Telegram adımı defter commit'inden **sonra** gelir ve `continue-on-error` ile korunur: bildirim katmanı ölçümü düşüremez. |
 
 ### config.yaml Değerleri
 
@@ -354,7 +354,7 @@ ve `main.py` tek kopyadır. Katman, ölçümün **koşullarını** değiştirir:
 | Modeller | 3 yarışmacı + 1 referans çıpası | 4 yarışmacı (12, 13, 14, 16) + 1 dış sistem kopyası (13) | 3 yarışmacı (18 + kıyas hedefi `trend` + kontrol) + 1 çıpa |
 | Defter | `ledgers/` | `ledgers_scalp/` | `ledgers_ema/` |
 | Rapor | `docs/data/metrics.json` | `docs/data/metrics_scalp.json` | `docs/data/metrics_ema.json` |
-| Cron | `run.yml` (SAATLİK; her 4H barına dört şans — karar 39. Bar ilerletmeyen turlar commit ve bildirim üretmez) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) | **YOK** — tetikleyicisi yok, tanım var koşu yok (bkz. aşağısı) |
+| Cron | `run.yml` (SAATLİK; hedef bar başına dört şanstı, GERÇEKLEŞEN ~0.97 — karar 39-DOĞRULAMA. Bar ilerletmeyen turlar commit ve bildirim üretmez) | `run-scalp.yml` (cron yok, dış tetikleyici; ~15 dk, tur başına 1 bar) | **YOK** — tetikleyicisi yok, tanım var koşu yok (bkz. aşağısı) |
 | Telafi barında sinyal | yok (`signals_per_bar: false`) | var (`signals_per_bar: true`) | yok (`signals_per_bar: false`) |
 | Stop tavanı (kural 14) | 3×ATR | 8×ATR | 3×ATR |
 | Kırılımlar | yok | kol + sembol + çıkış kuralı + seans + kayıp serisi | sembol + çıkış kuralı + seans + kayıp serisi |
@@ -435,8 +435,10 @@ kuralı sessizce değişir ve biriken geçmişin bir kısmı "tur başına tek s
 yazıyordu. Ölçüm (karar 39): turların %35'i telafi yapıyordu ve barların **%26'sı
 sinyalsiz** geçiyordu — üstelik kaybolan bar her zaman 00:00 ya da 08:00 barıydı, yani
 kayıp gürültü değil YANLILIK. Sebep GitHub cron'unun düşmesi/gecikmesiydi (2.6 saate
-varan). **Onarım ayarda değil TETİKLEYİCİDE yapıldı:** `run.yml` saatlik cron'a geçti ve
-her 4H barı dört bağımsız şans aldı. `signals_per_bar` base'de KAPALI kalır — defterin
+varan). **Onarım ayarda değil TETİKLEYİCİDE yapıldı:** `run.yml` saatlik cron'a geçti. Hedef
+bar başına dört bağımsız şanstı; ÖLÇÜLDÜ ve gerçekleşen 0.97'dir (karar 39-DOĞRULAMA) —
+GitHub bu depoya cron ne yazarsa yazsın ~4 saatte bir teslim ediyor. Kayıp yine de %26'dan
+%14'e indi ve sistematik olmaktan çıkıp yansızlaştı. `signals_per_bar` base'de KAPALI kalır — defterin
 kuralı değişmedi, yalnızca belgenin zaten varsaydığı güvenilirlik sağlandı. Alternatif
 (base'de ayarı açmak) tam olarak yukarıdaki dönem ayrışmasını üretirdi; bkz.
 docs/decisions.md > 39.
