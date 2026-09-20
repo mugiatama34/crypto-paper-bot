@@ -1221,6 +1221,54 @@ oynatmak, zaten koşmuş ve karara girmiş bir backtest'in penceresini geriye d�
 kaydırmak olurdu (§7.3'ün tam olarak yasakladığı şey) ve determinizm kapısını kırardı.
 Fonlama tezi kendi kapsamını kendi raporunda söyler; sabitin işi o değildir.
 
+### A-3 — arşivin ERİŞİM YOLU: ilk şema adayı düştü *(2026-09-20)*
+
+A-2 portalın fonlama veri kümesi SUNDUĞUNU gösterdi; A-3 onun **programatik yolunu**
+sorar. Bu ayrı bir sorudur ve A-2'nin sonucunu DEĞİŞTİRMEZ: veri kümesinin var olduğu
+doğrudan gözlemle görüldü, bulunamayan şey ona ulaşan istek.
+
+**Sınanan şema** (ikincil bir kaynaktan, bir indirici deposundan; doğrudan gözlem DEĞİL —
+ama bir VARLIK iddiası, yokluk iddiası değil, ve `scripts/probe_funding_archive.py`nin işi
+tam olarak onu sınamaktı). İki adımlı: listeleme `…/priapi/v5/broker/public/orderRecord
+?t=<ms>&path=cdn/okex/traderecords/<msg_type>/monthly/<ay>` dosya ADLARINI verecek,
+indirme `static.okx.com/cdn/okex/traderecords/…/<YYYYMM>/<dosya>` onu kullanacaktı.
+
+**SONUÇ (`measure-funding` #35518204981, `5667998`): listeleme ADIMI DÜŞTÜ.** Altı istek
+(iki ay yazımı × `2022-03`, artı kapsam için 2022-01/-02/-03/-04) altı kez aynı cevabı
+verdi: HTTP 404, `application/json`, 102 bayt,
+`{"code":404,"data":{},"detailMsg":"","error_code":"404","error_message":"Not Found","msg":"Not Found"}`.
+
+**404'ün KAPSAMI ölçüldü: ROTA düzeyinde** (`classify_not_found_scope`; kural test
+koşmadan ÖNCE yazıldı — `classify_depth_floor` ve `select_primary_family` ile aynı
+gerekçe). Ölçüt *"uç nokta `path` DEĞERİNİ değerlendiriyor mu"*dur ve üç istekle sorulur:
+
+| İstek | Sonuç |
+|---|---|
+| gerçek `path` | HTTP 404, 102 bayt, jenerik gövde |
+| saçma `path` (`BURASI-YOK-PROBE`) | **aynı** |
+| `path` parametresi YOK | **aynı** |
+
+Üç imza da aynı → uç nokta `path` değerini **hiç okumuyor** → bu adda bir rota YOK.
+Şablonun parametreleri değil, **uç noktanın kendisi** tutmuyor. (İmzalardan biri ayrışsaydı
+yargı "parametre düzeyinde" olurdu; bir istek hata verseydi "belirsiz" ve sessizce
+"rota"ya DÜŞMEZDİ.)
+
+⚠ **BURADAN SONRA TAHMİN TURU YOKTUR — kural, tercih değil.** Başka rota adı DENENMEZ:
+ikincil kaynağın çürüdüğü noktadan sonra ad denemek körlemesine aramadır ve bu belgede
+aynı sınıf kanıt iki kez çürüdü (karar 50). Sıradaki adım **doğrudan gözlemdir**:
+tarayıcının ağ sekmesinden gerçek istek. Kural betiğin kendi raporunda da basılır, yani
+bir sonraki okuyucu onu sohbet geçmişinde aramak zorunda kalmaz.
+
+**'Rota yok' ile 'rota hiç olmadı' AYNI ŞEY DEĞİLDİR.** İkincil kaynak yanlış değil BAYAT
+olabilir: priapi rotaları sürüm ve ad değiştirir, yani bir zamanlar çalışmış bir yol bugün
+bulunmayabilir. Pratik sonucu şudur: **indirme host'u hâlâ geçerli olabilir** — listeleme
+ile indirme ayrı sistemlerdir. Ama dosya ADI bilinmeden indirme denenemez, yani bu bir
+çıkış yolu DEĞİL, yalnızca doğrudan gözlemde nereye bakılacağını daraltan bir nottur.
+
+**Bu bulgu A-2'yi yeniden AÇMAZ ve Adım B'yi geri getirmez.** Engellenen şey veri kümesinin
+varlığı değil, ona giden bir istek adayı. C kapısı (aynı damga → aynı oran) aynen yerinde:
+arşiv, yolu bulunduktan sonra da o kapıyı geçmeden hiçbir yerde kullanılamaz.
+
 ### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(DÜŞTÜ: 2026-09-20, A-2 geçti)*
 
 ⚠ **Bu adım HİÇ KULLANILMADI.** Aşağıdaki sıra duruyor çünkü değeri sonucunda değil
