@@ -3966,6 +3966,9 @@ için kalıcı kayıt oradadır, burada değil.
 duruyor: ölçülüp düşmüş bir tez değil, veri yolunda duran bir tez. Değişen tek şey,
 yolun nerede ve neden bittiğinin artık tahmin değil ölçüm olmasıdır.
 
+⚠ **SONRAKİ İKİ PARAGRAF AYNI GÜN ÇÜRÜDÜ.** Silinmiyor; altındaki düzeltme neyin ve
+hangi kanıtla çürüdüğünü yazıyor.
+
 **A-2 de KAPANDI (2026-09-20): OKX-içi bir yol yok.** Tarihsel veri portalının sunduğu
 olarak anılan kümeler tick bazlı işlem verisi ve OHLCV mumları; fonlama geçmişi
 listelenmiyor ve fonlama için aynı kaynaklar REST API'yi işaret ediyor — probe'un
@@ -3981,6 +3984,38 @@ tutarlılık kanıtı — aynen geçerli ve hâlâ ÖN KOŞUL:** arşiv kurulsa 
 geçilmeden hiçbir yerde kullanılmaz. Tek fark, cross-venue bir adayda o kanıtın literal
 "aynı oran" biçimiyle değil §6f'nin üç koşuluyla (damga hizası, p95 olay kümesi Jaccard,
 işaret uyumu) verilecek olmasıdır — gerekçe ve bedeli §6f > Adım C'de yazılı.
+
+### DÜZELTME (2026-09-20, aynı gün): A-2 GEÇTİ — portal fonlama geçmişi sunuyor
+
+Portalın indirme listesine **doğrudan bakan** bir tarayıcı gözlemi, yukarıdaki iki
+paragrafı çürüttü: `okx.com/en-us/historical-data` veri kümeleri arasında
+*"Historical perpetual funding rates from March 2022 onwards"* var. Şart yukarıda,
+gözlem gelmeden ÖNCE yazılıydı ("doğrudan bir gözlem bunu tersine çevirirse A-2 yeniden
+açılır") ve tam olarak o sınıf kanıt geldi.
+
+⚠ **Bu belgede bir ikincil kaynak taraması İKİNCİ KEZ çürüyor** (ilki bu kaydın 3. yan
+bulgusu, "400 kayıt tavanı"). Tekrar eden hata artık bir desendir ve dersi yazılıyor:
+**ikincil kaynak, bir YOKLUK iddiası için doğrudan gözlemin yerine geçmez.** "X
+listelenmiyor" cümlesi, listeye bakmayan bir kaynaktan alınamaz — bu, karar 34'ün
+"ölçülmemiş sebebi ölçülmüş gibi kaydetme" dersinin kaynak taramasına uygulanmış hâlidir.
+
+**Sonuçlar (§6f'nin "A geçerse B ve C düşer" kuralı, probe koşmadan önce yazılıydı):**
+
+1. **Adım B DÜŞTÜ** — Bybit arşivi kurulmayacak, aday sırası hiç kullanılmadı.
+2. **Cross-venue muafiyeti KULLANILMADI** — docs/backtest.md > 5'in kabul edilen sapmalar
+   listesine satır eklenmedi; §8'in ön-kayıtlı uyarı satırı yerinde durur ama
+   TETİKLENMEDİ.
+3. **Bu kaydın 2. maddesi LİTERAL hâliyle geçerli:** aynı damga → aynı oran. Esnetmeyi
+   gerektiren şey adayın başka bir borsa olmasıydı; o aday düştü. C kapısının üç koşullu
+   biçimi (C-a/b/c) de onunla birlikte düştü.
+4. **Dönem A fiilen 2022-03-01 → 2024-06-30 (28 ay, 853 gün).** Ocak–Şubat 2022 hiçbir
+   yoldan kapsanmıyor; bu bir kapsam sınırıdır, sonuca bakılarak seçilmiş bir pencere
+   değil. n bütçesi bu pencere ve ~10.6 etkin sembol üzerinden kurulur (§6f).
+
+**Tez hâlâ ölçülmedi.** Değişen tek şey engelin kalkmış OLABİLECEĞİdir: portal verisi
+C kapısını (damga bazlı birebir eşitlik) geçmeden hiçbir yerde kullanılmaz — ne bir
+dağılım raporunda, ne bir eşik seçiminde, ne bir backtest'te. Sıra bu kaydın kendi
+sırasıdır ve esnetilmedi.
 
 ---
 
