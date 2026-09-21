@@ -193,6 +193,42 @@ eşitten sapıp sapmadığını, sembol kırılımı ise kayma varsayımının i
 (PENGU, ETHFI) tutup tutmadığını gösterir. Dosya yoksa (katman henüz koşmadıysa) bölüm
 sessizce gizli kalır.
 
+### Yaklaşan kurulumlar (`scripts/proximity.py`)
+
+Sayfanın son bölümü **"bir sonraki bar şu fiyatta kapanırsa bu model sinyal üretir"**
+sorusunu cevaplar. **Bu bir tahmin DEĞİLDİR** ve ölçüme girmez: `scripts/proximity.py`
+salt okunurdur — deftere, `config.yaml`'a ve önbelleğe yazmaz, borsaya çağrı yapmaz
+(turun bıraktığı parquet önbelleğini okur) ve hiçbir sinyalin sırasını değiştirmez.
+`survey`/`emitted` ile aynı statüde bir denetim izidir: "bugün sinyal yok" satırının
+arkasında ne olduğunu — kurulum fersah fersah mı uzaktı, yoksa kıl payı mı kaçırdı —
+gösterir.
+
+Yakınlık, **modelin kendi sinyal kodu** hipotetik bir sonraki barla çağrılarak bulunur;
+indikatör matematiği ikinci kez yazılmaz. İkinci bir uygulama bir gün modelden ayrışır ve
+ekran, modelin gerçekte üretmeyeceği bir sinyali "yaklaşıyor" diye gösterirdi. Modeller
+derin kopya üzerinde çağrılır, yani tarama turu hiçbir biçimde değiştiremez
+(`tests/test_proximity.py`).
+
+- **Kapıdan geçer ≠ tetiklenir.** Varsayılan görünüm yalnızca kapıdan geçen satırlardır;
+  kapıda ölenler (%1 stop tabanı, 1.5R, ATR tavanı) katlanmış panelde durur. Kapı kararı
+  her zaman modelin ya da motorun kendi kodundan gelir.
+- **Scalp modellerinde "seçim" yazmaz.** Model uygun kollar arasından çekilişle seçer ve
+  çekiliş o bardaki tüm sembollerin kurulumlarına bağlıdır; tarama sembolleri tek tek
+  fiyatlandırdığı için liste **tetiklenen kolları** söyler, oynanacak kolu değil.
+- **Varsayımlar çıktıda yazılıdır:** hipotetik barın açılışı son kapanış, gövdesi kapanışa
+  kadar (fitil yok), hacmi son 20 barın medyanı; ızgara taraması yapılır (ikiye bölme
+  değil, çünkü koşullar fiyata göre monoton değildir); her sembol tek başına fiyatlandırılır.
+
+```bash
+python scripts/proximity.py --layer base --layer ema --out docs/data/proximity.json
+python scripts/proximity.py --layer scalp --out docs/data/proximity_scalp.json
+```
+
+Koşu workflow'larında defter commit'inden **sonra**, ayrı ve `continue-on-error` bir
+adımdır — hatası turu kırmızıya çevirmez. Ama boş rapor sessizce yeşil dönmez: hiçbir
+katmanda tek sembol taranamadıysa betik **3** ile biter ve dosyayı hiç yazmaz. Telegram'a
+gönderilmez; gürültü ölçülmeden bildirim açılmaz.
+
 Sayfa **iki seviyelidir**: genel bakış tüm modelleri yan yana koyar, model kartına
 dokunulduğunda o modelin detayı açılır. Detayın adresi `#model=<ad>` hash'idir — geri tuşu,
 yer imi ve paylaşılan link çalışır.

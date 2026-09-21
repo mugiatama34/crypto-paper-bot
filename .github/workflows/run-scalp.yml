@@ -95,6 +95,60 @@ jobs:
           echo "push 4 denemede başarısız oldu"
           exit 1
 
+      # Yakınlık taraması (scripts/proximity.py) — "bir sonraki bar şu fiyatta
+      # kapanırsa bu model sinyal üretir". ÖLÇÜM DEĞİLDİR ve sicile girmez: salt
+      # okunur, deftere yazmaz, borsaya çağrı yapmaz (turun bıraktığı parquet
+      # önbelleğini okur). `survey`/`emitted` ile aynı statüde bir denetim izidir.
+      #
+      # Defter commit'inden SONRA ve `continue-on-error`: tarama bir BİLDİRİMDİR, tur
+      # çoktan kaydedilmiştir. Boş/bozuk çıktı sessizce yeşil dönmez — betik veri
+      # kapısında 3 ile biter ve dosyayı hiç yazmaz (karar 51).
+      #
+      # TELEGRAM'A GÖNDERİLMEZ: gürültü ölçülmeden bildirim açılmaz. Scalp katmanı
+      # 15 dakikada bir koşar ve her turda onlarca "yaklaşan" satır üretebilir;
+      # bunları telefona düşürmek, susturma penceresinin engellemek için var olduğu
+      # gürültünün kendisi olurdu (bkz. scripts/telegram_signals.py).
+      - name: Proximity scan
+        if: always()
+        continue-on-error: true
+        run: python scripts/proximity.py --layer scalp --out docs/data/proximity_scalp.json --log-level INFO
+
+      # Ayrı commit: defter commit'i YALNIZCA `ledgers_scalp` ve
+      # `docs/data/metrics_scalp.json` alır (4 saatlik katmanın çıktılarına bu iş
+      # hiçbir koşulda dokunmaz) ve tarama o commit'ten sonra üretilir.
+      - name: Commit proximity scan
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ ! -f docs/data/proximity_scalp.json ]; then
+            echo "yakınlık taraması üretilmedi, commit atlanıyor"
+            exit 0
+          fi
+
+          git add docs/data/proximity_scalp.json
+
+          if git diff --cached --quiet; then
+            echo "yakınlık taraması değişmedi, commit atlanıyor"
+            exit 0
+          fi
+
+          git commit -m "proximity: scalp"
+
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız oldu"
+          exit 1
+
       # Anlık sinyal bildirimi (scripts/telegram_signals.py). `run.yml`in GÜNLÜK ÖZETİNDEN
       # ayrıdır ve ona dokunmaz: bu, scalp katmanının YENİ SİNYAL olayını bildirir.
       #

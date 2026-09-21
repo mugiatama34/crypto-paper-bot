@@ -373,6 +373,34 @@
     .tip { transition: none; }
     .mcard { transition: none; }
   }
+
+    /* --- Yaklaşan kurulumlar (yalnızca bu sayfa) ---------------------------
+       Ortak tasarım dili shared.css'tedir; bu bölümün kendi görselleri burada
+       durur (CLAUDE.md > docs/shared.css: "sayfaya özgü görseller kendi
+       dosyasında kalır"). */
+    .px-layer { margin-top: 18px; }
+    .px-layer + .px-layer { border-top: 1px solid var(--grid); padding-top: 14px; }
+    .px-model { margin-top: 14px; }
+    .px-head {
+      display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .px-meta { color: var(--ink-2); font-size: 12px; }
+    .px-selection { margin: 0 0 8px; max-width: none; }
+    .px-detail { display: grid; gap: 6px; margin-top: 8px; font-size: 11.5px; }
+    .px-measure { color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+    /* Kapı rozetinin rengi YÜKTEKİ karardır, sayfanın kendi karşılaştırması değil. */
+    .px-gate {
+      border-radius: 999px; padding: 1px 7px; font-size: 11px;
+      border: 1px solid var(--grid); color: var(--ink-2);
+    }
+    .px-gate.ok { border-color: rgba(25,158,112,0.45); color: var(--pos); }
+    .px-gate.bad { border-color: rgba(217,89,38,0.45); color: var(--neg); }
+    .px-cond.bad { color: var(--warning); }
+    .px-flag {
+      display: inline-block; border-radius: 999px; padding: 1px 7px; font-size: 10.5px;
+      border: 1px solid rgba(250,178,25,0.4); color: var(--warning); white-space: nowrap;
+    }
 </style>
 </head>
 <body>
@@ -418,6 +446,10 @@
            fork). Bölüm gizliyken menü girdisi de gizlidir: var olmayan bir bölüme
            götüren bir link, menüyü bir vaatten ibaret bırakırdı. -->
       <a href="#sec-scalp" data-sec="sec-scalp" id="secnav-scalp" hidden>Scalp</a>
+      <!-- Yakınlık taraması AYRI bir yüktür (data/proximity*.json) ve hiç olmayabilir
+           (adım düşmüş, fork, katman koşmamış). Bölüm gizliyken menü girdisi de gizli:
+           aynı gerekçe scalp'te. -->
+      <a href="#sec-proximity" data-sec="sec-proximity" id="secnav-proximity" hidden>Yaklaşan</a>
     </nav>
 
     <section id="sec-summary">
@@ -623,6 +655,58 @@
       <div id="scalp-exit-rules"></div>
     </section>
 
+    <!-- ================= YAKLAŞAN KURULUMLAR =================
+         Bu bölüm ÖLÇÜM DEĞİLDİR ve sicile girmez: `survey`/`emitted` ile aynı statüde
+         bir denetim izidir (scripts/proximity.py). Cevapladığı soru "bugün neden sinyal
+         yok" — kurulum fersah fersah mı uzaktı, yoksa kıl payı mı kaçırdı.
+
+         Uyarı satırı KATLANMAZ ve her katmanın üstünde TEKRAR EDER: bölüm başına tek
+         bir uyarı, aşağı kaydırıp ikinci tabloyu gören okuyucuya ulaşmazdı ve tam da
+         ulaşması gereken cümle "bu bir tahmin değil". -->
+    <section id="sec-proximity" hidden>
+      <h2>Yaklaşan kurulumlar</h2>
+      <p class="note"><b>Bu bir TAHMİN DEĞİLDİR.</b> Her satır bir KOŞULDUR: bir sonraki
+        bar o fiyatta <i>kapanırsa</i> modelin kendi kodu o sinyali üretir. Olasılık
+        ölçülmez, sıralama bir beklenti değil bir UZAKLIKTIR.</p>
+      <details class="howto">
+        <summary>Nasıl okunur? — varsayımlar, kapılar ve neden "seçim" yazmıyor</summary>
+        <div class="howto-body">
+          <p class="note">
+            Yakınlık, modelin KENDİ sinyal kodu hipotetik bir sonraki barla çağrılarak
+            bulunur; indikatör matematiği ikinci kez yazılmaz. İkinci bir uygulama bir gün
+            modelden ayrışır ve ekran, modelin gerçekte üretmeyeceği bir sinyali
+            "yaklaşıyor" diye gösterirdi.
+          </p>
+          <p class="note">
+            <b>Kapıdan geçer ≠ tetiklenir.</b> Varsayılan görünüm yalnızca kapıdan GEÇEN
+            satırlardır; kapıda ölenler (%1 stop tabanı, 1.5R, ATR tavanı) katlanmış
+            panelde durur. İkisini aynı listede göstermek karar 34'ün hatasını tekrarlardı:
+            <code>momentum_burst</code> kolu aylarca "tetikleniyor" sanıldı, oysa kapı
+            aritmetiği onu imkânsız kılıyordu.
+          </p>
+          <p class="note">
+            <b>Varsayımlar:</b> hipotetik barın açılışı son kapanış, gövdesi kapanışa kadar
+            (fitil yok), hacmi son 20 barın medyanı. Izgara taraması yapılır (ikiye bölme
+            değil): koşullar fiyata göre monoton değildir. Her sembol TEK BAŞINA
+            fiyatlandırılır, yani satır "tüm piyasa şöyle kapanırsa" demez.
+          </p>
+          <p class="note">
+            <b>Scalp modellerinde "seçim" yazmaz.</b> Model uygun kollar arasından
+            çekilişle seçer ve çekiliş o bardaki TÜM sembollerin kurulumlarına bağlıdır;
+            tarama sembolleri tek tek fiyatlandırdığı için o küme yeniden üretilemez. Liste
+            bu yüzden TETİKLENEN kolları söyler, oynanacak kolu değil.
+          </p>
+          <p class="note">
+            <b>Rozetler:</b> <span class="px-flag">POZİSYON VAR</span> aynı sembol+yönde
+            açık pozisyon var — emir <code>duplicate_position</code> ile düşer.
+            <span class="px-flag">KOTA DOLU</span> <code>max_positions</code> /
+            <code>max_short_positions</code> dolu. Tetiğe ulaşmak emri açtırmaya yetmez.
+          </p>
+        </div>
+      </details>
+      <div id="proximity"></div>
+    </section>
+
   </main>
 
   <!-- ======================= SEVİYE 2 — MODEL DETAYI ======================= -->
@@ -793,6 +877,7 @@ function render(d) {
   setupCardFilter();
   setupSectionNav();
   loadScalp();
+  loadProximity();
 
   window.addEventListener("hashchange", route);
   el("back").addEventListener("click", (ev) => {
@@ -1034,6 +1119,163 @@ function renderScalp(d) {
   renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol", gate);
   renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol", gate);
   renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı", gate);
+}
+
+/* ================= YAKLAŞAN KURULUMLAR =================
+   Yük AYRIDIR (data/proximity.json + data/proximity_scalp.json) ve hiç olmayabilir:
+   adım `continue-on-error`dır ve veri kapısı (çıkış kodu 3) boş bir rapor YAZMAZ.
+   İkisi de yoksa bölüm gizli kalır — var olmayan bir bölüm, "hiçbir kurulum
+   yaklaşmıyor" diye okunacak boş bir tablodan iyidir.
+
+   İki dosya, tek bölüm: ayrılık dosya düzeyindedir (4 saatlik katmanlar ↔ 15 dakikalık),
+   okuyucunun sorusu değil. Her katman kendi kartında ve kendi `as_of`uyla durur;
+   katmanlar arası kıyas burada da YAPILMAZ (CLAUDE.md > Katmanlar). */
+function loadProximity() {
+  Promise.all([
+    fetchPayload("data/proximity.json").catch(() => null),
+    fetchPayload("data/proximity_scalp.json").catch(() => null),
+  ]).then((payloads) => {
+    const layers = [];
+    for (const payload of payloads) for (const layer of ((payload || {}).layers || [])) layers.push(layer);
+    if (!layers.length) return;
+    el("sec-proximity").hidden = false;
+    el("secnav-proximity").hidden = false;
+    sectionNavRefresh();
+    el("proximity").innerHTML = layers.map(proximityLayer).join("");
+  });
+}
+
+/* Tazelik metni katmanın BARINDAN türer, sabit bir cümleden değil: "15 dk'da eskir"
+   yazan sabit bir satır, 4 saatlik bir taramayı dört kat taze gösterirdi. */
+function proximityStaleness(timeframe) {
+  const tf = String(timeframe || "");
+  return tf === "15m" ? "15 dk'da eskir" : "bir sonraki bar kapanışında (" + esc(tf) + ") eskir";
+}
+
+function proximityLayer(layer) {
+  const head = '<h3 class="sub">' + esc(layer.layer) + " — bar " + esc(layer.timeframe || DASH) + "</h3>" +
+    '<p class="note"><b>Tahmin değildir:</b> bir sonraki bar bu fiyatta kapanırsa. ' +
+    "Veri <b>" + esc(fullTs(layer.as_of)) + "</b> itibarıyla; " + proximityStaleness(layer.timeframe) + ".</p>";
+  if (layer.error) {
+    /* Hata SÖYLENİR. Sessizce boş bırakmak, "ölçemedik" ile "yaklaşan yok"u aynı
+       hücreye yazmak olurdu (core/metrics.py'nin nan kuralının arayüzdeki karşılığı). */
+    return '<div class="px-layer">' + head +
+      '<p class="empty">Bu katman taranamadı: ' + esc(layer.error) + "</p></div>";
+  }
+  const models = (layer.models || []).map(proximityModel).join("");
+  return '<div class="px-layer">' + head + (models || '<p class="empty">Model yok.</p>') + "</div>";
+}
+
+function proximityModel(model) {
+  const triggers = model.triggers || [];
+  const open = triggers.filter((t) => t.gates_passed);
+  const blocked = triggers.filter((t) => !t.gates_passed);
+  const note = model.selection
+    ? '<p class="note px-selection">' + esc(model.selection) + "</p>"
+    : "";
+  const scanned = (model.scanned_symbols || []).length;
+  const missing = (model.no_trigger || []).length;
+  const state = model.position_state || {};
+  const quota = "açık " + (state.open_positions ?? DASH) + "/" + (state.max_positions ?? DASH) +
+    " (short " + (state.open_short ?? DASH) + "/" + (state.max_short_positions ?? DASH) + ")";
+
+  const body = open.length
+    ? proximityTable(open)
+    : '<p class="empty">Izgarada kapıdan geçen tetik yok.</p>';
+  /* "Tetik yok" sembolleri AÇIKÇA yazılır: boş bir liste "bilmiyoruz" ile "yok"u aynı
+     hücreye koyardı — yükte de aynı ayrım var (`no_trigger`). */
+  const none = missing
+    ? '<details class="howto"><summary>Izgarada hiç tetik yok — ' + missing + " sembol</summary>" +
+      '<div class="howto-body"><p class="note">' +
+      (model.no_trigger || []).map((s) => esc(s)).join(", ") + "</p></div></details>"
+    : "";
+  const dead = blocked.length
+    ? '<details class="howto"><summary>Tetiklenir ama KAPIDA ölür — ' + blocked.length +
+      " satır</summary><div class=\"howto-body\">" +
+      '<p class="note">Bu kurulumlar o fiyatta gerçekten oluşur, ama modelin kendi kapısı ' +
+      "(%1 stop tabanı / 1.5R) ya da motorun ATR tavanı (kural 14) onları eler. " +
+      "Silinmezler: bir kolun hiç işlem açmamasının sebebi çoğu zaman burada durur.</p>" +
+      proximityTable(blocked) + "</div></details>"
+    : "";
+
+  return '<article class="px-model">' +
+    '<div class="px-head"><b>' + esc(model.model) + "</b>" +
+    '<span class="px-meta">' + scanned + " sembol tarandı · " + quota + "</span></div>" +
+    note + body + dead + none + "</article>";
+}
+
+const PROXIMITY_COLUMNS = ["sembol", "yön", "kol", "tetik", "uzaklık", "ATR", "stop", "hedef", "R:R", "durum"];
+
+function proximityTable(rows) {
+  const head = '<div class="card wide"><table class="grid"><thead><tr>' +
+    PROXIMITY_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
+    rows.map(proximityRow).join("") + "</tbody></table></div>";
+  /* Dar ekranda tablo yerine kart (scalp tablosuyla aynı gerekçe): 10 kolon telefonda
+     ancak yatay kaydırmayla sığardı ve sayfanın sözü "yatay kaydırma yok". */
+  const cards = '<div class="rows narrow">' + rows.map(proximityCard).join("") + "</div>";
+  return head + cards;
+}
+
+function proximityRow(t) {
+  return '<tr class="data">' +
+    "<td>" + esc(t.symbol) + "</td>" +
+    "<td>" + dirBadge(t.direction) + "</td>" +
+    "<td>" + esc(t.arm || DASH) + "</td>" +
+    "<td>" + price(t.trigger_price) + "</td>" +
+    '<td class="' + signClass(t.distance_pct) + '">' + fmtSigned(t.distance_pct) + "%</td>" +
+    "<td>" + fmt(t.distance_atr) + "</td>" +
+    "<td>" + price(t.stop_price) + "</td>" +
+    "<td>" + price(t.target_price) + "</td>" +
+    "<td>" + fmt(t.reward_risk) + "</td>" +
+    "<td>" + proximityFlags(t) + "</td>" +
+    "</tr>";
+}
+
+function proximityCard(t) {
+  const fields = [
+    ["tetik", price(t.trigger_price)],
+    ["uzaklık", fmtSigned(t.distance_pct) + "% / " + fmt(t.distance_atr) + "×ATR"],
+    ["stop", price(t.stop_price)],
+    ["hedef", price(t.target_price)],
+    ["R:R", fmt(t.reward_risk)],
+    ["kol", t.arm || DASH],
+  ];
+  return '<article class="row">' +
+    '<div class="row-top"><div><span class="row-sym">' + esc(t.symbol) + "</span> " +
+    dirBadge(t.direction) + "</div>" +
+    '<div style="text-align:right"><div class="row-val ' + signClass(t.distance_pct) + '">' +
+    fmtSigned(t.distance_pct) + "%</div></div></div>" +
+    '<div class="row-grid">' + fields.map(([k, v]) =>
+      "<div><span>" + esc(k) + '</span> <b><span class="nw">' + esc(String(v)) + "</span></b></div>").join("") +
+    "</div>" + proximityDetail(t) + "</article>";
+}
+
+/* Kapı ve koşul satırları: yargı YÜKTEN gelir (`gates[].passed`), sayfa yeniden
+   karşılaştırma YAPMAZ (kural 7'nin arayüzdeki karşılığı). Ölçü ayrı bir alandır ve
+   yalnızca gösterilir. */
+function proximityDetail(t) {
+  const gates = (t.gates || []).map((g) =>
+    '<span class="px-gate ' + (g.passed ? "ok" : "bad") + '">' + esc(g.name) + "</span>").join(" ");
+  const measures = (t.measurements || []).map((m) =>
+    "<span>" + esc(m.name) + " " + fmt(m.value, 2) + esc(m.unit || "") +
+    " / eşik " + fmt(m.threshold, 2) + esc(m.unit || "") + "</span>").join(" · ");
+  const conds = (t.conditions || []).map((c) =>
+    '<span class="px-cond ' + (c.satisfied === false ? "bad" : "") + '">' + esc(c.detail) + "</span>"
+  ).join(" ");
+  const flags = proximityFlags(t);
+  return '<div class="px-detail">' + gates + (measures ? '<div class="px-measure">' + measures + "</div>" : "") +
+    (conds ? '<div class="px-measure">' + conds + "</div>" : "") +
+    (flags ? '<div class="px-measure">' + flags + "</div>" : "") + "</div>";
+}
+
+function proximityFlags(t) {
+  const s = t.position_state || {};
+  const out = [];
+  if (s.duplicate_position) out.push('<span class="px-flag">POZİSYON VAR</span>');
+  if (s.opposite_position) out.push('<span class="px-flag">TERS POZİSYON</span>');
+  if (s.quota_full) out.push('<span class="px-flag">KOTA DOLU</span>');
+  else if (s.direction_quota_full) out.push('<span class="px-flag">YÖN KOTASI DOLU</span>');
+  return out.join(" ") || (t.gates_passed ? "" : '<span class="px-flag">KAPIDA</span>');
 }
 
 const BREAKDOWN_COLUMNS = ["işlem", "ort. R", "ort. R aralığı", "kazanma", "toplam R", "cost/R"];
