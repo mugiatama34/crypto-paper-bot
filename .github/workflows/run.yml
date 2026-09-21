@@ -146,9 +146,28 @@ jobs:
           python scripts/proximity.py --layer base --layer ema --out docs/data/proximity.json --log-level INFO
           code=$?
           set -e
+
+          # Adım `continue-on-error`dır (job'u düşürmez) ama çöküşü SESSİZ olamaz:
+          # ölçülmüş arıza, betiğin her turda `ModuleNotFoundError` verip yeşil
+          # dönmesiydi. Annotation SEVİYESİ çıkış koduna göre ayrışır, çünkü iki kod
+          # iki ayrı olgudur ve aynı renge boyamak ikisini de okunmaz kılardı:
+          #
+          #   3 = VERİ KAPISI (önbellek boş / çıpa bayat). Betik doğru davrandı:
+          #       raporu YAZMADI çünkü yazacak bir şey yoktu. Bu bir arıza değil,
+          #       atlanmış bir adımdır -> `notice` ve adım YEŞİL çıkar. "Başarısız"
+          #       demek, olağan bir durumu her turda kırmızıya boyayıp gerçek
+          #       çöküşün görünürlüğünü tüketirdi.
+          #   diğer = ÇÖKÜŞ (import hatası, beklenmeyen istisna, kullanım hatası).
+          #       `error` seviyesi ve adım kırmızı (job yine yeşil) — uyarı seviyesi
+          #       gürültüye karışabilen seviyedir ve bu hata tam olarak öyle saklandı.
+          if [ "$code" -eq 3 ]; then
+            echo "::notice title=Yakınlık taraması atlandı::veri kapısı (çıkış kodu 3, base+ema) — taranacak sembol yok, docs/data/proximity.json güncellenmedi"
+            echo "ℹ️ Yakınlık taraması atlandı: veri kapısı (çıkış kodu \`3\`, base+ema) — taranacak sembol yok, \`docs/data/proximity.json\` güncellenmedi." >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 0
+          fi
           if [ "$code" -ne 0 ]; then
-            echo "::warning title=Yakınlık taraması başarısız::scripts/proximity.py çıkış kodu ${code} (base+ema) — docs/data/proximity.json güncellenmedi"
-            echo "⚠️ Yakınlık taraması başarısız (çıkış kodu \`${code}\`, base+ema) — \`docs/data/proximity.json\` güncellenmedi." >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            echo "::error title=Yakınlık taraması çöktü::scripts/proximity.py çıkış kodu ${code} (base+ema) — docs/data/proximity.json güncellenmedi"
+            echo "❌ Yakınlık taraması çöktü (çıkış kodu \`${code}\`, base+ema) — \`docs/data/proximity.json\` güncellenmedi." >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
           fi
           exit $code
 
