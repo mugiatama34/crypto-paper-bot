@@ -1575,6 +1575,30 @@ bar yeniden koşulduğunda aynı çekiliş, farklı barlarda bağımsız çekili
 **Kontrol bir REFERANS değil yarışmacıdır** (`is_benchmark = False`) ve katmanın
 `acceptance.control_model`ü odur.
 
+### Kontrolün TOHUMU — SABİT ve tek seferlik
+
+**`random_seed = 20240217`** (`config.yaml`, kök). `xsec_random` çekilişini
+`random.Random(f"{random_seed}:{self.name}:{as_of}")` ile kurar; yani kontrolün her
+rebalance günündeki seçimi bu sayının ve barın saf fonksiyonudur.
+
+**Koşu tek seferliktir, farklı tohumla yeniden koşulmaz.** Gerekçe bağlayıcı kapının
+kendisidir: E kapısı (§6g > Kapılar) `xsec_mom` ile `xsec_random` arasındaki ortalama R
+FARKINA dayanır. Tohum serbest bırakılsaydı aynı model, aynı pencere ve aynı defterle
+"kontrol kötü çıkana kadar yeniden koş" mümkün olurdu — ve bu §7.1'in yasakladığı
+parametre aramasının en sinsi hâli olurdu, çünkü aranan şey modelin bir parametresi değil
+KARŞILAŞTIRMA ZEMİNİ olurdu. Kontrolün bilgisiz olması onu manipülasyona kapalı yapmaz:
+bilgisiz bir çekiliş de yeniden çekilebilir.
+
+Bu yüzden sayı koşudan ÖNCE, bu commit'te sabittir:
+
+- Tohum değişirse koşu **yeni bir tez** sayılır ve sicile (§6c) ayrı bir satır olarak
+  girer; mevcut satırın sonucu onunla değiştirilemez ve BH paydası (§6c) bir artar.
+- Tohumun sabitliği bir belge cümlesine bırakılmaz, **mekanik olarak sınanır**
+  (`tests/test_docs_sync.py`): `config.yaml > random_seed` ile bu bölümde yazan sayı
+  aynı olmalıdır. İki yerde yazılı bir sayı bir gün sessizce ayrışır — aynı gerekçe
+  `scripts/measure_funding.py`nin pencere sınırlarını `backtest_ema.py`den İTHAL
+  etmesidir.
+
 ### Katman: yeni `xsec` — neden `ema`ya eklenmedi
 
 **`ema` katmanının stop tavanı 3.0'dır ve tavanı motor merkezî olarak uygular**
@@ -1774,6 +1798,8 @@ long-only bir top-k modelin boğa dönemlerinde al-tut'un gerisinde kalması bek
   (haftalık), stop (5×ATR) ve tavan (6.0) bu commit'te sabittir.
 - **Kapıdan kalırsa ayar aranmaz.** Düşen bir tez sicilde kalır (§6c).
 - **Tek workflow tetiklemesi, tek sonuç dosyası.**
+- **Tek tohum.** Kontrolün çekilişi `random_seed = 20240217`e bağlıdır ve koşu tek
+  seferliktir, farklı tohumla yeniden koşulmaz (§6g > Kontrolün TOHUMU).
 - **Koşu sonrası ZORUNLU raporlama:** çıkış sebebi kırılımı (`exit_rule`) ve tutuş süresi
   dağılımı — `ema_trend`in yol ölçümündeki gibi. P1 bu ikisinden okunur.
 

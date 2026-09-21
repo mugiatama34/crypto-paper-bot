@@ -177,3 +177,30 @@ def test_readme_scalp_universe_matches_config() -> None:
     for symbol in universe:
         base = symbol.split("-")[0]
         assert re.search(rf"\b{re.escape(base)}\b", readme), f"{base} README'de yok"
+
+
+def test_xsec_preregistration_pins_the_control_seed() -> None:
+    """Kontrolün tohumu belgede SABİT ve `config.yaml` ile aynı olmalı.
+
+    Bağlayıcı E kapısı `xsec_mom` ile `xsec_random` arasındaki ortalama R FARKINA
+    dayanır ve kontrolün çekilişi `random_seed`in saf fonksiyonudur (bar bazında
+    karıştırılır). Tohum serbest kalsaydı aynı model, aynı pencere ve aynı defterle
+    "kontrol kötü çıkana kadar yeniden koş" mümkün olurdu — değişen şey modelin bir
+    parametresi değil KARŞILAŞTIRMA ZEMİNİ olurdu (§7.1'in yasakladığı aramanın en
+    sinsi hâli).
+
+    Bu yüzden sayı ön-kayıtta yazılıdır ve burada MEKANİK olarak sınanır: belgedeki bir
+    cümle tek başına bir kapı değildir, iki yerde yazılı bir sayı bir gün sessizce
+    ayrışır.
+    """
+    seed = int(load_config()["random_seed"])
+    prereg = (PROJECT_ROOT / "docs/backtest.md").read_text(encoding="utf-8")
+
+    heading = "### Kontrolün TOHUMU — SABİT ve tek seferlik"
+    assert heading in prereg, "§6g'de tohumu sabitleyen bölüm yok"
+
+    section = prereg.split(heading, 1)[1].split("\n### ", 1)[0]
+    assert f"`random_seed = {seed}`" in section, (
+        f"ön-kayıt config.yaml'daki tohumu ({seed}) yazmıyor; ayrışma var"
+    )
+    assert "koşu tek seferliktir, farklı tohumla yeniden koşulmaz" in section.lower()
