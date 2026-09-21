@@ -260,6 +260,73 @@ layers:
     # model bunlara bakmaz ve hiçbir sinyal bu etiketlere göre elenmez.
     breakdowns: ["symbol", "exit_rule", "session", "loss_streak"]
 
+  xsec:
+    # Kesitsel momentum katmanı (4H) — `xsec_mom` ve kontrolünün ölçüldüğü yer.
+    # Ön-kayıt: docs/backtest.md > 6g (bu katman, o belge commit edildikten SONRA kuruldu).
+    #
+    # NEDEN `ema` KATMANINA EKLENMEDİ. `ema`nın stop tavanı 3.0'dır ve tavanı MOTOR
+    # merkezî olarak uygular (`core/engine.py::_within_stop_band`): tavanı aşan sinyal
+    # elenir. `xsec_mom`un stop'u 5×ATR olduğu için o katmanda İSTİSNASIZ her sinyali
+    # düşerdi — model sıfır işlem yapardı. İki alternatif de reddedildi ve gerekçeleri
+    # ön-kayıtta yazılı: stop'u kısmak tasarım niyetini bozardı (baskın çıkış rebalance
+    # olsun), `ema`nın tavanını yükseltmek ise TAMAMLANMIŞ ve ön-kayıtlı bir koşunun
+    # (#35391881083) katman koşulunu geriye dönük değiştirirdi — §7.3'ün yasakladığı
+    # şeyin katman düzeyindeki hâli.
+    #
+    # Gerekçe `ema` katmanının kendi varlık sebebiyle birebir aynıdır: backtest'in ölçtüğü
+    # koşullar forward test'inkiyle aynı olmalı.
+    #
+    # TETİKLEYİCİSİ YOKTUR: tanım var, koşu yok (`ema` ile aynı statü). `run-xsec.yml`
+    # ancak ön-kayıtlı kapılar geçilirse ve AYRI bir kararla eklenir.
+    models: ["buyhold", "xsec_mom", "xsec_random"]
+
+    # `ema` katmanının evreninin AYNISI. Aynı liste olmasının sebebi kolaylık değil:
+    # kesitsel sıralama evrenin BİLEŞİMİNE duyarlıdır (top-3, kaç sembol arasından?) ve
+    # sabit bir evren o bileşimi ölçüm boyunca sabit tutar. Hacimden otomatik seçim,
+    # sıralamanın paydasını 30 günde bir değiştirirdi.
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "SUI-USDT-SWAP"
+      - "NEAR-USDT-SWAP"
+      - "PENGU-USDT-SWAP"
+      - "ETHFI-USDT-SWAP"
+
+    ledger_dir: "ledgers_xsec"
+    metrics_file: "docs/data/metrics_xsec.json"
+
+    # Stop 5×ATR + dolum kaymasına pay (giriş bir sonraki barın açılışından, kural 13:
+    # mesafe ölçüldüğü andan sonra genişleyebilir). 6.0 o paya yer bırakır ama tavanı bir
+    # kural olmaktan ÇIKARMAZ — 5×ATR'yi sistematik aşan bir kurulum yine elenir.
+    # Sayı koşudan ÖNCE sabitlendi (§6g) ve sonuca göre değiştirilmeyecektir.
+    max_stop_atr_multiple: 6.0
+
+    # Kontrol bu katmanda `xsec_random`dır: kabul çıtasının E kapısı onun ortalama R'sine
+    # göre ölçülür. Kök değer (`random_ctrl`) bu katmanda YOKTUR ve bırakılsaydı kapı
+    # kümede olmayan bir modele bakıp sessizce düşerdi (CLAUDE.md > Kabul Çıtası).
+    acceptance:
+      control_model: "xsec_random"
+
+    data:
+      # 126 barlık geriye bakış + ATR(14) + tohumlama payı. 600 bar (100 gün) canlı için
+      # fazlasıyla yeterli; backtest pencereyi `--history-bars` ile DERİNLEŞTİRİR.
+      history_bars: 600
+
+    retention:
+      equity_compaction_days: null
+      model_trade_limit: 100
+
+    # `exit_rule` ZORUNLU: ön-kayıtlı P1 tahmini (rebalance çıkışı ≥ %70, stop ≤ %30) tam
+    # olarak bu kırılımdan okunur. symbol/session/loss_streak `ema` ile aynı statüde ÖLÇÜM.
+    breakdowns: ["symbol", "exit_rule", "session", "loss_streak"]
+
   scalp:
     # 15 dakikalık scalp katmanı: iki model (model 11 adaptif, model 12 kontrol).
     timeframe: "15m"
@@ -441,6 +508,20 @@ ema_trend:
 # 13 ↔ 14 farkı bu yüzden "ev kurallarının katkısı" DEĞİLDİR: iki model sinyal kuralları,
 # boyutlandırma, ev kapıları, seçim politikası, bar başına sinyal sayısı ve evren olmak
 # üzere altı eksende birden ayrışır (bkz. strategies/vwap_managed.py docstring'i).
+# Kesitsel momentum (model `xsec_mom`) ve kontrolü (`xsec_random`) — YALNIZCA bu ikisi okur.
+# Dört sayı da docs/backtest.md > 6g'de ÖN-KAYITLIDIR: koşu sonucuna göre değiştirilemez
+# ve süpürülmez (§7.1).
+#
+# ATR PERİYODU BURADA YOKTUR: projenin tek ATR tanımı `trailing.atr_period`tır (14).
+# ATR YUMUŞATMASI da yoktur ve bu bir eksiklik değil bir KARARDIR: model projenin
+# varsayılanını (`simple`) kullanır. `ema_trend` Wilder'ı bir dış sistem paritesi için
+# BİLDİRMİŞTİ; bu modelin öyle bir referansı yok ve motorun stop tavanı kontrolü ATR'yi
+# zaten varsayılanla ölçüyor — ayrışmak "5×ATR"yi iki farklı sayı yapardı (§6g).
+xsec:
+  lookback_bars: 126        # 126 × 4H = 21 gün; kesitsel momentum literatüründeki 1-4 hafta bandının ortası
+  top_k: 3                  # portföy büyüklüğü; `max_positions` (5) bunu bağlamaz
+  stop_atr_multiple: 5.0    # haftalık oynaklık ölçeği: baskın çıkış rebalance olsun, gürültü stop'u değil
+
 vwap:
   band_mult: 2.0            # MODEL 14: VWAP'ten kaç hacim ağırlıklı standart sapma "bant dışı"
   min_vwap_bars: 8          # MODEL 14: gün çapasından bu kadar bar geçmeden sapma anlamlı değil
