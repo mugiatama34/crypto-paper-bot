@@ -92,6 +92,36 @@
     color: var(--ink-dim);
   }
 
+  /* KARŞI POZİSYON rozeti: aynı modelin aynı sembolde TERS yönde duran pozisyonu.
+     Bir kural değil bir GÖRÜNÜRLÜK işaretidir (bkz. docs/decisions.md > 52) — bot
+     ters yönü ayrı bir pozisyon sayar, ama tek yönlü bir borsa hesabında okuyucu
+     ikisini aynı anda tutamaz.
+
+     Ayrım renk TEK BAŞINA taşımaz: rozetin kendi SÖZÜ ("KARŞI") ve ⇅ işareti de
+     söyler (aynı kural `.sig.rej` ve `.outcome` için de geçerli — renk körlüğünde
+     renk yeterli bir ipucu değildir). Rozet bir düğmedir çünkü eşine ATLAR; adresi
+     değiştirmez, çünkü bu sayfada hash FİLTRE DURUMUDUR ve bir çapa onu silerdi. */
+  button.badge.peer {
+    position: relative; min-height: 0; padding: 2px 6px; font-size: 10.5px; margin-left: 6px;
+    text-decoration: underline dotted; text-underline-offset: 2px;
+  }
+  /* Rozet, yoğun bir satırın içinde durduğu için GÖRSEL olarak küçüktür; dokunma
+     hedefi ise sayfanın tabanını (44px) korumak zorundadır. `min-height` ile büyütmek
+     tablo satırını iki katına çıkarırdı, bu yüzden büyüyen şey görünmeyen VURUŞ
+     ALANIDIR. Açık pozisyon satırında başka tıklanabilir öğe yok, yani genişleyen
+     alan hiçbir komşunun dokunuşunu çalmaz. */
+  button.badge.peer::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    height: var(--touch); transform: translateY(-50%);
+  }
+  @media (min-width: 480px) { table.grid button.badge.peer { margin-left: 5px; } }
+  /* Atlanan satır bir an için işaretlenir: uzun bir listede "gittim ama nereye"
+     sorusunu kapatır. Vurgulama renkle SINIRLI değildir — kenarlık da değişir. */
+  [data-pos].peer-flash, tr.data.peer-flash > td {
+    background: rgba(250,178,25,0.14); transition: background 900ms ease-out;
+  }
+  [data-pos].peer-flash { outline: 1px solid rgba(250,178,25,0.55); }
+
   @media (min-width: 480px) {
     .wide { display: block; }
     .narrow { display: none; }
@@ -588,6 +618,72 @@ const OPEN_COLUMNS = [
   "TP", "SL", "durum", "kaldıraç", "margin", "riske edilen", "funding", "açılış (UTC)",
 ];
 
+/* ------------------------------------------------------------------ *
+ * KARŞI POZİSYON — aynı modelin aynı sembolde TERS yönde duran pozisyonu
+ * ------------------------------------------------------------------
+ * Aynı sembolde ters yönde eşzamanlı pozisyon TASARIM GEREĞİ serbesttir
+ * (core/portfolio.py yalnızca (sembol, yön) çiftini reddeder) ve bu
+ * DEĞİŞMEDİ. Sayfa bir kural uygulamıyor, bir OLGUYU görünür kılıyor:
+ * tek yönlü (one-way) bir borsa hesabında elle takip eden biri botla
+ * aynı iki pozisyonu aynı anda tutamaz — onun emri mevcut pozisyonu
+ * azaltır ya da kapatır. Bkz. docs/decisions.md > 52.
+ *
+ * Eşleştirme RENDER EDİLEN satırlar üzerinde kurulur, POSITIONS'ın
+ * tamamında değil: açık pozisyon filtresi yalnızca katman ve modele
+ * bakar (matchesScope) ve eş tanımı gereği aynı katman + aynı modeldir,
+ * yani bir satır görünüyorsa eşi de görünür. Tersi olsaydı rozet hiçbir
+ * yere gitmeyen bir bağlantı taşırdı.
+ *
+ * Bu bir ÖLÇÜM DEĞİLDİR: hiçbir sayıyı değiştirmez, hiçbir satırı
+ * elemez ve yükten okunan istatistiklere dokunmaz (kural 7).
+ */
+const posKey = (p) => [p.layer, p.model, p.symbol, p.direction, p.opened_at].join("|");
+
+function indexCounters(rows) {
+  const byPair = new Map();
+  for (const p of rows) {
+    const key = [p.layer, p.model, p.symbol].join("|");
+    if (!byPair.has(key)) byPair.set(key, []);
+    byPair.get(key).push(p);
+  }
+  const peers = new Map();
+  for (const group of byPair.values()) {
+    if (group.length < 2) continue;
+    for (const p of group) {
+      const mate = group.find((q) => q.direction && p.direction && q.direction !== p.direction);
+      if (mate) peers.set(posKey(p), posKey(mate));
+    }
+  }
+  return peers;
+}
+
+function counterHtml(position, peers) {
+  const peer = peers.get(posKey(position));
+  if (!peer) return "";
+  const side = String(position.direction || "") === "long" ? "SHORT" : "LONG";
+  const title = "Aynı model bu sembolde ters yönde (" + side + ") de pozisyon tutuyor. " +
+    "Bot ikisini AYRI tutar (hedge modu) ve ölçüm de öyle yapar; tek yönlü (one-way) " +
+    "bir borsa hesabında ise ikisi birbirini azaltır/kapatır. Dokunun: eşine gider.";
+  return ' <button type="button" class="badge warn peer" data-peer="' + esc(peer) +
+    '" title="' + esc(title) + '">⇅ KARŞI POZİSYON</button>';
+}
+
+/* Atlama ADRESİ DEĞİŞTİRMEZ: bu sayfada hash filtre durumudur (readHash) ve bir
+   `#...` çapası onu silip tüm filtreleri sıfırlardı. Hedef `data-pos` ile bulunur,
+   id ile değil: tablo ve kart AYNI pozisyonu iki düzende çizer, id kullanmak aynı
+   belgede çift id demekti. Görünen düzen hangisiyse ona gidilir. */
+function jumpToPeer(host, key) {
+  const targets = Array.from(host.querySelectorAll("[data-pos]"))
+    .filter((node) => node.dataset.pos === key && node.offsetParent !== null);
+  const target = targets[0];
+  if (!target) return;
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+  target.classList.remove("peer-flash");
+  void target.offsetWidth;   // yeniden tetiklenebilsin diye akış zorlanır
+  target.classList.add("peer-flash");
+  setTimeout(() => target.classList.remove("peer-flash"), 1600);
+}
+
 /* Hedefler KALAN hedeflerdir: dolmuş bir kısmi TP pozisyondan düşülür
    (core/portfolio.py), yani kolon "bundan sonra ne bekleniyor"u gösterir. */
 function targetHtml(position) {
@@ -645,6 +741,7 @@ function renderOpen() {
   const rows = POSITIONS.filter(matchesScope);
   const host = el("open-host");
   const unmarked = rows.some((p) => p.marked === false);
+  const peers = indexCounters(rows);
 
   el("open-note").innerHTML =
     "<b>" + rows.length + " açık pozisyon</b> — anlık K/Z ve anlık R, pozisyonun " +
@@ -653,6 +750,10 @@ function renderOpen() {
     "<b>Anlık R</b> = anlık K/Z ÷ giriş anındaki 1R (ilk stop'tan); stop'suz referans " +
     "pozisyonda tanımsızdır. Riske edilen tutar = <code>boyut × |giriş − ilk stop|</code>, " +
     "margin = pozisyonun bağladığı teminat — ikisi farklı sorulardır." +
+    (peers.size ? " <b>⇅ KARŞI POZİSYON</b> rozeti: aynı model aynı sembolde ters yönde " +
+      "de pozisyon tutuyor. Bu tasarım gereğidir — bot ters yönü AYRI bir pozisyon sayar " +
+      "ve ölçüm de öyle yapılır; tek yönlü (one-way) bir borsa hesabında ise ikisi " +
+      "birbirini azaltır/kapatır. Rozete dokununca eşine gider." : "") +
     (unmarked ? " <b>*</b> işaretli fiyat: sembolün <code>as_of</code> barı anlık görüntüde " +
       "yoktu, pozisyon giriş fiyatından işaretlendi." : "");
 
@@ -667,7 +768,7 @@ function renderOpen() {
       const cells = [
         ["model-cell", modelCell(p)],
         ["symcell", esc(p.symbol)],
-        ["", dirBadge(p.direction)],
+        ["", dirBadge(p.direction) + counterHtml(p, peers)],
         ["", esc(price(p.entry_price))],
         ["", esc(price(p.mark_price) + (p.marked === false ? " *" : ""))],
         [signClass(p.pnl), esc(usd(p.pnl))],
@@ -681,7 +782,7 @@ function renderOpen() {
         [signClass(p.funding), esc(usd(p.funding))],
         ["", esc(fullTs(p.opened_at))],
       ];
-      return '<tr class="data">' + cells.map(([cls, value]) =>
+      return '<tr class="data" data-pos="' + esc(posKey(p)) + '">' + cells.map(([cls, value]) =>
         '<td class="' + cls + '">' + value + "</td>").join("") + "</tr>" +
         (p.reason
           ? '<tr><td class="reason-cell" colspan="' + OPEN_COLUMNS.length + '">' + esc(p.reason) + "</td></tr>"
@@ -702,9 +803,10 @@ function renderOpen() {
       ["funding", esc(usd(p.funding))],
       ["açılış (UTC)", esc(fullTs(p.opened_at))],
     ];
-    return '<article class="row">' +
+    return '<article class="row" data-pos="' + esc(posKey(p)) + '">' +
       '<div class="row-top"><div>' +
         '<span class="row-sym">' + esc(p.symbol) + "</span> " + dirBadge(p.direction) +
+        counterHtml(p, peers) +
         '<div class="row-model">' + modelCell(p) + "</div>" +
       "</div>" +
       '<div style="text-align:right">' +
@@ -719,6 +821,9 @@ function renderOpen() {
   }).join("") + "</div>";
 
   host.innerHTML = table + cards;
+  host.querySelectorAll("button.badge.peer").forEach((button) => {
+    button.addEventListener("click", () => jumpToPeer(host, button.dataset.peer));
+  });
 }
 
 /* ================================================================== *

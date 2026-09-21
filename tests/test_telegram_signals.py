@@ -143,6 +143,58 @@ def telegram(monkeypatch: pytest.MonkeyPatch) -> _FakeRequests:
     return fake
 
 
+def _positions(
+    tmp_path: Path,
+    model: str,
+    *,
+    positions: Sequence[dict[str, Any]] = (),
+    pending: Sequence[dict[str, Any]] = (),
+) -> Path:
+    """Bir modelin defter durumu (`<kök>/<model>/positions.json`).
+
+    Karşı maruziyet uyarısının TEK girdisi budur: script onu okur, hesaplamaz.
+    """
+    path = tmp_path / "ledgers" / model / "positions.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"model": model, "positions": list(positions), "pending_orders": list(pending)}),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _open_position(
+    *, symbol: str = "BTC-USDT-SWAP", direction: str = "short", **overrides: Any
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "symbol": symbol,
+        "direction": direction,
+        "entry_price": 64000.0,
+        "opened_at": (AS_OF - BAR).isoformat(),
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _pending_order(
+    *,
+    symbol: str = "BTC-USDT-SWAP",
+    direction: str = "short",
+    kind: str = "open",
+    **overrides: Any,
+) -> dict[str, Any]:
+    """`core/engine.py::PendingOrder.as_state`in ilgili alanları (`kind` şart: bir ÇIKIŞ
+    emri pozisyonun KENDİ yönünü taşır ve karşı maruziyet değildir)."""
+    payload: dict[str, Any] = {
+        "kind": kind,
+        "symbol": symbol,
+        "direction": direction,
+        "created_at": AS_OF.isoformat(),
+    }
+    payload.update(overrides)
+    return payload
+
+
 def _run(
     tmp_path: Path,
     payload: dict[str, Any],
@@ -156,8 +208,11 @@ def _run(
     if state is not None:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(json.dumps({"sent": state}), encoding="utf-8")
+    # Defter kökü HER koşuda tmp_path altındadır: varsayılan (`ledgers_scalp`) depo
+    # kökündeki GERÇEK defteri okurdu ve testler canlı pozisyonlara bağlanırdı.
     code = telegram_signals.main(
-        ["--metrics", str(metrics), "--state", str(state_path), *args]
+        ["--metrics", str(metrics), "--state", str(state_path),
+         "--ledgers", str(tmp_path / "ledgers"), *args]
     )
     return code, state_path
 
@@ -365,6 +420,10 @@ def test_layer_picks_its_own_metrics_and_state_paths() -> None:
     assert telegram_signals.metrics_path_for("base") == Path("docs/data/metrics.json")
     assert telegram_signals.metrics_path_for("scalp") == Path("docs/data/metrics_scalp.json")
     assert telegram_signals.state_path_for("base") != telegram_signals.state_path_for("scalp")
+    # Defter kökü de aynı ÜÇLÜNÜN parçasıdır: karşı pozisyon uyarısı katmanın KENDİ
+    # defterinden okunmalı, yoksa 15 dakikalık bir sinyal 4 saatlik defterle uyarılırdı.
+    assert telegram_signals.ledger_dir_for("base") == Path("ledgers")
+    assert telegram_signals.ledger_dir_for("scalp") == Path("ledgers_scalp")
 
 
 # --------------------------------------------------------------------------- #
@@ -824,3 +883,198 @@ def test_only_the_signals_whose_message_was_sent_are_recorded(
     assert "scalp_bandit|SYM0-USDT-SWAP|long" in sent
     assert "scalp_bandit|SYM2-USDT-SWAP|long" in sent
     assert "scalp_bandit|SYM1-USDT-SWAP|long" not in sent
+
+
+# --------------------------------------------------------------------------- #
+# Karşı maruziyet: aynı sembolde TERS yönde ne var
+# --------------------------------------------------------------------------- #
+# Ters yönde eşzamanlı pozisyon TASARIM GEREĞİ serbesttir ve bu testler o davranışı
+# değiştirmez — ölçtükleri tek şey GÖRÜNÜRLÜKTÜR: mesaj durumu söylüyor mu, ve
+# söylememesi gereken yerde susuyor mu (bkz. docs/decisions.md > 52).
+def test_counter_position_adds_a_warning_line(tmp_path: Path, telegram: _FakeRequests) -> None:
+    """Ters yönde AÇIK pozisyon varken uyarı satırı mesajda durur.
+
+    Tek yönlü bir borsa hesabında okuyucu botla aynı iki pozisyonu tutamaz: onun emri
+    mevcut pozisyonu azaltır ya da kapatır. Satır olmadan mesaj, botun defterinde olan
+    şeyi okuyucunun hesabında da olabilecek bir şey gibi gösterirdi.
+    """
+    _positions(tmp_path, "scalp_bandit", positions=[_open_position(direction="short")])
+
+    _run(tmp_path, _payload([_signal(direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "Bu modelin BTC-USDT-SWAP üzerinde açık <b>SHORT</b> pozisyonu var" in message
+    assert "bot ikisini AYRI tutar (hedge modu)" in message
+
+
+def test_no_counter_position_means_no_warning_line(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Aynı yönde bir pozisyon ya da hiç pozisyon: satır YOKTUR.
+
+    Her mesaja koşulsuz bir "hedge" satırı eklemek, uyarıyı bir uyarı olmaktan çıkarıp
+    mesajın sabit bir kuyruğuna çevirirdi — okuyucu onu okumayı bırakırdı.
+    """
+    _positions(tmp_path, "scalp_bandit", positions=[_open_position(direction="long")])
+
+    _run(tmp_path, _payload([_signal(direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "hedge modu" not in message
+    # İki ZORUNLU uyarı yerinde kalır: karşı maruziyet satırı onların yerine geçmez.
+    assert "Senin girişin farklı bir fiyattan olacak." in message
+    assert "Bu bir sinyaldir, açılmış bir işlem DEĞİL" in message
+
+
+def test_counter_position_on_another_symbol_is_not_a_warning(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Ölçüt (model, SEMBOL, ters yön) üçlüsüdür: başka sembolde short tutmak, bu
+    sembolde tek yönlü modu ilgilendirmez."""
+    _positions(tmp_path, "scalp_bandit", positions=[_open_position(symbol="ETH-USDT-SWAP")])
+
+    _run(tmp_path, _payload([_signal(symbol="BTC-USDT-SWAP", direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "hedge modu" not in message
+
+
+def test_pending_counter_order_in_the_same_round_warns(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Aynı turda ters yönde BEKLEYEN emir de uyarır — ama başka cümleyle.
+
+    İSTEK ile OLAY ayrı yazılır: bekleyen emir dolum anında kota/nakit kapılarında
+    düşebilir (kural 13), yani "pozisyonun var" demek `_warning`in (b) satırının açtığı
+    ayrımı bir satır sonra geri kapatmak olurdu.
+    """
+    _positions(tmp_path, "scalp_bandit", pending=[_pending_order(direction="short")])
+
+    _run(tmp_path, _payload([_signal(direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "bu turda açılacak <b>SHORT</b> emri var" in message
+    assert "pozisyonu var" not in message
+
+
+def test_pending_exit_order_is_not_a_counter_position(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Bekleyen bir ÇIKIŞ emri (ör. zaman stop'u) pozisyonun KENDİ yönünü taşır.
+
+    Onu karşı maruziyet saymak, kapanmakta olan bir pozisyonu yeni bir ters pozisyon
+    gibi gösterirdi — `kind == "open"` şartı tam olarak bunu kapatır.
+    """
+    _positions(
+        tmp_path, "scalp_bandit",
+        pending=[_pending_order(direction="short", kind="exit")],
+    )
+
+    _run(tmp_path, _payload([_signal(direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "hedge modu" not in message
+
+
+def test_open_position_is_reported_over_a_pending_order(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """İkisi birden varsa mesaj AÇIK pozisyonu söyler: okuyucunun elinde duran şey odur."""
+    _positions(
+        tmp_path, "scalp_bandit",
+        positions=[_open_position(direction="short")],
+        pending=[_pending_order(direction="short")],
+    )
+
+    _run(tmp_path, _payload([_signal(direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "açık <b>SHORT</b> pozisyonu var" in message
+    assert "emri var" not in message
+
+
+def test_another_models_counter_position_does_not_warn(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """İZOLASYON (kural 4): başka bir modelin ters pozisyonu uyarı TETİKLEMEZ.
+
+    Okuyucunun takip ettiği şey tek bir modeldir; komşu modelin defteri onun hesabında
+    yoktur. Modelleri birleştirmek, `scalp_fixed`in short'u yüzünden `scalp_patient`in
+    long sinyalini "hedge" diye bildirmek olurdu — hiçbir hesapta karşılığı olmayan bir
+    uyarı, uyarının kendisini değersizleştirir.
+    """
+    _positions(tmp_path, "scalp_fixed", positions=[_open_position(direction="short")])
+    _positions(tmp_path, "scalp_bandit")
+
+    _run(tmp_path, _payload([_signal(model="scalp_bandit", direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "hedge modu" not in message
+
+
+def test_batch_message_marks_only_the_hedged_signals(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Toplu mesajda işaret SATIR bazındadır, gerekçe bir KEZ yazılır.
+
+    Ortak tek bir satır hangi sinyalin etkilendiğini söylemezdi; açıklamayı altı kez
+    tekrarlamak ise 4096 karakterlik sınırı yerdi.
+    """
+    _positions(tmp_path, "scalp_bandit", positions=[_open_position(symbol="SOL-USDT-SWAP")])
+    signals = [
+        _signal(symbol=f"{name}-USDT-SWAP", direction="long")
+        for name in ("ADA", "AVAX", "BNB", "BTC", "ETH", "SOL")
+    ]
+
+    _run(tmp_path, _payload(signals))
+
+    (message,) = _messages(telegram)
+    assert message.count("⚠️ ters yönde açık SHORT var") == 1
+    assert message.count("bot ikisini AYRI tutar (hedge modu)") == 1
+
+
+def test_a_missing_positions_file_still_sends_the_signal(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Defter okunamıyorsa uyarı satırı düşer, MESAJ düşmez.
+
+    Uyarı bir kolaylıktır; onu üretemediği için sinyali hiç bildirmemek, okuyucuyu
+    fırsattan da habersiz bırakırdı ("her yolda 0 döner" sözünün bu yüzeydeki karşılığı).
+    """
+    code, _ = _run(tmp_path, _payload([_signal(direction="long")]))
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "BTC-USDT-SWAP" in message and "hedge modu" not in message
+
+
+def test_a_corrupt_positions_file_still_sends_the_signal(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    path = tmp_path / "ledgers" / "scalp_bandit" / "positions.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{bozuk", encoding="utf-8")
+
+    code, _ = _run(tmp_path, _payload([_signal(direction="long")]))
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "BTC-USDT-SWAP" in message and "hedge modu" not in message
+
+
+def test_counter_warning_does_not_change_which_signals_are_sent(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Uyarı bir KAPI DEĞİLDİR: ters pozisyon sinyali ELEMEZ, yalnızca satır ekler.
+
+    Seçenek B (reddet) tam olarak bunu yapardı ve ölçümü yol-bağımlı hâle getirirdi;
+    reddedilmesi gereken yer ölçümün kendisidir (`core/portfolio.py`) ve orası
+    değişmedi — bildirim katmanı bir ölçüm kuralı icat edemez.
+    """
+    _positions(tmp_path, "scalp_bandit", positions=[_open_position(direction="short")])
+
+    _run(tmp_path, _payload([_signal(direction="long")]))
+
+    (message,) = _messages(telegram)
+    assert "⚡ YENİ SİNYAL" in message
+    assert "R:R 2.00" in message
