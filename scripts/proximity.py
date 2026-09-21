@@ -111,23 +111,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-import pandas as pd
+# Depo kökü `sys.path`e ALINIR (öteki betiklerin aynı kalıbı). Workflow betiği
+# `python scripts/proximity.py` ile çağırır: o kipte `sys.path[0]` `scripts/`tir ve
+# `core`/`strategies`/`main` görünmez. Testlerde görünüyor olması bunu maskeler —
+# `pytest.ini` kökü zaten yola koyar — bu yüzden kapı da ayrıca testtedir
+# (`tests/test_script_entrypoints.py`): betikler GERÇEKTEN çağrıldıkları gibi koşulur.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.config import ConfigError, get_setting, load_config
-from core.data import bar_duration, load_cached_market_data
-from core.engine import Engine
-from core.indicators import average_true_range, sma
-from core.layers import DEFAULT_LAYER, Layer, resolve_layer
-from core.ledger import Ledger
-from core.portfolio import Portfolio
-from core.tags import find_tag
-from main import build_strategies, jsonable
-from strategies.base import MarketData, Signal, Strategy
-from strategies.scalp import arms as scalp_arms
-from strategies.scalp.model import ScalpModel
-from strategies.vwap import signal as vwap_signal
-from strategies.vwap_clone import VwapClone
-from strategies.vwap_managed import VwapManaged
+import pandas as pd  # noqa: E402
+
+from core.config import ConfigError, get_setting, load_config  # noqa: E402
+from core.data import bar_duration, load_cached_market_data  # noqa: E402
+from core.engine import Engine  # noqa: E402
+from core.indicators import average_true_range, sma  # noqa: E402
+from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
+from core.ledger import Ledger  # noqa: E402
+from core.portfolio import Portfolio  # noqa: E402
+from core.tags import find_tag  # noqa: E402
+from main import build_strategies, jsonable  # noqa: E402
+from strategies.base import MarketData, Signal, Strategy  # noqa: E402
+from strategies.scalp import arms as scalp_arms  # noqa: E402
+from strategies.scalp.model import ScalpModel  # noqa: E402
+from strategies.vwap import signal as vwap_signal  # noqa: E402
+from strategies.vwap_clone import VwapClone  # noqa: E402
+from strategies.vwap_managed import VwapManaged  # noqa: E402
 
 logger = logging.getLogger("proximity")
 

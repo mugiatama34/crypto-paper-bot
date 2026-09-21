@@ -135,7 +135,22 @@ jobs:
       - name: Proximity scan
         if: steps.round.outputs.advanced == 'true'
         continue-on-error: true
-        run: python scripts/proximity.py --layer base --layer ema --out docs/data/proximity.json --log-level INFO
+        # Adım `continue-on-error`dır, yani job'u DÜŞÜRMEZ — ama sessizce de geçemez.
+        # Ölçülmüş arıza: betik `ModuleNotFoundError` ile her turda çöktü ve job yeşil
+        # döndüğü için haftalarca fark edilmedi. Bir uyarı annotation'ı (koşu sayfasının
+        # başında görünür) ve bir özet satırı (`$GITHUB_STEP_SUMMARY`) o sessizliği
+        # kapatır. Çıkış kodu OLDUĞU GİBİ yazılır: `3` veri kapısıdır (önbellek boş, çıpa
+        # bayat — olağan), `1` gerçek bir çöküştür ve ikisi aynı satıra çökmemelidir.
+        run: |
+          set +e
+          python scripts/proximity.py --layer base --layer ema --out docs/data/proximity.json --log-level INFO
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::warning title=Yakınlık taraması başarısız::scripts/proximity.py çıkış kodu ${code} (base+ema) — docs/data/proximity.json güncellenmedi"
+            echo "⚠️ Yakınlık taraması başarısız (çıkış kodu \`${code}\`, base+ema) — \`docs/data/proximity.json\` güncellenmedi." >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          fi
+          exit $code
 
       # Neden AYRI bir commit: yukarıdaki defter commit'i `docs/data`yı tarama
       # üretilmeden ÖNCE ekliyor. Taramayı o commit'e katmak, onu defterin
