@@ -3982,6 +3982,36 @@ geçilmeden hiçbir yerde kullanılmaz. Tek fark, cross-venue bir adayda o kanı
 "aynı oran" biçimiyle değil §6f'nin üç koşuluyla (damga hizası, p95 olay kümesi Jaccard,
 işaret uyumu) verilecek olmasıdır — gerekçe ve bedeli §6f > Adım C'de yazılı.
 
+⚠ **DÜZELTME + KAPANIŞ (2026-09-21): yukarıdaki iki paragraf AŞILDI.** Doğrudan portal
+gözlemi geldi ve A-2'nin gerekçesini çürüttü: **portal fonlama verisi SUNUYOR** —
+indirilen dosya `BTC 2022-08`, yani dönem A'nın içi. "Fonlama geçmişi listelenmiyor"
+cümlesi yanlıştı; yukarıda silinmeden bırakıldı çünkü nasıl yanıldığımız da kayıttır.
+Bu, bu belgede ikincil kaynak iddiasının doğrudan gözlemle düştüğü **ikinci** vakadır
+(ilki "400 kayıt tavanı") ve ders şudur: burada ikincil kaynak HİPOTEZ üretir, SONUÇ
+üretmez.
+
+**Engel VARLIK değil TESLİMATTIR.** Portalın gözlenen kısıtları: 7 gün (günlük mod) /
+6 ay (aylık mod) pencere, aylık modda "All" yok, 4 sembol sınırı, gün kesimi 16:00 UTC —
+ve belirleyici olan: **4 sembol × 6 aylık bir talep tek bir sembol-ay dosyası döndürdü.**
+Dönem A `13 × 30 = 390` sembol-ay ister; bu davranışla o küme derlenemez ve kısmen
+derlense bile hangi ayın neden gelmediği bilinmez, yani kapsama tablosuna görünmez bir
+üçüncü sebep ("portal vermedi") karışır. Gelen dosyanın damgalarının tam 8 saatlik
+ızgarada olması ise bir kazançtır: biçim doğru, dönüştürme işi yok.
+
+**KARAR: tez ASKIYA ALINDI, TEST EDİLMEDİ.** Adım B açılmadı, Bybit'e geçilmedi ve
+cross-venue muafiyeti HİÇ kullanılmadı — §6f'deki C-a/b/c koşulları ve §8'in satırı
+yazılı kalır ama uygulanmadılar; §5'in sapma satırı da eklenmez (koşulu "arşiv gerçekten
+kullanıldığında"ydı). Tez DÜŞMEDİ: bu kaydın başındaki ayrım aynen geçerlidir — ölçülüp
+düşmüş bir tez değil, veri yolunda duran bir tez. Değişen tek şey yolun NEREDE durduğudur:
+REST API'de derinlik, portalda teslimat.
+
+**Yeniden açılma koşulu güvenilir bir veri yoludur** ve "güvenilir" ölçülebilir bir
+şeydir: istenen sembol-ay kümesinin tamamının gelmesi ya da eksiklerin ADLANDIRILMIŞ
+gelmesi. O gün geldiğinde uygulanacak kapı da belli ve LİTERALDİR: portal OKX'in kendi
+verisi olduğu için yol OKX-içidir ve bu kaydın 2. maddesindeki "aynı damga, aynı oran"
+şartı geçerlidir — üç koşullu cross-venue biçim Bybit/Binance adaylarına aitti ve onlara
+sıra hiç gelmedi.
+
 ---
 
 ## 39-DOĞRULAMA: tahmin kıl payı tuttu, ama onarımın DAYANDIĞI MEKANİZMA çürüdü

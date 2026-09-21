@@ -1166,7 +1166,66 @@ yok. §6f'nin SABİT aday sırası devreye giriyor: **Bybit.** Bunun iki sonucu 
 bir iştir ve kurulduktan sonra bile **C kapısı geçilmeden hiçbir yerde kullanılamaz** —
 ne bir dağılım raporunda, ne bir eşik seçiminde, ne bir backtest'te (karar 50'nin sırası).
 
-### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(AÇILDI: 2026-09-20)*
+#### ⚠ DÜZELTME (2026-09-21) — A-2'nin GEREKÇESİ yanlıştı, ve tez ASKIYA ALINDI
+
+**Doğrudan portal gözlemi geldi ve yukarıdaki kaydı çürüttü.** Portal fonlama verisi
+**SUNUYOR**: indirilen dosya `BTC 2022-08`, yani dönem A'nın TA İÇİ. Bir üstteki
+"fonlama oranı geçmişi listelenmiyor" cümlesi **yanlıştır** ve olduğu yerde bırakılmıştır
+(silmek, yanlışın nasıl oluştuğunu da silerdi).
+
+**Çürüyen şey kanıtın SINIFIYDI ve uyarısı zaten yazılıydı.** Bir üstteki ⚠ tam olarak bu
+ihtimali adlandırıyordu: *"portalın indirme listesine doğrudan bakan bir gözlem bunu
+tersine çevirebilir."* Çevirdi. Uyarı işini gördü; ona rağmen ikincil kaynağa dayanarak
+verilen sonuç görmedi. **Bu belgede ikinci kez bir ikincil kaynak iddiası doğrudan bir
+gözlemle düştü** (ilki "400 kayıt tavanı") ve iki vakanın ortak dersi şudur: bu projede
+ikincil kaynak bir HİPOTEZ üretir, bir SONUÇ üretmez.
+
+**Doğrudan gözlenen portal kısıtları:**
+
+| Gözlem | Değer |
+|---|---|
+| pencere — günlük mod | 7 gün |
+| pencere — aylık mod | 6 ay |
+| aylık modda "All" seçeneği | YOK |
+| eşzamanlı sembol sınırı | 4 |
+| **4 sembol × 6 ay talebi** | **1 sembol-ay dosyası döndü** (`BTC 2022-08`) |
+| gün sınırının kesimi | 16:00 UTC |
+| aylık dosyanın damgaları | tam 8 saatlik ızgara |
+
+**Engel VARLIK değil, TESLİMAT — ve ayrım bu kaydın asıl bilgisidir.** İki gözlem onu
+kuruyor: (1) `BTC 2022-08` dosyasının var olması, verinin dönem A'ya ULAŞTIĞINI gösterir —
+yani A-1'in ölçtüğü ~3 aylık derinlik tavanı portalda YOK; (2) 24 sembol-ay isteyip 1
+tanesini almak, yolun öngörülebilir olmadığını gösterir. Dönem A için `13 × 30 = 390`
+sembol-ay gerekir; bu teslimat davranışıyla o küme derlenemez ve — daha kötüsü — kısmen
+derlense bile hangi ayın NEDEN gelmediği bilinmez. O hâlde kapsama tablosu okunamaz olurdu:
+`measure_funding.py::coverage`'ın ayırmak için var olduğu "listeleme tarihi ↔ veri boşluğu"
+ayrımına üçüncü ve görünmez bir sebep ("portal o dosyayı vermedi") karışırdı.
+
+**8 saatlik ızgara bir KAZANÇTIR ve kayda geçiyor:** gelen dosyanın damgaları fonlama
+periyoduyla birebir örtüşüyor, yani biçim doğru. Güvenilir bir teslimat yolu çıkarsa
+önünde bir dönüştürme işi yok.
+
+### KARAR — fonlama tezi ASKIYA ALINDI (2026-09-21), TEST EDİLMEDİ
+
+- **Adım B AÇILMADI; Bybit'e geçilmedi.** §6f'nin sabit sırası mekanik olarak Bybit'i
+  işaret ediyordu, ama bir sıra ancak arşiv işi sürdürülürse anlam taşır. İş sürdürülmüyor.
+- **Cross-venue muafiyeti hiç KULLANILMADI.** Adım C'nin üç koşulu ve §8'in "iddia
+  edilmeyecekler" satırı yazılı kalır — uygulanmadılar. §5'e eklenecek sapma satırı da
+  EKLENMEZ: koşulu "arşiv gerçekten kullanıldığında"ydı ve hiçbir arşiv kullanılmadı.
+- **Tez DÜŞMEDİ.** Karar 50'nin ayrımı aynen yerinde: ölçülüp düşmüş bir tez değil, veri
+  yolunda duran bir tez. Değişen tek şey yolun NEREDE durduğudur — REST API'de derinlik,
+  portalda teslimat.
+- **Yeniden açılma koşulu: güvenilir bir veri yolu.** "Güvenilir" burada ölçülebilir bir
+  şeydir: istenen sembol-ay kümesinin tamamının gelmesi, ya da eksiklerin ADLANDIRILMIŞ
+  gelmesi (hangi sembol-ay, neden). Sessiz eksik kabul edilmez — kapsama tablosunu
+  okunamaz yapan şey tam olarak odur.
+- **O gün hangi kapının geçerli olacağı ZATEN yazılıdır ve LİTERAL biçimdir:** portal
+  OKX'in kendi verisidir, yani yol OKX-içidir ve karar 50'nin "aynı zaman damgası, aynı
+  oran" şartı uygulanır. C-a/b/c'nin üç koşullu biçimi **cross-venue adaylara aitti**
+  (Bybit, Binance) ve onlara hiç sıra gelmedi. Kapılar yeniden yazılmaz.
+
+
+### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(AÇILDI 2026-09-20 → KULLANILMADI: tez 2026-09-21'de askıya alındı)*
 
 1. **Bybit** — `/v5/market/funding/history`
 2. **Binance** — `data.binance.vision` aylık `fundingRate` dökümleri (sembol eşleme gerekir:
