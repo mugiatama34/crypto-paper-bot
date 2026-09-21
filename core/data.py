@@ -627,6 +627,103 @@ def load_market_data(
     )
 
 
+def load_cached_market_data(
+    config: dict[str, Any],
+    *,
+    symbols: Iterable[str] | None = None,
+    now: pd.Timestamp | None = None,
+) -> MarketData:
+    """Anlık görüntüyü YALNIZCA parquet önbelleğinden kurar: ağ yok, DİSKE YAZMA yok.
+
+    `load_market_data`ın salt okunur ikizidir ve SALT OKUNUR araçlar içindir
+    (`scripts/proximity.py`). İki şey için var:
+
+    - **Borsaya ikinci çağrı yapılmaz.** Tur zaten önbelleği tazeledi; aynı barları
+      ikinci kez indirmek hem gereksiz hem de iki aracın FARKLI bir `as_of` görmesine
+      açık kapı — arada bir bar kapanırsa yakınlık taraması turun ölçtüğü bardan başka
+      bir barı anlatırdı.
+    - **Disk dokunulmaz.** `fetch_ohlcv`i boş bir istemciyle çağırmak da ağ trafiği
+      üretmezdi ama `_write_cache`i tetiklerdi; "salt okunur" sözü o zaman koddan
+      denetlenemezdi (test: `tests/test_proximity.py`).
+
+    `as_of` kuralı KOPYALANMAZ: çıpa (`_anchor_as_of`) ve `as_of` barını taşımayan
+    sembolün dışlanması (`_symbols_at_anchor`) `load_market_data` ile TEK kopyadır —
+    ikinci bir tanım, aracın turun gördüğünden başka bir "şimdi" görmesi demekti
+    (kural 12).
+
+    Önbellekte hiç barı olmayan sembol sessizce atlanmaz: çağıran, görülebilen sembol
+    listesini `MarketData.ohlcv`'den okur ve eksikleri raporlar.
+    """
+    stamp = _utc_now(now)
+    bar = okx_bar(config)
+    duration = bar_duration(bar)
+    history_bars = int(get_setting(config, "data.history_bars"))
+
+    requested = list(symbols) if symbols is not None else cached_universe(config)
+    btc_symbol = str(get_setting(config, "exchange.btc_reference"))
+    wanted = list(dict.fromkeys([*requested, btc_symbol]))
+
+    frames: dict[str, pd.DataFrame] = {}
+    for symbol in wanted:
+        frame = _read_cache(_cache_path(config, symbol, bar), OHLCV_COLUMNS)
+        if frame.empty:
+            logger.warning("%s önbellekte yok ya da boş, atlanıyor", symbol)
+            continue
+        frames[symbol] = frame.tail(history_bars)
+
+    if btc_symbol not in frames:
+        raise OKXError(
+            f"BTC referansı ({btc_symbol}) önbellekte yok: anlık görüntü üretilemez"
+        )
+
+    as_of = _anchor_as_of(
+        frames[btc_symbol],
+        symbol=btc_symbol,
+        now=stamp,
+        duration=duration,
+        max_staleness_bars=int(get_setting(config, "data.max_staleness_bars")),
+    )
+    usable = _symbols_at_anchor(frames, as_of=as_of, duration=duration)
+
+    ohlcv = {
+        symbol: frames[symbol].loc[:as_of]
+        for symbol in usable
+        if symbol != btc_symbol or symbol in requested
+    }
+    _log_snapshot_coverage(as_of, requested=requested, visible=ohlcv)
+
+    periods = int(get_setting(config, "data.funding_history_periods"))
+    funding: dict[str, pd.Series] = {}
+    if bool(get_setting(config, "funding.enabled")):
+        for symbol in ohlcv:
+            cached = _read_cache(_cache_path(config, symbol, "funding"), (FUNDING_COLUMN,))
+            if cached.empty:
+                continue
+            funding[symbol] = cached.tail(periods)[FUNDING_COLUMN].rename(symbol).loc[:as_of]
+
+    return MarketData(
+        ohlcv=ohlcv,
+        btc=frames[btc_symbol].loc[:as_of],
+        funding=funding,
+        as_of=as_of,
+    )
+
+
+def cached_universe(config: dict[str, Any]) -> list[str]:
+    """`data/universe.json`u OKUR, tazelemez — evren yeniden hesaplanmaz.
+
+    `load_universe` pencere dolmuşsa borsaya gider ve dosyayı YENİDEN YAZAR; salt
+    okunur bir araç için ikisi de kabul edilemez. Üstelik evrenin bir araç tarafından
+    kaydırılması kural 6'yı doğrudan deler: kıyas kümesi yalnızca turun kendi
+    takviminde değişmelidir.
+    """
+    path = project_path(str(get_setting(config, "data.universe_file")))
+    cached = _read_universe_file(path)
+    if cached is None:
+        raise OKXError(f"evren dosyası yok ya da okunamadı: {path}")
+    return [str(symbol) for symbol in cached["symbols"]]
+
+
 def _anchor_as_of(
     btc_frame: pd.DataFrame,
     *,

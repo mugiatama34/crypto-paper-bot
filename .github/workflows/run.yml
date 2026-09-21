@@ -113,6 +113,67 @@ jobs:
           echo "push 4 denemede başarısız oldu"
           exit 1
 
+      # Yakınlık taraması (scripts/proximity.py) — "bir sonraki bar şu fiyatta
+      # kapanırsa bu model sinyal üretir". ÖLÇÜM DEĞİLDİR ve sicile girmez: salt
+      # okunur, deftere yazmaz, borsaya çağrı yapmaz (turun bıraktığı parquet
+      # önbelleğini okur). `survey`/`emitted` ile aynı statüde bir denetim izidir.
+      #
+      # Defter commit'inden SONRA gelir ve `continue-on-error`dır: tarama bir
+      # BİLDİRİMDİR, burada ne olursa olsun tur çoktan kaydedilmiştir. Ama boş/bozuk
+      # çıktı sessizce YEŞİL dönmez — betik veri kapısında 3 ile biter ve dosyayı hiç
+      # yazmaz (karar 51'in çıkış kodu kusuru tekrarlanmasın). `continue-on-error`
+      # adımı kırmızıya çevirmez ama log'da görünür ve aşağıdaki commit boş geçer.
+      #
+      # İKİ katman tek dosyaya yazar (`base` + `ema`): ikisi de 4 SAATLİK bardır ve
+      # aynı önbellekten okunur. `ema` katmanının tetikleyicisi yoktur (CLAUDE.md >
+      # Katmanlar), yani tarayabildiği sembol kümesi base'in evreniyle sınırlıdır —
+      # bu bir eksiklik değil, yükte `scanned_symbols` olarak YAZILAN bir olgudur.
+      #
+      # `advanced` kapısına bağlıdır (Telegram adımlarıyla aynı gerekçe): bar
+      # ilerletmeyen turlarda `as_of` sabit kalır ve aynı tarama dört kez commit
+      # edilirdi.
+      - name: Proximity scan
+        if: steps.round.outputs.advanced == 'true'
+        continue-on-error: true
+        run: python scripts/proximity.py --layer base --layer ema --out docs/data/proximity.json --log-level INFO
+
+      # Neden AYRI bir commit: yukarıdaki defter commit'i `docs/data`yı tarama
+      # üretilmeden ÖNCE ekliyor. Taramayı o commit'e katmak, onu defterin
+      # kaydedilmesinin ÖNÜNE koymayı gerektirirdi — oysa tarama bir süs, defter
+      # denetim izidir.
+      - name: Commit proximity scan
+        if: always() && steps.round.outputs.advanced == 'true'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ ! -f docs/data/proximity.json ]; then
+            echo "yakınlık taraması üretilmedi, commit atlanıyor"
+            exit 0
+          fi
+
+          git add docs/data/proximity.json
+
+          if git diff --cached --quiet; then
+            echo "yakınlık taraması değişmedi, commit atlanıyor"
+            exit 0
+          fi
+
+          git commit -m "proximity: base+ema"
+
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız oldu"
+          exit 1
+
       # Günlük Telegram özeti. Defter commit'inden SONRA gelir: özet bir bildirimdir,
       # ölçümün parçası değil — burada ne olursa olsun tur çoktan kaydedilmiştir.
       #
