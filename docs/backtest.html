@@ -71,11 +71,10 @@
     <h1>Backtest <span>— <code>ema_trend</code>, ön-kayıtlı koşu</span></h1>
     <p class="sub" id="stamp">yük okunuyor…</p>
     <div class="chips" id="chips"></div>
-    <nav class="nav">
-      <a href="index.html">← Panel</a>
-      <a href="positions.html">Pozisyonlar &amp; işlemler</a>
-      <a href="backtest.html" aria-current="page">Backtest</a>
-    </nav>
+    <!-- Şeridin TANIMI docs/shared.js::SITE_NAV'tadır (tek kopya): üç sayfa da aynı
+         şeridi çizer ve üçü de EŞİT AĞIRLIKTADIR. Üç yerde ayrı yazılsaydı bir ad
+         değiştiğinde sitenin bir kısmı bazı sayfalar için yok olurdu. -->
+    <nav class="nav" id="sitenav" aria-label="Sayfalar"></nav>
     <div id="banner"></div>
   </header>
 
@@ -153,6 +152,10 @@
    (Hata sayfanın kendi `catch`'ine düşmez: script hiç koşmaz.) */
 let PAYLOAD = null;
 let PERIOD = "B";   // OOS varsayılan: kararın okunduğu pencere odur
+
+/* Gezinme şeridi veriden ÖNCE çizilir: yük düşse bile okuyucu diğer sayfalara
+   geçebilmeli — bir hata mesajı, sitenin geri kalanını kapatmamalı. */
+renderSiteNav("backtest");
 
 fetchPayload("data/backtest_ema_trend.json")
   .then((data) => { PAYLOAD = data; render(); })

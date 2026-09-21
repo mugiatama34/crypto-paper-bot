@@ -136,11 +136,10 @@
     <h1>Pozisyonlar &amp; işlemler <span>— iki katman, tüm modeller</span></h1>
     <p class="sub" id="stamp">yükleniyor…</p>
     <div class="chips" id="chips"></div>
-    <nav class="nav">
-      <a href="index.html">← Genel bakış</a>
-      <a href="positions.html" aria-current="page">Pozisyonlar &amp; işlemler</a>
-      <a href="backtest.html">Backtest (ema_trend)</a>
-    </nav>
+    <!-- Şeridin TANIMI docs/shared.js::SITE_NAV'tadır (tek kopya): üç sayfa da aynı
+         şeridi çizer ve üçü de EŞİT AĞIRLIKTADIR. Üç yerde ayrı yazılsaydı bir ad
+         değiştiğinde sitenin bir kısmı bazı sayfalar için yok olurdu. -->
+    <nav class="nav" id="sitenav" aria-label="Sayfalar"></nav>
     <div id="banner"></div>
   </header>
 
@@ -193,10 +192,7 @@
  * diğerini gösterir ve eksikliği SÖYLER — sessizce boş bir tablo,
  * "hiç işlem yok" ile "dosya yok"u aynı görüntüye indirirdi.
  * ------------------------------------------------------------------ */
-const LAYERS = [
-  { key: "base",  file: "data/metrics.json",       label: "4 saat",  note: "ana yarışma" },
-  { key: "scalp", file: "data/metrics_scalp.json", label: "15 dk",   note: "scalp katmanı" },
-];
+const LAYERS = SITE_LAYERS;   // docs/shared.js — ad ve dosya TEK yerde
 
 const TRADE_PAGE_SIZE = 50;
 
@@ -209,6 +205,10 @@ let TRADE_WINDOW = [];    // {layer, model, total, shown} — yükün penceresi
 let STYLE = {};           // model -> {color, ...}; docs/shared.js::assignStyles
 
 const view = { layer: "all", model: "all", dir: "all", outcome: "all", from: "", to: "", page: 0 };
+
+/* Gezinme şeridi veriden ÖNCE çizilir: yük düşse bile okuyucu diğer sayfalara
+   geçebilmeli — bir hata mesajı, sitenin geri kalanını kapatmamalı. */
+renderSiteNav("positions");
 
 /* ------------------------------------------------------------------ *
  * Yükleme — iki yük paralel okunur, biri düşerse diğeri çizilir.
@@ -296,10 +296,11 @@ function collect() {
     String(b.opened_at || "").localeCompare(String(a.opened_at || "")));
   TRADES.sort((a, b) => String(b.closed_at || "").localeCompare(String(a.closed_at || "")));
   indexFills();
-  STYLE = assignStyles(styleModels, benchmarks, controls[0] || null);
+  // Kontrol LİSTE olarak geçer: her katmanın kendi kontrolü nötr tonu almalı.
+  STYLE = assignStyles(styleModels, benchmarks, controls);
 }
 
-const layerLabel = (key) => (LAYERS.find((l) => l.key === key) || {}).label || key;
+const layerLabel = (key) => layerDef(key).label;
 const modelKey = (row) => row.layer + "::" + row.model;
 
 /* Yükte üç alan bulunmayabilir (bu sayfadan ÖNCE üretilmiş bir metrics.json):
@@ -377,7 +378,7 @@ function renderFilters() {
   for (const layer of layers) {
     const rows = MODEL_INDEX.filter((m) => m.layer === layer.key);
     if (!rows.length) continue;
-    options.push('<optgroup label="' + esc(layer.label + " — " + layer.note) + '">');
+    options.push('<optgroup label="' + esc(layer.label + " — " + layer.long) + '">');
     for (const m of rows) {
       const suffix = m.is_benchmark ? " (referans çıpası)" : m.is_replica ? " (dış sistem kopyası)" : "";
       const key = m.layer + "::" + m.model;
