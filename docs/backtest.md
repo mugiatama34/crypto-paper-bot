@@ -1658,12 +1658,37 @@ Gerekçe `ema_trend`de verilen kararla aynıdır: bu modele diğerlerinden kolay
 açmak karşılaştırmayı bozar. Yön karşılaştırması bir KAPI değil, aşağıdaki **P2
 tahminidir**.
 
-**3) Model sahibinin kapıları — K-2 ve K-3 aynen:**
+**3) Model sahibinin kapıları:**
 
-| Kapı | Koşul |
-|---|---|
-| **K-2** | Toplam işlem sayısı (dönem A+B) **> 300** |
-| **K-3** | Max drawdown **%25'i geçmiyor** |
+| Kapı | Koşul | Statü |
+|---|---|---|
+| **K-2** | Toplam işlem sayısı (dönem A+B) | **BAĞLAYICI DEĞİL — raporlanır** (bkz. TADİLAT-1) |
+| **K-3** | Max drawdown **%25'i geçmiyor** | **BAĞLAYICI** |
+
+#### TADİLAT-1 — K-2 bağlayıcı olmaktan çıktı *(koşudan önce, işlem sayısı GÖRÜLMEDEN)*
+
+> **K-2 xsec için bağlayıcı değil. Gerekçe: bağlayıcı kapılar CI bazlı ve örneklem
+> yeterliliğini içeriyor; sayı eşiği PF bazlı kapılar için tasarlanmıştı. Gerçekleşen
+> işlem sayısı raporlanır. Karar koşudan önce, işlem sayısı görülmeden verildi; eşik
+> gevşetilmedi, eşiğin kapsamı değişti.**
+
+Ayrıntı: K-2 `ema_trend` için eklenmişti ve amacı tekti — **küçük örneklemde tesadüfi bir
+kâr faktörünün modeli geçirmesini engellemek.** Orada bağlayıcı kapılar PF bazlıydı ve PF
+örneklem büyüklüğünü kendi içinde TAŞIMAZ; bu yüzden ayrı bir sayı eşiği gerekiyordu.
+
+`xsec`te bağlayıcı kapılar **güven aralığı bazlıdır** (`avg_r_ci_low > 0` ve kontrol
+farkının bootstrap CI alt sınırı > 0). Bir CI kapısı örneklem yetersizliğini
+**kendiliğinden cezalandırır:** 195 işlemle geçen bir model, 300 işlemle geçenden daha
+BÜYÜK bir etki göstermek zorundadır. Yani K-2'nin işini burada başka bir kapı zaten
+yapıyor; onu bağlayıcı tutmak modeli **edge'le ilgisi olmayan** bir sebeple düşürebilirdi.
+
+⚠ **Eşik İNDİRİLMEDİ ve bu bilinçlidir.** 300'ü 150 ya da 200 yapmak, projeksiyona
+(195–366 beklentisi) bakarak kapıyı tasarıma uydurmak olurdu — §7.1'in yasakladığı şeyin
+kapı tarafındaki hâli. **Kapıyı kaldırmak ilkelidir, düşürmek değil:** kaldırma bir
+GEREKÇEYE dayanır (kapsamın yanlış olması), düşürme ise beklenen sayıya.
+
+**Raporlama zorunlu kalır:** gerçekleşen toplam işlem sayısı (A, B ve A+B) sonuçla
+birlikte yazılır. Bağlayıcı olmaması, görünmez olması demek değildir.
 
 **K-1 UYGULANMAZ ve gerekçesi yapısaldır:** K-1 tek-sembollü koşulardan okunur ("en az 6
 coinde dönem B PF > 1.1"), oysa `xsec_mom` tanımı gereği bir PORTFÖY modelidir — top-3
@@ -1673,13 +1698,13 @@ başka bir modele çevirir. Kapıyı zorla uygulamak, ölçülmek istenen şeyi 
 **K-3'ün tanımı** §6d'deki gibi sabittir: hesap tektir ve coin başına bölünemez; burada
 portföy modeli olduğu için doğrudan **hesap düzeyi `max_drawdown`** okunur.
 
-⚠ **K-2 BAĞLAYABİLİR ve bu koşudan ÖNCE yazılıyor.** `ema_trend`in 978 işlemi
-tek-sembollü koşuların TOPLAMIYDI; burada öyle bir toplam yok, yalnızca portföy koşusu
-var. Beklenen aralık: A+B'de **244 rebalance günü** × haftalık giriş sayısı ≈
-**195 – 366 işlem** (haftalık devir 0.8 ↔ 1.5). Eşik 300 bu aralığın **içinde**. Yani
-model, edge'inden bağımsız olarak örneklem kapısından kalabilir. Bu bir kusur değil bir
-BİLGİDİR: kalırsa sonuç "edge yok" değil **"bu kurulumun ürettiği örneklem bu kapıyı
-geçmiyor"** diye okunur ve kapı gevşetilmez (§7.1).
+**K-2'nin neden bağlayıcı olamayacağını gösteren sayı da burada dursun** (TADİLAT-1'in
+dayanağı, koşudan önce hesaplandı): `ema_trend`in 978 işlemi tek-sembollü koşuların
+TOPLAMIYDI; burada öyle bir toplam yok, yalnızca portföy koşusu var. Beklenen aralık:
+A+B'de **244 rebalance günü** × haftalık giriş sayısı ≈ **195 – 366 işlem** (haftalık
+devir 0.8 ↔ 1.5) — eşik 300 bu aralığın **içinde**. Bu bir projeksiyondur, bir ölçüm
+değil; eşiği indirmek için değil, eşiğin bu modelde neyi ölçtüğünü göstermek için
+yazıldı.
 
 **4) Çıpa istisnası — `ema_trend`dekiyle birebir aynı:** model YALNIZCA C-3'ten (hesap
 getirisi `buyhold` çıpasını geçer) kalıyor ve diğer TÜM kapıları geçiyorsa koşu **DURUR**,
