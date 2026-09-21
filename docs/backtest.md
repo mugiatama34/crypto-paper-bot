@@ -1826,6 +1826,7 @@ koşudan sonra dokunulmadı.
 | Hesap getirisi ↔ çıpa (`buyhold`) | +%45.5 ↔ **+%123.0** ❌ | +%0.9 ↔ −%4.8 ✅ |
 | **E kapısı** | ❌ | ❌ |
 | **K-3** — max drawdown (tavan %25) | −%16.06 ✅ | **−%25.92** ❌ |
+| *(aynı pencerede kontrolün drawdown'u)* | *−%24.1* | *−%23.3* |
 | Stop mesafesi / band uyarısı | %11.35, band 6.85–17.13 — uyarı YOK | %11.75, band 7.21–18.03 — uyarı YOK |
 
 **Bağlayıcı kapıların üçü de düştü:** E her iki dönemde, K-3 dönem B'de. K-1 uygulanmadı
@@ -1872,6 +1873,47 @@ piyasasının büyük kısmı kaçırıldı — long-only bir top-k modelin haft
 nakde çıktığı günler, çıpanın kesintisiz taşındığı günlerdi. Bu P4'ün önceden yazdığı
 yönde ama BÜYÜKLÜĞÜ ön-kayıtta yoktu ve kayda burada giriyor.
 
+#### K-3 ihlali MODEL-ÖZGÜ DEĞİL, YAPISAL
+
+Aynı pencerelerde **kontrolün** (`xsec_random`) drawdown'u A'da **−%24.1**, B'de
+**−%23.3**. Yani uygunlar arasından rastgele üç coin seçen, başka hiçbir şeyi farklı
+olmayan bir portföy de tavanın hemen altında duruyor.
+
+**Drawdown'u üreten şey seçim kuralı değil, yapının kendisidir:** long-only, üç
+pozisyonda yoğunlaşmış, %11 stop mesafeli bir kripto portföyü. Momentum seçimi tavanı
+%25.92'ye taşıdı, ama zemini %23–24'te bulan şey o değil.
+
+⚠ **Bu satır ileride "momentum drawdown'u artırdı" diye okunmasın diye buradadır.**
+K-3'ün düşmesi tezin aleyhine bir kanıt DEĞİLDİR; bu yapının K-3 tavanına yapısal olarak
+yakın olduğunun kanıtıdır. Kapı yine de bağlayıcıdır ve koşu yine BLOKE'dur — bir kapının
+neden düştüğünü bilmek onu geçmiş saymaz (aynı gerekçe: çıpa koşulu yalnızca DUR üretir,
+asla otomatik GEÇTİ).
+
+Sayı ayrıca bir SINIR bilgisidir: `top_k`, yön kotası ya da eşzamanlı pozisyon sayısı
+değişmeden bu katmanda K-3'ü rahatça geçen bir model beklemek gerçekçi değildir. Bunu
+bir ayar önerisine çevirmek §7.1'dir; burada yalnızca ölçülen olgu durur.
+
+#### Friksiyon tasarımı ÇALIŞTI — tez düştü, ilke doğrulandı
+
+`cost_per_r` ölçüldü: **0.025 – 0.028**, `ema_trend`in **0.057**'sine karşı. 5×ATR
+stop'un ön-kayıtlı gerekçesi (`friksiyon/R = 2c / stop%`, yani R başına friksiyon stop
+mesafesiyle TERS orantılı) veride tuttu: stop üç kat genişledi, R başına friksiyon
+yarıya indi.
+
+**Ama projeksiyonun BÜYÜKLÜĞÜ tutmadı ve bu da kayda geçer.** Ön-kayıt "~3.3 kat düşer"
+yazmıştı (yukarısı, ⚠ işaretli paragraf); ölçülen **~2.0 – 2.3 kat**. Sebep aritmetiktir:
+projeksiyon ATR ÇARPANLARININ oranını (5.0 / 1.5 = 3.33) doğrudan `stop%` oranına
+taşımıştı, oysa bu ancak iki model aynı `ATR/fiyat` değerini görürse geçerlidir — ikisi
+görmez (`ema_trend` `wilder`, bu katman `simple`; ayrıca farklı pencere ve farklı sembol
+karışımı). Özdeşliğin kendisi yanlış değil, ona verilen GİRDİ yanlıştı.
+
+**İlke neden tezden ayrı kaydediliyor:** karar 35'in özdeşliği ve §6e > KAYIT'ta duran
+"açık kalan tek kaldıraç stop mesafesidir" cümlesi bu ilkeye dayanıyor. Tez düştü diye
+ilkeyi de düşmüş saymak, bir sonraki ön-kaydın dayanağını sessizce silmek olurdu. İlke
+DOĞRULANDI; doğrulanan şey friksiyonun kontrol edilebilirliğidir, modelin kârlılığı
+değil — nitekim aynı oranda R başına **sürüklenme de** küçüldü ve ön-kayıt bunu da
+önceden yazmıştı.
+
 #### KAYIT EKSİĞİ — ön-kayıtlı zorunlu raporlamanın iki kalemi transkribe EDİLMEDİ
 
 "Koşu sonrası ZORUNLU raporlama" çıkış sebebi kırılımının TAMAMINI ve tutuş süresi
@@ -1880,6 +1922,14 @@ dağılımını istiyordu. `results.json` ikisini de taşıyor (`periods.<X>.exi
 o koşuyu yürüten oturumdan erişilemedi. P1'in okunduğu sayı (%57.9) kapı yükünden
 gelmektedir ve doğrudur; eksik olan AYRINTIDIR. Aynı gerekçeyle **güç bölümünün söz
 verdiği sd karşılaştırması da yapılamadı** (varsayım 1.2–1.6R).
+
+**KAYNAK AYRIMI — bu bölümdeki her sayı aynı yerden gelmiyor ve bu yazılır.** Yukarıdaki
+kapı tablosu koşunun log'una basılan `gates` bloğundan okundu. Kontrolün drawdown'u
+(−%24.1 / −%23.3) ve `cost_per_r` (0.025–0.028) ise orada YOKTUR: ikisi de `results.json`
+dosyasını doğrudan açan depo sahibinden geldi. Sayıların doğruluğu değişmez — aynı
+dosyanın aynı koşusudur — ama hangi satırın hangi kanaldan okunduğu, bir sonraki
+okuyucunun log'da arayıp bulamayacağı için burada duruyor. Hâlâ transkribe EDİLMEMİŞ
+olanlar: çıkış kırılımının tamamı, tutuş süresi dağılımı ve gerçekleşen sd.
 
 Örneklem tahmininin kendisi ise okunabiliyor ve **düştü:** ön-kayıt A'da ~150–200 işlem
 bekliyordu, ölçülen **95**. Yani kurulumun gerçek gücü ön-kayıtta yazılandan DAHA

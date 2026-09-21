@@ -4170,6 +4170,7 @@ docs/backtest.md > 6g (commit `b112def`, koşudan dokuz gün önce). Sonuç tabl
 | Fark, %95 CI | +0.416, [−0.186, +1.162] | −0.167, [−0.546, +0.197] |
 | Çıpa (`buyhold`) | +%123.0 ↔ model +%45.5 | −%4.8 ↔ model +%0.9 |
 | Max drawdown (K-3 tavanı %25) | −%16.06 | **−%25.92** |
+| *aynı pencerede KONTROLÜN drawdown'u* | *−%24.1* | *−%23.3* |
 
 Bağlayıcı kapılardan E iki dönemde de, K-3 dönem B'de düştü.
 
@@ -4190,6 +4191,46 @@ kanıt sınıfından birini siler:
 çiğnemek DEĞİLDİR: cümle "ayırt edilemedi" durumu için yazıldı, B o durum değil. Bir
 ön-kaydın kapsamını sonradan GENİŞLETMEK de daraltmak kadar ihlaldir; burada yapılan,
 cümlenin zaten çizdiği sınırı görmektir.
+
+### K-3 ihlali MODEL-ÖZGÜ DEĞİL, YAPISAL — bu okumayı değiştirir
+
+Kontrolün (`xsec_random`) drawdown'u aynı pencerelerde **−%24.1** ve **−%23.3**. Yani
+rastgele üç coin seçen, başka hiçbir şeyi farklı olmayan bir portföy de tavanın hemen
+altında duruyor. Drawdown'u üreten şey SEÇİM KURALI değil, yapının kendisi: long-only,
+üç pozisyonda yoğunlaşmış, %11 stop mesafeli bir kripto portföyü. Momentum onu
+%25.92'ye taşıdı; zemini %23–24'te bulan o değil.
+
+**Bu ayrım kayda ayrıca yazıldı, çünkü yokluğunda yanlış okunur:** ileride biri
+"momentum drawdown'u artırdı" diye okuyabilirdi. K-3'ün düşmesi tezin aleyhine bir kanıt
+DEĞİLDİR — bu yapının K-3 tavanına yapısal olarak yakın olduğunun kanıtıdır. Kapı yine
+de bağlayıcı ve koşu yine BLOKE: **bir kapının neden düştüğünü bilmek onu geçmiş
+saymaz.** (Aynı asimetri çıpa istisnasında da var: yalnızca DUR üretir, asla otomatik
+GEÇTİ.)
+
+Sayı bir SINIR bilgisi de taşıyor: `top_k`, yön kotası ve eşzamanlı pozisyon sayısı
+değişmeden bu katmanda K-3'ü rahatça geçen bir model beklemek gerçekçi değil. Bunu bir
+ayar önerisine çevirmek §7.1'dir; burada ölçülen olgu olarak durur.
+
+### Friksiyon tasarımı ÇALIŞTI — tez düştü, İLKE doğrulandı
+
+`cost_per_r` **0.025 – 0.028**; `ema_trend`in **0.057**'si. 5×ATR stop'un ön-kayıtlı
+gerekçesi — `friksiyon/R = 2c / stop%`, yani R başına friksiyon stop mesafesiyle ters
+orantılı (karar 35'in özdeşliği) — veride tuttu: stop genişledi, R başına friksiyon
+yarıya indi.
+
+**Projeksiyonun BÜYÜKLÜĞÜ tutmadı ve bu da kayda geçer.** Ön-kayıt "~3.3 kat düşer"
+diyordu; ölçülen ~2.0–2.3 kat. Sebep aritmetiktir: projeksiyon ATR ÇARPANLARININ oranını
+(5.0 / 1.5 = 3.33) doğrudan `stop%` oranına taşımıştı, oysa bu ancak iki model aynı
+`ATR/fiyat` değerini görürse geçerli — görmüyorlar (`ema_trend` `wilder`, `xsec` `simple`;
+üstüne farklı pencere ve sembol karışımı). Özdeşlik yanlış değil, ona verilen girdi
+yanlıştı — ve bu, bir sonraki ön-kayıt için doğrudan kullanılabilir bir derstir: `stop%`
+oranı ATR çarpanı oranından TÜRETİLEMEZ, ÖLÇÜLÜR.
+
+**İlke neden tezden ayrı kaydediliyor:** karar 35'in özdeşliği ve §6e > KAYIT'ta duran
+"açık kalan tek kaldıraç stop mesafesidir" cümlesi buna dayanıyor. Tez düştü diye ilkeyi
+de düşmüş saymak, bir sonraki ön-kaydın dayanağını sessizce silmek olurdu. Doğrulanan
+şey friksiyonun KONTROL EDİLEBİLİRLİĞİDİR, modelin kârlılığı değil — nitekim aynı oranda
+R başına sürüklenme de küçüldü ve ön-kayıt bunu önceden yazmıştı.
 
 ### İkinci bulgu: stop haftalık ufuk için hâlâ DAR
 
@@ -4213,6 +4254,11 @@ log'a yalnızca `gates` bloğunu basıyor ve artifact'e koşuyu yürüten oturum
 erişilemedi; aynı sebeple güç bölümünün söz verdiği sd karşılaştırması da yapılamadı.
 P1'in sayısı (%57.9) kapı yükünden okundu ve doğrudur. **Onarım workflow'dadır, koşuda
 değil:** tam yük log'a basılacak. Koşu yeniden koşulmaz.
+
+**Kaynak ayrımı yazılır:** kapı tablosu log'daki `gates` bloğundan; kontrolün drawdown'u
+ve `cost_per_r` ise orada yok — ikisi `results.json`'ı doğrudan açan depo sahibinden
+geldi. Aynı dosyanın aynı koşusudur, ama bir sonraki okuyucu o satırları log'da arayıp
+bulamayacağı için kanal kaydedilir.
 
 Örneklem tahmini ise okunabildi ve düştü: ön-kayıt A'da ~150–200 işlem bekliyordu,
 ölçülen 95 — yani kurulumun gerçek gücü ön-kayıtta yazılandan da düşüktür.
