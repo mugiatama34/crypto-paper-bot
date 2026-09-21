@@ -365,6 +365,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, commit `e912efd` (TADİLAT-1: `93cd891`) | A: 2022-01-01 → 2024-12-30 (sinyal kesimi 06-30), B: 2024-07-21 → 2026-09-18 | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | **P1 TUTTU** (1.549 / 1.206) ama **hipotez DÜŞTÜ**: ortalama R A −0.0015 / B −0.0165 (C-1), çıpa da geçilemedi (C-3) → **BLOKE**, §6d > SONUÇ |
 | 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 49 |
+| 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -373,6 +374,11 @@ görünmesidir** — düşen bir denemeyi silmek, sicilin engellemek için var o
 yanlılığının ta kendisidir.
 
 **Sicildeki 2. satır bu paydaya AİT DEĞİLDİR:** `ema_trend` hipotezi dış bir sistemden geldi, ev içi arama uzayından seçilmedi (bkz. §6d > Çoklu karşılaştırma). İki payda ayrı tutulur.
+
+**Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
+hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
+sayacının saydığı türdendir. Satır koşudan ÖNCE açıldı ve sonucu ne olursa olsun burada
+kalacaktır.
 
 **Araştırmadan çıkan öneri sayısı: 10.** Bunların 1'i test edildi (yukarıdaki), 4'ü
 ölçüm katmanı olduğu için hipotez DEĞİLDİR ve sicile girmez (kabul kapısı, belge
@@ -1479,6 +1485,278 @@ olay sayar — hiçbiri burada yok, çünkü hiçbiri veri görülmeden seçilem
 dağılım GÖRÜLDÜKTEN sonra **ayrı bir ön-kayıtla** seçilir ve o ön-kayıt §6c'nin siciline
 kendi satırını açar. Bu belge yalnızca **hangi veriyle** sorulacağını sabitler, **ne
 sorulacağını** değil.
+
+---
+
+## 6g. ÖN-KAYIT — `xsec_mom` (kesitsel momentum) ve `xsec` katmanı
+
+**Bu belge koşudan ÖNCE yazıldı ve commit edildi.** Hiçbir sayı görülmedi: ne bir
+sıralama, ne bir işlem, ne bir ortalama. §7'nin tamamı bu bölüme uygulanır.
+
+### Mekanizma — neden böyle bir edge olabilir
+
+Kripto'da sermaye akışı son dönemin kazananlarını **gecikmeyle** takip eder; göreli güç
+kısa vadede kalıcıdır. Karşı tarafta duran şey geç gelen akıştır. Tez, fiyatın kendi
+geçmişine değil **diğer sembollere göre** konumuna dayanır.
+
+**`ema_trend`den (model 18) farkı bir parametre değil, sorunun kendisidir:** o ZAMAN
+SERİSİ momentumudur ("bu sembol yükseliyor mu"), bu KESİTSELdir ("bu sembol
+diğerlerinden iyi mi"). Yatay bir piyasada zaman serisi sinyali susar, kesitsel sinyal
+susmaz — göreli sıralama her zaman tanımlıdır. İki modelin aynı katmanda olmamasının
+sebebi de budur (aşağısı): ölçtükleri şey farklı, koşulları da öyle.
+
+### Model: `xsec_mom` (long-only, stop'lu, yarışmacı)
+
+| Boyut | Tanım |
+|---|---|
+| Evren | `xsec` katmanının SABİT 13 sembolü (`ema` katmanının aynısı) |
+| Uygunluk | sembol, o rebalance barında **tam geriye bakış geçmişine** (126 bar) sahipse uygundur; değilse o hafta sıralamaya GİRMEZ |
+| Sıralama ölçütü | **geriye bakış getirisi = 126 × 4H bar (21 gün)**, `close[t] / close[t−126] − 1` |
+| Rebalance | **haftalık**, aşağıdaki bar tanımıyla |
+| Portföy | **top-3** |
+| Giriş | top-3'e giren ve elde olmayan sembol; dolum bir SONRAKİ barın açılışında (kural 13, değişiklik yok) |
+| Çıkış | (1) rebalance'ta top-3 DIŞINA düşerse, (2) stop |
+| Take-profit | **YOK** |
+| Stop | **5 × ATR(14)**, projenin varsayılan yumuşatmasıyla (`simple`) |
+| Trailing / breakeven / kısmi çıkış / zaman stop'u | **YOK** |
+| Boyutlandırma, maliyet, kayma, funding, likidasyon, dolum | **repo standardı, değişiklik yok** |
+
+**Geriye bakış 21 gün, çünkü** kripto kesitsel momentum literatüründeki 1–4 haftalık
+bandın ortasıdır. Tek değer seçildi ve **süpürülmeyecek** (§7.1).
+
+**TP YOK, çünkü** `ema_trend`in yol ölçümü (§6e > SONUÇ, karar 49) hedef geometrisinin
+beklenen değeri değiştirmediğini gösterdi: hedef sonrası işaretli hareket sıfır etrafında
+salınıyordu. Momentumda kâr, pozisyonda **kalma süresinden** gelir; bir hedef tam olarak
+o süreyi keserdi.
+
+**Stop 5×ATR, çünkü** tipik tutuş ~1 hafta = 42 bardır ve stop, haftalık oynaklık
+ölçeğinde olmalıdır ki **baskın çıkış rebalance olsun, gürültü stop'u değil.** Bu bir
+tasarım ilkesidir ve sonuçtan türetilmedi — P1 tahmini (aşağıda) tam olarak bu niyetin
+sınamasıdır.
+
+⚠ **Yan etkisi ÖNCEDEN yazılıyor, sonradan keşfedilen bir avantaj olarak okunmasın:**
+friksiyon/R = `2c / stop%` olduğu için R başına friksiyon `ema_trend`in 1.5×ATR'sine göre
+**~3.3 kat düşer.** Bu, modeli otomatik olarak iyi yapmaz — aynı oranda R başına
+**sürüklenme de** küçülür (karar 35'in özdeşliği). Kaydın sebebi şudur: iki model
+`avg_stop_distance_pct` kolonunda ayrışacak ve stop bandı uyarısı (⚠ B) tetiklenebilir;
+o uyarı görüldüğünde şaşırılmayacak, çünkü burada yazılı.
+
+### ATR yumuşatması: `simple` — ve bu bir DÜZELTMEDİR
+
+Bu modelin ilk taslağı `wilder` diyordu. **Düzeltildi ve gerekçesi kayda geçiyor:**
+`ema_trend` Wilder'ı bir SPEC uyumu olarak aldı (kaynak sistem TradingView `ta.atr` ile
+doğrulanmıştı, §6d > TADİLAT-1). `xsec_mom`un öyle bir dış referansı **yoktur** — Wilder
+seçmek gerekçesiz bir ayrışma olurdu.
+
+Üstelik somut bir bedeli vardı: motorun stop tavanı kontrolü (`core/engine.py::
+_within_stop_band`) ATR'yi projenin **varsayılanıyla** hesaplar ve modelin bildirimini
+okumaz (CLAUDE.md'nin kuralı: *her model kendi yumuşatmasıyla kendi tavanını
+genişletebilseydi tavan bir kural olmaktan çıkardı*). Model Wilder, tavan `simple` ölçseydi
+"5×ATR" ifadesi iki farklı sayı anlamına gelir ve oran kayardı. `simple` seçmek bu kaymayı
+**sıfırlar** ve modele özel bir istisna gerektirmez.
+
+Periyot ortak kalır: `trailing.atr_period` = 14 (projenin tek ATR periyodu).
+
+### Kontrol: `xsec_random` (yarışmacı, referans DEĞİL)
+
+Ölçülen şey **seçimin kendisidir**, o yüzden kontrol seçim dışındaki her şeyde birebir
+aynıdır:
+
+| Aynı | Farklı |
+|---|---|
+| rebalance günleri, uygunluk kuralı, top-3 kotası, stop (5×ATR simple), çıkış kuralları (rebalance + stop), TP yokluğu, boyutlandırma, maliyet | **seçim**: uygun semboller arasından **rastgele 3** |
+
+**Çekiliş BAĞIMSIZDIR, paylaşılmaz.** Gerekçe scalp katmanının kuralıdır (CLAUDE.md >
+"Çekiliş, ölçülmeyen eksende PAYLAŞILIR, ölçülen eksende BAĞIMSIZDIR"): burada ölçülen
+eksen seçimin ta kendisi, yani çekiliş paylaşılsaydı fark momentumun değil tesadüfün
+ölçüsü olurdu. Tohumlama `random_ctrl`ün desenini izler (`random_seed` + `as_of`): aynı
+bar yeniden koşulduğunda aynı çekiliş, farklı barlarda bağımsız çekiliş.
+
+**Kontrol bir REFERANS değil yarışmacıdır** (`is_benchmark = False`) ve katmanın
+`acceptance.control_model`ü odur.
+
+### Katman: yeni `xsec` — neden `ema`ya eklenmedi
+
+**`ema` katmanının stop tavanı 3.0'dır ve tavanı motor merkezî olarak uygular**
+(`_within_stop_band`, adım C): tavanı aşan sinyal **elenir**. 5×ATR stop o katmanda
+istisnasız her sinyali düşürürdü — model sıfır işlem yapardı.
+
+Üç yol vardı ve seçim **sonuç görülmeden** yapıldı:
+
+| Yol | Karar |
+|---|---|
+| Stop'u ≤3×ATR'ye indirmek | **RED** — tasarım niyetini bozar; "baskın çıkış rebalance olsun" gerekçesi düşer ve P1'in dayanağı kalmaz |
+| `ema` katmanının tavanını yükseltmek | **RED** — tamamlanmış, ön-kayıtlı bir koşunun (#35391881083) katman koşulunu geriye dönük değiştirir; §7.3'ün yasakladığı şeyin katman düzeyindeki hâli |
+| **Yeni `xsec` katmanı** | **SEÇİLDİ** |
+
+Gerekçe `ema` katmanının kendi varlık sebebiyle birebir aynıdır: *backtest'in ölçtüğü
+koşullar forward test'inkiyle aynı olmalı.* Katman `ema`nın evrenini (aynı 13 sembol),
+maliyetini, riskini ve defter kurallarını aynen taşır; ayrışan tek şey stop tavanı ve
+model listesidir.
+
+**`max_stop_atr_multiple = 6.0` ve bu sayı koşudan önce sabittir.** Gerekçe: stop 5×ATR
+ve dolum kayması (giriş bir sonraki barın açılışından, kural 13) mesafeyi ölçüldüğü andan
+sonra genişletebilir. 6.0, o paya yer bırakır ve **tavanı bir kural olmaktan çıkarmaz** —
+5×ATR'yi sistematik olarak aşan bir kurulum yine elenir. Sayı sonuca göre
+DEĞİŞTİRİLMEYECEKTİR (§7.1).
+
+Katman `ledgers_xsec/` ve `docs/data/metrics_xsec.json` kullanır; **tetikleyicisi YOKTUR**
+(`ema` ile aynı statü: tanım var, koşu yok — canlıya alma ayrı bir karardır).
+
+### Rebalance barının TAM tanımı
+
+Bar indeksi **açılış** zamanıdır (`core/data.py`: kapanış = `bar_ts + timeframe`). Bu
+yüzden "Pazartesi 00:00 kapanışı" tek başına iki şeye işaret edebilirdi; seçilen ve
+sabitlenen tanım:
+
+> **Rebalance barı, indeksi PAZAR 20:00 UTC olan 4H bardır** (Pazartesi 00:00 UTC'de
+> kapanır). Sıralama o barın kapanışıyla hesaplanır; giriş ve çıkış emirleri bir sonraki
+> barın açılışından, yani **Pazartesi 00:00 UTC**'den dolar (kural 13).
+
+Böylece haftanın ilk barının açılışı girişin ta kendisi olur. Alternatif (indeks Pazartesi
+00:00, dolum 04:00) **reddedildi** ve bu satır onu kayda geçirir.
+
+⚠ **Canlı not (bugün geçerli değil, canlıya alınırsa geçerli):** `signals_per_bar` bu
+katmanda `false` olacak (base/ema ile aynı). Backtest harness'ı onu `true` yapar, yani her
+bar sinyal üretilir ve modelin kendisi rebalance barını süzer — backtest'te sorun yok.
+Canlıda ise bir Pazartesi turu düşerse **o haftanın rebalance'ı komple kaçar.** Bu bir
+kadans riskidir (karar 39'un ölçtüğü şeyin aynısı) ve canlıya alma aşamasına gelinirse o
+zaman çözülür; bugün yalnızca yazılı durur.
+
+### Pencereler ve embargo
+
+| Dönem | Aralık | Rol |
+|---|---|---|
+| **A** | 2022-01-01 → 2024-06-30 (sinyal kesimi) | IS |
+| **B** | 2024-06-30 + embargo → koşu günü | **OOS** |
+
+`ema_trend` ile **aynı pencereler** — kasıtlı: iki model aynı rejimleri görür ve
+sonuçları aynı piyasa geçmişine göre okunur.
+
+**Embargo VARSAYILMAZ, dönem A'dan ÖLÇÜLÜR** (`holding_stats`), yöntem §6d'nin aynısı:
+modelin zaman stop'u yoktur, yani tutuş süresinin tanım gereği bir üst sınırı yoktur ve
+§6.1'in dayandığı sınır kurulamaz. Dönem A'da gözlenen **azami tutuş süresi** embargo
+olarak uygulanır ve uygulanan değer `manifest.json > window.embargo_bars`ta raporlanır.
+
+⚠ **Dönem B'ye koşu öncesi DOKUNULMAZ.** A koşulup embargo ölçülmeden B başlatılmaz.
+
+**Beklenti (tahmin değil, bir not):** bir sembol top-3'te haftalarca kalabileceği için
+azami tutuş `ema_trend`in 129 barından (21.5 gün) UZUN çıkabilir. Embargo o ölçüme
+uyar; uzun çıkması bir sorun değil, ölçümün kendisidir.
+
+### Kapılar (hepsi BAĞLAYICI)
+
+**1) Repo kapıları birincildir** — §3'ün B-0/B-1/B-2'si ve §4'ün C-1..C-5'i, canlı
+koşuyla birebir aynı `acceptance_flags` hesabından okunur.
+
+**2) E kapısı (edge) BAĞLAYICIDIR ve repo standardındadır:** ortalama R kontrolün
+ortalama R'sini **en az 0.15R marjla** aşar **ve** farkın bootstrap güven aralığının alt
+sınırı **> 0** (`acceptance.edge_ci_alpha` = 0.05) **ve** hesap getirisi çıpayı geçer.
+
+⚠ **İlk taslaktaki daha zayıf "ek kapı" (yalnızca `momentum > random_ctrl`) DÜŞÜRÜLDÜ.**
+Gerekçe `ema_trend`de verilen kararla aynıdır: bu modele diğerlerinden kolay bir kapı
+açmak karşılaştırmayı bozar. Yön karşılaştırması bir KAPI değil, aşağıdaki **P2
+tahminidir**.
+
+**3) Model sahibinin kapıları — K-2 ve K-3 aynen:**
+
+| Kapı | Koşul |
+|---|---|
+| **K-2** | Toplam işlem sayısı (dönem A+B) **> 300** |
+| **K-3** | Max drawdown **%25'i geçmiyor** |
+
+**K-1 UYGULANMAZ ve gerekçesi yapısaldır:** K-1 tek-sembollü koşulardan okunur ("en az 6
+coinde dönem B PF > 1.1"), oysa `xsec_mom` tanımı gereği bir PORTFÖY modelidir — top-3
+seçimi ancak tüm sembollere aynı anda bakılarak kurulur ve tek-sembollü bir koşu modeli
+başka bir modele çevirir. Kapıyı zorla uygulamak, ölçülmek istenen şeyi ölçmemek olurdu.
+
+**K-3'ün tanımı** §6d'deki gibi sabittir: hesap tektir ve coin başına bölünemez; burada
+portföy modeli olduğu için doğrudan **hesap düzeyi `max_drawdown`** okunur.
+
+⚠ **K-2 BAĞLAYABİLİR ve bu koşudan ÖNCE yazılıyor.** `ema_trend`in 978 işlemi
+tek-sembollü koşuların TOPLAMIYDI; burada öyle bir toplam yok, yalnızca portföy koşusu
+var. Beklenen aralık: A+B'de **244 rebalance günü** × haftalık giriş sayısı ≈
+**195 – 366 işlem** (haftalık devir 0.8 ↔ 1.5). Eşik 300 bu aralığın **içinde**. Yani
+model, edge'inden bağımsız olarak örneklem kapısından kalabilir. Bu bir kusur değil bir
+BİLGİDİR: kalırsa sonuç "edge yok" değil **"bu kurulumun ürettiği örneklem bu kapıyı
+geçmiyor"** diye okunur ve kapı gevşetilmez (§7.1).
+
+**4) Çıpa istisnası — `ema_trend`dekiyle birebir aynı:** model YALNIZCA C-3'ten (hesap
+getirisi `buyhold` çıpasını geçer) kalıyor ve diğer TÜM kapıları geçiyorsa koşu **DURUR**,
+karar kullanıcıya gider, otomatik geçiş YOKTUR. Başka herhangi bir kapıdan kalırsa
+doğrudan **BLOKE**. İstisna tek kapı içindir ve genişletilemez.
+
+### İSTATİSTİKSEL GÜÇ — dürüst hâliyle
+
+**Örneklem tahmini.** Dönem A'da **130 rebalance günü** (912 gün, Pazartesi sayımı).
+Rebalance günlerinde ortalama uygun sembol **10.54** (10 → 12; SUI 2023-05, ETHFI
+2024-03, her biri +21 gün ısınma; PENGU dönem A'da hiç yok). Haftalık devir top-3'te
+0.8–1.5 giriş varsayımıyla:
+
+| Haftalık giriş | Dönem A işlem |
+|---|---|
+| 0.8 | ~104 |
+| 1.2 | ~156 |
+| 1.5 | ~195 |
+
+**Merkezî beklenti ~150–200 işlem.**
+
+**R dağılımının sd'si.** TP yok, stop −1R'de kesiyor, rebalance çıkışı kuyruğu buduyor.
+Bu yapı için **sd ≈ 1.2 – 1.6 R** varsayılıyor (nokta tahmin 1.4). Varsayım koşudan sonra
+gerçekleşen sd ile karşılaştırılacak ve **fark raporlanacaktır** — güç hesabının kendisi
+de denetlenebilir olmalıdır.
+
+**MDE (güç 0.80), n = 175:**
+
+| Kapı | MDE |
+|---|---|
+| C-1: ortalama R > 0 (tek örneklem, tek yönlü α=0.05) | **0.23 – 0.30 R** |
+| `avg_r_ci_low` > 0 (≈ iki yönlü α=0.05) | **0.25 – 0.34 R** |
+| **E kapısı: kontrol farkı (iki örneklem)** | **0.36 – 0.48 R** |
+
+İki örneklem karşılaştırması eşleştirilmemiştir: iki model aynı GÜNLERDE işlem açar ama
+aynı SEMBOLLERDE açmaz, yani eşleştirilecek çift yoktur (CLAUDE.md >
+`bootstrap_diff_ci`'ın aynı gerekçesi).
+
+> **Bağlayıcı kapıda MDE ≈ 0.42R. Bu kurulum ancak büyük bir etkiyi tespit edebilir;
+> "ayırt edilemedi" beklenen sonuçlardan biridir ve tezin reddi olarak okunmaz.**
+
+**Güç için tasarım OYNATILMADI ve bu bilinçlidir.** Rebalance sıklığını artırmak ya da
+k'yı büyütmek örneklemi büyütürdü. Veri görülmediği için teknik olarak §7'yi ihlal
+etmezdi — ama **güç hesabına bakarak tasarım seçmek ayrı bir kaygan zemindir** ve her
+değişiklik friksiyonu artırır (karar 35'in özdeşliği). Tasarım olduğu gibi kalıyor;
+bedeli yukarıdaki MDE'dir ve o bedel burada yazılı.
+
+### ÖN-KAYITLI TAHMİNLER (sonucu görmeden)
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | çıkış sebebi dağılımı | rebalance çıkışı **≥ %70**, stop **≤ %30** | dışına çıkması → stop çok dar demektir, tasarım niyeti tutmamıştır |
+| **P2** | seçim | dönem A'da `xsec_mom` ort. R **>** `xsec_random` ort. R | ≤ olması |
+| **P3** | ortalama R | dönem A'da **> 0** (C-1) | ≤ 0 |
+| **P4** | çıpa | hesap getirisi `buyhold`un **ALTINDA** (C-3 DÜŞER) | çıpayı geçerse |
+
+**P1 bir performans tahmini değil, TASARIM NİYETİNİN sınamasıdır:** stop'un rolü
+felaket sigortasıdır, birincil çıkış değil. Tutmazsa model "kötü" olmaz — 5×ATR'nin
+haftalık ölçek için yeterli olmadığı ölçülmüş olur.
+
+**P4'ün pozitif çıkması (çıpanın geçilmesi) bir sürpriz olur ve öyle raporlanır:**
+long-only bir top-k modelin boğa dönemlerinde al-tut'un gerisinde kalması beklenir.
+
+### Koşu kuralları
+
+- **Parametre araması YOK.** Tek tanım, tek koşu. Geriye bakış (126), k (3), rebalance
+  (haftalık), stop (5×ATR) ve tavan (6.0) bu commit'te sabittir.
+- **Kapıdan kalırsa ayar aranmaz.** Düşen bir tez sicilde kalır (§6c).
+- **Tek workflow tetiklemesi, tek sonuç dosyası.**
+- **Koşu sonrası ZORUNLU raporlama:** çıkış sebebi kırılımı (`exit_rule`) ve tutuş süresi
+  dağılımı — `ema_trend`in yol ölçümündeki gibi. P1 bu ikisinden okunur.
+
+### Bu ön-kayıt neyi SEÇMİYOR
+
+Canlıya alınmayı. `xsec` katmanının tetikleyicisi yoktur ve kapılar geçilse bile
+`run-xsec.yml` ayrı bir karardır — `ema` katmanının bugünkü statüsünün aynısı. Kod
+ölçülmeden yarışmaz; ölçülüp geçse bile canlıya alınması otomatik değildir.
 
 ---
 
