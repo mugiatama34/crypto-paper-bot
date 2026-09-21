@@ -31,6 +31,15 @@ olduğu an defterde henüz hiçbir satırı yoktur.
 3. **5'ten fazla sinyalde tek TOPLU mesaj.** Tek tek yollamak bildirim akışını
    kullanılamaz hâle getirirdi.
 
+**Mesaj bir de KARŞI MARUZİYETİ söyler.** Aynı sembolde ters yönde eşzamanlı pozisyon
+tasarım gereği serbesttir (`core/portfolio.py` yalnızca (sembol, yön) çiftini reddeder)
+ve bu DEĞİŞMİYOR. Ama tek yönlü (one-way) bir borsa hesabında aynı sembolde iki yön aynı
+anda tutulamaz: okuyucu bu emri verdiğinde onun hesabında olan şey botun defterinde
+olandan ayrışır. Sinyalin modeli o sembolde ters yönde bir pozisyon (ya da bu turda
+açılacak bir emir) tutuyorsa mesaja tek satırlık bir uyarı girer. Bilgi defterin
+`positions.json`ından OKUNUR, hesaplanmaz (kural 7) ve yalnızca sinyali üreten MODELİN
+kendi dosyasından (kural 4). Uyarı hiçbir sinyali elemez — bkz. docs/decisions.md > 52.
+
 **Bu script koşuyu ASLA düşürmez** — `scripts/telegram_report.py` ile aynı söz: eksik
 token, ağ hatası, Telegram 4xx'i, bozuk JSON ya da bozuk durum dosyası loglanır ve
 geçilir, her yol 0 ile biter. Bildirim ölçümün parçası değildir.
@@ -91,6 +100,19 @@ def state_path_for(layer: str) -> Path:
     ya da açardı — `ledgers/` ↔ `ledgers_scalp/` ayrımının aynı gerekçesi.
     """
     return Path(f"state/telegram_{layer}.json")
+
+
+def ledger_dir_for(layer: str) -> Path:
+    """Katmanın defter kökü (`config.yaml > layers.<ad>.ledger_dir`) ile AYNI adlandırma
+    kuralı: `base` -> `ledgers`, ötekiler -> `ledgers_<ad>`.
+
+    Config yine OKUNMAZ (bkz. `metrics_path_for`). Buradan okunan TEK şey
+    `<kök>/<model>/positions.json`dır ve o dosya salt okunur bir BİLDİRİM girdisidir:
+    mesaja bir uyarı satırı ekler, hiçbir sayıyı hesaplamaz ve hiçbir ölçüme girmez.
+    Yanlış köke bakmanın bedeli de sessiz bir yanlışlık değildir — dosya yoksa uyarı
+    satırı hiç yazılmaz ve bu loglanır (bkz. `_load_positions`).
+    """
+    return Path("ledgers" if layer == "base" else f"ledgers_{layer}")
 
 
 METRICS_PATH = metrics_path_for(DEFAULT_LAYER)
@@ -185,7 +207,10 @@ def _run(args: argparse.Namespace) -> int:
 
     # SIRA: önce sinyal, sonra ret. Aynı turda ikisi birden çıkarsa okuyucu önce yeni
     # fırsatı, sonra eski sinyalin sonucunu görür; tersi, cevabı sorudan önce koyardı.
-    messages = build_messages(fresh, timeframe=timeframe_of(payload))
+    # Karşı maruziyet SALT OKUNUR bir bildirim girdisidir: defterden okunur,
+    # hesaplanmaz ve hiçbir sinyali elemez (bkz. `counter_exposures`).
+    counters = counter_exposures(fresh, ledger_root=Path(args.ledgers))
+    messages = build_messages(fresh, timeframe=timeframe_of(payload), counters=counters)
     reject_messages = build_reject_messages(rejects)
     if args.dry_run:
         # Durum dosyasına YAZILMAZ: yollanmamış bir mesajı "bildirildi" saymak, gerçek
@@ -450,6 +475,112 @@ def _key(signal: Mapping[str, Any]) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Karşı maruziyet — aynı sembolde TERS yönde duran şey
+# --------------------------------------------------------------------------- #
+# Aynı sembolde ters yönde eşzamanlı pozisyon TASARIM GEREĞİ serbesttir ve bu davranış
+# DEĞİŞMİYOR: `core/portfolio.py` yalnızca (sembol, yön) çiftini reddeder, ters yön ayrı
+# bir pozisyondur (bkz. docs/decisions.md > 52). Sorun ölçümde değil GÖRÜNÜRLÜKTEDİR:
+# tek yönlü (one-way) hesap modunda elle takip eden biri botla aynı iki pozisyonu aynı
+# anda tutamaz — onun emri mevcut pozisyonu azaltır ya da kapatır. Mesaj bunu SÖYLER;
+# sinyali ELEMEZ. Elemek (seçenek B) ya da netleştirmek (seçenek C) ölçülen şeyi
+# değiştirirdi ve ikisi de ancak ayrı, ön-kayıtlı bir varyant olarak açılabilir.
+OPPOSITE: Mapping[str, str] = {"long": "short", "short": "long"}
+
+
+@dataclass(frozen=True)
+class CounterExposure:
+    """Sinyalin TERSİ yönde, AYNI modelin AYNI sembolünde duran maruziyet.
+
+    `pending` İSTEK ile OLAY'ı ayırır (`docs/positions.html`in rozet kuralının aynısı):
+    açık bir pozisyon gerçekleşmiş bir olaydır, bekleyen bir emir ise henüz dolmamış bir
+    denemedir ve kota/nakit kapılarında düşebilir (kural 13). İkisini tek cümleye
+    çökertmek, açılmamış bir emri "pozisyonun var" diye bildirmek olurdu — tam olarak bu
+    satırın engellemek için var olduğu yanlış okumanın kendisi.
+    """
+
+    direction: str
+    pending: bool
+
+
+def counter_exposures(
+    signals: Sequence[Mapping[str, Any]], *, ledger_root: Path
+) -> dict[str, CounterExposure]:
+    """Bildirilecek her sinyal için: aynı modelin o sembolde TERS yönde ne tuttuğu.
+
+    Bilgi `<defter kökü>/<model>/positions.json`dan OKUNUR, hesaplanmaz: defter zaten
+    hem açık pozisyonları hem bekleyen emirleri taşıyor ve bir bildirim script'inin
+    pozisyon durumu türetmesi kural 7'nin yasakladığı şeydir. `metrics_*.json`in
+    `open_positions` bölümü de aynı dosyadan gelir (`core/report.py::open_positions`)
+    ama bekleyen emirleri TAŞIMAZ — tek kaynak olarak defter seçildi, çünkü iki yüzeyi
+    birleştirmek "aynı turda ters yönde bekleyen emir" durumunu ölçülemez bırakırdı.
+
+    **İzolasyon model bazındadır (kural 4).** Yalnızca sinyali üreten modelin kendi
+    dosyası okunur: başka bir modelin ters pozisyonu uyarı TETİKLEMEZ, çünkü okuyucunun
+    takip ettiği şey tek bir modeldir ve komşu modelin defteri onun hesabında yoktur.
+    """
+    states: dict[str, Mapping[str, Any]] = {}
+    found: dict[str, CounterExposure] = {}
+    for signal in signals:
+        model = str(signal.get("model") or "")
+        symbol = str(signal.get("symbol") or "")
+        opposite = OPPOSITE.get(str(signal.get("direction") or ""))
+        if not model or not symbol or opposite is None:
+            continue
+        if model not in states:
+            states[model] = _load_positions(ledger_root / model / "positions.json")
+        exposure = _counter_in(states[model], symbol=symbol, opposite=opposite)
+        if exposure is not None:
+            found[_key(signal)] = exposure
+            logger.info(
+                "%s: aynı sembolde ters yönde %s (%s), uyarı satırı ekleniyor",
+                _key(signal), opposite, "bekleyen emir" if exposure.pending else "açık pozisyon",
+            )
+    return found
+
+
+def _counter_in(
+    state: Mapping[str, Any], *, symbol: str, opposite: str
+) -> CounterExposure | None:
+    """Önce AÇIK pozisyon, sonra bekleyen AÇILIŞ emri.
+
+    Sıra bir tercih değil: ikisi birden varsa okuyucunun elinde duran şey açık
+    pozisyondur ve mesaj onu söylemelidir. Bekleyen emirlerde `kind == "open"` şartı da
+    zorunludur — bir ÇIKIŞ emri (`kind == "exit"`, ör. zaman stop'u) pozisyonun KENDİ
+    yönünü taşır ve onu karşı maruziyet saymak, kapanmakta olan bir pozisyonu yeni bir
+    ters pozisyon gibi gösterirdi.
+    """
+    for position in state.get("positions") or ():
+        if str(position.get("symbol")) == symbol and str(position.get("direction")) == opposite:
+            return CounterExposure(direction=opposite, pending=False)
+    for order in state.get("pending_orders") or ():
+        if str(order.get("kind")) != "open":
+            continue
+        if str(order.get("symbol")) == symbol and str(order.get("direction")) == opposite:
+            return CounterExposure(direction=opposite, pending=True)
+    return None
+
+
+def _load_positions(path: Path) -> Mapping[str, Any]:
+    """Modelin defter durumu. Dosya yoksa/bozuksa BOŞ döner ve bildirim YİNE gider.
+
+    Uyarı satırı bir kolaylıktır; onu üretemediği için mesajın tamamını düşürmek,
+    okuyucuyu sinyalden de habersiz bırakırdı ("her yolda 0 döner" sözünün bu
+    yüzeydeki karşılığı). Eksiklik sessiz olmaz: ikisi de loglanır ve ayrı seviyede —
+    dosyanın olmaması beklenen bir durumdur (henüz hiç pozisyon açmamış model),
+    bozuk olması değildir.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        logger.info("%s yok: karşı pozisyon uyarısı bu model için üretilmiyor", path)
+        return {}
+    except Exception as exc:  # noqa: BLE001 — defter okunamaması bildirimi düşüremez
+        logger.warning("%s okunamadı, karşı pozisyon uyarısı üretilmiyor: %s", path, exc)
+        return {}
+    return payload if isinstance(payload, Mapping) else {}
+
+
+# --------------------------------------------------------------------------- #
 # Durum dosyası (yalnızca bildirim bookkeeping'i — ölçümün parçası DEĞİL)
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
@@ -586,6 +717,7 @@ def build_messages(
     signals: Sequence[Mapping[str, Any]],
     *,
     timeframe: str = "",
+    counters: Mapping[str, CounterExposure] | None = None,
 ) -> list[tuple[str, list[Mapping[str, Any]]]]:
     """Bildirilecek mesajlar: 5'e kadar tek tek, fazlasında TEK toplu mesaj.
 
@@ -597,12 +729,20 @@ def build_messages(
     model ve kol adları alt çizgi içerir (`scalp_bandit`, `rsi2_reversal`) ve Markdown'da
     alt çizgi italik açar.
     """
+    found = counters or {}
     if len(signals) > MAX_SINGLE_MESSAGES:
-        return [(_batch_message(signals, timeframe), list(signals))]
-    return [(_single_message(signal, timeframe), [signal]) for signal in signals]
+        return [(_batch_message(signals, timeframe, found), list(signals))]
+    return [
+        (_single_message(signal, timeframe, found.get(_key(signal))), [signal])
+        for signal in signals
+    ]
 
 
-def _single_message(signal: Mapping[str, Any], timeframe: str = "") -> str:
+def _single_message(
+    signal: Mapping[str, Any],
+    timeframe: str = "",
+    counter: CounterExposure | None = None,
+) -> str:
     lines = [
         "<b>" + _headline(timeframe) + "</b>",
         f"<b>{_esc(signal.get('model'))}</b> / {_esc(_arm(signal))}",
@@ -616,11 +756,23 @@ def _single_message(signal: Mapping[str, Any], timeframe: str = "") -> str:
     if reason:
         lines.append(f"<i>{_esc(reason)}</i>")
     lines.append("")
+    # Karşı maruziyet uyarısı, iki ZORUNLU uyarıdan ÖNCE gelir ve onların yerine
+    # GEÇMEZ: o ikisi her mesajda duran standing uyarılardır (fiyat farkı, emrin hiç
+    # dolmayabilmesi), bu ise yalnızca bu sinyale özgü bir durumdur ve okuyucunun
+    # emri vermeden önce bilmesi gereken şeydir.
+    hedge = _counter_warning(signal, counter)
+    if hedge:
+        lines.append(hedge)
+        lines.append("")
     lines.append(_warning(signal))
     return _clipped("\n".join(lines))
 
 
-def _batch_message(signals: Sequence[Mapping[str, Any]], timeframe: str = "") -> str:
+def _batch_message(
+    signals: Sequence[Mapping[str, Any]],
+    timeframe: str = "",
+    counters: Mapping[str, CounterExposure] | None = None,
+) -> str:
     """Tek mesajda tüm sinyaller. `reason` metni GİRMEZ: mesaj sınırı 4096 karakterdir
     ve altı sinyalin gerekçesi tek başına onu aşabilirdi; gerekçe dashboard'da durur."""
     lines = [
@@ -628,6 +780,8 @@ def _batch_message(signals: Sequence[Mapping[str, Any]], timeframe: str = "") ->
         f"bar {_esc(_clock(signals[0].get('bar')))} UTC",
         "",
     ]
+    found = counters or {}
+    hedged = False
     for index, signal in enumerate(signals, start=1):
         lines.append(
             f"{index}. <b>{_esc(signal.get('model'))}</b> / {_esc(_arm(signal))} — "
@@ -639,7 +793,17 @@ def _batch_message(signals: Sequence[Mapping[str, Any]], timeframe: str = "") ->
             f"hedef <code>{_price(signal.get('target_price'))}</code> · "
             f"R:R {_ratio(signal.get('reward_risk'))}"
         )
+        # Toplu mesajda uyarı SATIR BAZINDA işaretlenir, gerekçesi ise bir kez yazılır:
+        # aynı açıklamayı altı kez tekrarlamak 4096 karakterlik sınırı yerdi, tek bir
+        # ortak satır ise hangi sinyalin etkilendiğini söylemezdi.
+        counter = found.get(_key(signal))
+        if counter is not None:
+            hedged = True
+            lines.append(f"   {_counter_mark(counter)}")
     lines.append("")
+    if hedged:
+        lines.append("ℹ️ İşaretli sinyallerde " + _COUNTER_NOTE)
+        lines.append("")
     lines.append(_warning(signals[0]))
     return _clipped("\n".join(lines))
 
@@ -705,6 +869,50 @@ def _reject_detail(reject: Mapping[str, Any]) -> str:
     """
     text = " ".join(str(reject.get("detail") or "").split())
     return text or str(reject.get("code") or "—")
+
+
+# Uyarının GEREKÇESİ tek yerde durur: tek tek mesajda cümlenin kuyruğu, toplu mesajda
+# ortak not. İki kopya, bir gün birinin "bot ikisini ayrı tutar" demeyi bırakması demekti
+# ve tam olarak o yarım cümle okuyucuya botun pozisyonu kapattığını düşündürürdü.
+_COUNTER_NOTE = (
+    "tek yönlü (one-way) hesap modunda bu emir mevcut pozisyonu azaltır/kapatır; "
+    "bot ikisini AYRI tutar (hedge modu) ve ölçüm de öyle yapılır."
+)
+
+
+def _counter_mark(counter: CounterExposure) -> str:
+    """Toplu mesajın satır işareti: hangi sinyalin karşı maruziyeti var."""
+    what = "bekleyen" if counter.pending else "açık"
+    return f"⚠️ ters yönde {what} {_esc(counter.direction.upper())} var"
+
+
+def _counter_warning(signal: Mapping[str, Any], counter: CounterExposure | None) -> str:
+    """Aynı sembolde ters yönde maruziyet varsa TEK satırlık uyarı, yoksa boş metin.
+
+    **Bu bir kural değil, bir GÖRÜNÜRLÜK satırıdır.** Bot ters yönü ayrı bir pozisyon
+    sayar ve bu davranış tasarım gereğidir (docs/decisions.md > 52); uyarı hiçbir
+    sinyali elemez, hiçbir boyutu değiştirmez ve deftere hiçbir şey yazmaz. Var olma
+    sebebi mesajın OKUYUCUSUDUR: tek yönlü bir borsa hesabında aynı sembolde iki yön
+    aynı anda tutulamaz, yani okuyucu bu emri verdiğinde botun defterinde olan şey
+    (iki ayrı pozisyon) ile kendi hesabında olan şey (azalan ya da kapanan tek bir
+    pozisyon) AYRIŞIR. Ayrışmayı söylememek, "bot şunu yaptı" ile "ben şunu yaptım"ı
+    aynı satır sanmaya davettir.
+
+    İki hâl AYRI yazılır (bkz. `CounterExposure.pending`): açık bir pozisyon elde duran
+    bir olaydır, bekleyen bir emir ise dolum anında reddedilebilecek bir denemedir
+    (kural 13) — ikisine aynı cümleyi kurmak, `_warning`in (b) satırının açtığı ayrımı
+    bir satır sonra geri kapatmak olurdu.
+    """
+    if counter is None:
+        return ""
+    symbol = _esc(signal.get("symbol"))
+    side = _esc(counter.direction.upper())
+    state = (
+        f"bu turda açılacak <b>{side}</b> emri var"
+        if counter.pending
+        else f"açık <b>{side}</b> pozisyonu var"
+    )
+    return f"⚠️ Bu modelin {symbol} üzerinde {state} — {_COUNTER_NOTE}"
 
 
 def _warning(signal: Mapping[str, Any]) -> str:
@@ -836,11 +1044,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Scalp katmanının yeni sinyallerini Telegram'a bildirir."
     )
-    # Yol varsayılanları KATMANDAN türer (bkz. metrics_path_for / state_path_for), bu
-    # yüzden `--layer base` tek başına doğru dosya çiftini seçer: üç bayrağı elle
-    # hizalamak, bir katmanın ötekinin durum dosyasına yazması demekti.
+    # Yol varsayılanları KATMANDAN türer (bkz. metrics_path_for / state_path_for /
+    # ledger_dir_for), bu yüzden `--layer base` tek başına doğru ÜÇLÜYÜ seçer: bayrakları
+    # elle hizalamak, bir katmanın ötekinin durum dosyasına yazması ya da başka bir
+    # katmanın defterinden karşı pozisyon okuması demekti.
     parser.add_argument("--metrics", default=None, help="katmanın rapor dosyası")
     parser.add_argument("--state", default=None, help="susturma penceresi durumu")
+    parser.add_argument(
+        "--ledgers", default=None,
+        help="katmanın defter kökü; ters yön uyarısı buradaki positions.json'dan okunur",
+    )
     parser.add_argument(
         "--layer", default=DEFAULT_LAYER,
         help=f"raporun ait olması gereken katman (varsayılan {DEFAULT_LAYER})",
@@ -868,6 +1081,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         args.metrics = str(metrics_path_for(args.layer))
     if args.state is None:
         args.state = str(state_path_for(args.layer))
+    if args.ledgers is None:
+        args.ledgers = str(ledger_dir_for(args.layer))
     # Çakışma BURADA yakalanır ve argparse'ın kendi hatasına çevrilir (çıkış kodu 2,
     # traceback yok). Sessizce birini seçmek, kullanıcının yazdığı iki kuraldan birini
     # yok saymak olurdu; "her yolda 0 döner" sözü ise ÇALIŞMA ZAMANI içindir (ağ,

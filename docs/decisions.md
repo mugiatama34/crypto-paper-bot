@@ -4147,3 +4147,77 @@ kısıt bir sayfa boyu değil, uç noktanın tuttuğu **~3 aylık kayan penceren
 hesaplanmıştı — yani ölçülmemiş bir mekanizma, ölçülmüş bir sayıdan türetilmişti. Doğru
 yol karar 50'nin yaptığıdır: soruyu soran ayrı bir probe yazmak ve ön-kaydını koşudan önce
 commit etmek. Bir araç kendi teşhisini üretemez; teşhis de ölçülür.
+
+---
+
+## 52. Ters yöndeki eşzamanlı pozisyon: kural DEĞİŞMEDİ, GÖRÜNÜRLÜK değişti
+
+**Olgu.** Aynı sembolde ters yönde eşzamanlı pozisyon tasarım gereği serbesttir ve bu
+belgenin başından beri öyle yazılıdır: *"Aynı sembolde aynı yönde ikinci pozisyon açılmaz;
+ters yön ayrı bir pozisyondur."* `core/portfolio.py` yalnızca **(sembol, yön)** çiftini
+reddeder. Canlı defterde bu nadir de değil: `scalp_patient` 21 pozisyonun 6'sında,
+`scalp_fixed` 68'in 12'sinde aynı sembolde ters yönde bir eş taşıyor.
+
+**Sorun ölçümde DEĞİL.** İki yön ayrı pozisyonlardır, ayrı 1R taşırlar, ayrı ölçülürler ve
+projenin ana sorusu (long ↔ short) tam olarak bu ayrımın üstünde durur. Bozulan şey
+okuyucunun **eşleşmesidir:** tek yönlü (one-way) bir borsa hesabında aynı sembolde iki yön
+aynı anda tutulamaz. Bildirimi elle takip eden biri ters yöndeki emri verdiğinde onun
+hesabında olan şey (azalan ya da kapanan tek bir pozisyon) botun defterinde olandan (iki
+ayrı pozisyon) AYRIŞIR — ve bunu hiçbir yerde söylemiyorduk. Bu, karar 39'un DOGE
+vakasıyla aynı sınıftan bir kusurdur: sistem doğru çalışıyor, ama okuyucu gördüğü şeyi
+sistemin bir arızası sanıyor.
+
+**Yapılan (yalnızca iki bildirim yüzeyi, ölçüme dokunulmadan):**
+
+- `scripts/telegram_signals.py` — sinyalin modeli o sembolde ters yönde bir pozisyon (ya da
+  bu turda açılacak bir AÇILIŞ emri) tutuyorsa mesaja tek satırlık bir uyarı girer. Bilgi
+  defterin `positions.json`ından **OKUNUR, hesaplanmaz** (kural 7) ve yalnızca sinyali
+  üreten **MODELİN** kendi dosyasından (kural 4): komşu modelin ters pozisyonu uyarı
+  tetiklemez, çünkü okuyucunun takip ettiği şey tek bir modeldir. Açık pozisyon ile
+  bekleyen emir AYRI cümlelerle yazılır — `_warning`in (b) satırı "bu emir hiç
+  dolmayabilir" der ve bir satır sonra dolmamış bir emri "pozisyonun var" diye bildirmek
+  o ayrımı geri kapatırdı. Bekleyen emirlerde `kind == "open"` şartı vardır: bir ÇIKIŞ
+  emri (ör. zaman stop'u) pozisyonun KENDİ yönünü taşır ve karşı maruziyet değildir.
+- `docs/positions.html` — ters yönde eşi olan açık pozisyon satırı/kartı **⇅ KARŞI
+  POZİSYON** rozeti taşır ve rozet eşine atlar. Eşleştirme render edilen satırlar üzerinde
+  kurulur; açık pozisyon filtresi yalnızca katman ve modele baktığı için bir satır
+  görünüyorsa eşi de görünür, yani rozet hiçbir zaman boşluğa bağlanmaz. Atlama ADRESİ
+  DEĞİŞTİRMEZ: bu sayfada hash filtre durumudur ve bir `#...` çapası tüm filtreleri
+  sıfırlardı. Ayrım renk TEK BAŞINA taşımaz (rozetin kendi sözü ve ⇅ işareti de söyler);
+  dokunma hedefi 44px tabanını korur ama büyüyen şey görünmeyen vuruş alanıdır, satır
+  yüksekliği değil.
+
+**İkisi de DENETİM/OKUMA yüzeyidir, kural değil:** hiçbir sinyali elemez, hiçbir boyutu
+değiştirmez, deftere hiçbir şey yazmaz ve hiçbir metriği kaydırmaz — `rejections`,
+`emitted` ve `survey` ile aynı statü (kural 15).
+
+**Seçenek B — ters yöndeki sinyali REDDET.** Alınmadı. Ret, ölçümü **yol-bağımlı** yapar:
+bir modelin bir sinyali üretip üretememesi o anda elinde ne tuttuğuna bağlanır ve
+örneklem, sinyalin kendi kalitesinden değil pozisyon sırasından şekillenir. Bugün
+`max_positions` da yol-bağımlıdır ama o TÜM modellere aynı kaba kotayı koyar; yöne bağlı
+bir ret, kesikli bir şekilde long ve short örneklemlerini FARKLI oranda budardı — yani tam
+olarak projenin ana sorusunun (long ↔ short) paydasını bozardı. Üstelik etki modelden
+modele değişir (bkz. yukarıdaki 6/21 ↔ 12/68 oranları), yani kural 6'nın "aynı koşul"
+sözü de zedelenirdi.
+
+**Seçenek C — ters yön mevcut pozisyonu NETLEŞTİRSİN.** Alınmadı ve gerekçesi daha
+serttir: netleştirme, bir ÇIKIŞI bir GİRİŞ sinyaline bağlar. Oysa çıkışın nerede verildiği
+modellerin ölçülen ekseninin kendisidir — `scalp_fixed` ↔ `scalp_managed` farkı yönetimin
+katkısıdır, `scalp_fixed` ↔ `scalp_patient` farkı zaman stop'unun SINIRIDIR (bkz.
+CLAUDE.md > Scalp katmanının model kuralları). Bir netleştirme kuralı her iki eksene de
+ölçülmeyen bir değişken eklerdi ve kapanan pozisyonun `exit_reason`/`exit_rule` kırılımı
+"hangi kural tetikledi" sorusunu cevaplamayı bırakırdı (kural 13c'nin tam tersi yönde).
+
+**İkisi de kapalı değil, ERTELENMİŞTİR — ama yalnızca AYRI, ÖN-KAYITLI bir varyant
+olarak.** Yolu mevcut bir modeli değiştirmek DEĞİLDİR: değiştirmek o modelin ölçtüğü
+ekseni sessizce kaydırır ve defterini tarihli olarak ikiye böler (karar 25'in `fee_rate`
+hatası). Yeni bir model, tek ayrışan değişkenle, kendi ön-kaydıyla gelir — `scalp_vol`un
+(model 17) deseni budur. Ölçülecek tahmin de şimdiden bellidir ve bu kayıt onu
+çivilemektedir: netleştiren bir varyantın ortalama R'si ikizinden anlamlı biçimde
+AYRIŞMAZ, çünkü ters yöndeki eşler zaten ayrı 1R taşıyor ve toplamları aynı nakde
+düşüyor; ayrışacak olan şey işlem SAYISI ve friksiyon hızıdır.
+
+**Dersin kendisi kaydın sebebi:** bir davranışın DOĞRU olması, onun OKUNABİLİR olduğu
+anlamına gelmiyor. Karar 39'un DOGE vakasında da sistem kuralına göre çalışmış, eksik olan
+tek şey "ne olduğunu söyleyen satır" olmuştu. Görünürlük kusurunun onarımı bir kural
+değişikliği değildir ve bir kural değişikliğine bahane de edilemez.
