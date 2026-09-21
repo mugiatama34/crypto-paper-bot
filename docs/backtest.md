@@ -1269,6 +1269,55 @@ ile indirme ayrı sistemlerdir. Ama dosya ADI bilinmeden indirme denenemez, yani
 varlığı değil, ona giden bir istek adayı. C kapısı (aynı damga → aynı oran) aynen yerinde:
 arşiv, yolu bulunduktan sonra da o kapıyı geçmeden hiçbir yerde kullanılamaz.
 
+### SONUÇ — fonlama tezi ASKIYA ALINDI: veri yolu engelli *(2026-09-21)*
+
+⚠ **BU BİR TEZ SONUCU DEĞİLDİR.** Tez SINANMADI: ne bir dağılım görüldü, ne bir eşik
+seçildi, ne bir koşu yapıldı. Askıya alınan şey ölçüm, düşen şey iddia DEĞİL — karar
+50'nin ilk paragrafındaki ayrım aynen geçerli: *düşmüş bir tezi yeniden açmak yeni kanıt
+ister, engellenmiş bir tezi açmaksa yalnızca yolun onarılmasını.*
+
+**A-2 hâlâ GEÇERLİ:** portal fonlama veri kümesini SUNUYOR (doğrudan gözlem, 2026-09-20).
+Askıya alınma sebebi verinin yokluğu değil, ona **güvenilir bir yoldan ulaşılamaması.**
+
+**Portalın gözlenen kısıtları** (tarayıcıdan doğrudan gözlem, 2026-09-21):
+
+| Gözlem | Sonucu |
+|---|---|
+| Aylık grupta **"All" seçeneği YOK** | 13 sembol tek talepte alınamaz |
+| Sembol limiti **4** | dönem A için en az ⌈13/4⌉ = 4 tur talep |
+| Aralık sınırı **6 ay** (günlükte 7 gün) | 28 aylık pencere için sembol grubu başına ≥5 talep → toplam ~20 talep |
+| **Talep edilen teslim EDİLMİYOR** | aşağısı |
+
+**Teslim güvenilmezliği ÖLÇÜLDÜ, tahmin değil:** 4 sembol × 6 ay talebi (BTC/ETH/SOL/BNB,
+2022-03 → 2022-08 = 24 dosya beklenir) **TEK dosya** döndürdü — `BTC-USDT-SWAP` 2022-08.
+Üstelik talebin kendi listesinde **BNB düşmüştü** ve boyut **0.00 MB** göründü. Yani
+portal ne istendiğini eksiksiz kabul ediyor ne de kabul ettiğini teslim ediyor.
+
+**Bu bir kapsam sorunundan daha kötüdür ve gerekçe budur:** eksik ama BİLİNEN bir kapsamla
+ölçüm yapılabilir (kapsam raporlanır, n bütçesi ona göre kurulur — §6f'nin 10.6 sembol
+hesabı tam olarak budur). Sessizce eksilen bir teslimatla yapılamaz: hangi damganın
+gelmediği bilinmediği için "olay yok" ile "veri gelmedi" aynı hücreye düşer ve bu, karar
+51'in çıkış kodu kapısının kapatmak için var olduğu hatanın ta kendisidir.
+
+**İki yapısal gözlem — yol açılırsa GEREKECEK, o yüzden şimdi yazılıyor:**
+
+1. **Portalın GÜNÜ 16:00 UTC'de başlıyor.** Günlük dosya sınırları bizim UTC gün
+   tanımımızla hizalı DEĞİL; bir gün-çapası kullanan her hesap (ör. `core/metrics.py`nin
+   seans kırılımı, VWAP'in gün çapası) bu farkı görmek zorunda.
+2. **Aylık dosyanın damgaları tam 8 saatlik ızgarada; GÜNLÜK dosyada saniye düzeyinde
+   oynama var.** C kapısının ızgara koşulu (`C-ızgara`) aylık dosyada doğrudan
+   sınanabilir; günlük dosyada damga eşleşmesi tam eşitlikle DEĞİL bir tolerans kuralıyla
+   kurulmak zorunda kalır — ve o tolerans, seçilmeden önce ön-kayda yazılması gereken yeni
+   bir serbestliktir. Aylık dosyayı tercih etmenin gerekçesi budur.
+
+**Yeniden açılma koşulu tek ve yazılı:** güvenilir bir veri yolu (talep edilenin eksiksiz
+teslim edildiği, damga bazında doğrulanabilir bir kaynak). O gün geldiğinde C kapısı
+(aynı damga → aynı oran) aynen yerinde durur; askı onu gevşetmez.
+
+**Sicile (§6c) GİRMEZ.** §6f'nin kendi kuralı: bu bölüm bir tezin performansı hakkında
+iddia taşımaz, bir VERİ YOLUNUN ön-kaydıdır. Sınanmamış bir tezi sicile yazmak, paydayı
+sınanmış hipotezlerle sınanmamışları karıştırarak şişirirdi.
+
 ### Adım B — aday sırası, SONUÇTAN ÖNCE sabitlendi *(DÜŞTÜ: 2026-09-20, A-2 geçti)*
 
 ⚠ **Bu adım HİÇ KULLANILMADI.** Aşağıdaki sıra duruyor çünkü değeri sonucunda değil

@@ -4017,6 +4017,26 @@ C kapısını (damga bazlı birebir eşitlik) geçmeden hiçbir yerde kullanılm
 dağılım raporunda, ne bir eşik seçiminde, ne bir backtest'te. Sıra bu kaydın kendi
 sırasıdır ve esnetilmedi.
 
+**ASKIYA ALINDI (2026-09-21): veri yolu engelli, tez SINANMADI.** A-3 (erişim yolu)
+düştü ve portalın kendi arayüzü de güvenilir bir yol vermedi. Gözlemler (tarayıcıdan,
+doğrudan): aylık grupta "All" yok, sembol limiti 4, aralık sınırı 6 ay (günlükte 7 gün);
+ve asıl engel — **talep edilen teslim edilmiyor:** 4 sembol × 6 ay talebi (BTC/ETH/SOL/BNB,
+2022-03 → 2022-08, 24 dosya beklenir) tek dosya döndürdü (`BTC-USDT-SWAP` 2022-08), talep
+listesinde BNB düşmüştü ve boyut 0.00 MB göründü.
+
+**Bu kaydın başındaki ayrım yine yerinde duruyor ve bu kez ALTI ÇİZİLİYOR:** tez ölçülüp
+düşmedi, ölçülemedi. Eksik ama BİLİNEN bir kapsamla ölçüm yapılabilirdi; sessizce eksilen
+bir teslimatla yapılamaz — hangi damganın gelmediği bilinmezse "olay yok" ile "veri
+gelmedi" aynı hücreye düşer ve bu tam olarak karar 51'in kapattığı hatadır.
+
+İki yapısal gözlem yol açılırsa gerekecek, bu yüzden şimdi yazıldı: portalın **günü 16:00
+UTC'de başlıyor** (gün-çapalı her hesap bunu görmeli) ve **aylık dosya damgaları tam 8
+saatlik ızgarada, günlük dosyada saniye düzeyinde oynama var** (C kapısının ızgara koşulu
+aylık dosyada doğrudan sınanır; günlükte bir TOLERANS gerekir ve o, ön-kayda yazılması
+gereken yeni bir serbestliktir). Ayrıntı ve yeniden açılma koşulu docs/backtest.md > 6f >
+"fonlama tezi ASKIYA ALINDI".
+
+
 ---
 
 ## 39-DOĞRULAMA: tahmin kıl payı tuttu, ama onarımın DAYANDIĞI MEKANİZMA çürüdü
