@@ -426,6 +426,36 @@ yapılmaz (CLAUDE.md > Katmanlar) ve sorulan soru tam olarak "bu model `trend`de
 | 9 | `random_ctrl` | long + short | **kontrol grubu**: bilgisiz çekiliş, edge'in referansı |
 | 18 | `ema_trend` | **yalnızca long** | EMA(21) EMA(55)'i yukarı keser; stop 1.5×ATR, hedef 2R, trailing ve zaman stop'u YOK |
 
+### Kadro — `xsec` (tanımlı, tetikleyicisi YOK)
+
+4H, **sabit 13 sembol** (`ema` katmanının evreninin aynısı), `config.yaml > layers.xsec`.
+`ema` ile aynı statü: **cron'u yoktur ve `run-xsec.yml` eklenmemiştir** — tanım var, koşu
+yok. Ön-kayıt `docs/backtest.md > 6g`de ve koddan ÖNCE commit edildi.
+
+Ölçtüğü şey **kesitsel** momentumdur: "bu sembol yükseliyor mu" değil **"bu sembol
+diğerlerinden iyi mi"**. `ema_trend`den farkı bir parametre değil sorunun kendisidir —
+yatay bir piyasada zaman serisi sinyali susar, göreli sıralama susmaz.
+
+**Neden ayrı bir katman:** `ema`nın stop tavanı 3.0 ve tavanı motor merkezî uygular
+(`core/engine.py::_within_stop_band`); `xsec_mom`un stop'u 5×ATR olduğu için o katmanda
+istisnasız her sinyali elenirdi. `ema`nın tavanını yükseltmek reddedildi — tamamlanmış,
+ön-kayıtlı bir koşunun katman koşulunu geriye dönük değiştirirdi. Bu katmanın tavanı
+**6.0**: 5×ATR + dolum kaymasına pay, koşudan önce sabitlendi.
+
+İki model `strategies/xsec/` altındaki **tek kopyayı** paylaşır (uygunluk, sıralama
+ölçütü, stop geometrisi, rebalance takvimi, çıkış kuralı) ve yalnızca **seçimde** ayrışır
+— ölçülen eksen tam olarak o farktır.
+
+| # | Strateji | Yön | Tez |
+|---|---|---|---|
+| — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
+| 19 | `xsec_mom` | **yalnızca long** | 21 günlük getiriye göre top-3, haftalık rebalance; stop 5×ATR, TP YOK |
+| 20 | `xsec_random` | **yalnızca long** | **kontrol grubu**: aynı kurulum, uygunlar arasından rastgele 3 |
+
+**Rebalance barı tam tanımlı:** indeksi **Pazar 20:00 UTC** olan 4H bar (Pazartesi 00:00'da
+kapanır); dolum Pazartesi 00:00 açılışından (kural 13). Çıkışın iki yolu var — rebalance'ta
+top-3 dışına düşmek (`exit_rule=rebalance`) ve stop.
+
 ### Katalog — kayıtlı ama listede değil
 
 Emekli bir modelin **kodu ve defteri DURUR** (kural 1: defter append-only); listeye geri

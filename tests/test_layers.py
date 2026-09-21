@@ -26,7 +26,7 @@ SHARED_KEYS = (
 
 
 def test_repository_defines_its_layers() -> None:
-    assert layer_names(load_config()) == ["base", "ema", "scalp"]
+    assert layer_names(load_config()) == ["base", "ema", "scalp", "xsec"]
 
 
 def test_base_layer_matches_the_root_config() -> None:

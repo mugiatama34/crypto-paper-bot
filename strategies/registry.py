@@ -35,6 +35,8 @@ from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_managed import VwapManaged
+from strategies.xsec_mom import XsecMomentum
+from strategies.xsec_random import XsecRandom
 
 StrategyFactory = Callable[[], Strategy]
 
@@ -54,6 +56,12 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # sistemden gelir ama KOPYA değildir (kural 15b): dışarıdan gelen yalnızca sinyal,
     # boyutlandırma ve maliyet evin. Ön-kayıt: docs/backtest.md > 6d.
     EmaTrend.name: EmaTrend,
+    # xsec_mom / xsec_random — `xsec` katmanının (4H, sabit 13 sembol) ölçtüğü çift.
+    # Kesitsel momentum: "bu sembol yükseliyor mu" değil "diğerlerinden iyi mi". İkisi
+    # `strategies/xsec/` altındaki TEK kopyayı paylaşır ve yalnızca SEÇİMDE ayrışır —
+    # ölçülen eksen tam olarak o farktır. Ön-kayıt: docs/backtest.md > 6g.
+    XsecMomentum.name: XsecMomentum,
+    XsecRandom.name: XsecRandom,
     # 15 dakikalık scalp katmanı (config.yaml > layers.scalp). Kayıt defteri katmandan
     # bağımsızdır: hangi modelin hangi turda koşacağını katmanın `models` listesi söyler.
     ScalpBandit.name: ScalpBandit,

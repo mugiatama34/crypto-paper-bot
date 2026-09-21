@@ -38,6 +38,9 @@ _ACTIVE_HEADINGS = {
     # backtest'in ölçtüğü kümedir, koşan bir lig değil. Başlık, kapılar geçilip workflow
     # eklendiğinde "Aktif lig" olarak yeniden adlandırılacak.
     "ema": "### Kadro — `ema` (tanımlı, tetikleyicisi YOK)",
+    # `xsec` de TANIMLI ama tetikleyicisi yok (`ema` ile aynı statü): ön-kayıt
+    # docs/backtest.md > 6g, canlıya alma ayrı bir karar.
+    "xsec": "### Kadro — `xsec` (tanımlı, tetikleyicisi YOK)",
 }
 _CATALOG_HEADING = "### Katalog — kayıtlı ama listede değil"
 
