@@ -365,7 +365,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, commit `e912efd` (TADİLAT-1: `93cd891`) | A: 2022-01-01 → 2024-12-30 (sinyal kesimi 06-30), B: 2024-07-21 → 2026-09-18 | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | **P1 TUTTU** (1.549 / 1.206) ama **hipotez DÜŞTÜ**: ortalama R A −0.0015 / B −0.0165 (C-1), çıpa da geçilemedi (C-3) → **BLOKE**, §6d > SONUÇ |
 | 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 49 |
-| 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, commit `b112def` (TADİLAT-1: `aee3672`, tohum: `b86b599`) | A: 2022-01-01 → 2024-06-30, B: A+embargo → 2026-09-21 | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **P2 TUTTU** (0.484 > 0.068) ama **hipotez DÜŞTÜ**: A'da fark AYIRT EDİLEMEDİ (CI [−0.186, +1.162]), B'de tezin öngördüğü büyüklük DIŞLANDI (CI üst sınırı +0.197, işaret ters) ve K-3 aşıldı (B: −%25.92) → **BLOKE**, §6g > SONUÇ, karar 52 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -1808,6 +1808,95 @@ long-only bir top-k modelin boğa dönemlerinde al-tut'un gerisinde kalması bek
 Canlıya alınmayı. `xsec` katmanının tetikleyicisi yoktur ve kapılar geçilse bile
 `run-xsec.yml` ayrı bir karardır — `ema` katmanının bugünkü statüsünün aynısı. Kod
 ölçülmeden yarışmaz; ölçülüp geçse bile canlıya alınması otomatik değildir.
+
+### SONUÇ — koşuldu, kapılar okundu: **BLOKE**
+
+Koşu: `backtest-xsec` #35578057311, `main` @ `2fdb812`, 2026-09-21. Ham çıktı artifact'te
+(`xsec-results` → `results.json`); kapı yükü koşunun log'una basıldı. **Bu bölüm sonucu
+KAYDEDER, kuralları değiştirmez** — yukarıdaki hiçbir eşik, tahmin, tohum ya da parametre
+koşudan sonra dokunulmadı.
+
+| | Dönem A (IS) | Dönem B (OOS) |
+|---|---|---|
+| Pozisyon (Ö kapısı, ≥30) | **95** ✅ | **110** ✅ |
+| Ortalama R | **+0.484** | **+0.003** |
+| Kontrol (`xsec_random`) ort. R | +0.068 (n=164) | **+0.170** (n=171) |
+| Fark (model − kontrol) | **+0.416** (marj 0.15 ✅) | **−0.167** (kontrol ÖNDE) |
+| Farkın %95 bootstrap aralığı | **[−0.186, +1.162]** | **[−0.546, +0.197]** |
+| Hesap getirisi ↔ çıpa (`buyhold`) | +%45.5 ↔ **+%123.0** ❌ | +%0.9 ↔ −%4.8 ✅ |
+| **E kapısı** | ❌ | ❌ |
+| **K-3** — max drawdown (tavan %25) | −%16.06 ✅ | **−%25.92** ❌ |
+| Stop mesafesi / band uyarısı | %11.35, band 6.85–17.13 — uyarı YOK | %11.75, band 7.21–18.03 — uyarı YOK |
+
+**Bağlayıcı kapıların üçü de düştü:** E her iki dönemde, K-3 dönem B'de. K-1 uygulanmadı
+(coin başına koşu yapısal olarak yok, bkz. yukarısı). Harness'ın kendi yargısı:
+`BLOKE — K-3 (max drawdown) aşıldı`.
+
+#### A ile B AYNI ŞEYİ SÖYLEMİYOR — ikisi ayrı yazılır
+
+Bu ayrım kaydın en önemli satırıdır, çünkü iki dönem iki farklı kanıt sınıfı üretti:
+
+- **Dönem A: AYIRT EDİLEMEDİ.** Nokta tahmini büyük (+0.416R) ve bağlayıcı kapının
+  MDE'sine (≈0.42R) neredeyse tam eşit; aralık sıfırı içeriyor. Güç bölümünün ön-kayıtlı
+  cümlesi tam olarak bu durumu kapsıyor: *"Bu kurulum ancak büyük bir etkiyi tespit
+  edebilir; 'ayırt edilemedi' beklenen sonuçlardan biridir ve tezin reddi olarak
+  okunmaz."* A için geçerlidir.
+- **Dönem B: TEZİN ÖNGÖRDÜĞÜ BÜYÜKLÜKTEKİ ETKİ DIŞLANDI.** Farkın aralığının ÜST sınırı
+  **+0.197R**. Tezin iddiası büyük bir etkiydi — ön-kayıt onu ≈0.42R olarak yazdı — ve B
+  o büyüklüğü %95 güvenle dışlıyor; üstelik işaret TERS (kontrol önde). Küçük bir etki
+  dışlanmadı, ama **bu kurulum küçük bir etkiyi zaten ölçemez** (MDE'si o).
+
+**Ön-kayıttaki "ayırt edilemedi tezin reddi olarak okunmaz" cümlesi B için GEÇERLİ
+DEĞİLDİR ve bu cümleyi çiğnemek de değildir:** cümle "ayırt edilemedi" durumunu kapsıyor,
+B o durum değil — orada veri büyük-etki iddiasına KARŞI konuşuyor. İkisini tek satıra
+("edge bulunamadı") indirmek, elde olan iki ayrı bilgiden birini silmek olurdu.
+
+#### Ön-kayıtlı tahminler
+
+| # | Tahmin | Sonuç |
+|---|---|---|
+| **P1** | rebalance çıkışı ≥ %70 | **DÜŞTÜ** — %57.9 |
+| **P2** | A'da `xsec_mom` ort. R > `xsec_random` | **TUTTU** (0.484 > 0.068) — ama yalnızca NOKTA TAHMİNİ olarak; E kapısı geçilmedi. B'de işaret TERSİNE döndü |
+| **P3** | A'da ortalama R > 0 | **TUTTU** (+0.484) |
+| **P4** | hesap getirisi çıpanın ALTINDA | **TUTTU** (A: %45.5 ↔ %123.0). B'de çıpa geçildi — ama B düşen bir çıpadır (−%4.8), yani sürpriz değil |
+
+**P1'in düşmesi K-3 ihlaliyle AYNI YÖNE işaret ediyor ve bu bir KAYITTIR, bir ayar
+önerisi değil.** Çıkışların %42'si stop/likidasyon, yani 5×ATR haftalık ufuk için hâlâ
+DAR: pozisyonlar hedefledikleri rebalance gününe varmadan ölüyor ve aynı darlık dönem
+B'de hesabı %25 tavanının üstüne taşıyor. İki gözlem tek bir mekanizmayı gösteriyor.
+Bunu bir çarpan önerisine çevirmek §7.1'in yasağıdır; buraya yalnızca ölçülen olgu
+yazılır.
+
+**Dönem A'da model çıpanın ÜÇTE BİRİNİ getirdi** (+%45.5 ↔ +%123.0). Yani boğa
+piyasasının büyük kısmı kaçırıldı — long-only bir top-k modelin haftalık rebalance'la
+nakde çıktığı günler, çıpanın kesintisiz taşındığı günlerdi. Bu P4'ün önceden yazdığı
+yönde ama BÜYÜKLÜĞÜ ön-kayıtta yoktu ve kayda burada giriyor.
+
+#### KAYIT EKSİĞİ — ön-kayıtlı zorunlu raporlamanın iki kalemi transkribe EDİLMEDİ
+
+"Koşu sonrası ZORUNLU raporlama" çıkış sebebi kırılımının TAMAMINI ve tutuş süresi
+dağılımını istiyordu. `results.json` ikisini de taşıyor (`periods.<X>.exit_mix`,
+`periods.<X>.holding`) ama workflow log'a yalnızca `gates` bloğunu basıyor ve artifact'e
+o koşuyu yürüten oturumdan erişilemedi. P1'in okunduğu sayı (%57.9) kapı yükünden
+gelmektedir ve doğrudur; eksik olan AYRINTIDIR. Aynı gerekçeyle **güç bölümünün söz
+verdiği sd karşılaştırması da yapılamadı** (varsayım 1.2–1.6R).
+
+Örneklem tahmininin kendisi ise okunabiliyor ve **düştü:** ön-kayıt A'da ~150–200 işlem
+bekliyordu, ölçülen **95**. Yani kurulumun gerçek gücü ön-kayıtta yazılandan DAHA
+DÜŞÜKTÜR ve bu, A'nın "ayırt edilemedi" sonucunu daha da beklenir kılar.
+
+Eksiğin kapanma yolu bir onarımdır, yeni bir koşu değil: workflow tam yükü log'a bassın.
+**Mevcut koşu yeniden koşulmaz** — §6g > Koşu kuralları ("tek tetikleme, tek sonuç
+dosyası", "tek tohum") ve §7 bağlayıcıdır.
+
+#### Tezin durumu
+
+**Kapanır.** Hiçbir parametre oynatılmaz: geriye bakış (126), k (3), rebalance sıklığı
+(haftalık), stop (5×ATR), tavan (6.0) ve tohum (20240217) bu hâlleriyle sicilde kalır
+(§6c > 4. satır). Ekseni yeniden açmanın tek yolu YENİ BİR ÖN-KAYITTIR — `ema_trend`in
+çıkış ekseninde (§6e > SONUÇ) olduğu gibi.
+
+---
 
 ---
 

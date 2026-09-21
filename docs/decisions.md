@@ -4147,3 +4147,90 @@ kısıt bir sayfa boyu değil, uç noktanın tuttuğu **~3 aylık kayan penceren
 hesaplanmıştı — yani ölçülmemiş bir mekanizma, ölçülmüş bir sayıdan türetilmişti. Doğru
 yol karar 50'nin yaptığıdır: soruyu soran ayrı bir probe yazmak ve ön-kaydını koşudan önce
 commit etmek. Bir araç kendi teşhisini üretemez; teşhis de ölçülür.
+
+---
+
+## 52. `xsec_mom` koşuldu: A'da ayırt edilemedi, B'de büyük etki DIŞLANDI — BLOKE
+
+**Karar:** kesitsel momentum tezi (21 gün geriye bakış, top-3, haftalık rebalance,
+long-only) ön-kayıtlı tek koşusunu yaptı ve **kapılardan geçemedi.** Tez bu hâliyle
+KAPANIR; hiçbir parametre oynatılmaz.
+
+Koşu: `backtest-xsec` #35578057311, `main` @ `2fdb812`, 2026-09-21. Ön-kayıt
+docs/backtest.md > 6g (commit `b112def`, koşudan dokuz gün önce). Sonuç tablosu
+§6g > SONUÇ; sicil satırı §6c > 4.
+
+### Ne oldu
+
+| | Dönem A (IS) | Dönem B (OOS) |
+|---|---|---|
+| Pozisyon | 95 | 110 |
+| Ortalama R | +0.484 | +0.003 |
+| Kontrol (`xsec_random`) | +0.068 (n=164) | +0.170 (n=171) |
+| Fark, %95 CI | +0.416, [−0.186, +1.162] | −0.167, [−0.546, +0.197] |
+| Çıpa (`buyhold`) | +%123.0 ↔ model +%45.5 | −%4.8 ↔ model +%0.9 |
+| Max drawdown (K-3 tavanı %25) | −%16.06 | **−%25.92** |
+
+Bağlayıcı kapılardan E iki dönemde de, K-3 dönem B'de düştü.
+
+### Kaydın ASIL noktası: A ile B aynı şeyi söylemiyor
+
+Kolay okuma "iki dönemde de edge bulunamadı" demek olurdu. O okuma, elde olan iki ayrı
+kanıt sınıfından birini siler:
+
+- **A'da ayırt edilemedi.** Nokta tahmini (+0.416R) bağlayıcı kapının MDE'sine (≈0.42R)
+  neredeyse eşit ve aralık sıfırı içeriyor. Ön-kayıt bu durumu ÖNCEDEN adlandırmıştı:
+  *"'ayırt edilemedi' beklenen sonuçlardan biridir ve tezin reddi olarak okunmaz."*
+- **B'de tezin ÖNGÖRDÜĞÜ BÜYÜKLÜK dışlandı.** Farkın aralığının üst sınırı +0.197R; tez
+  ise ≈0.42R'lik bir etki arıyordu. Yani B, 0.2R'den büyük bir üstünlüğü %95 güvenle
+  dışlıyor — üstelik işaret ters, kontrol önde. Küçük bir etki dışlanmadı ama bu kurulum
+  onu zaten ölçemez.
+
+Ön-kayıttaki "reddi olarak okunmaz" cümlesi A'yı kapsar, B'yi kapsamaz — ve bu cümleyi
+çiğnemek DEĞİLDİR: cümle "ayırt edilemedi" durumu için yazıldı, B o durum değil. Bir
+ön-kaydın kapsamını sonradan GENİŞLETMEK de daraltmak kadar ihlaldir; burada yapılan,
+cümlenin zaten çizdiği sınırı görmektir.
+
+### İkinci bulgu: stop haftalık ufuk için hâlâ DAR
+
+Ön-kayıtlı P1 (rebalance çıkışı ≥ %70) **düştü: %57.9.** Yani çıkışların %42'si
+stop/likidasyon ve "baskın çıkış rebalance olsun" tasarım niyeti tutmadı. Aynı darlık
+dönem B'de K-3 ihlalini üretiyor: pozisyonlar hedefledikleri rebalance gününe varmadan
+ölüyor, hesap %25 tavanının üstüne çıkıyor. **İki gözlem tek mekanizmayı gösteriyor ve
+burada bir KAYIT olarak durur** — bir çarpan önerisine çevirmek §7.1'in yasakladığı
+şeydir (sonucu görüp parametre aramak).
+
+### Üçüncü bulgu: model boğa piyasasının büyük kısmını kaçırdı
+
+Dönem A'da model çıpanın üçte birini getirdi (+%45.5 ↔ +%123.0). P4 yönü önceden
+yazmıştı ama BÜYÜKLÜĞÜ yazmamıştı. Long-only bir top-k modelin haftalık rebalance'la
+nakde çıktığı günler, çıpanın kesintisiz taşındığı günlerdi.
+
+### Ön-kayıtlı raporlamanın iki kalemi transkribe edilemedi
+
+Çıkış kırılımının tamamı ve tutuş süresi dağılımı `results.json`'da var ama workflow
+log'a yalnızca `gates` bloğunu basıyor ve artifact'e koşuyu yürüten oturumdan
+erişilemedi; aynı sebeple güç bölümünün söz verdiği sd karşılaştırması da yapılamadı.
+P1'in sayısı (%57.9) kapı yükünden okundu ve doğrudur. **Onarım workflow'dadır, koşuda
+değil:** tam yük log'a basılacak. Koşu yeniden koşulmaz.
+
+Örneklem tahmini ise okunabildi ve düştü: ön-kayıt A'da ~150–200 işlem bekliyordu,
+ölçülen 95 — yani kurulumun gerçek gücü ön-kayıtta yazılandan da düşüktür.
+
+### Neden bu koşu manipüle edilemezdi
+
+Tetiklemeden hemen önce kontrolün tohumunun ön-kayıtta SABİT olmadığı fark edildi
+(commit `b86b599`): `random_seed` serbest kalsaydı aynı model, aynı pencere ve aynı
+defterle "kontrol kötü çıkana kadar yeniden koş" mümkün olurdu — aranan şey modelin bir
+parametresi değil KARŞILAŞTIRMA ZEMİNİ olurdu ve bağlayıcı kapı tam olarak o zemine
+dayanıyor. Tohum (20240217) koşudan önce yazıldı, cümlesi ("koşu tek seferliktir, farklı
+tohumla yeniden koşulmaz") eklendi ve eşitliği `tests/test_docs_sync.py`ye mekanik kapı
+olarak kondu. **Ders:** bir kontrol grubunun BİLGİSİZ olması onu manipülasyona kapalı
+yapmaz — bilgisiz bir çekiliş de yeniden çekilebilir.
+
+### Ne YAPILMAYACAK
+
+§7 bağlayıcıdır. Stop çarpanı, `top_k`, geriye bakış penceresi, rebalance sıklığı,
+katman tavanı ve tohum — hiçbiri sonuca bakılarak değiştirilmez. Ekseni yeniden açmanın
+tek yolu yeni bir ön-kayıttır (karar 49'un `ema_trend` çıkış ekseninde bıraktığı kuralın
+aynısı). `xsec` katmanının tetikleyicisi yoktur ve bu koşudan sonra da yoktur.
