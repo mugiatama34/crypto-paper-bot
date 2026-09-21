@@ -1,12 +1,12 @@
 /* ==========================================================================
-   Paper Trading — ORTAK yardımcılar (docs/index.html + docs/positions.html)
+   Paper Trading — ORTAK yardımcılar (index.html + positions.html + backtest.html)
    ==========================================================================
    Biçimlendirme ölçümün bir parçasıdır, süs değil: aynı sayının iki sayfada
    farklı yuvarlanması (ya da birinde "—", diğerinde "0.00" görünmesi) okuyucuya
    iki ayrı ölçüm gibi gelir. Bu yüzden biçimleyiciler, çıkış sebebi etiketleri ve
    renk/kimlik ataması BURADA tek kopya durur.
 
-   Klasik script (modül değil): iki sayfa da `<script src="shared.js">` ile yükler
+   Klasik script (modül değil): üç sayfa da `<script src="shared.js">` ile yükler
    ve buradaki `const`lar sonraki satır içi script'ten görünür. Build adımı, bundler
    ve CDN yok — GitHub Pages dosyayı olduğu gibi sunar.
    ========================================================================== */
@@ -106,13 +106,21 @@ const SLOTS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300",
 const REF_COLOR = "#c3c2b7";      // referans çıpası: nötr, hue yok — bir fikir değil zemin
 const CTRL_COLOR = "#898781";     // kontrol grubu: nötr, daha sönük
 
+/* `controlModel` tek bir ad ya da bir LİSTE olabilir: iki katman tek sayfada
+   çizildiğinde her katmanın kendi kontrol modeli vardır ve ikisi de nötr tonu
+   almalıdır. Tek ada geri düşmek, bir katmanın kontrolünü yarışmacı renginde
+   göstermek olurdu. */
 function assignStyles(models, benchmarks, controlModel) {
+  const controls = new Set(
+    controlModel === null || controlModel === undefined ? []
+      : (Array.isArray(controlModel) ? controlModel : [controlModel])
+  );
   const style = {};
   let slot = 0;
   for (const model of models) {
     if ((benchmarks || []).includes(model)) {
       style[model] = { color: REF_COLOR, dash: "", width: 2.5, kind: "reference" };
-    } else if (model === controlModel) {
+    } else if (controls.has(model)) {
       style[model] = { color: CTRL_COLOR, dash: "5 4", width: 2, kind: "control" };
     } else {
       // 8 slot dolduğunda yeni renk ÜRETİLMEZ: slot baştan alınır ama çizgi kesikli olur,
@@ -128,6 +136,58 @@ function assignStyles(models, benchmarks, controlModel) {
     }
   }
   return style;
+}
+
+/* ------------------------------------------------------------------ *
+ * KATMANLAR — TEK tanım (index.html + positions.html).
+ *
+ * Ölçüm iki katmanda yürür (CLAUDE.md > Katmanlar) ve ikisi de AYNI
+ * çekirdeği koşar; ayrışan şey ölçümün KOŞULLARIDIR. Katmanın adı ve
+ * dosyası iki sayfada ayrı ayrı yazılsaydı biri "15 dk", öteki "Scalp"
+ * derdi ve okuyucu aynı defteri iki ayrı şey sanırdı — biçimlendirmenin
+ * tek kopya olma gerekçesinin aynısı.
+ * ------------------------------------------------------------------ */
+const SITE_LAYERS = [
+  { key: "base",  file: "data/metrics.json",       label: "4s",
+    long: "4 saatlik ana yarışma" },
+  { key: "scalp", file: "data/metrics_scalp.json", label: "Scalp",
+    long: "15 dakikalık scalp katmanı" },
+];
+const layerDef = (key) =>
+  SITE_LAYERS.find((l) => l.key === key) || { key, label: key, long: key };
+
+/* ------------------------------------------------------------------ *
+ * SAYFALAR ARASI GEZİNME — TEK tanım.
+ *
+ * Üç sayfa da aynı şeridi çizer ve üçü de EŞİT AĞIRLIKTADIR: "Operasyon"
+ * bir dipnot değil ikinci ana iştir. Şerit üç yerde ayrı ayrı yazılsaydı
+ * bir sayfa eklendiğinde (ya da bir ad değiştiğinde) iki sayfa onu
+ * gösterir, üçüncüsü göstermezdi — okuyucu için sitenin bir kısmı yok
+ * olurdu. Biçim `docs/shared.css > .nav`ta, tanım burada.
+ *
+ * "Nasıl okunur?" skorboardun yardım BÖLÜMÜNE gider: metodoloji metni
+ * tek yerde durur ve hiçbir sayfanın ana akışını şişirmez.
+ * ------------------------------------------------------------------ */
+const SITE_NAV = [
+  { key: "index", href: "index.html", label: "Skorboard",
+    title: "Kim önde — tüm modeller tek tabloda" },
+  { key: "positions", href: "positions.html", label: "Operasyon",
+    title: "Açık pozisyonlar, kapanmış işlemler ve son turun denetim izi" },
+  { key: "backtest", href: "backtest.html", label: "Backtest",
+    title: "ema_trend'in ön-kayıtlı koşusu — canlı defter değil, geçmiş bir pencerede bir DENEME" },
+];
+
+function renderSiteNav(current) {
+  const host = el("sitenav");
+  if (!host) return;
+  host.innerHTML = SITE_NAV.map((item) =>
+    '<a href="' + item.href + '"' + (item.key === current ? ' aria-current="page"' : "") +
+    ' title="' + esc(item.title) + '">' + esc(item.label) + "</a>"
+  ).join("") +
+    // Skorboarddayken aynı sayfadaki bölüme gider (adres çubuğuna yazmadan,
+    // bkz. index.html::setupSectionNav); ötekilerde oraya götüren gerçek bir link.
+    '<a href="' + (current === "index" ? "#sec-help" : "index.html#sec-help") +
+    '" id="nav-help" title="Metrik tanımları, kapılar ve katman farkı">Nasıl okunur?</a>';
 }
 
 /* Yük her turda yeniden yazılır ve workflow onu commit eder: `no-store` + zaman

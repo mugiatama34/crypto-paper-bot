@@ -1,11 +1,13 @@
 /* ==========================================================================
-   Paper Trading — ORTAK stil katmanı (docs/index.html + docs/positions.html)
+   Paper Trading — ORTAK stil katmanı (index.html + positions.html + backtest.html)
    ==========================================================================
-   İki sayfa da aynı ölçümü çizer; aynı sayının iki sayfada farklı görünmesi
+   Üç sayfa da aynı ölçümü çizer; aynı sayının iki sayfada farklı görünmesi
    okuyucuya iki ayrı ölçüm gibi gelir. Bu yüzden renk paleti, sayı hizası,
-   kart/tablo düzeni ve dokunma hedefi tabanı BURADA tek kopya durur —
-   sayfaya özgü görseller (eğri grafiği, korelasyon ısı haritası, model
-   kartları, açık pozisyon rozetleri) kendi dosyalarında kalır.
+   kart/tablo düzeni, SAYFALAR ARASI ŞERİT (.nav), sayfa içi menü (.secnav),
+   katlanır yardım/gelişmiş panelleri (.howto, .panel), KATMAN ROZETİ (.lyr) ve
+   dokunma hedefi tabanı BURADA tek kopya durur — sayfaya özgü görseller (eğri
+   grafiği, korelasyon ısı haritası, model kartları, açık pozisyon rozetleri)
+   kendi dosyalarında kalır.
 
    Hâlâ sıfır bağımlılık: harici framework yok, CDN yok, build adımı yok.
    GitHub Pages bu dosyayı olduğu gibi sunar.
@@ -165,6 +167,49 @@ h1 span { color: var(--ink-muted); font-weight: 400; }
 /* Başlık yapışkan menünün altında kalmasın: hash ile ya da menüden bir bölüme
    gidildiğinde kaydırma bu kadar erken durur. */
 section[id] { scroll-margin-top: calc(var(--secnav-h) + 12px); }
+
+/* ---------------- katman rozeti ----------------
+   İki katman TEK tabloda sıralanır (okuyucunun sorusu "kim önde"), ama satırın
+   hangi ölçüm koşulundan geldiği kaybolamaz: bar, evren ve defter ayrıdır
+   (CLAUDE.md > Katmanlar). Rozet RENKLE değil METİNLE ayırır ("4s" / "Scalp") —
+   10px'lik bir etikette renk tek anlatıcı olamaz. */
+.lyr {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 1.5px 6px; border-radius: 3px; margin-left: 7px; white-space: nowrap;
+  border: 1px solid var(--hair); background: var(--surface-2); color: var(--ink-dim);
+}
+.lyr.scalp { border-color: rgba(201,133,0,0.45); }
+
+/* ---------------- gelişmiş paneller ----------------
+   `.howto` ile aynı dil (katlanır, JS'siz, 44px dokunma hedefi) ama TAM GENİŞLİK:
+   `.howto` 78ch ile sınırlıdır çünkü metin taşır; buradaki paneller tablo ve
+   grafik taşır ve 78ch'e sıkıştırmak kolon kırpardı. */
+.panel {
+  border: 1px solid var(--hair); border-radius: var(--radius);
+  background: var(--surface); margin: 0 0 10px;
+}
+.panel > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+  min-height: var(--touch); padding: 0 12px;
+  color: var(--ink-2); font: 600 12.5px/1.35 var(--font);
+}
+.panel > summary::-webkit-details-marker { display: none; }
+.panel > summary::before { content: "▸"; font-size: 10px; color: var(--ink-muted); transition: transform .12s ease; }
+.panel[open] > summary::before { transform: rotate(90deg); }
+.panel[open] > summary { border-bottom: 1px solid var(--grid); }
+.panel > summary:hover { color: var(--ink); }
+.panel > summary:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: -2px; border-radius: var(--radius); }
+.panel > summary .panel-hint { color: var(--ink-dim); font-weight: 400; }
+.panel-body { padding: 12px; }
+.panel-body > h3.sub:first-child { margin-top: 0; }
+
+
+/* Ana akıştaki tek satırlık uyarıdan yardıma giden bağlantı: metin ORADA durur,
+   burada yalnızca kapısı. */
+.help-link { color: var(--ink-2); white-space: nowrap; }
+.help-link:hover, .help-link:focus-visible { color: var(--ink); }
+
 
 /* ---------------- "Nasıl okunur?" panelleri ----------------
    Metodoloji metni SİLİNMEZ, KATLANIR: bu sayfada bir sayının nasıl okunacağı
@@ -398,5 +443,6 @@ footer a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .howto > summary::before { transition: none; }
+  .howto > summary::before,
+  .panel > summary::before { transition: none; }
 }

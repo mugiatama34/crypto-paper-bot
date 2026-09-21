@@ -4221,3 +4221,61 @@ düşüyor; ayrışacak olan şey işlem SAYISI ve friksiyon hızıdır.
 anlamına gelmiyor. Karar 39'un DOGE vakasında da sistem kuralına göre çalışmış, eksik olan
 tek şey "ne olduğunu söyleyen satır" olmuştu. Görünürlük kusurunun onarımı bir kural
 değişikliği değildir ve bir kural değişikliğine bahane de edilemez.
+
+---
+
+## 53. Skorboard: iki katman TEK tabloda sıralanıyor — sunum kararı, ölçüm kararı değil
+
+**Değişen ne.** `docs/index.html` bir "dashboard" değil bir **SKORBOARD** olarak yeniden
+düzenlendi. Ana akış beş bölüme indi — durum kartları, kompakt long/short, **tek sıralama
+tablosu**, özsermaye eğrisi, katlanmış "Gelişmiş" — ve metodoloji metninin tamamı tek bir
+"Nasıl okunur?" bölümüne toplandı. Sayfalar arası şerit eşit ağırlıklı üç girdiye indi:
+**Skorboard | Operasyon | Backtest** (+ yardım).
+
+Tablonun iki kuralı değişti:
+
+1. **İki katmanın yarışmacıları aynı listede durur** (eskiden `scalp` ayrı bir bölümde, ayrı
+   bir tablodaydı).
+2. **Varsayılan sıra GETİRİDİR**, ortalama R değil — rütbe kolonunu da getiri belirler.
+
+**Neden.** Sayfanın cevapladığı tek soru "kim önde"ydi ve cevap iki ayrı tabloya dağılmıştı:
+okuyucu beş tez grubunu ve iki katmanı gezip sayıları kafasında birleştiriyordu. Ortalama R
+birincil METRİK olmayı sürdürüyor, ama **birincil SIRA ölçütü olmak için gereken şeye sahip
+değil**: katmandan bağımsız ortak bir birim. Hesap getirisinde o birim var — her model 10.000 $
+ile başlıyor (kural 6) ve çıpa da kopya da aynı sayıyı üretiyor, oysa ort. R'leri tanım gereği
+başka paydadan geliyor (kural 15/15b).
+
+**Bedel ÖDENDİ ve YAZILDI, gizlenmedi.** Tek tablo, 15 dakikalık bir modelin ortalama R'sini
+4 saatlik bir modelinkinin yanına koyuyor — CLAUDE.md'nin "katmanlar arası kıyas yanıltıcıdır"
+uyarısının tam olarak engellemek istediği görüntü. Karşılığında üç şey konuldu: her satırda bir
+**katman rozeti** (`4s` / `Scalp`), tablonun üstünde tek satırlık bir uyarı ve bir **katman
+filtresi** (Tümü / 4s / Scalp) — katman içi kıyas artık tek tık uzakta, eskiden ise sayfanın
+başka bir bölümündeydi.
+
+**Ölçüme DOKUNULMADI ve dokunulamaz.** `core/metrics.py` katman başına koşmaya devam ediyor;
+iki katmanın işlemleri hiçbir yerde tek havuzda toplanmıyor ve long/short paneli **katman
+BAŞINA bir kart** çiziyor. Sayfa hiçbir sayıyı hesaplamıyor (kural 7): sıralama da filtreleme
+de yalnızca yükteki alanları yeniden diziyor. Yani bu karar tersine çevrilebilir — bir gün tek
+tablo yanlış okumalar ürettiğinde, geri alınacak şey bir sunum tercihidir, biriken bir defter
+değil (karar 25'in `fee_rate` hatasının tersi durum).
+
+**Sınır cümlesi.** Bu tablodan "scalp 4 saatliği yendi" cümlesi kurulacaksa dayanağı **hesap
+getirisi** olmalıdır, ortalama R değil. Ort. R kolonu katman İÇİNDE okunur.
+
+**Yan kararlar.**
+
+- **Model kimliği artık `<katman>::<ad>`.** İki katmanda aynı adlı iki model (bugün yok, ama
+  `ema` katmanı canlıya alındığında `trend` ve `buyhold` iki kez görünecek) birbirini ezemez.
+  Detay adresi `#model=<ad>&layer=<katman>` oldu; katman yazılmazsa `base` varsayılır, yani
+  eski `#model=trend` yer imleri çalışmaya devam eder.
+- **Model detayı iki katmanı da açar.** Eskiden scalp modellerinin detay sayfası YOKTU —
+  tablo satırı bir bağlantı değildi. Defter yolu katmanın kendi kökünden türer
+  (`ledgers/` ↔ `ledgers_scalp/`); tek bir yol yazmak okuyucuyu var olmayan bir dosyaya
+  gönderirdi.
+- **Katman adı ve gezinme şeridi `docs/shared.js`e taşındı** (`SITE_LAYERS`, `SITE_NAV`).
+  Gerekçe biçimlendirmenin tek kopya olma gerekçesinin aynısı: `positions.html` katmana
+  "15 dk", `index.html` "Scalp" deseydi okuyucu aynı defteri iki ayrı şey sanırdı.
+- **Hiçbir bölüm SİLİNMEDİ, katlandı.** Tez grupları, korelasyon, scalp kırılımları ve
+  yaklaşan kurulumlar "Gelişmiş" altında varsayılan kapalı panellerde duruyor; metodoloji
+  metni "Nasıl okunur?" bölümünde. Silmek, her biri bir kararın kaydı olan gerekçeleri
+  kaybetmek olurdu — katlamak yalnızca sayfanın asıl işini öne alır.
