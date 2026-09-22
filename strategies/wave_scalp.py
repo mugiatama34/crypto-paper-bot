@@ -118,6 +118,17 @@ class WaveScalp(Strategy):
     name = "wave_scalp"
     allowed_directions: list[Direction] = ["long", "short"]
 
+    # Bandit çekilişinin KİMLİĞİ — model adından AYRI bir alan, çünkü kontrol modeli
+    # (`wave_coinflip`, §6h > EK-1) onu PAYLAŞIR. CLAUDE.md'nin kuralı: *çekiliş,
+    # ölçülmeyen eksende PAYLAŞILIR, ölçülen eksende BAĞIMSIZDIR.* EK-1'de ölçülen eksen
+    # YÖNDÜR; kombinasyon çekilişi ölçülen eksen DEĞİLDİR, yani paylaşılmalıdır ki iki
+    # model aynı barda aynı kombinasyonu denesin ve fark yalnızca yönden gelsin
+    # (`scalp_fixed` ↔ `scalp_managed` eşleştirilmiş deneyinin aynı deseni).
+    #
+    # Değer `wave_scalp`in kendi adına EŞİTTİR, yani bu alanın eklenmesi `wave_scalp`in
+    # çekilişini DEĞİŞTİRMEZ — dönem A koşusu yeniden koşulmak zorunda kalmaz.
+    rng_identity: str = "wave_scalp"
+
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:
         settings = dict(config) if config is not None else load_config()
         self._universe = [str(s) for s in get_setting(settings, "wave.clone.universe")]
@@ -279,7 +290,8 @@ class WaveScalp(Strategy):
             )
             counts[reason] += 1
             if candidate is not None:
-                signals.append(self._signal(candidate, combo=combo, stats=stats, pick=pick))
+                oriented = self.orient(candidate, market=market)
+                signals.append(self._signal(oriented, combo=combo, stats=stats, pick=pick))
 
         survey = clone_signal.Survey(counts=counts)
         self._survey = survey
@@ -416,14 +428,28 @@ class WaveScalp(Strategy):
                 resolved[combo.key] = self._global[combo.key]
         return resolved
 
-    def _round_rng(self, market: MarketData) -> random.Random:
-        """Tur ve model başına bağımsız RNG; tohum sabit, seçim tekrarlanabilir.
+    def orient(
+        self, candidate: clone_signal.WaveCandidate, *, market: MarketData
+    ) -> clone_signal.WaveCandidate:
+        """Kurulumun YÖNÜ. Varsayılan: kaynağın kararı, dokunulmadan geçer.
 
-        Kimlik model ADINI taşır, yani çekiliş `vwap_clone` ile PAYLAŞILMAZ: iki model
-        aynı barda aynı sembolleri tarıyor ama ölçtükleri şey ayrı ve paylaşılan bir
+        **Tek override noktasıdır ve karşılığı ÖLÇÜLEN bir eksendir** (§6h > EK-1: C-2
+        kontrolü, `wave_coinflip`). Kural `ScalpModel` ve `strategies/xsec/model.py` ile
+        aynıdır: karşılığı bir eksen olmayan bir override noktası eklenemez — yoksa iki
+        model arasındaki ortalama R farkı bir eksenin ölçüsü olmaktan çıkar.
+        """
+        del market
+        return candidate
+
+    def _round_rng(self, market: MarketData) -> random.Random:
+        """BANDIT çekilişinin RNG'si; tohum sabit, seçim tekrarlanabilir.
+
+        Kimlik `rng_identity`dir, model adı DEĞİL (bkz. sınıf alanının gerekçesi):
+        `wave_coinflip` onu paylaşır çünkü kombinasyon çekilişi ölçülen eksen değildir.
+        `vwap_clone` ile ise paylaşılmaz — o başka bir şey ölçüyor ve paylaşılan bir
         çekiliş aralarına ölçülmeyen bir bağ koyardı.
         """
-        return random.Random(f"{self._seed}:{market.as_of.isoformat()}:{self.name}")
+        return random.Random(f"{self._seed}:{market.as_of.isoformat()}:{self.rng_identity}")
 
 
 # --------------------------------------------------------------------------- #

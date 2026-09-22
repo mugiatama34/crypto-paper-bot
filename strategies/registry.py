@@ -35,6 +35,7 @@ from strategies.squeeze import Squeeze
 from strategies.trend import Trend
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_managed import VwapManaged
+from strategies.wave_coinflip import WaveCoinflip
 from strategies.wave_scalp import WaveScalp
 from strategies.xsec_mom import XsecMomentum
 from strategies.xsec_random import XsecRandom
@@ -88,6 +89,13 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # (docs/backtest.md > 6h; `scalp_patient`/`scalp_vol` ile aynı statü) ve backtest
     # onu `--models` ile çağırır.
     WaveScalp.name: WaveScalp,
+    # wave_coinflip — wave_scalp'in KONTROLÜ (docs/backtest.md > 6h > EK-1): aynı
+    # kurulum, yönü adil bir yazı-turayla seçilmiş. Ayrışan TEK şey yöndür; stop ve
+    # hedef MESAFELERİ yansıtılarak korunur, yani iki model aynı maliyet ölçeğinde
+    # kalır. Scalp katmanında kontrol modeli olmadığı için C-2 koşulu bugüne kadar
+    # değerlendirilemiyordu; bu model onu ölçülebilir kılar. Katmanın `models`
+    # listesinde YOKTUR ve canlıya alınacak bir tez değil, bir ölçüm zeminidir.
+    WaveCoinflip.name: WaveCoinflip,
 }
 
 

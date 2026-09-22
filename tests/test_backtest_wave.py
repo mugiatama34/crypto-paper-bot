@@ -435,6 +435,18 @@ def test_exit_mix_declares_that_its_unit_is_a_fill():
 
 
 def test_per_symbol_runs_are_labelled_informational():
-    """Coin başına koşu bir KAPI üretmez; adı bunu söylemeli (§6h > 7, 9)."""
+    """Coin başına koşu bir KAPI üretmez; adı bunu söylemeli (§6h > 7, 9).
+
+    Kapı yokluğu ADIYLA değil, `passed`/`holds` alanı üretmemesiyle sınanır: bir metin
+    araması "EK-1" gibi masum dizelerde yanlış alarm verir (ilk hâli tam olarak buna
+    düştü) ve daha kötüsü, gerçek bir kapı başka bir adla eklenirse sessiz kalırdı.
+    """
     assert "per_symbol_INFORMATIONAL" in SOURCE
-    assert "K1" not in SOURCE and "K-1" not in SOURCE.replace("K-1/K-3", "")
+    tree = ast.parse(SOURCE)
+    defined = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    # Coin başına koşudan kapı türeten bir fonksiyon YOKTUR.
+    assert not {n for n in defined if "k1" in n.lower() or "per_symbol_gate" in n.lower()}
+    # Yükün coin başına bölümü yalnızca metrik ve tutuş süresi taşır.
+    per_symbol_keys = {"metrics", "holding"}
+    assert '"metrics": _metrics_row(single),' in SOURCE
+    assert all(f'"{key}"' in SOURCE for key in per_symbol_keys)

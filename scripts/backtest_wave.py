@@ -52,11 +52,18 @@ from core.ledger import Ledger  # noqa: E402
 from core.metrics import _median, _percentile, breakdown, merge_fills  # noqa: E402
 from core.tags import find_tag  # noqa: E402
 from scripts.backtest import BacktestResult, run_backtest  # noqa: E402
+from strategies.wave_coinflip import FLIPPED, SAME, WaveCoinflip  # noqa: E402
 
 logger = logging.getLogger("backtest_wave")
 
 LAYER = "scalp"
 MODEL = "wave_scalp"
+# Kontrol AÇIKÇA verilir; katmanın kök varsayılanı (`acceptance.control_model` =
+# `random_ctrl`) bu koşuda KULLANILMAZ. Gerekçe §6h > EK-1: scalp katmanı bir gün
+# `scalp_coinflip` alırsa varsayılan ona kayabilir ve o, wave için YANLIŞ kontroldür
+# (farklı stop geometrisi -> ⚠B yanar, `cost_per_r` kıyaslanamaz). Seçim
+# `manifest.json > deviations.control_model`a yazılır.
+CONTROL = "wave_coinflip"
 PREREGISTRATION = "docs/backtest.md > 6h"
 
 # --------------------------------------------------------------------------- #
@@ -119,9 +126,15 @@ def run_period(
     signal_cutoff: pd.Timestamp | None = None,
     embargo_bars: int = 0,
     symbols: Sequence[str] | None = None,
+    models: Sequence[str] | None = None,
     config_path: str | None = None,
 ) -> BacktestResult:
-    """Bir koşu. Maliyet override'ı YOKTUR (§6h > 6): canlı config ile ölçülür."""
+    """Bir koşu. Maliyet override'ı YOKTUR (§6h > 6): canlı config ile ölçülür.
+
+    `control_model` HER koşuda açıkça geçirilir — kontrolün kendi koşusunda da, çünkü
+    kabul bayrağı farkın İKİ tarafını da aynı zeminden okumalı ve katmanın varsayılanı
+    hiçbir koşuda sessizce devreye girmemeli (§6h > EK-1).
+    """
     logger.info(
         "[%s] koşu: %s → %s%s", name, start, end,
         f" (kesim {signal_cutoff})" if signal_cutoff is not None else "",
@@ -131,19 +144,20 @@ def run_period(
         start=start,
         end=end,
         out_dir=out_root / name,
-        models=[MODEL],
+        models=list(models) if models else [MODEL],
         history_bars=history_bars,
         funding_periods=funding_periods,
         signal_cutoff=signal_cutoff,
         embargo_bars=embargo_bars or None,
         symbols=list(symbols) if symbols else None,
+        control_model=CONTROL,
         config_path=config_path,
     )
 
 
-def model_trades(result: BacktestResult) -> list[Mapping[str, Any]]:
+def model_trades(result: BacktestResult, model: str = MODEL) -> list[Mapping[str, Any]]:
     """Koşunun KENDİ defterinden modelin dolum satırları (salt okunur)."""
-    return Ledger(result.out_dir / "ledger").read_trades(MODEL)
+    return Ledger(result.out_dir / "ledger").read_trades(model)
 
 
 # --------------------------------------------------------------------------- #
@@ -440,6 +454,123 @@ def evaluate_predictions(
     }
 
 
+# --------------------------------------------------------------------------- #
+# EK-1 ölçümleri (§6h > EK-1) — hipotez DEĞİL, BH paydasına girmez
+# --------------------------------------------------------------------------- #
+S1_MAX_RELATIVE_GAP = 0.10       # avg_stop_distance_pct bağıl farkı; aşarsa C-2 OKUNMAZ
+S2_FLIP_SHARE = 0.5              # adil yazı-tura
+S2_TOLERANCE = 0.05
+C2_MARGIN_R = 0.15               # §4'teki hâliyle; burada SEÇİLMEZ, alıntılanır
+
+
+def evaluate_addendum(
+    *,
+    model_row: Mapping[str, Any] | None,
+    control_row: Mapping[str, Any] | None,
+    control_flips: Mapping[str, int],
+    control_flag: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """S1, S2, M1 ve C-2'yi MEKANİK okur. Hiçbir eşik burada seçilmez.
+
+    **S1 bir KAPIDIR ve C-2'nin ÖNÜNDE durur:** iki model aynı maliyet ölçeğinde değilse
+    aralarındaki ortalama R farkı "yönün ölçüsü" olmaktan çıkar. Bu yüzden S1 düşerse
+    C-2 `readable=False` ile döner ve sonucu YORUMLANMAZ.
+    """
+    model_stop = _number((model_row or {}).get("avg_stop_distance_pct"))
+    control_stop = _number((control_row or {}).get("avg_stop_distance_pct"))
+    gap = None
+    if model_stop is not None and control_stop is not None:
+        base = max(abs(model_stop), abs(control_stop))
+        gap = abs(model_stop - control_stop) / base if base > 0.0 else 0.0
+
+    s1_holds = _holds(gap, lambda v: v < S1_MAX_RELATIVE_GAP)
+
+    flipped = int(control_flips.get(FLIPPED, 0))
+    same = int(control_flips.get(SAME, 0))
+    total_flips = flipped + same
+    flip_share = flipped / total_flips if total_flips else float("nan")
+
+    control_avg_r = _number((control_row or {}).get("avg_r"))
+    control_cost = _number((control_row or {}).get("cost_per_r"))
+    ci_low = _number((control_row or {}).get("avg_r_ci_low"))
+    ci_high = _number((control_row or {}).get("avg_r_ci_high"))
+    expected = None if control_cost is None else -control_cost
+    m1_covers = None
+    if expected is not None and ci_low is not None and ci_high is not None:
+        m1_covers = bool(ci_low <= expected <= ci_high)
+
+    model_avg_r = _number((model_row or {}).get("avg_r"))
+    diff = None
+    if model_avg_r is not None and control_avg_r is not None:
+        diff = model_avg_r - control_avg_r
+    # Farkın bootstrap CI alt sınırı kabul bayrağından okunur — ikinci bir bootstrap
+    # hesaplamak, aynı defterin iki farklı kesinlik ölçüsü demekti (kural 7).
+    diff_ci_low = _number((control_flag or {}).get("edge_diff_ci_low"))
+
+    return {
+        "S1_stop_scale": {
+            "threshold_relative_gap": S1_MAX_RELATIVE_GAP,
+            "model_avg_stop_distance_pct": model_stop,
+            "control_avg_stop_distance_pct": control_stop,
+            "relative_gap": gap,
+            "holds": s1_holds,
+            "note": (
+                "Tolerans %10 ve koşudan ÖNCE sabit (§6h > EK-1): bandit posteriorları, "
+                "dolumlar ve max_short_positions×yön etkileşimi iki modelin aynı "
+                "kurulumları görmesini garanti etmez. Aşarsa C-2 OKUNMAZ."
+            ),
+        },
+        "S2_flip_share": {
+            "expected": S2_FLIP_SHARE,
+            "tolerance": S2_TOLERANCE,
+            "flipped": flipped,
+            "same": same,
+            "measured": flip_share,
+            "holds": _holds(
+                flip_share, lambda v: abs(v - S2_FLIP_SHARE) <= S2_TOLERANCE
+            ),
+        },
+        "M1_control_avg_r": {
+            "measured": control_avg_r,
+            "ci": [ci_low, ci_high],
+            "expected_point": expected,
+            "covers_minus_cost_per_r": m1_covers,
+            "note": (
+                "KAPI DEĞİL, tutarlılık kontrolü: bilgisiz yönün beklenen değeri sıfır, "
+                "gerçekleşen R friksiyon kadar altındadır. Kapsamıyorsa önce yansıtmanın "
+                "mesafeyi bozup bozmadığı araştırılır."
+            ),
+        },
+        "C2_edge_vs_control": {
+            "margin_r": C2_MARGIN_R,
+            "model_avg_r": model_avg_r,
+            "control_avg_r": control_avg_r,
+            "difference": diff,
+            "diff_ci_low": diff_ci_low,
+            # S1 düşerse okunmaz: farklı maliyet ölçeğinde bir fark yönün ölçüsü değildir.
+            "readable": bool(s1_holds) if s1_holds is not None else False,
+            "holds": (
+                None
+                if diff is None or not s1_holds
+                else bool(diff >= C2_MARGIN_R and (diff_ci_low or float("-inf")) > 0.0)
+            ),
+        },
+    }
+
+
+def count_flips(trades: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """Kontrolün yazı-tura dökümü; POZİSYON başına (dilim değil).
+
+    Okuma yolu TEKTİR (`WaveCoinflip.coin_of`): etiketi ikinci bir yerde ayrıştırmak,
+    S2'nin iki farklı cevabı olabilmesi demekti.
+    """
+    counts = {SAME: 0, FLIPPED: 0, "etiketsiz": 0}
+    for row in merge_fills(trades):
+        coin = WaveCoinflip.coin_of(row.get("signal_reason", ""))
+        counts[coin if coin in (SAME, FLIPPED) else "etiketsiz"] += 1
+    return counts
+
+
 def _holds(value: float | None, test) -> bool | None:
     """`nan`/None bir dalı TETİKLEMEZ: ölçülemeyen bir tahmin tutmuş da düşmüş de sayılmaz."""
     if value is None or (isinstance(value, float) and math.isnan(value)):
@@ -567,6 +698,30 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     trades = model_trades(period_a)
     metrics_row = _metrics_row(period_a)
+
+    # --- EK-1: KONTROL koşusu (§6h > EK-1) ---------------------------------
+    # `wave_scalp` YENİDEN KOŞULMAZ; kontrol kendi koşusunda, aynı pencere/seed/config ile
+    # koşar. Kabul bayrağı farkın iki tarafını da gördüğü için kontrol koşusunda İKİ model
+    # birlikte verilir — ayrı defterlere yazarlar (model adı = defter klasörü) ama
+    # `acceptance_flags` farkı tek bir kümeden okur.
+    control_result = None
+    control_row = None
+    control_flips: dict[str, int] = {}
+    addendum = None
+    if not args.skip_control:
+        control_result = run_period(
+            name="A-control", start=a_start, end=a_tail_end, out_root=out_root,
+            history_bars=args.history_bars, funding_periods=args.funding_periods,
+            signal_cutoff=a_cutoff, models=[MODEL, CONTROL], config_path=args.config,
+        )
+        control_row = _metrics_row(control_result, CONTROL)
+        control_flips = count_flips(model_trades(control_result, CONTROL))
+        addendum = evaluate_addendum(
+            model_row=_metrics_row(control_result, MODEL),
+            control_row=control_row,
+            control_flips=control_flips,
+            control_flag=_flag(control_result, MODEL),
+        )
     diagnostics = {
         "exit_mix": exit_mix(period_a),
         "stop_distance": stop_distance_profile(trades),
@@ -615,6 +770,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             "open_at_tail_end": _open_positions(period_a),
         },
         "diagnostics": diagnostics,
+        # EK-1: kontrol satırı ve ölçümleri. `control` alanı YOKSA kontrol koşulmadı
+        # demektir ve C-2 yine değerlendirilemez — eksik bir çıta, geçilmiş çıta gibi
+        # görünmemeli.
+        "control": {
+            "model": CONTROL,
+            "preregistration": f"{PREREGISTRATION} > EK-1",
+            "selected_explicitly": True,
+            "layer_default_not_used": "random_ctrl",
+            "metrics": control_row,
+            "acceptance": None if control_result is None else _flag(control_result, CONTROL),
+            "flips": control_flips,
+            "paired_run_metrics_model": (
+                None if control_result is None else _metrics_row(control_result, MODEL)
+            ),
+        },
+        "addendum_measurements": addendum,
         "per_symbol_INFORMATIONAL": per_symbol,
         # Embargo dönem A'dan ÖLÇÜLÜR ve burada yalnızca KAYDEDİLİR; Aşama 2 onu
         # kullanacaktır. Model zaman stop'u taşımadığı için varsayılamaz (§6h > 5).
@@ -640,16 +811,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(json.dumps(
         {"predictions": payload["predictions"],
          "portfolio": payload["portfolio"],
+         "addendum_measurements": payload["addendum_measurements"],
+         "control": {k: payload["control"][k] for k in ("model", "metrics", "flips")},
          "measured_embargo_bars": payload["measured_embargo_bars"]},
         indent=2, ensure_ascii=False, default=str,
     ))
     return 0
 
 
-def _metrics_row(result: BacktestResult) -> dict[str, Any] | None:
+def _metrics_row(result: BacktestResult, model: str = MODEL) -> dict[str, Any] | None:
     """Model satırının özeti — hiçbir sayı burada hesaplanmaz (kural 7)."""
     for item in result.metrics:
-        if item.model != MODEL:
+        if item.model != model:
             continue
         return {
             "trades": item.total.trades,
@@ -672,8 +845,8 @@ def _metrics_row(result: BacktestResult) -> dict[str, Any] | None:
     return None
 
 
-def _flag(result: BacktestResult) -> dict[str, Any] | None:
-    return next((dict(f.__dict__) for f in result.acceptance if f.model == MODEL), None)
+def _flag(result: BacktestResult, model: str = MODEL) -> dict[str, Any] | None:
+    return next((dict(f.__dict__) for f in result.acceptance if f.model == model), None)
 
 
 def _skipped_signals(result: BacktestResult) -> int:
@@ -741,6 +914,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--skip-per-symbol", action="store_true",
         help="coin başına koşuyu atla (BİLGİ koşusudur, birincil satırı etkilemez)",
+    )
+    parser.add_argument(
+        "--skip-control", action="store_true",
+        help="EK-1 kontrol koşusunu atla; C-2 o zaman DEĞERLENDİRİLEMEZ kalır",
     )
     # Pencereler ön-kayıtlıdır; bayraklar yalnızca tekrarlanabilirlik için açıktır,
     # dönem B'ye bakmayı kolaylaştırmak için DEĞİL.

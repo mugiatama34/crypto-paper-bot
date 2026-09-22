@@ -510,6 +510,7 @@ eklemek bir commit'tir. Backtest onları `--models` ile hâlâ çağırabilir.
 | 15 | `scalp_managed` | emekli | çıkış yönetimi ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
 | 17 | `scalp_vol` | aday, canlıda koşmaz | ön-kayıtlı birincil tahmin P1 DÜŞTÜ (karar 36) |
 | 21 | `wave_scalp` | aday, canlıda koşmaz | ön-kayıt açık, dönem A henüz koşulmadı (docs/backtest.md > 6h) — Elliott Wave Dalga-3, 15m; kuralları dış bir sistemden gelir ama KOPYA değildir (boyut, kaldıraç ve maliyet evin) |
+| 22 | `wave_coinflip` | **kontrol**, canlıda koşmaz | `wave_scalp`in kontrolü (docs/backtest.md > 6h > EK-1): aynı kurulum, yönü adil bir yazı-turayla seçilmiş. Ayrışan TEK şey yöndür; stop/hedef MESAFELERİ yansıtılarak korunur, yani iki model aynı maliyet ölçeğinde kalır. Scalp katmanında kontrol modeli olmadığı için C-2 koşulu değerlendirilemiyordu; bu model onu ölçülebilir kılar. Canlıya alınacak bir tez değil, bir ölçüm zeminidir |
 
 **Emekli ≠ silinmiş.** Ölçüt performans değil ÖLÇÜLEBİLİRLİKTİR: ne kadar iyi olduğunu asla
 öğrenemeyeceğimiz bir satır, tabloda bir bilgi değil bir gürültü kaynağıdır.

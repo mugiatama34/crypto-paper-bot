@@ -40,7 +40,7 @@ bardır, yani dal ulaşılamaz; yine de yazılı durur.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Mapping
 
 import pandas as pd
@@ -430,6 +430,33 @@ def detect(
             pivots=len(pivots) - 1,
         ),
         SETUP,
+    )
+
+
+def reflect(candidate: WaveCandidate) -> WaveCandidate:
+    """Adayın YÖNÜNÜ çevirir; stop ve hedef MESAFELERİNİ girişin öbür tarafına yansıtır.
+
+    Kontrol modeli (`strategies/wave_coinflip.py`, ön-kayıt §6h > EK-1) için vardır ve
+    burada durur çünkü yaptığı şey SAF GEOMETRİDİR — bir strateji kararı değil.
+
+        stop_ters  = giriş + (giriş − stop)
+        hedef_ters = giriş + (giriş − hedef)
+
+    **`|giriş − stop|` ve `|hedef − giriş|` KORUNUR** ve bu bir tercih değil, ölçümün
+    şartıdır: yansıtma mesafeyi değiştirseydi kontrol başka bir maliyet ölçeğinde koşar,
+    ⚠B bandı yanar ve `cost_per_r` kıyaslanamaz olurdu (EK-1'in `scalp_coinflip`i tam
+    olarak bu yüzden reddetme gerekçesi). S1 ölçümü bu korumanın denetimidir.
+
+    `setup` DOKUNULMAZ: o, kaynağın o barda GERÇEKTEN bulduğu kurulumdur ve denetim izidir
+    (`retrace`, `wave1` etiketleri ondan yazılır). Yansıtılan şey pozisyonun yönü, kaynağın
+    gözlemi değil.
+    """
+    entry = candidate.entry_price
+    return replace(
+        candidate,
+        direction="short" if candidate.direction == "long" else "long",
+        stop_price=entry + (entry - candidate.stop_price),
+        target_price=entry + (entry - candidate.target_price),
     )
 
 
