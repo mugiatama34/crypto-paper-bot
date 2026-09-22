@@ -602,3 +602,76 @@ vwap:
       - "ETHFI-USDT-SWAP"
       - "PENGU-USDT-SWAP"
       - "NEAR-USDT-SWAP"
+
+# --- MODEL 21 (`wave_scalp`) — Elliott Wave Dalga-3, 15m -----------------------
+# Ön-kayıt: docs/backtest.md > 6h. Buradaki her sayı KAYNAK SİSTEMİN kendi sabitidir
+# (klonnist/Hasanwavebot @ fa888b7: wave_detector.py, learner.py, main.py) ve ön-kayıt
+# commit'inde sabitlenmiştir — koşu sonucuna göre DEĞİŞTİRİLEMEZLER (§7.1).
+#
+# Blok yalnızca `wave_scalp` tarafından okunur; hiçbir canlı modelin gördüğü hiçbir değeri
+# değiştirmez (okunmayan anahtar zararsızdır — core/config.py'nin REQUIRED_KEYS deseni).
+# `vwap.clone` ile ayrı durmasının gerekçesi ölçülmüş bir ayrışmadır: iki blok kaynağın İKİ
+# AYRI profilini anlatıyor ve bugün aynı evreni taşımıyorlar (aşağıya bkz.).
+#
+# BURADA OLMAYANLAR ve neden:
+#   - ATR periyodu: projenin tek tanımı `trailing.atr_period` (14) ve kaynağın varsayılanı
+#     da 14 — modele özel bir periyot, aynı "×ATR" ifadesinin modelden modele farklı
+#     mesafe anlamına gelmesi demekti.
+#   - ATR yumuşatması: kaynak DÜZ ortalama kullanıyor, yani projenin varsayılanı (`simple`)
+#     zaten SPEC ile aynı. Karar 46'nın `ema_trend` için gerektirdiği Wilder bildirimi
+#     burada UYGULANMAZ.
+#   - notional_fraction / leverage / max_portfolio_risk: model bir YARIŞMACIDIR, kopya
+#     değil (§6h > 1). Boyut `risk_per_trade` (%1) ve `leverage_cap` (5) ile kurulur;
+#     `ModelLimits` yalnızca kopyalara açıktır (kural 15b) ve kotalar kökten gelir.
+#   - çıkış yönetimi: `exit_management` bloğu kaynağın CLI varsayılanlarıyla BİREBİR aynı
+#     (breakeven 1.0R, kısmi %50 @ 1.5R, geri verme %50) ve tek kopyadır.
+wave:
+  clone:
+    # Bandit ızgarası: 4 ATR katsayısı × 3 hedef çarpanı = 12 kombinasyon
+    # (kaynak: learner.py::WAVE_DEVIATIONS × WAVE_TP_MULTS).
+    # `deviations` bir YÜZDE DEĞİL, ATR%'nin KATSAYISIDIR: gerçek zigzag eşiği
+    # max(deviation × atr_pct, min_deviation_pct)'tir (kaynak: main.py::_find_wave_setup).
+    deviations: [0.8, 1.2, 1.8, 2.5]
+    tp_mults: [1.272, 1.618, 2.0]
+    sl_mult: 0.15             # kaynak: WAVE_SL_MULT; SABİT, ızgarayı şişirmesin diye
+    min_deviation_pct: 0.05   # kaynak: max(..., 0.05) — eşiğin TABANI, yüzde cinsinden
+    retrace_min: 0.236        # kaynak: WaveParams.retrace_min; ızgarada YOK
+    retrace_max: 0.886        # kaynak: WaveParams.retrace_max; ızgarada YOK
+    # Zigzag'ın gördüğü pencere. Bir DERİNLİK ayarı DEĞİL, bir FIDELITY şartıdır: kaynak
+    # `fetch_ohlcv(..., limit=300)` ile tam 300 bar alır ve zigzag'ın çıktısı pencere
+    # UZUNLUĞUNA bağlıdır (çapa pencerenin İLK barının orta fiyatıdır). Daha uzun bir
+    # pencere kaynağın hiç görmediği bir pivot listesi üretir, daha kısası çapayı ileri
+    # kaydırır. Bu yüzden harness'ın `--history-bars` bayrağıyla KARIŞMAZ.
+    window_bars: 300          # kaynak: main.py --limit varsayılanı
+
+    bandit:
+      epsilon: 0.25           # kaynak: --epsilon varsayılanı; sıfıra İNMEZ
+      min_symbol_samples: 3   # kaynak: learner.MIN_SYMBOL_SAMPLES
+
+    # Kaynağın `15m` profilinin evreni (main.py::POPULAR_COINS @ fa888b7) EKSİ TON.
+    #
+    # ⚠ Bu liste `vwap.clone.universe` ile AYNI DEĞİLDİR ve paylaşılmaz. Ölçülen ayrışma:
+    # `vwap_clone` yazıldığında kaynağın listesi PENGU taşıyordu, `fa888b7`'de taşımıyor —
+    # onun yerine TON var. `vwap.clone.universe`ü yeniden kullanmak, kaynağın Dalga-3
+    # profilinin HİÇ TARAMADIĞI bir sembolde (PENGU) işlem açmak olurdu. Paylaşılan bir
+    # liste ise birinin kaynağı değiştiğinde ötekini sessizce yanlış yapardı.
+    #
+    # TON-USDT-SWAP dışlanır: OKX'te kalıcı olarak yoktur (51001) ve scalp katmanının
+    # evreninde de yoktur (karar 24) — listede tutmak hiç taranmayan bir sembolü
+    # taranıyormuş gibi göstermek olurdu.
+    #
+    # Küme, `layers.scalp.universe`in ALT KÜMESİDİR: core/validate.py'nin evren kapısı
+    # sağlanır ve katmanın evrenine dokunulmaz. SUI ve PENGU bu modelin evreninde YOKTUR
+    # ve bu, katman içi kıyasta bilinen bir asimetridir (§6h > 4).
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "ETHFI-USDT-SWAP"
+      - "NEAR-USDT-SWAP"

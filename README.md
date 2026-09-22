@@ -509,6 +509,7 @@ eklemek bir commit'tir. Backtest onları `--models` ile hâlâ çağırabilir.
 | 11 | `scalp_bandit` | emekli | adaptasyon ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
 | 15 | `scalp_managed` | emekli | çıkış yönetimi ekseni İKİ bağımsız pencerede de sıfır fark verdi (karar 33) |
 | 17 | `scalp_vol` | aday, canlıda koşmaz | ön-kayıtlı birincil tahmin P1 DÜŞTÜ (karar 36) |
+| 21 | `wave_scalp` | aday, canlıda koşmaz | ön-kayıt açık, dönem A henüz koşulmadı (docs/backtest.md > 6h) — Elliott Wave Dalga-3, 15m; kuralları dış bir sistemden gelir ama KOPYA değildir (boyut, kaldıraç ve maliyet evin) |
 
 **Emekli ≠ silinmiş.** Ölçüt performans değil ÖLÇÜLEBİLİRLİKTİR: ne kadar iyi olduğunu asla
 öğrenemeyeceğimiz bir satır, tabloda bir bilgi değil bir gürültü kaynağıdır.
