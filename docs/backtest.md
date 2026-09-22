@@ -2536,6 +2536,44 @@ araştırılır.
   Kontrolün TOHUMU ile birebir aynı gerekçe: C-2 bir FARKA dayanır ve tohum serbest
   bırakılsaydı "kontrol kötü çıkana kadar yeniden çek" mümkün olurdu).
 
+#### NOT — koşu MEKANİĞİ değişti, ölçüm değişmedi *(2026-09-22)*
+
+İlk koşu denemesi (#35705966047) **runner kaybıyla** düştü (`The runner has received a
+shutdown signal`), 48. dakikada ve pencerenin ilk çeyreğinde. Bu bir kod hatası değil,
+altyapı kaybıdır. O koşudan ÖĞRENİLEN İKİ ŞEY kayda geçiyor:
+
+**1. Model ve kontrol artık TEK koşuda, birlikte çalışır.** Önce ayrı iki koşu yapılıyordu
+(`A` ve `A-control`). Gerekçe üç katlı ve hiçbiri sonuca bakmıyor:
+
+- **Sonuç AYNIDIR.** Modeller izoledir (kural 4), portföy her model için ayrı hesap durumu
+  tutar (kural 7) ve kotalar model başınadır; `random_seed` sabittir. Yani
+  `wave_coinflip`in eklenmesi `wave_scalp`in tek bir satırını dahi değiştirmez.
+- **EK-1'in kendi ilkesi.** "Dönem B'de kontrol, sadık sürüm ve varyant AYNI koşuda
+  çalışır" kuralı yukarıda yazılıydı; dönem A'da da öyle yapmak onu erken uygular ve
+  *"`wave_scalp` YENİDEN KOŞULMAZ"* şartını kendiliğinden sağlar.
+- **Bütçe ÖLÇÜLDÜ.** Tek eşleştirilmiş koşu ≈ **112 dakika** (veri çekimi ~25 dk + 34.944
+  bar × 2 model motor zamanı). Ayrı koşular bunu ikiye katlıyordu ve workflow'un 180
+  dakikalık tavanına sığmıyordu; tavan 300'e çıkarıldı.
+
+**2. `zero_size` retleri GÖRÜLDÜ ve raporlanacak.** Düşen koşunun logunda, pencerenin
+3. ayında (2025-06-05) `wave_scalp` için şu satırlar var:
+
+> `WARNING core.engine: wave_scalp ETH-USDT-SWAP long açılmadı [zero_size]: boyut sıfır
+> (sermaye/nakit kalmadı)` — aynı barda ETH, AVAX ve ETHFI için.
+
+`zero_size` `core/portfolio.py::SIZING_FAILURES` kümesindedir ve CLAUDE.md'nin
+*"bakılması gereken tek grup"*udur. Burada bir harness arızası DEĞİL, bir **ölçüm
+sonucudur**: hesap tükenmiş. Bu yüzden rapora iki alan eklendi (`rejections` ve
+`sizing_failures`) — bir modelin sermayesini yakması, ortalama R'nin yanında görünmek
+zorundadır.
+
+⚠ **Aynı logda kombinasyon posteriorları da görüldü** (her iki model için, pencerenin
+1/4'ünde) ve bunlar bir SONUÇ DEĞİLDİR: tur ortası ara değerlerdir, kapanmış örneklem
+değil. Görüldükleri yine de kayda geçiyor (yukarıdaki bir haftalık probe ile aynı
+gerekçe) ve hiçbir tahminin okunmasında kullanılmayacaktır. Özellikle: kontrolün bazı
+hücrelerinin o anda modelden yüksek görünmesi C-2 hakkında bir şey SÖYLEMEZ ve öyle
+okunmayacaktır — C-2 yalnızca tamamlanmış koşunun kabul bayrağından okunur.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR

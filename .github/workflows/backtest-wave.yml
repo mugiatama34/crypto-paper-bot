@@ -56,7 +56,11 @@ permissions:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # 12 aylık bir 15m penceresi ölçüldü: tek eşleştirilmiş koşu ~112 dakika (veri çekimi
+    # ~25 dk + 34.944 bar × 2 model motor zamanı) ve üstüne 11 coin başına BİLGİ koşusu
+    # gelir. 180 dakika yetmiyordu; koşuyu ölçümün ortasında kesmek, yarım bir defterden
+    # sayı okumaya davet olurdu.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
 

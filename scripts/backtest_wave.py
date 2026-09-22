@@ -678,11 +678,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     universe = [str(s) for s in config["wave"]["clone"]["universe"]]
     out_root = Path(args.out_dir)
 
-    # --- Dönem A, PORTFÖY koşusu (birincil satır) --------------------------
+    # --- Dönem A, PORTFÖY koşusu: İKİ MODEL BİRLİKTE (birincil satır + kontrol) ---
+    #
+    # Model ve kontrol AYNI koşuda çalışır. Gerekçe üç katlı:
+    #
+    # 1. **Sonuç AYNIDIR.** Modeller izoledir (kural 4) ve portföy her model için ayrı
+    #    hesap durumu tutar (kural 7); kotalar model başınadır. Yani `wave_coinflip`in
+    #    eklenmesi `wave_scalp`in tek bir satırını dahi değiştirmez — determinizm
+    #    (`random_seed`) ile birlikte iki koşu birebir aynı defteri verir.
+    # 2. **EK-1'in kendi ilkesi.** Dönem B'de "kontrol, sadık sürüm ve varyant AYNI
+    #    koşuda çalışır" kuralı yazılıdır; dönem A'da da öyle yapmak o ilkeyi erken
+    #    uygular ve "wave_scalp YENİDEN KOŞULMAZ" şartını da kendiliğinden sağlar.
+    # 3. **Ölçülmüş bütçe.** Ayrı koşular maliyeti İKİYE katlıyordu ve 12 aylık bir 15m
+    #    penceresinin tek koşusu ölçüldü: ~112 dakika (koşu #35705966047, runner kaybıyla
+    #    48. dakikada düştü ve o ana kadar pencerenin 1/4'ünü işlemişti).
     period_a = run_period(
         name="A", start=a_start, end=a_tail_end, out_root=out_root,
         history_bars=args.history_bars, funding_periods=args.funding_periods,
-        signal_cutoff=a_cutoff, config_path=args.config,
+        signal_cutoff=a_cutoff, models=[MODEL, CONTROL], config_path=args.config,
     )
 
     # --- KAPSAM KAPISI: ana sayılar okunmadan ÖNCE -------------------------
@@ -699,29 +712,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     trades = model_trades(period_a)
     metrics_row = _metrics_row(period_a)
 
-    # --- EK-1: KONTROL koşusu (§6h > EK-1) ---------------------------------
-    # `wave_scalp` YENİDEN KOŞULMAZ; kontrol kendi koşusunda, aynı pencere/seed/config ile
-    # koşar. Kabul bayrağı farkın iki tarafını da gördüğü için kontrol koşusunda İKİ model
-    # birlikte verilir — ayrı defterlere yazarlar (model adı = defter klasörü) ama
-    # `acceptance_flags` farkı tek bir kümeden okur.
-    control_result = None
-    control_row = None
-    control_flips: dict[str, int] = {}
-    addendum = None
-    if not args.skip_control:
-        control_result = run_period(
-            name="A-control", start=a_start, end=a_tail_end, out_root=out_root,
-            history_bars=args.history_bars, funding_periods=args.funding_periods,
-            signal_cutoff=a_cutoff, models=[MODEL, CONTROL], config_path=args.config,
-        )
-        control_row = _metrics_row(control_result, CONTROL)
-        control_flips = count_flips(model_trades(control_result, CONTROL))
-        addendum = evaluate_addendum(
-            model_row=_metrics_row(control_result, MODEL),
-            control_row=control_row,
-            control_flips=control_flips,
-            control_flag=_flag(control_result, MODEL),
-        )
+    # --- EK-1: kontrol AYNI koşudan okunur (§6h > EK-1) --------------------
+    control_row = _metrics_row(period_a, CONTROL)
+    control_flips = count_flips(model_trades(period_a, CONTROL))
+    addendum = evaluate_addendum(
+        model_row=metrics_row,
+        control_row=control_row,
+        control_flips=control_flips,
+        control_flag=_flag(period_a, MODEL),
+    )
     diagnostics = {
         "exit_mix": exit_mix(period_a),
         "stop_distance": stop_distance_profile(trades),
@@ -764,6 +763,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "metrics": metrics_row,
             "acceptance": _flag(period_a),
             "skipped_signals_stop_band": int(_skipped_signals(period_a)),
+            # Doldurulamayan emirlerin sebep kodu dökümü. `zero_size` ve
+            # `insufficient_cash` (core/portfolio.py::SIZING_FAILURES) BEKLENEN bir tekrar
+            # DEĞİL, bakılması gereken gruptur: bu modelde "sermaye/nakit kalmadı"
+            # anlamına gelir, yani hesabın tükendiğini söyler ve bir ölçüm sonucudur.
+            "rejections": dict(_rejections(period_a)),
+            "sizing_failures": _sizing_failures(period_a),
             # Kuyruğun ucunda hâlâ AÇIK olan pozisyonlar: kapanmış işlem istatistiğine
             # GİRMEZLER (gerçekleşmemiş bir sonucu ölçüme sokmak olurdu) ama sayıları
             # raporlanır — sıfırdan büyükse ölçülen embargo bir ALT SINIRDIR.
@@ -779,11 +784,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "selected_explicitly": True,
             "layer_default_not_used": "random_ctrl",
             "metrics": control_row,
-            "acceptance": None if control_result is None else _flag(control_result, CONTROL),
+            "acceptance": _flag(period_a, CONTROL),
             "flips": control_flips,
-            "paired_run_metrics_model": (
-                None if control_result is None else _metrics_row(control_result, MODEL)
-            ),
+            "paired_run": True,
         },
         "addendum_measurements": addendum,
         "per_symbol_INFORMATIONAL": per_symbol,
@@ -867,6 +870,24 @@ def _open_positions(result: BacktestResult) -> int:
     return len(rows) if isinstance(rows, list) else 0
 
 
+def _rejections(result: BacktestResult, model: str = MODEL) -> Mapping[str, int]:
+    report = result.report.by_model(model)
+    return dict(getattr(report, "rejections", {}) or {})
+
+
+def _sizing_failures(result: BacktestResult, model: str = MODEL) -> dict[str, int]:
+    """Yalnızca BOYUTLANDIRMA arızaları — beklenen tekrarlardan ayrı raporlanır.
+
+    Ayrım `core/portfolio.py::SIZING_FAILURES`ten gelir; burada yeniden tanımlanmaz
+    (`docs/positions.html`in "beklenen ret ile ARIZA ayrı renktedir" kuralının rapor
+    tarafındaki karşılığı).
+    """
+    from core.portfolio import SIZING_FAILURES
+
+    rows = _rejections(result, model)
+    return {code: count for code, count in rows.items() if code in SIZING_FAILURES}
+
+
 def _max_holding_bars(result: BacktestResult) -> float:
     return float((result.holding.get(MODEL) or {}).get("max_bars") or 0.0)
 
@@ -917,10 +938,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--skip-per-symbol", action="store_true",
         help="coin başına koşuyu atla (BİLGİ koşusudur, birincil satırı etkilemez)",
-    )
-    parser.add_argument(
-        "--skip-control", action="store_true",
-        help="EK-1 kontrol koşusunu atla; C-2 o zaman DEĞERLENDİRİLEMEZ kalır",
     )
     # Pencereler ön-kayıtlıdır; bayraklar yalnızca tekrarlanabilirlik için açıktır,
     # dönem B'ye bakmayı kolaylaştırmak için DEĞİL.
