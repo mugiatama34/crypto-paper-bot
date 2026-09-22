@@ -318,6 +318,12 @@ class WaveScalp(Strategy):
                 combo=combo.key,
                 retrace=candidate.setup.retrace,
                 wave1=candidate.setup.wave1_len,
+                # Hedef FİYATI etiket olarak yazılır çünkü `trades.csv`de TP kolonu
+                # YOKTUR ve yeni kolon açılamaz (kural 13c: başlık değişirse eski
+                # satırlar okunamaz hâle gelir). Ön-kayıt (§6h > 10.5) fiili R:R
+                # dağılımını istiyor ve o oran, dolum fiyatı (`entry_price`) ile ilk
+                # stop (`stop_price`) yanında hedefi de gerektirir.
+                target=candidate.target_price,
                 combo_r=stats.mean_r,
                 combo_n=stats.trades,
                 pick=pick,

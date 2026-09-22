@@ -2093,6 +2093,21 @@ kesimden sonraki barlar pozisyon yönetimi için işlenir (stop/TP/kısmi/likida
 ama YENİ sinyal üretilmez. Kesimde hâlâ açık olan pozisyonların SAYISI raporlanır ve
 kapanmış işlem istatistiğine GİRMEZ.
 
+**Kuyruğun UZUNLUĞU: 2 ay (kesim → 2026-02-28), koşudan önce sabit.** Kuyruk zaman olarak
+dönem B ile ÖRTÜŞÜR ve bu bir kirlenme DEĞİLDİR: B'yi açan şey barların işlenmesi değil,
+kesimden sonra YENİ SİNYAL üretilmesidir ve kuyrukta üretilen sinyal sayısı sıfırdır.
+§6d'de de A'nın kuyruğu (2024-12-30) B'nin başlangıcının (2024-07-21) ötesine uzanıyordu.
+Uzunluğun gerekçesi ölçülen embargonun kırpılmamasıdır: model zaman stop'u taşımıyor
+(3h), yani pozisyon ömrünün tanım gereği bir üst sınırı yok. 15 dakikalık barda 2 ay
+≈ **5.760 bardır** — kaynağın geometrisinde tipik ömrün kat kat üstü. Kuyruğun ucunda
+hâlâ açık kalan pozisyonların sayısı raporlanır; **sıfırdan büyükse ölçülen embargo bir
+ALT SINIRDIR** ve öyle okunur.
+
+⚠ **Görülmüş veri hiçbir bayrakla açılmaz ve ölçütü PENCERENİN UCUDUR** (kesim değil):
+2026-09-01 ve sonrasındaki barların bir pozisyon yönetimi için bile işlenmesi, ölçümü
+görülmüş fiyatlara bağlardı. Dönem B'yi açan `--confirm-holdout` bayrağı bu kapıyı
+AÇMAZ ve `.github/workflows/backtest-wave.yml` o bayrağı girdi olarak hiç sunmaz.
+
 **Ne A ne B kaynağın kendi öğrenme penceresidir.** Kaynağın banditi 2026 Eylül'ünde canlı
 öğrendi; ızgara, `epsilon` ve `sl_mult` ise koddaki sabitlerdir ve bizim verimizle
 seçilmedi. Yani A da B de bizim için kontaminasyon taşımaz — **A'nın "geliştirme" olması
@@ -2263,6 +2278,12 @@ Bu sayılar sicile GİRMEZ ve bir kapı değildir — Aşama 2'nin tek girdisidi
 5. **Giriş anında fiili R:R** (`|TP − giriş| / |giriş − stop|`) dağılımı. Kaynakta
    dayatılmış bir R:R kapısı yoktur (ev kapıları uygulanmıyor, madde 3h); bu dağılım
    geometrinin gerçekte ne ürettiğini gösterir.
+   **Hedef fiyatı `reason` kuyruğuna `target=` ETİKETİYLE yazılır** ve oran oradan
+   okunur: `trades.csv`de bir TP kolonu YOKTUR ve yeni kolon açılamaz (kural 13c —
+   başlık değişirse eski satırlar okunamaz hâle gelir). Payda defterin `stop_price`
+   kolonudur, yani İLK stop ve R'nin paydasıyla aynı; giriş ise DOLUM fiyatıdır, sinyal
+   barının kapanışı değil — "fiili" tam olarak budur (kural 13: emir bir sonraki barın
+   açılışından dolar ve oran o boşluk kadar kayar).
 6. **Yön (long/short) ve sembol kırılımı.** Projenin ana sorusu long/short ayrımıdır;
    sembol kırılımı ise kayma varsayımının ince kitapta tutup tutmadığına dair İPUÇTUR,
    kanıt değil (§8).
