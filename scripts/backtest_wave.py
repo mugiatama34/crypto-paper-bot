@@ -894,21 +894,24 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--config", default=None)
     # Sınıf-1 bayraklar (§5g): yalnızca DERİNLEŞTİRİR, sonucu kaydırmaz.
     #
-    # ⚠ DEĞER KEYFİ DEĞİL, ARİTMETİKTİR. `core/data.py::_download_candles` barları ŞU ANDAN
-    # geriye doğru sayfalar ve `data.history_bars` kadar bar toplayınca DURUR — pencerenin
-    # başına ATLAMAZ. Yani derinlik, bugünden dönem A'nın başına kadarki TÜM mesafeyi
-    # kapsamalı, yalnızca pencerenin kendisini değil:
+    # ⚠ DEĞER KEYFİ DEĞİL, ARİTMETİKTİR — ama aritmetiği ÖLÇÜLDÜ ve ilk okuma çürüdü
+    # (docs/backtest.md > 6h > 5 > DÜZELTME, koşu #35701959605).
     #
-    #     2026-09 → 2025-03-01 ≈ 570 gün × 96 bar/gün ≈ 54.720 bar
-    #     + zigzag penceresi (300) + ATR ısınması (14)
+    # `history_bars` PENCERENİN SONUNDA BİTEN bar sayısıdır, bugünden geriye olan mesafe
+    # DEĞİL: `scripts/backtest.py` anlık görüntüyü `load_market_data(..., now=min(end, now))`
+    # ile kurar, `_parse_candle` `now`dan yeni barları atar ve `max_bars` sayacı yalnızca
+    # `now`dan eski barları sayar. Yani gereksinim pencere uzunluğu + ısınmadır:
     #
-    # 60.000 o mesafeye pay bırakır. Yetmezse kapsam KAPISI düşer ve teşhis yanıltıcı olur:
-    # rapor "OKX veriyi vermiyor" derken aslında "biz o kadar geriye İSTEMEDİK" demiş
-    # olurdu. Emsali `scripts/backtest_ema.py`nin 12.000'idir (4H'de ≈ 5,5 yıl).
+    #     2025-03-01 → 2026-02-28 = 364 gün × 96 ≈ 34.944 bar
+    #     + zigzag penceresi (300) + ATR ısınması (14) ≈ 35.300
     #
-    # Bedeli istek sayısıdır: 60.000 / 100 ≈ 600 sayfa × 13 sembol ≈ 7.800 istek ve
-    # `exchange.min_request_interval_sec` (0.15) ile en az ~20 dakika. Workflow'un
-    # timeout'u (180 dk) buna göre seçildi.
+    # 60.000 buna fazlasıyla pay bırakır. Yetmezse kapsam KAPISI düşer ve teşhis yanıltıcı
+    # olur: rapor "OKX veriyi vermiyor" derken aslında "biz o kadar geriye İSTEMEDİK" demiş
+    # olurdu. Emsali `scripts/backtest_ema.py`nin 12.000'idir.
+    #
+    # Bugüne kadarki mesafe yine de sayfa sayfa gezilip ATILIR; bu bir derinlik ayarı değil
+    # sabit bir ÜCRETTİR ve bedeli zamandır — bir HAFTALIK pencere bile 24 dakika sürdü
+    # (13 sembol × ~550 atılan sayfa). Workflow timeout'u buna göre seçildi.
     parser.add_argument("--history-bars", type=int, default=60000)
     parser.add_argument("--funding-periods", type=int, default=2000)
     parser.add_argument(

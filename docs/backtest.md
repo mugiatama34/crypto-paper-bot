@@ -2129,20 +2129,46 @@ canlı derinliğinin (`layers.scalp.data.history_bars` = 1500) yaklaşık 20 kat
 15m geçmişinin o kadar geriye gittiği **VARSAYILMAZ**. Ana koşudan önce ayrı bir kapsam
 adımı koşar ve şunları tabloya yazar:
 
-⚠ **BİZİM ÇEKME YOLUMUZUN derinliği ayrı bir sayıdır ve pencereden BÜYÜKTÜR.**
-`core/data.py::_download_candles` barları ŞU ANDAN geriye doğru sayfalar ve
-`data.history_bars` kadar bar toplayınca durur — pencerenin başına ATLAMAZ. Yani derinlik,
-koşu gününden dönem A'nın başına kadarki TÜM mesafeyi kapsamalıdır:
+⚠ **BİZİM ÇEKME YOLUMUZUN derinliği ayrı bir sayıdır.** Harness'ın varsayılanı
+**60.000 bardır** (emsali `backtest_ema`nın 4H'deki 12.000'i) ve bu ayrım yazılı durmak
+zorunda, çünkü yetersiz bir derinlikte kapsam kapısı düşer ve teşhis YANILTICI olur: rapor
+"OKX veriyi vermiyor" derken aslında *"biz o kadar geriye istemedik"* demiş olurdu. Kapı
+düştüğünde bakılacak İLK şey bu sayıdır; ikinci şey borsanın kendi derinliğidir (karar
+50'nin fonlama uç noktasında ölçtüğü şeyin mum tarafındaki karşılığı).
 
-> 2026-09 → 2025-03-01 ≈ **570 gün × 96 bar/gün ≈ 54.720 bar**, artı zigzag penceresi
-> (300) ve ATR ısınması (14).
+**DÜZELTME — `history_bars`ın ne saydığı ÖLÇÜLDÜ ve ilk okuma ÇÜRÜDÜ** *(2026-09-22)*
 
-Harness'ın varsayılanı bu yüzden **60.000**'dir (emsali `backtest_ema`nın 4H'deki
-12.000'i). Bu ayrım yazılı durmak zorunda, çünkü yetersiz bir derinlikte kapsam kapısı
-düşer ve teşhis YANILTICI olur: rapor "OKX veriyi vermiyor" derken aslında *"biz o kadar
-geriye istemedik"* demiş olurdu. Kapı düştüğünde bakılacak İLK şey bu sayıdır; ikinci şey
-borsanın kendi derinliğidir (karar 50'nin fonlama uç noktasında ölçtüğü şeyin mum
-tarafındaki karşılığı).
+⚠ Bu paragraf bir zamanlar şunu diyordu: *"`core/data.py::_download_candles` barları ŞU
+ANDAN geriye sayfalar ve `data.history_bars` kadar bar toplayınca durur — pencerenin başına
+ATLAMAZ. Yani derinlik, koşu gününden dönem A'nın başına kadarki TÜM mesafeyi kapsamalıdır:
+570 gün × 96 ≈ 54.720 bar."* **O okuma yanlıştı ve ölçümle çürüdü.**
+
+Gerçek mekanizma: `scripts/backtest.py` anlık görüntüyü `load_market_data(..., now=min(end,
+now))` ile kurar, yani `now` PENCERENİN SONUDUR. `_parse_candle` `now`dan yeni barları atar
+ve `_download_candles`ın `max_bars` sayacı yalnızca `now`dan ESKİ barları sayar. Yani
+`history_bars` **pencerenin sonunda biten bar sayısıdır**, bugünden geriye olan mesafe
+DEĞİL. Bugüne kadarki mesafe yine de sayfa sayfa gezilir (ve atılır), ama bu bir DERİNLİK
+ayarı değil sabit bir ÜCRETTİR.
+
+**Kanıt** (koşu #35701959605, 2026-09-22): `history_bars=2000` ve `end=2025-03-08` ile koşan
+probe 2025-03-07T21:15 ve 21:30 barlarını İŞLEDİ. İlk okuma doğru olsaydı 2000 bar yalnızca
+2026-09'a yeterdi ve pencerede tek bar bulunmazdı.
+
+**Doğru gereksinim** pencere uzunluğu + ısınmadır:
+
+> 2025-03-01 → 2026-02-28 = 364 gün × 96 ≈ **34.944 bar**, artı zigzag penceresi (300) ve
+> ATR ısınması (14) ≈ **35.300**.
+
+**Sayı DEĞİŞMİYOR: 60.000 hâlâ yeterli ve fazlasıyla paylı.** Değişen yalnızca gerekçedir ve
+düzeltilmesi zorunluydu: bir ön-kayıtta yanlış bir gerekçe, doğru bir sayıdan daha
+tehlikelidir — sonraki okuyucu o gerekçeye dayanarak başka bir pencere için yanlış bir
+derinlik seçer. Düzeltme HİÇBİR sonuç görülmeden yapıldı (dönem A koşulmamıştı) ve §7'nin
+kapsamına girmez; §6f'nin "~300-400 kayıtlık sayfalama tavanı" okumasının çürütülmesiyle
+aynı statüde bir kayıttır.
+
+⚠ **Sabit ücretin bedeli ZAMANDIR ve ölçüldü:** bir HAFTALIK pencere için bile koşu 24
+dakika sürdü, çünkü 13 sembolün her biri için bugünden 2025-03'e kadar ~550 sayfa gezilip
+atıldı. `backtest.yml`in 45 dakikalık timeout'u bu yüzden 300'e çıkarıldı.
 
 - her sembolün **ilk 15m barı** (OKX'te fiilen ulaşılan en eski kapanmış bar);
 - dönem A ve B için **beklenen ↔ gerçekleşen bar sayısı** ve **eksik bar** sayısı;
