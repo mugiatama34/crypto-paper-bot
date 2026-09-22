@@ -42,7 +42,7 @@ matematiğini yazmaz — hepsi `core/indicators.py`'dedir.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Sequence
 
 import pandas as pd
@@ -523,19 +523,82 @@ ARMS: dict[str, ArmFunction] = {
 ARM_NAMES: tuple[str, ...] = tuple(ARMS)
 
 
-def propose_all(market: MarketData, params: ArmParams) -> dict[str, list[ArmSetup]]:
-    """Her kolun o turdaki kurulumları. Kol hata verirse tur düşmez, kol boş geçer.
+@dataclass(frozen=True, kw_only=True)
+class ArmScan:
+    """Bir BARIN tam tarama kaydı: kaç sembol incelendi, hangi kol ne üretti, hangisi patladı.
 
-    Kolun patlaması modelin turunu tümden düşürseydi, tek bir sembolün bozuk serisi beş
-    kolu birden susturur ve iki modelin de o turu sessizce boş geçerdi. Kol bazında
-    izolasyon, hatayı hem daraltır hem görünür kılar.
+    `propose_all` yalnızca kurulumları döndürür ve bu, tarama sayımı için YETMEZ: bir kolun
+    boş listesi "tez hiçbir sembolde tutmadı" da olabilir, "kol patladı ve `propose_all`
+    hatayı yuttu" da. İkisini aynı hücreye yazmak, `ScalpModel.take_survey`in tam olarak
+    ayırt etmek için var olduğu iki durumu birleştirirdi (bkz. docs/backtest.md > 6i > 6).
+
+    `examined` sayım sağlamasının PAYDASIDIR: her kol için eleme sebeplerinin toplamı tam
+    olarak bu sayıya eşit olmalıdır. Kol bazında değil BAR bazında tek bir sayıdır, çünkü
+    her kol aynı `symbol_views` listesini gezer.
+    """
+
+    examined: int
+    setups: dict[str, list[ArmSetup]]
+    failed: frozenset[str]
+
+
+def scan_all(market: MarketData, params: ArmParams) -> ArmScan:
+    """`propose_all`in tam kaydı: kurulumlar + taranan sembol sayısı + patlayan kollar.
+
+    Kol hata verirse tur düşmez, kol boş geçer — kolun patlaması modelin turunu tümden
+    düşürseydi, tek bir sembolün bozuk serisi beş kolu birden susturur ve iki modelin de o
+    turu sessizce boş geçerdi. Kol bazında izolasyon, hatayı hem daraltır hem görünür kılar.
+
+    Hatanın GÖRÜNÜRLÜĞÜ artık logla sınırlı değildir: patlayan kolun adı `failed`de durur
+    ve tur raporuna `kol_hatasi` olarak düşer.
     """
     views = symbol_views(market, atr_period=params.atr_period)
     results: dict[str, list[ArmSetup]] = {}
+    failed: set[str] = set()
     for name, arm in ARMS.items():
         try:
             results[name] = arm(views, params)
         except Exception as exc:
             logger.error("scalp kolu %s %s barında hata verdi: %s", name, market.as_of, exc)
             results[name] = []
-    return results
+            failed.add(name)
+    return ArmScan(examined=len(views), setups=results, failed=frozenset(failed))
+
+
+def propose_all(market: MarketData, params: ArmParams) -> dict[str, list[ArmSetup]]:
+    """Her kolun o turdaki kurulumları — `scan_all`in yalnızca kurulum kısmı.
+
+    İkinci bir tarama uygulaması DEĞİLDİR: `scan_all`i çağırır. Ayrı durmasının sebebi
+    çağıranların farklı sorular sormasıdır — `scripts/proximity.py` ve testler yalnızca
+    "bu barda hangi kurulumlar var" diye sorar ve tarama sayımına ihtiyaç duymaz.
+    """
+    return scan_all(market, params).setups
+
+
+def reflect(setup: ArmSetup) -> ArmSetup:
+    """Kurulumun YÖNÜNÜ çevirir; stop ve hedef MESAFELERİNİ girişin öbür tarafına yansıtır.
+
+    Kontrol modeli (`strategies/scalp_coinflip.py`, ön-kayıt docs/backtest.md > 6i) için
+    vardır ve burada durur çünkü yaptığı şey SAF GEOMETRİDİR — bir strateji kararı değil.
+    `strategies/wave/clone_signal.py::reflect` ile aynı aritmetiktir ve aynı gerekçeyle
+    kendi veri tipinin yanında durur:
+
+        stop_ters  = giriş + (giriş − stop)
+        hedef_ters = giriş + (giriş − hedef)
+
+    **`|giriş − stop|` ve `|hedef − giriş|` KORUNUR**, dolayısıyla `stop_distance_pct` ve
+    `reward_risk` tanım gereği değişmez. Bu bir tercih değil ölçümün şartıdır: yansıtma
+    mesafeyi değiştirseydi kontrol başka bir maliyet ölçeğinde koşar, ⚠B bandı yanar ve
+    `cost_per_r` kıyaslanamaz olurdu (S1 ölçümü bu korumanın denetimidir).
+
+    `arm` ve `detail` DOKUNULMAZ: ikisi de kolun o barda GERÇEKTEN gördüğüdür ve denetim
+    izidir (kol kırılımı `arm` etiketinden okunur). Yansıtılan şey pozisyonun yönü, kolun
+    gözlemi değil.
+    """
+    entry = setup.entry_price
+    return replace(
+        setup,
+        direction="short" if setup.direction == "long" else "long",
+        stop_price=entry + (entry - setup.stop_price),
+        target_price=entry + (entry - setup.target_price),
+    )

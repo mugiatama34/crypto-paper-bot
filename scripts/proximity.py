@@ -142,6 +142,13 @@ logger = logging.getLogger("proximity")
 # ve ikisinde de "yakınlık" tanımsızdır: çıpanın tetiği fiyattan bağımsızdır (her turda
 # aynı iki sinyal), kontrolünki ise bir zar atışıdır — bir fiyat eşiği göstermek, orada
 # olmayan bir kuralı varmış gibi çizmek olurdu.
+#
+# `scalp_coinflip` (23) aynı gerekçeyle kapsam DIŞIDIR ve bu, katmanın `models` listesinde
+# olmasına rağmen böyledir: kurulumu `scalp_patient`inkiyle birebir aynıdır (zaten o
+# satırda taranıyor), ayrıştığı tek şey ise bir YAZI-TURADIR. "Şu fiyatta long tetikler"
+# demek, yönü fiyattan türüyormuş gibi göstermek olurdu — oysa fiyat yalnızca kurulumu
+# belirler, yönü çekiliş belirler. Liste bir İZİN listesidir, yani kapsam dışı kalan model
+# sessizce "bulunamadı"ya düşmez: `--models` ile istenirse açıkça hata verir.
 SCOPE: Mapping[str, tuple[str, ...]] = {
     "base": ("trend", "meanrev"),
     "ema": ("ema_trend",),
