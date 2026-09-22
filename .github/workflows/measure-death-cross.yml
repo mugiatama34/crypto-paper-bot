@@ -1,0 +1,110 @@
+# Aday "ölüm kesişimi + geri çekilme" short'unun ÖLÇÜLEBİLİRLİK SAYIMININ elle
+# tetikleyicisi (`scripts/measure_death_cross.py`).
+#
+# NE YAPAR: bir kurulumun dönem A'da kaç kez oluştuğunu ve stop MESAFESİNİN dağılımını
+# sayar. NE YAPMAZ: bir strateji koşmaz — getiri, R, PnL, kazanma oranı ne hesaplanır ne
+# raporlanır (betik `core/metrics.py`, `core/portfolio.py`, `core/ledger.py` ve
+# `strategies/*` modüllerini import bile etmez; test: tests/test_measure_death_cross.py).
+# Ayrım `measure-funding.yml`in aynı gerekçesidir (docs/backtest.md > 7): sayıyı görmek
+# eşik seçimini kirletmez, sonucu görmek kirletirdi.
+#
+# `backtest-ema.yml`den AYRIDIR ve olmak zorundadır: o ön-kayıtlı bir SIRAYI koşar
+# (dönem A → embargo → dönem B) ve karara giren sayıları üretir. Bu iş karar üretmez ve
+# dönem B'ye HİÇ DOKUNMAZ — betik `--end` dönem A kesimini aşarsa hata koduyla biter ve
+# mumları kesimden ileriye hiç çekmez. İkisini tek dosyaya koymak, bir sayımın yanlışlıkla
+# OOS penceresini de koşturması demekti.
+#
+# DÖNEM SINIRLARI GİRDİ OLARAK AÇILMAZ: açılsalardı dönem B'ye bakmak bir yazım hatası
+# kadar kolay olurdu. Sınırlar `scripts/backtest_ema.py`den ithal edilir (tek kopya).
+#
+# TANIM da girdi DEĞİLDİR (EMA periyotları, kümeleme aralığı, ATR eşikleri): bir
+# ölçülebilirlik sayımı tek bir tanımın sayımıdır. Girdi yapmak, karar kapısını (birincil
+# sayım >= 150) sayıyı gördükten sonra süpürülebilir bir parametreye bağlardı.
+#
+# `permissions: contents: read` — bu iş YAZAMAZ. Defterin, config'in ya da `docs/`un bir
+# sayım tarafından değiştirilmesi niyetle değil YETKİYLE imkânsızdır (`backtest.yml`in
+# aynı gerekçesi).
+#
+# `cron` YOKTUR ve bilinçli olarak yoktur (docs/backtest.md > 7): periyodik bir sayım,
+# "sonucu görüp tekrar koşma"yı otomatikleştirirdi.
+#
+# Çıktı log ve artifact'tir; depoya hiçbir dosya girmez.
+name: measure-death-cross
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Taranacak semboller (boşlukla ayrılmış; boş = ema evreninin tamamı)"
+        required: false
+        default: ""
+      history_bars:
+        description: "Çekilecek azami bar (dönem A + ısınma) — derinlik ayarı"
+        required: false
+        default: "8000"
+      verify_samples:
+        description: "EMA doğrulaması: kaç rastgele barda core/indicators.py ile kıyaslansın"
+        required: false
+        default: "25"
+  # `workflow_dispatch` yalnızca dosya VARSAYILAN DALDA olduğunda tetiklenebilir; bu sayım
+  # ise bir çalışma dalında doğdu ve cevabını ORADA vermesi gerekiyor. Bu yüzden dar
+  # kapsamlı bir push tetikleyicisi: yalnızca `claude/**` dallarında ve yalnızca BU iki
+  # dosya değiştiğinde. Bir cron DEĞİLDİR (§7'nin yasakladığı şey periyodik koşudur) —
+  # tetikleyen şey yine bir insan eylemidir, tek fark tıklama yerine push olmasıdır.
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - "scripts/measure_death_cross.py"
+      - ".github/workflows/measure-death-cross.yml"
+
+concurrency:
+  group: measure-death-cross
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Girdiler ortam değişkeninden okunur (kabuk enjeksiyonu kapısı) ve boş bırakılabilir:
+      # varsayılanlar betiğin kendi sabitleridir, workflow onları ikinci kez yazmaz.
+      - name: Count death-cross pullback setups (period A only)
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+          HISTORY_BARS: ${{ inputs.history_bars || '8000' }}
+          VERIFY_SAMPLES: ${{ inputs.verify_samples || '25' }}
+        run: |
+          set -o pipefail
+          mkdir -p out
+          ARGS=(--history-bars "$HISTORY_BARS" --verify "$VERIFY_SAMPLES" \
+                --results-json out/death_cross.json)
+          if [ -n "$SYMBOLS" ]; then
+            # shellcheck disable=SC2206
+            ARGS+=(--symbols $SYMBOLS)
+          fi
+          python scripts/measure_death_cross.py "${ARGS[@]}" | tee out/report.txt
+
+      - name: Upload count
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: death-cross-count
+          path: out/
+          if-no-files-found: warn
