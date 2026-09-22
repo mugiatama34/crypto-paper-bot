@@ -352,7 +352,26 @@ layers:
     # tetiklemedi, yani bandit'in tahsis edecek bir şeyi yok ("1 uygun kol"). Eksenleri
     # kapatmak bilgi kaybı değil, iki kez alınan "fark yok" cevabını kabul etmektir.
     # Hareket eden TEK eksen süredir (scalp_patient ↔ scalp_fixed: −0.01 ↔ −0.15).
-    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
+    #
+    # KONTROL EKLENDİ (docs/backtest.md > 6i): `scalp_coinflip` (23), `scalp_patient`in
+    # ikizi — tek farkı kurulumun YÖNÜNÜN adil bir yazı-turayla seçilmesi. Katmanda
+    # kontrol modeli YOKTU (`random_ctrl` base katmanındadır), bu yüzden
+    # `core/metrics.py::acceptance_flags` marj ve bootstrap koşullarını düşürüyordu:
+    # `edge` fiilen `avg_r > 0`'a inmişti ve `scalp_patient` örneklem kapısını geçtiği
+    # anda `passed: true` görünecekti. Kontrol canlı kâğıt katmanında KOŞAR, çünkü C-2
+    # bir FARKA dayanır ve farkın öteki tarafı ancak defterde birikir.
+    models: ["scalp_fixed", "scalp_patient", "scalp_coinflip", "vwap_clone", "vwap_managed"]
+
+    # Kontrol bu katmanda `scalp_coinflip`tir: kabul çıtasının E kapısı onun ortalama
+    # R'sine göre ölçülür. Kök değer (`random_ctrl`) bu katmanda YOKTUR ve bırakılsaydı
+    # kapı kümede olmayan bir modele bakıp sessizce düşerdi (CLAUDE.md > Kabul Çıtası;
+    # `xsec` katmanının `xsec_random` ataması ile birebir aynı gerekçe).
+    #
+    # `random_ctrl` buraya EKLENEMEZDİ: scalp geometrisini (5×ATR stop, %1 taban, 1.5R)
+    # hiç okumaz ve kendi stop kuralıyla koşar — iki farklı stop ölçeğini aynı C-2
+    # farkında toplamak ⚠B bandını yakar ve `cost_per_r`yi kıyaslanamaz kılardı.
+    acceptance:
+      control_model: "scalp_coinflip"
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle

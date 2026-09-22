@@ -11,6 +11,7 @@ karşılık gelmek ZORUNDADIR** — kural sayı değil, bu karşılıklılıktı
     rng_identity     — çekilişin kimliği (aşağıya bkz.)
     time_stop_key    — zaman stop'unun SINIRI (model 12 ↔ model 16: sürenin katkısı)
     regime_filter    — ek rejim kapısı (model 16 ↔ model 17: volatilite rejiminin katkısı)
+    direction_policy — kurulumun YÖNÜ (model 16 ↔ model 23: yön iddiasının bilgi değeri)
 
 Liste zamanla uzadı ve uzayabilir; uzatmanın bedeli şudur: **karşılığı bir eksen olmayan
 bir override noktası eklenemez.** Aksi hâlde iki model arasındaki fark birden çok yerden
@@ -54,6 +55,19 @@ ikisi her turda aynı kolu ve aynı sembolü seçer ve aralarındaki ortalama R 
 eksene bağlıdır, bu yüzden kimlik bir alan olarak durur ve alt sınıf gerekçesiyle
 değiştirir.
 
+**Tarama sayımı (`take_survey`) bir override noktası DEĞİLDİR.** Gövde onu tek kopya
+olarak uygular ve her scalp modeli aynı sayımı alır; alt sınıf `take_survey`i EZMEZ,
+yalnızca `_note_survey` ile kendi teşhis anahtarlarını EKLEYEBİLİR (`scalp_vol`ün rejim
+kapısı böyle sayar). Sayım `rejections`/`emitted` ile aynı statüde bir DENETİM İZİDİR
+(kural 15): hangi kolun seçileceğini, hangi sembolün çekileceğini ve sıralarını
+DEĞİŞTİRMEZ — bu yüzden yukarıdaki "her override noktası bir eksene karşılık gelmeli"
+kuralının konusu değildir, o kural DAVRANIŞI değiştiren noktalar içindir.
+
+Sayımın birimi **kol × eleme sebebi**dir ve sebepler AYRIKTIR: her kol için sebeplerin
+toplamı o barda taranan sembol sayısına (`taranan`) eşittir. Sağlama olmadan bir kolun
+sessizce düşmesi görünmezdi — `momentum_burst`ün ölü olduğu tam da bu yüzden iki backtest
+sonra fark edildi (karar 34/48). Ön-kayıt: docs/backtest.md > 6i.
+
 Rollere dikkat: bu modül boyut/komisyon/bakiye hesaplamaz (kural 1/2/3/7) ve deftere
 yazmaz. Kol mantığı `strategies/scalp/arms.py`'de, gösterge matematiği
 `core/indicators.py`'de, çıkış yönetiminin tanımı `strategies/exit_management.py`'dedir.
@@ -78,12 +92,29 @@ from strategies.base import (
     TakeProfit,
 )
 from strategies.exit_management import ExitManagement
-from strategies.scalp.arms import ARM_NAMES, ArmParams, ArmSetup, propose_all
+from strategies.scalp.arms import ARM_NAMES, ArmParams, ArmSetup, scan_all
 from strategies.time_stop import CONFIG_KEY as TIME_STOP_KEY, TimeStop
 
 logger = logging.getLogger(__name__)
 
 SIGNALS_PER_ROUND = 1
+
+# --- Tarama sayımının sebep kodları (docs/backtest.md > 6i > 6). AYRIKTIRLAR: bir kol
+# için `Σ sebep == SCANNED`. Anahtarlar tur raporuna `<kol>/<sebep>` olarak düşer;
+# `SCANNED` ise kolsuzdur, çünkü paydadır ve her kol için aynıdır.
+SCANNED = "taranan"
+NO_SETUP = "kurulum_yok"       # kol o sembolde hiç kurulum üretmedi
+MIN_STOP = "stop_tabani"       # stop mesafesi < scalp.min_stop_pct
+MIN_REWARD = "hedef_stop"      # hedef/stop < scalp.min_reward_risk
+REGIME_GATE = "rejim_kapisi"   # ek rejim kapısı eledi (yalnızca regime_filter'lı modelde)
+QUOTA = "kota"                 # tüm kapıları geçti, barda tek sinyal oynandığı için kaldı
+SELECTED = "secildi"           # oynanan kurulum
+ARM_ERROR = "kol_hatasi"       # kol patladı; "tez tutmadı" ile aynı hücreye yazılamaz
+
+
+def survey_key(arm: str, reason: str) -> str:
+    """Tur raporundaki sayım anahtarı. Tek tanım: sağlamayı yazan test de bunu kullanır."""
+    return f"{arm}/{reason}"
 
 
 class ScalpModel(Strategy):
@@ -117,6 +148,11 @@ class ScalpModel(Strategy):
         # değişken demekti (bkz. o modülün docstring'i).
         self._time_stop = TimeStop.from_config(settings, key=self.time_stop_key)
         self._seed = int(get_setting(settings, "random_seed"))
+        # Son taramanın eleme sayımı (denetim izi, kural 15). Her `generate_signals`
+        # çağrısının BAŞINDA sıfırlanır: patlayan bir çağrının yarım sayımı motor
+        # tarafından hiç okunmaz (motor `take_survey`i yalnızca başarılı çağrıdan sonra
+        # çağırır) ve bir sonraki taramaya SIZMAZ.
+        self._survey: dict[str, int] = {}
 
     # ------------------------------------------------------------------ #
     # Açılış
@@ -126,12 +162,32 @@ class ScalpModel(Strategy):
         market: MarketData,
         peer_signals: Mapping[str, tuple[Signal, ...]] | None = None,
     ) -> list[Signal]:
-        proposals = propose_all(market, self._params)
-        available = {
-            arm: kept
-            for arm, setups in proposals.items()
-            if (kept := self.regime_filter(self._gated(arm, setups), market))
-        }
+        """O barın tek sinyali (varsa). Yan ürün: kol × eleme sebebi TARAMA SAYIMI.
+
+        Sayım akışa hiç dokunmaz — kollar, kapılar, çekiliş ve seçim sayım eklenmeden
+        önceki hâliyle aynıdır (test: `tests/test_scalp_survey.py`). Yalnızca her adımda
+        kaç kurulumun düştüğü kaydedilir ki "sinyal neden hiç üretilmedi" sorusunun cevabı
+        tur raporunda dursun (docs/backtest.md > 6i > 6).
+        """
+        self._survey = {}
+        scan = scan_all(market, self._params)
+        self._note_survey(SCANNED, scan.examined)
+
+        available: dict[str, list[ArmSetup]] = {}
+        for arm, setups in scan.setups.items():
+            if arm in scan.failed:
+                # Patlayan kol o barda HİÇBİR sembolü değerlendiremedi; sağlamanın
+                # (Σ sebep == taranan) payını bu sebep taşır. `kurulum_yok`a yazmak,
+                # "tez tutmadı" ile "kol patladı"yı aynı hücreye koymak olurdu.
+                self._note_survey(survey_key(arm, ARM_ERROR), scan.examined)
+                continue
+            self._note_survey(survey_key(arm, NO_SETUP), scan.examined - len(setups))
+            gated = self._gated(arm, setups)
+            kept = self.regime_filter(gated, market)
+            self._note_survey(survey_key(arm, REGIME_GATE), len(gated) - len(kept))
+            if kept:
+                available[arm] = kept
+
         if not available:
             return []
 
@@ -145,7 +201,44 @@ class ScalpModel(Strategy):
 
         setups = sorted(available[arm], key=lambda item: item.symbol)
         chosen = [rng.choice(setups) for _ in range(min(SIGNALS_PER_ROUND, len(setups)))]
-        return [self._signal(setup, posterior=posterior) for setup in chosen]
+
+        # Kapılardan geçmiş ama oynanmayan her kurulum `kota`dır — "başka kol seçildi" ile
+        # "bu kolda başka sembol çekildi" ayrı ayrı sayılmaz: ikisi de aynı şeyi söyler
+        # (oynanabilirdi, barda tek sinyal oynandığı için oynanmadı) ve ayırmak sayımı
+        # seçim mekaniğinin bir kopyasına çevirirdi. Seçimin kendisi `emitted`dadır.
+        played = len({id(setup) for setup in chosen})
+        for name, kept in available.items():
+            selected = played if name == arm else 0
+            self._note_survey(survey_key(name, SELECTED), selected)
+            self._note_survey(survey_key(name, QUOTA), len(kept) - selected)
+
+        # YÖN en sonda belirlenir: sayım ve çekiliş kolun kendi yön iddiası üzerinden
+        # yapılmıştır, yani `direction_policy` hangi kurulumun oynanacağını DEĞİŞTİREMEZ
+        # (model 16 ↔ 23 ekseninin şartı — bkz. docs/backtest.md > 6i > 2).
+        return [
+            self._signal(self.direction_policy(setup, market=market), posterior=posterior)
+            for setup in chosen
+        ]
+
+    def _note_survey(self, key: str, count: int) -> None:
+        """Tarama sayımına ekler. Sıfır YAZILMAZ: bilgi taşımaz ve raporu şişirirdi.
+
+        `protected` olmasının sebebi alt sınıfın kendi teşhis anahtarını ekleyebilmesidir
+        (`scalp_vol`ün rejim kapısı). Bu bir override noktası DEĞİLDİR: yazılan sayı
+        hiçbir sinyali, sırayı ya da çekilişi etkilemez.
+        """
+        if count:
+            self._survey[key] = self._survey.get(key, 0) + int(count)
+
+    def take_survey(self) -> Mapping[str, int] | None:
+        """Son taramanın eleme sayımı; okununca SIFIRLANIR (motor bar bazında toplar).
+
+        Tek kopyadır ve alt sınıfta ezilmez: `scalp_fixed`, `scalp_patient` ve
+        `scalp_coinflip` aynı sayımı alır. İki uygulama, aynı eksenin iki tarafında iki
+        farklı "taranan sembol" tanımı demekti.
+        """
+        survey, self._survey = dict(self._survey), {}
+        return survey or None
 
     def _gated(self, arm: str, setups: Sequence[ArmSetup]) -> list[ArmSetup]:
         """Stop tabanı ve hedef/stop kapısı. Her eleme GEREKÇESİYLE loglanır.
@@ -163,12 +256,14 @@ class ScalpModel(Strategy):
                     self.name, arm, setup.symbol,
                     setup.stop_distance_pct * 100, self._min_stop_pct * 100,
                 )
+                self._note_survey(survey_key(arm, MIN_STOP), 1)
                 continue
             if setup.reward_risk < self._min_reward_risk:
                 logger.info(
                     "%s %s/%s: kurulum atlandı, hedef/stop %.2f < çıta %.2f",
                     self.name, arm, setup.symbol, setup.reward_risk, self._min_reward_risk,
                 )
+                self._note_survey(survey_key(arm, MIN_REWARD), 1)
                 continue
             kept.append(setup)
         return kept
@@ -251,6 +346,31 @@ class ScalpModel(Strategy):
         tek bir kurulumun kendi alanlarından okunamaz.
         """
         return list(setups)
+
+    def direction_policy(self, setup: ArmSetup, *, market: MarketData) -> ArmSetup:
+        """Oynanacak kurulumun YÖNÜNÜ belirler. Varsayılan: kolun yön iddiası korunur.
+
+        `choose_arm`/`exit_management`/`rng_identity`/`time_stop_key`/`regime_filter` ile
+        aynı statüde bir override noktasıdır ve aynı kurala tabidir: **bir alt sınıf
+        burayı yalnızca ÖLÇÜLEN bir eksene karşılık geliyorsa değiştirebilir.** Bugün
+        karşılığı `scalp_patient` (16) ↔ `scalp_coinflip` (23) eksenidir ve cevapladığı
+        soru şudur: *kolun YÖN iddiası bilgi taşıyor mu, yoksa taşıdığı şey yalnızca
+        "oynanabilir bir kurulum" mu?* (ön-kayıt: docs/backtest.md > 6i).
+
+        **SEÇİMDEN SONRA çağrılır ve seçimi değiştiremez.** Kol çekilişi, sembol çekilişi
+        ve tarama sayımı kolun kendi yön iddiası üzerinden yapılmıştır; yön kararı o
+        akışın önüne geçseydi kontrol, `scalp_patient` ile aynı kurulumları seçmez ve
+        eşleştirilmiş deney bozulurdu — fark yönün değil tesadüfün ölçüsü olurdu.
+
+        **Mesafeler KORUNMALIDIR.** Yönü çeviren bir uygulama stop/hedef mesafelerini
+        değiştirirse model başka bir maliyet ölçeğinde koşar, ⚠B bandı yanar ve
+        `cost_per_r` kıyaslanamaz olur (kural 14). Geometrisi hazırdır ve saf bir
+        fonksiyondur: `strategies/scalp/arms.py::reflect`.
+
+        `market` verilir çünkü karar bara bağlı olabilir (yazı-tura `as_of` ile tohumlanır);
+        tek bir kurulumun kendi alanlarından okunamaz — `regime_filter`ın aynı gerekçesi.
+        """
+        return setup
 
     @abstractmethod
     def choose_arm(

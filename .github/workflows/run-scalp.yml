@@ -207,10 +207,22 @@ jobs:
         # DEĞİLDİR ve kendi pozisyon kotasına (5) kadar sinyal üretir, yani tek başına
         # mesaj akışının çoğunu o doldurur.
         #
+        # `--mute scalp_coinflip`: kabul çıtasının KONTROLÜDÜR (docs/backtest.md > 6i) ve
+        # yönü adil bir yazı-turayla seçilir — bilgisiz bir çekilişin yönünü telefona
+        # düşürmek, susturma penceresinin engellemek için var olduğu gürültünün kendisi
+        # olurdu. `run.yml`in `random_ctrl`ü bildirmeme gerekçesiyle birebir aynı. Bu da
+        # bir BİLDİRİM ayarıdır: kontrol koşmaya, deftere yazmaya ve tabloda görünmeye
+        # devam eder — ölçümü bir bildirim tercihine bağlamak için katmanın `models`
+        # listesini daraltmak tam olarak yapılmayacak şeydir.
+        #
         # Susturma listesi (izin listesi değil): scalp kadrosuna yeni bir model
         # eklendiğinde o model bildirilmeye BAŞLAR. Hata yönü gürültüdür, sessizlik
         # değil — yeni bir modelin sessizce bildirilmemesi fark edilmezdi.
-        run: python scripts/telegram_signals.py --log-level INFO --mute vwap_clone
+        # Liste VİRGÜLLE ayrılır, bayrak tekrarlanmaz: `--mute` bir `store`dur ve ikinci
+        # bir `--mute` birincisini sessizce EZER — yani `vwap_clone` bildirilmeye başlardı.
+        run: >-
+          python scripts/telegram_signals.py --log-level INFO
+          --mute vwap_clone,scalp_coinflip
 
       # Susturma penceresinin durumu (state/telegram_scalp.json) koşular arası TAŞINMAK
       # zorundadır: runner her koşuda sıfırdan kurulur, commit edilmezse "bu sinyali 4 bar

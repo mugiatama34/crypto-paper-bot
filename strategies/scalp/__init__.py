@@ -10,9 +10,12 @@ from strategies.scalp.arms import (
     ARM_NAMES,
     ARMS,
     ArmParams,
+    ArmScan,
     ArmSetup,
     SymbolView,
     propose_all,
+    reflect,
+    scan_all,
     symbol_views,
 )
 from strategies.scalp.model import ScalpModel, arm_universe
@@ -21,10 +24,13 @@ __all__ = [
     "ARMS",
     "ARM_NAMES",
     "ArmParams",
+    "ArmScan",
     "ArmSetup",
     "ScalpModel",
     "SymbolView",
     "arm_universe",
     "propose_all",
+    "reflect",
+    "scan_all",
     "symbol_views",
 ]

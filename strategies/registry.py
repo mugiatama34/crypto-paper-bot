@@ -27,6 +27,7 @@ from strategies.meanrev import MeanReversion
 from strategies.momentum import Momentum
 from strategies.random_ctrl import RandomControl
 from strategies.scalp_bandit import ScalpBandit
+from strategies.scalp_coinflip import ScalpCoinflip
 from strategies.scalp_fixed import ScalpFixed
 from strategies.scalp_managed import ScalpManaged
 from strategies.scalp_patient import ScalpPatient
@@ -74,9 +75,14 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     #   scalp_managed — scalp_fixed'in ikizi, tek farkı üç aşamalı çıkış yönetimi
     ScalpManaged.name: ScalpManaged,
     # scalp_patient — scalp_fixed'in ikizi, tek farkı zaman stop'unun SINIRI (16 ↔ 100).
-    # Katmanın `models` listesinde YOKTUR: canlıya alınmadan önce taze bir OOS penceresinde
-    # doğrulanmalı (docs/backtest.md > 4, C-5). Backtest onu `--models` ile çağırır.
     ScalpPatient.name: ScalpPatient,
+    # scalp_coinflip — scalp_patient'in KONTROLÜ (docs/backtest.md > 6i): aynı kurulum,
+    # yönü adil bir yazı-turayla seçilmiş. Ayrışan TEK şey yöndür; stop ve hedef
+    # MESAFELERİ yansıtılarak korunur, yani iki model aynı maliyet ölçeğinde kalır.
+    # Katmanın `models` listesinde VARDIR ve bu bilinçlidir: C-2 bir FARKA dayanır ve
+    # farkın öteki tarafı ancak canlı kâğıt defterinde birikir. `acceptance.control_model`
+    # scalp katmanında buna bağlıdır; wave koşularının kontrolü DEĞİLDİR (§6h > EK-1).
+    ScalpCoinflip.name: ScalpCoinflip,
     # scalp_vol — scalp_patient'in ikizi, tek farkı KESİTSEL volatilite rejimi kapısı.
     # Katmanın `models` listesinde YOKTUR: önce taze bir OOS penceresinde ölçülür.
     ScalpVol.name: ScalpVol,
