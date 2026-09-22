@@ -999,6 +999,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             slippage_base=args.slippage_base,
             funding_periods=args.funding_periods,
             signal_cutoff=cutoff,
+            control_model=args.control_model,
         )
     except Exception as exc:  # noqa: BLE001 — CLI sınırı; gerekçe kullanıcıya gider
         logger.error("backtest koşulamadı: %s", exc)
@@ -1122,6 +1123,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "funding geçmişi derinliği; yalnızca DERİNLEŞTİRİR. Varsayılan 180 periyot "
             "≈ 60 gündür: yıllara uzanan pencerede kaydı olmayan an funding ÖDEMEZ ve "
             "eski dönem iyimser çıkar."
+        ),
+    )
+    parser.add_argument(
+        "--control-model", default=None, metavar="AD",
+        help=(
+            "kabul çıtasının KONTROLÜNÜ açıkça seçer ve katmanın varsayılanını "
+            "(acceptance.control_model) ezer. Eşiği DEĞİŞTİRMEZ; yalnızca farkın öteki "
+            "tarafının hangi model olduğunu söyler ve manifest.json'a yazılır. Bir modelin "
+            "doğru kontrolü katmanın varsayılanı olmak zorunda değildir "
+            "(docs/backtest.md > 6h > EK-1)."
         ),
     )
     parser.add_argument(
