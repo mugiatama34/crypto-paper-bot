@@ -2574,6 +2574,52 @@ gerekçe) ve hiçbir tahminin okunmasında kullanılmayacaktır. Özellikle: kon
 hücrelerinin o anda modelden yüksek görünmesi C-2 hakkında bir şey SÖYLEMEZ ve öyle
 okunmayacaktır — C-2 yalnızca tamamlanmış koşunun kabul bayrağından okunur.
 
+#### AÇIK İŞ — dönem A koşusu BÜTÇEYE SIĞMIYOR *(2026-09-22)*
+
+**Dönem A henüz koşulamadı ve sebebi ölçüldü.** Dört deneme, dördü de tamamlanmadan
+düştü (`The runner has received a shutdown signal` / iptal):
+
+| Koşu | Harness | Süre | Nereye kadar geldi |
+|---|---|---|---|
+| #35701959605 | `backtest.yml` (1 hafta) | 24 dk | **BİTTİ** — kapsam kapısının veri tarafı geçti |
+| #35705966047 | `backtest.yml` (12 ay) | 48 dk | 2025-06-05 |
+| #35709836062 | `backtest-wave.yml` | 31 dk | 2025-03-18 |
+| #35713730859 | `backtest-wave.yml` | 83 dk | 2025-03-18 |
+
+**Ölçülen sebep iki katmanlı** (ağsız, sentetik veriyle; `core/engine.py` + `Ledger`):
+
+| Ölçüm | Sonuç |
+|---|---|
+| Bar başına maliyet ↔ çerçeve boyutu | 2.000 satır **27.7 ms** → 8.000 satır **35.0 ms** → 32.000 satır **70.1 ms** |
+| Bar başına maliyet ↔ DEFTER boyutu (kural 16'nın kancası) | 100 satır **7 ms** → 2.000 **26 ms** → 8.000 **100 ms** → 20.000 **259 ms** |
+
+İkincisi **dominanttır ve koşuyu işlem sayısında KARESEL yapar:**
+`observe_closed_trades` her barda `trades.csv`'nin TAMAMINI yeniden okur ve posterioru
+sıfırdan kurar. Bu tasarım bilinçlidir ve DOĞRUDUR (durum defterin saf fonksiyonudur,
+ikinci bir doğruluk kaynağı yoktur — CLAUDE.md); canlıda bedavadır çünkü tur başına tek
+bar işlenir. 34.944 barlık bir backtest'te ise defter büyürken her bar daha pahalı olur.
+
+Dönem A'nın gerçek bütçesi bu yüzden **saatler** mertebesindedir, 112 dakika değil.
+
+⚠ **Pencere KAYDIRILMADI ve hiçbir eşik gevşetilmedi.** Bu bir bütçe olgusudur, bir sonuç
+değil; §7.3'ün yasakladığı şey pencereyi SONUCA göre değiştirmektir ve hiçbir sonuç
+okunmadı. Seçenekler (biri seçilene kadar dönem A sonucu YOKTUR):
+
+1. **Dönem A'yı kısaltmak** — ön-kayıtlı pencereyi değiştirir; ayrı bir karar ve ayrı bir
+   ek gerektirir.
+2. **Coin başına BİLGİ koşularını atlamak** — kapı üretmezler, ama §6h > 9'un bir
+   teslimatıdır.
+3. **Öğrenme beslemesini tur İÇİNDE artımlı yapmak** — ölçülen darboğazı kaldırır ve
+   ölçüm semantiğini değiştirmez (eşdeğerlik `tests/test_engine_per_bar.py` ile kilitli),
+   ama `core/engine.py`nin sıcak yoluna dokunur ve `scalp_bandit` ile `vwap_clone`u da
+   etkiler.
+4. **Actions dakika/harcama sınırı** — üç koşunun aynı biçimde kesilmesi bunu da olası
+   kılıyor ve depo 15 dakikada bir iş koşuyor.
+
+**Ayrıca ölçülmüş bir sapma teyit edildi:** log `funding atlandı: ... için OKX funding
+kaydı yok` satırları taşıyor, yani §6h > 6'nın "dönem A İYİMSER çıkar" sapması
+gerçekleşti. Bu, oradaki uyarının ölçülmüş hâlidir.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
