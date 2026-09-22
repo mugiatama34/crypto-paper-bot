@@ -274,6 +274,7 @@ Bir modelin parametresi hangi veride seçildiyse o veri onun için **in-sample**
 | **`vwap_managed`** | `atr_multiple=2.5`, **17 Ağu – 16 Eyl 2026** verisinde seçildi (karar 26) -> o pencere **IN-SAMPLE** |
 | **`vwap_fast`** (henüz kurulmadı) | `band_mult` aynı pencerede ölçüldü -> o pencere **IN-SAMPLE** |
 | **`ema_trend`** | Parametreleri dış bir sistemde (TradingView), **2022-01 – 2024-06** BTC verisinde doğrulandı -> o pencere **IN-SAMPLE**; 2024-07 sonrası OOS (§6d) |
+| **`wave_scalp`** | Kuralları dış bir sistemin kodundaki sabitlerdir ve bizim verimizle seçilmedi -> koşudan ÖNCE tüm pencere OOS. **Kaynağın canlı defteri (09.09–21.09.2026) GÖRÜLDÜ** -> Eylül 2026 hiçbir döneme girmez; dönem A (2025-03 → 2025-12) teşhisleri okunacağı için **Aşama 2 açısından IN-SAMPLE**dır, dönem B (2026-01 → 2026-08) hold-out'tur (§6h) |
 
 **Kural:** `vwap_managed` ve `vwap_fast` için C-1..C-3, **17 Ağu 2026'dan ÖNCEKİ** bir
 pencerede de sağlanmalıdır (C-5). O pencerede sağlanmıyorsa kalibrasyon o 30 güne
@@ -366,6 +367,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, commit `e912efd` (TADİLAT-1: `93cd891`) | A: 2022-01-01 → 2024-12-30 (sinyal kesimi 06-30), B: 2024-07-21 → 2026-09-18 | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | **P1 TUTTU** (1.549 / 1.206) ama **hipotez DÜŞTÜ**: ortalama R A −0.0015 / B −0.0165 (C-1), çıpa da geçilemedi (C-3) → **BLOKE**, §6d > SONUÇ |
 | 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 49 |
 | 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 5 | `wave_scalp`: Elliott Wave Dalga-3 (15m, zigzag + retrace 0.236–0.886) bir edge taşır (dış sistemden) | §6h, bu commit | A: 2025-03-01 → 2025-12-31, B: A+embargo → 2026-08-31 (**Aşama 2'de**) | P1: dönem A net ort. R ≤ 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -374,6 +376,13 @@ görünmesidir** — düşen bir denemeyi silmek, sicilin engellemek için var o
 yanlılığının ta kendisidir.
 
 **Sicildeki 2. satır bu paydaya AİT DEĞİLDİR:** `ema_trend` hipotezi dış bir sistemden geldi, ev içi arama uzayından seçilmedi (bkz. §6d > Çoklu karşılaştırma). İki payda ayrı tutulur.
+
+**Sicildeki 5. satır (`wave_scalp`) da bu paydaya AİT DEĞİLDİR** ve gerekçesi 2. satırın
+aynısıdır: hipotez dış bir sistemden (`klonnist/Hasanwavebot`, `15m` profili) geldi, ev içi
+arama uzayından seçilmedi. Böylece **dış kökenli payda bugün 2'dir** (`ema_trend`,
+`wave_scalp`) ve ev içi paydadan ayrı tutulur. ⚠ `wave_scalp`in Aşama 2'de türetilecek
+VARYANTI dış kökenli DEĞİLDİR — dönem A teşhislerinden çıkacaktır, yani ev içi paydaya
+girer ve kendi satırını açar (§6h > 13).
 
 **Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
 hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
@@ -1808,6 +1817,698 @@ long-only bir top-k modelin boğa dönemlerinde al-tut'un gerisinde kalması bek
 Canlıya alınmayı. `xsec` katmanının tetikleyicisi yoktur ve kapılar geçilse bile
 `run-xsec.yml` ayrı bir karardır — `ema` katmanının bugünkü statüsünün aynısı. Kod
 ölçülmeden yarışmaz; ölçülüp geçse bile canlıya alınması otomatik değildir.
+
+---
+
+## 6h. ÖN-KAYIT — `wave_scalp` (model 21): Elliott Wave Dalga-3, 15m
+
+**Bu bölüm koşudan ÖNCE yazıldı ve commit edildi; tarih damgası git'tedir.** Hiçbir sayı
+görülmedi: ne bir pivot, ne bir işlem, ne bir ortalama. Kod da bu commit'te YOKTUR —
+ön-kayıt modelden önce gelir. §7'nin tamamı bu bölüme uygulanır.
+
+### NUMARALANDIRMA DÜZELTMESİ — talep "§6g / model 19" diyordu, ikisi de DOLU
+
+Talep bu bölümü `§6g`, modeli `19` olarak adlandırıyordu. İkisi de alınmıştır: **§6g**
+`xsec_mom`un ön-kaydıdır ve **19-20** numaraları `xsec_mom` / `xsec_random`a aittir
+(`strategies/registry.py`, karar 53'ün öncesi). Çakışmaya izin vermek bir yazım detayı
+olmazdı: iki ön-kayıt aynı başlığı taşısa sicilden (§6c) hangi hipotezin hangi pencerede
+koşulduğu okunamaz ve düşen bir tez, geçen bir tezin başlığı altında kaybolurdu. Bu
+yüzden bölüm **§6h**, model **21**'dir. Talebin başka hiçbir satırı değişmedi.
+
+### Köken: dış bir sistem, ama SİNYAL ve ÖĞRENME düzeyinde
+
+Model `klonnist/Hasanwavebot` deposunun **`15m` profilinden** gelir
+(`.github/workflows/run-bot.yml`: `main.py --timeframe 15m --leverage 10 --trade-margin
+500 --data-dir ./data/15m --once`; `--strategy` varsayılanı `wave`). Aynı kaynağın VWAP
+profili bu repoda zaten `vwap_clone` (model 13) olarak koşuyor, yani altyapı — üç aşamalı
+çıkış yönetimi, bandit deseni, defterden türeyen durum — **tek kopya olarak mevcuttur** ve
+bu model onu yeniden yazmaz.
+
+**SPEC referansı `fa888b7`'dir** (`klonnist/Hasanwavebot`, 2026-09-21). Aşağıdaki her kural
+o commit'teki `wave_detector.py`, `learner.py` ve `main.py`'den okunmuştur; koşudan sonra
+kaynak değişse bile bu ön-kayıt o commit'i anlatmaya devam eder.
+
+⚠ **Kaynağın kendi defteri GÖRÜLMÜŞ VERİDİR.** `data/15m/account_state.json` (09.09 –
+21.09.2026, 195 pozisyon) sohbette okundu: brüt ort. R +0.057, CI [−0.08, +0.20]; ev
+komisyonuyla (0.00055 × 2) net −0.044. **Eylül 2026 bu yüzden hiçbir döneme girmez** ve
+hiçbir OOS iddiasında kullanılamaz. P1 ve P2 tahminleri (aşağıda) tam olarak bu görülmüş
+pencereden türetildi ve öyle etiketlendi.
+
+### 1. Statü: YARIŞMACI, kopya DEĞİL (`is_replica = False`)
+
+Emsal `ema_trend`dir (§6d, karar 45 §1): dışarıdan gelen yalnızca **sinyal ve öğrenme**
+kuralıdır; boyut, kaldıraç tavanı, maliyet, funding ve likidasyon **evin** kurallarıdır.
+
+| Kaynaktan gelen | Evden gelen |
+|---|---|
+| zigzag + Dalga-3 kurulum kuralı, seviye geometrisi (giriş/TP/SL) | boyutlandırma (`sizing="risk"`, `risk_per_trade` %1) |
+| bandit ızgarası (12 kombinasyon) ve seçim sırası | kaldıraç tavanı (`leverage_cap` 5) |
+| üç aşamalı çıkış yönetimi (breakeven / kısmi / geri verme) | `fee_rate`, `slippage_*`, funding, `maintenance_margin` |
+| — | dolum kuralı (kural 13), likidasyon sırası, defter kuralları (kural 1/2/7) |
+
+**Gerekçe ölçülecek şeyin kendisidir.** Aşama 2'nin iyileştirme turu `cost_per_r` ve
+`avg_stop_distance_pct` üzerinden okunacak; kopya statüsünde (kural 15b) bu iki kolon
+tanım gereği **`nan`** olur — 1R'si sabit teminattan türer, yarışmacılarınki sermayenin
+%1'inden. Kopya olarak kurulsa model, iyileştirmenin okunacağı kolonları taşımayan bir
+satır olurdu. Ayrıca yarışmacı olmak modeli kabul kapılarına (§3, §4) TABİ kılar; kopya
+onlara tabi değildir ve bu tez bir kabul kararı hedefliyor.
+
+**Bedeli vardır ve aşağıda 3(f)/3(g) olarak yazılıdır:** yarışmacı statüsü kaynağın
+boyutlandırmasını ve limit bildirimini KOPYALAMAYI yasaklar.
+
+### 2. Kaynaktan BİREBİR gelen kurallar (`fa888b7`)
+
+**Zigzag eşiği (`wave_detector.atr_pct` + `main._find_wave_setup`):**
+
+```
+vol_pct        = ATR(14, BASİT ortalama) / son_kapanış × 100
+effective_dev  = max(deviation_pct × vol_pct, 0.05)        # taban %0.05
+pivots         = zigzag_pivots(df, deviation_pct=effective_dev)
+```
+
+ATR periyodu 14 ve yumuşatma **BASİT ortalamadır** (`true_range.rolling(14).mean()`).
+Bu, projenin varsayılanıyla (`simple`) ÇAKIŞMAZ — yani karar 46'nın `ema_trend` için
+verdiği Wilder tadilatı **burada UYGULANMAZ ve uygulanmasına gerek de yoktur**: SPEC
+kaynağın kodudur ve kaynak zaten basit ortalama kullanıyor. Periyot da projenin tek ATR
+periyoduna (`trailing.atr_period` = 14) eşittir, yani motorun stop tavanı kontrolü
+(`_within_stop_band`) ile modelin ölçüsü aynı sayıyı görür (§6g'nin `xsec` için verdiği
+gerekçenin kendiliğinden sağlanmış hâli).
+
+**Dalga-3 kurulumu (`detect_wave3_setup`):**
+
+- Aday pivotlar `pivots[:-1]`'dir — **son pivot ONAYSIZDIR ve kullanılmaz** (henüz ters
+  yönde `deviation` kadar hareket görmemiştir).
+- Onaylılar 3'ten azsa kurulum yoktur.
+- Son üç onaylı pivot `p0, p1, p2`; desen **L-H-L → BUY**, **H-L-H → SELL**.
+- `wave1_len` = `p1 − p0` (BUY) / `p0 − p1` (SELL); `≤ 0` ise kurulum yoktur.
+- `retrace` = `(p1 − p2)/wave1_len` (BUY) / `(p2 − p1)/wave1_len` (SELL);
+  **`0.236 ≤ retrace ≤ 0.886`** dışında kurulum yoktur.
+- **`p2`, `p0`'ı AŞMAMALIDIR:** BUY'da `p2 > p0`, SELL'de `p2 < p0` şartı; ihlalde kurulum
+  yoktur.
+
+**Seviyeler (`build_signal_levels`):**
+
+| | BUY | SELL |
+|---|---|---|
+| giriş | sinyal barının KAPANIŞI | sinyal barının KAPANIŞI |
+| TP | `p2 + wave1_len × tp_mult` | `p2 − wave1_len × tp_mult` |
+| SL | `p2 − wave1_len × 0.15` | `p2 + wave1_len × 0.15` |
+
+**Geçerlilik kapısı (`main.try_open_position`):** `sl < giriş < tp` (BUY) /
+`tp < giriş < sl` (SELL). Sağlanmazsa kurulum **atlanır**. Talep metni bu kapıyı yalnızca
+BUY biçiminde yazıyordu; SELL aynası kaynakta mevcuttur ve burada ikisi de sabitlenir —
+tek yönlü yazmak short kolunu sessizce kapısız bırakırdı.
+
+**Izgara (`learner.build_wave_grid`):** `deviation_pct ∈ {0.8, 1.2, 1.8, 2.5}` ×
+`tp_mult ∈ {1.272, 1.618, 2.0}` = **12 kombinasyon**. `sl_mult` **sabit 0.15**'tir
+(`WAVE_SL_MULT`) ve ızgarada değildir.
+
+**Bandit (`learner.select`):** `epsilon = 0.25`; sıra (a) o sembolde HİÇ DENENMEMİŞ
+kombinasyon varsa onlardan biri, (b) `epsilon` olasılıkla ızgaradan rastgele,
+(c) sömürü. İstatistik **sembol bazındadır** ve `min_symbol_samples = 3`'ten az örnekte
+o kombinasyonun **tüm semboller genelindeki** ortalamasına düşülür. Ödül, gerçekleşen R
+çarpanıdır.
+
+**Durum ayrı bir dosyada TUTULMAZ.** Kaynak iki JSON tutar (`learner_state.json` +
+`..._by_symbol.json`); burada posterior `trades.csv`'nin saf bir fonksiyonudur ve her
+turda sıfırdan kurulur — `vwap_clone` ve `scalp_bandit` ile aynı desen ve aynı gerekçe
+(ikinci bir doğruluk kaynağı, defterle senkron kalması ayrıca test edilmesi gereken bir
+şey olurdu). Bu bir SAPMA DEĞİLDİR: kaynağın istatistiği de yalnızca kapanan işlemlerden
+beslenir, yani iki yol aynı defterden aynı sayıyı üretir.
+
+**Limitler (kaynağın CLI varsayılanları):** en çok 5 eşzamanlı pozisyon, aynı YÖNDE en
+çok 3, açık toplam risk ≤ sermayenin %8'i. Bunların bu modelde ne kadarının geçerli
+olduğu 3(g)'de yazılıdır.
+
+**Çıkış yönetimi (kaynağın CLI varsayılanları):** breakeven `1.0R`, kısmi `1.5R`'da
+`%50`, sonrasında kazancın en çok `%50`'sini geri veren takip. Repo'nun
+`exit_management.*` bloğu bu dördünü **birebir** taşır; ayrı bir uygulama YAZILMAZ
+(`strategies/exit_management.py`, modeller 13/14/15 ile tek kopya).
+
+### 3. Motor gereği KOPYALANMAYAN sapmalar — listelenir, düzeltilmez
+
+Bunlar sonuç görülmeden yazıldı ve sonuç okunurken hatırlanacak. Hiçbiri "onarılacak" bir
+kusur değildir: her biri ya bir değişmez kuralın (12/13) ya da bir statü kararının
+(yarışmacı olmak) zorunlu sonucudur.
+
+**(a) Sinyal yalnızca KAPANMIŞ barla üretilir (kural 12).** Kaynak `fetch_ohlcv` ile
+OLUŞMAKTA OLAN barı da alır ve `close.iloc[-1]` o barın anlık fiyatıdır; yani kaynağın
+girişi bizim göremediğimiz bir fiyattır. Yön bilinmiyor ve bilinemez.
+
+**(b) Emir sinyal barının ERTESİNDEN dolar (kural 13).** Kaynakta giriş, kurulumun
+bulunduğu anın fiyatındadır. Bizde bir bar (15 dk) gecikme ve `slippage_base` vardır.
+Stop/TP seviyeleri sinyal barından kurulur ve dolum fiyatına GÖRE yeniden kurulmaz — yani
+gerçekleşen R:R bir bar boşluğu kadar kayabilir.
+
+**(c) Çıkışlar 15m barın `high`/`low` değeriyle ve motorun KÖTÜMSER sırasıyla kontrol
+edilir.** Kaynak her taramada son 20 adet **1 dakikalık** mumu sırayla gezer
+(`try_close_position`) ve — pozisyon henüz açılmamış olsa bile — girişten ÖNCEKİ dakikalara
+da bakabilir. Bizde mum içi sıra likidasyon → stop → kısmi → TP'dir ve aynı barda hem stop
+hem hedef varsa **stop** gerçekleşmiş sayılır (§5e). Yön bilinmektedir: bu sapma bizi
+kaynaktan **kötümser** tarafa koyar.
+
+**(d) Kısmi kâr tam `1.5R` seviyesinden dolar.** Kaynak kısmiyi mumun UÇ fiyatından alır
+(`_manage_position(pos, last_price)`, `last_price` = mumun `high`/`low`'u), yani 1.5R'nin
+ötesinden. Bu sapma da bizi kötümser tarafa koyar.
+
+**(e) Kaynaktaki ızgara dışı `sl_mult = 1.5` satırı TAŞINMAZ.** Kaynağın kendi
+istatistiğinde n=2 ile duran, `WAVE_SL_MULT = 0.15`'ten önceki bir kalıntıdır; ızgarada
+yoktur ve bandit onu hiç seçemez.
+
+**(f) Boyutlandırma: sabit teminat × 10x → risk %1 + `leverage_cap` 5.** Statü
+kararının (madde 1) doğrudan sonucu. Kaynağın her işlemi 5.000 USDT notional taşır ve R'si
+sabit teminattan türer; bu model `boyut = (%1 × sermaye) / |giriş − stop|` ile
+boyutlandırılır ve gereken notional nakdi aşarsa kaldıraç en çok 5'e kadar devreye girer,
+aşarsa pozisyon KÜÇÜLTÜLÜR (kural 11, atlanmaz). Sonuç: aynı sinyal kümesinde bile
+pozisyon büyüklükleri ve dolayısıyla hesap eğrisi kaynakla karşılaştırılamaz. **Ortalama R
+karşılaştırılabilir kalır** — ölçümün birimi tam bu yüzden R'dir.
+
+**(g) `ModelLimits` bu modele KAPALIDIR (kural 15b) — limitler kökten gelir.** Kapı
+`core/validate.py::validate_model`tedir ve yalnızca kopyalara açıktır; yarışmacıya
+açmak kural 6'yı delerdi. Sonuçlar:
+
+| Kaynağın limiti | Bu modelde |
+|---|---|
+| en çok 5 pozisyon | **aynı** (kök `max_positions` = 5) |
+| aynı YÖNDE en çok 3 | **short tarafta uygulanır** (kök `max_short_positions` = 3), **long tarafta UYGULANMAZ** — kök ayar yalnızca short'u kapsar, yani long kotası 5'tir |
+| açık toplam risk ≤ %8 | **UYGULANMAZ** (kökte böyle bir ayar yok) — ama **YAPISAL OLARAK BAĞLAMAZ**: risk %1 × en çok 5 pozisyon = açık risk ≤ %5 < %8 |
+
+Üçüncü satır kayda değer: sapma listelenir ama bedeli SIFIRDIR ve bu koşudan önce
+hesaplanmıştır. İkinci satır ise gerçek bir sapmadır ve yönü bellidir — model long
+tarafta kaynaktan daha yoğunlaşabilir. Gerçekleşen eşzamanlı pozisyon dağılımı sonuçla
+birlikte raporlanacaktır.
+
+**(h) Ev kapıları UYGULANMAZ ve bu bir sapma DEĞİL, bir tanımdır.** Scalp katmanının %1
+stop tabanı, 1.5R hedef/stop kapısı ve 16 barlık zaman stop'u kaynakta yoktur; eklemek
+modeli ölçülmek isteneni başka bir şeye çevirirdi (`vwap_clone`a verilen aynı gerekçe).
+Model bu yüzden `ScalpModel` gövdesinden TÜREMEZ ve `strategies/time_stop.py`'yi OKUMAZ.
+
+⚠ **(i) Stop tavanı (kural 14) UYGULANIR ve bunun bir bedeli olabilir — ÖNCEDEN yazılıyor.**
+Scalp katmanının tavanı `max_stop_atr_multiple = 8.0`'dır ve motor onu merkezî olarak
+uygular (`core/engine.py::_within_stop_band`): stop mesafesi 8×ATR(14)'ü aşan sinyal
+**elenir**, stop tavana ÇEKİLMEZ. Dalga-3'ün stop mesafesi `|giriş − p2| + 0.15 ×
+wave1_len`'dir ve `wave1_len` zigzag eşiğinin (0.8–2.5 × ATR%) bir katı olduğundan geniş
+kurulumlarda tavanı aşabilir. Bu, modelin işlem sayısını düşürebilir ve **sessiz olamaz:**
+elenen sinyal sayısı (`ModelReport.skipped_signals`) sonuçla birlikte raporlanır. Tavan
+YÜKSELTİLMEZ — `xsec` için verilen karar (katmanın tavanını geriye dönük değiştirmek,
+tamamlanmış ön-kayıtlı koşuların koşulunu değiştirmektir) burada da geçerlidir; scalp
+katmanında dört model canlı koşuyor ve tavanı oynatmak onların defterini böler (karar
+25'in `fee_rate` hatası).
+
+### 4. Katman ve evren
+
+**Katman `scalp`'tir** (15m bar, `config.yaml > layers.scalp`): `ledgers_scalp/`,
+`docs/data/metrics_scalp.json`, `signals_per_bar: true`, stop tavanı 8×ATR. Model
+katmanın **canlı `models` listesine EKLENMEZ** — `REGISTRY`de durur ve backtest onu
+`--models` ile çağırır (`scalp_vol` ve `scalp_patient`in bugünkü statüsü; kod ölçülmeden
+yarışmaz).
+
+**Yeni bir katman AÇILMAZ ve gerekçesi `ema`/`xsec` kararlarının tersidir:** o iki model
+katmanın stop tavanına ya da evrenine sığmıyordu; bu model `scalp`in barını (15m —
+kaynağın profilinin ta kendisi), tavanını (8×ATR) ve evrenini zaten kullanabiliyor. Sığan
+bir modele ayrı katman açmak, ölçümü bölmekten başka bir şey yapmazdı.
+
+#### EVREN — talebin işaret ettiği blok kaynakla AYRIŞMIŞ durumda
+
+Talep "Evren `vwap.clone.universe` (kaynağın sembolleri, TON hariç)" diyordu. **İki tanım
+bugün aynı kümeyi vermiyor** ve fark ölçüme girdiği için burada sabitlenir:
+
+| | Küme |
+|---|---|
+| Kaynağın `POPULAR_COINS` @ `fa888b7` (12) | BTC, ETH, SOL, XRP, BNB, DOGE, ADA, AVAX, LINK, **TON**, ETHFI, NEAR |
+| `config.yaml > vwap.clone.universe` (12) | BTC, ETH, SOL, XRP, BNB, DOGE, ADA, AVAX, LINK, ETHFI, **PENGU**, NEAR |
+
+`vwap_clone` yazıldığında kaynağın listesi PENGU taşıyordu; `fa888b7`'de taşımıyor.
+`vwap.clone.universe`'ü yeniden kullanmak, kaynağın Dalga-3 profilinin **hiç taramadığı**
+bir sembolde (PENGU) işlem açmak olurdu.
+
+**SEÇİLEN ve SABİTLENEN tanım — talebin parantez içindeki DEFİNİSYONU, işaret ettiği blok
+değil:** kaynağın `fa888b7` sembolleri **eksi TON** = **11 sembol**:
+
+```
+BTC, ETH, SOL, XRP, BNB, DOGE, ADA, AVAX, LINK, ETHFI, NEAR   (hepsi -USDT-SWAP)
+```
+
+TON dışlanır çünkü OKX'te kalıcı olarak yoktur (51001) ve `scalp` katmanının evreninde de
+yoktur (karar 24): listede tutmak hiç taranmayan bir sembolü taranıyormuş gibi
+göstermek olurdu. Küme, katmanın 13 sembollük evreninin **alt kümesidir** — yani
+`core/validate.py`'nin evren kapısı sağlanır ve katmanın evreni DEĞİŞTİRİLMEZ.
+
+Liste `config.yaml > wave.clone.universe` olarak **kendi bloğunda** durur,
+`vwap.clone.universe` ile paylaşılmaz: iki blok iki farklı kaynak profilini anlatıyor ve
+bugün ayrışmış oldukları ölçüldü. Paylaşılan bir liste, birinin kaynağı değiştiğinde
+ötekini sessizce yanlış yapardı.
+
+⚠ **SUI ve PENGU bu modelin evreninde YOKTUR.** Katmanda koşan öteki modeller onları
+görür; bu model görmez. Bu, katman İÇİ kıyasta bir asimetridir ve **kıyas hedefi
+seçilirken hatırlanacaktır** — `vwap_clone` da kendi 12'sini görüyor, yani asimetri yeni
+değil ama bu modelde 11'e iniyor.
+
+#### `config.yaml` neden değişiyor — ve neyin değişMEDİĞİ
+
+Talebin yasak listesi "`config.yaml` değişmez" diyor. Uygulanan okuma: **ölçümün ORTAK
+koşulları değişmez** — `fee_rate`, `slippage_*`, `risk_per_trade`, `leverage_cap`,
+`initial_capital`, `maintenance_margin`, `random_seed`, katmanların `timeframe`/`universe`/
+`models`/`max_stop_atr_multiple` değerleri: hiçbirine dokunulmaz. Eklenen tek şey modelin
+**kendi** ön-kayıtlı parametre bloğudur (`wave.*`), emsali `ema_trend.*` (§6d) ve `xsec.*`
+(§6g). Alternatif, sayıları koda gömmekti — CLAUDE.md'nin "hiçbir sabit hardcoded
+edilmez" kuralının doğrudan ihlali ve ön-kayıtlı bir sayının grep'lenemez hâle gelmesi.
+Blok hiçbir canlı modelin gördüğü hiçbir değeri değiştirmez (okunmayan anahtar zararsızdır).
+
+Sonucu DOĞRUDAN kaydıran harness sapmaları (`--fee-rate`, `--slippage-base`, `--symbols`,
+`--signal-cutoff`) yine yalnızca bayrakla uygulanır ve `manifest.json > deviations`a
+yazılır (§5g). **Bu koşuda maliyet override'ı YOKTUR** (madde 6).
+
+### 5. Pencereler — koşudan ÖNCE sabitlenir, sonuca göre KAYDIRILMAZ (§7.3)
+
+| Dönem | Aralık | Rol |
+|---|---|---|
+| **A** (geliştirme) | **2025-03-01 → 2025-12-31** (sinyal kesimi) | teşhis + birincil satır; Aşama 2'nin TEK girdisi |
+| **B** (hold-out) | **2026-01-01 + embargo → 2026-08-31** | **OOS — bu aşamada KOŞULMAZ** |
+| — | 2026-09-01 → koşu günü | **hiçbir döneme girmez**: görülmüş veri (kaynağın defteri) |
+
+**Dönem atama ölçütü GİRİŞ tarihidir** (§6d ile birebir): dönem A'da açılan bir pozisyon
+sınırı aşsa bile kapanışına kadar A'ya sayılır. Uygulaması `--signal-cutoff`tur —
+kesimden sonraki barlar pozisyon yönetimi için işlenir (stop/TP/kısmi/likidasyon/funding)
+ama YENİ sinyal üretilmez. Kesimde hâlâ açık olan pozisyonların SAYISI raporlanır ve
+kapanmış işlem istatistiğine GİRMEZ.
+
+**Kuyruğun UZUNLUĞU: 2 ay (kesim → 2026-02-28), koşudan önce sabit.** Kuyruk zaman olarak
+dönem B ile ÖRTÜŞÜR ve bu bir kirlenme DEĞİLDİR: B'yi açan şey barların işlenmesi değil,
+kesimden sonra YENİ SİNYAL üretilmesidir ve kuyrukta üretilen sinyal sayısı sıfırdır.
+§6d'de de A'nın kuyruğu (2024-12-30) B'nin başlangıcının (2024-07-21) ötesine uzanıyordu.
+Uzunluğun gerekçesi ölçülen embargonun kırpılmamasıdır: model zaman stop'u taşımıyor
+(3h), yani pozisyon ömrünün tanım gereği bir üst sınırı yok. 15 dakikalık barda 2 ay
+≈ **5.760 bardır** — kaynağın geometrisinde tipik ömrün kat kat üstü. Kuyruğun ucunda
+hâlâ açık kalan pozisyonların sayısı raporlanır; **sıfırdan büyükse ölçülen embargo bir
+ALT SINIRDIR** ve öyle okunur.
+
+⚠ **Görülmüş veri hiçbir bayrakla açılmaz ve ölçütü PENCERENİN UCUDUR** (kesim değil):
+2026-09-01 ve sonrasındaki barların bir pozisyon yönetimi için bile işlenmesi, ölçümü
+görülmüş fiyatlara bağlardı. Dönem B'yi açan `--confirm-holdout` bayrağı bu kapıyı
+AÇMAZ ve `.github/workflows/backtest-wave.yml` o bayrağı girdi olarak hiç sunmaz.
+
+**Ne A ne B kaynağın kendi öğrenme penceresidir.** Kaynağın banditi 2026 Eylül'ünde canlı
+öğrendi; ızgara, `epsilon` ve `sl_mult` ise koddaki sabitlerdir ve bizim verimizle
+seçilmedi. Yani A da B de bizim için kontaminasyon taşımaz — **A'nın "geliştirme" olması
+bir veri etiketi değil, bir KULLANIM taahhüdüdür:** teşhislerine bakacağız, bu yüzden
+Aşama 2'nin varyantı için A artık IN-SAMPLE sayılır (§6'ya satır eklendi).
+
+#### Embargo — VARSAYILMAZ, dönem A'dan ÖLÇÜLÜR
+
+Model **zaman stop'u taşımaz** (madde 3h), yani §6.1'in dayandığı üst sınır ("hiçbir
+pozisyon `time_stop_bars`tan uzun yaşamaz") tanım gereği yoktur. Yöntem §6d/§6g'nin
+aynısı: dönem A'da gözlenen **azami tutuş süresi** embargo olarak uygulanır ve uygulanan
+değer `manifest.json > window.embargo_bars`ta raporlanır. **A koşulup embargo
+ölçülmeden B başlatılamaz** — bu, Aşama 1'in Aşama 2'den ayrı olmasının teknik sebebidir.
+
+#### VERİ KAPSAMI — koşudan ÖNCE ölçülür ve bir KAPIDIR (§6d emsali)
+
+15m barda dönem A ≈ **29.400 bar/sembol**, dönem B ≈ **23.300 bar/sembol**. Bu, katmanın
+canlı derinliğinin (`layers.scalp.data.history_bars` = 1500) yaklaşık 20 katıdır ve OKX'in
+15m geçmişinin o kadar geriye gittiği **VARSAYILMAZ**. Ana koşudan önce ayrı bir kapsam
+adımı koşar ve şunları tabloya yazar:
+
+⚠ **BİZİM ÇEKME YOLUMUZUN derinliği ayrı bir sayıdır ve pencereden BÜYÜKTÜR.**
+`core/data.py::_download_candles` barları ŞU ANDAN geriye doğru sayfalar ve
+`data.history_bars` kadar bar toplayınca durur — pencerenin başına ATLAMAZ. Yani derinlik,
+koşu gününden dönem A'nın başına kadarki TÜM mesafeyi kapsamalıdır:
+
+> 2026-09 → 2025-03-01 ≈ **570 gün × 96 bar/gün ≈ 54.720 bar**, artı zigzag penceresi
+> (300) ve ATR ısınması (14).
+
+Harness'ın varsayılanı bu yüzden **60.000**'dir (emsali `backtest_ema`nın 4H'deki
+12.000'i). Bu ayrım yazılı durmak zorunda, çünkü yetersiz bir derinlikte kapsam kapısı
+düşer ve teşhis YANILTICI olur: rapor "OKX veriyi vermiyor" derken aslında *"biz o kadar
+geriye istemedik"* demiş olurdu. Kapı düştüğünde bakılacak İLK şey bu sayıdır; ikinci şey
+borsanın kendi derinliğidir (karar 50'nin fonlama uç noktasında ölçtüğü şeyin mum
+tarafındaki karşılığı).
+
+- her sembolün **ilk 15m barı** (OKX'te fiilen ulaşılan en eski kapanmış bar);
+- dönem A ve B için **beklenen ↔ gerçekleşen bar sayısı** ve **eksik bar** sayısı;
+- `missing_bars` ve `unchecked_position_bars` (B-2).
+
+**Geç listelenen sembol kendi başlangıç tarihinden girer** — `core/data.py` `as_of` barını
+taşımayan sembolü zaten o tur dışlar (kural 12), yani bu bir sessiz kayıp değil loglanan
+bir kapsam sınırıdır.
+
+⚠ **Kapsam dönem A için yetersizse pencere KAYDIRILMAZ.** Koşu durur ve karar kullanıcıya
+gider. "Yetersiz" ölçütü koşudan önce sabitlenir: **herhangi bir sembolde dönem A'nın
+başlangıcına ulaşılamıyorsa** ya da **B-2 sıfırdan büyükse**. Pencereyi veri kapsamına
+göre kaydırmak §7.3'ün yasağının tam olarak kendisidir; durmak değildir.
+
+### 6. Maliyet — canlı config, DEĞİŞİKLİK YOK
+
+`fee_rate = 0.00055` (tek yön, iki bacak taker), `slippage_base = 0.0005`,
+`slippage_short_stop = 0.0015`. **Harness maliyet override'ı KULLANILMAZ** —
+`ema_trend`in koşusundan (§6d) ayrıştığı nokta budur ve bilinçlidir: orada model sahibi
+TradingView paritesi için farklı bir maliyet talep ediyordu; burada böyle bir talep yok ve
+kaynağın kendi defteri zaten komisyonsuz tutuluyor, yani parite kurulacak bir sayı yoktur.
+Bu koşu **canlının ödediği maliyeti** ölçer.
+
+Funding: `data.funding_history_periods = 180` (≈60 gün) dönem A'yı kapsamaz; kaydı olmayan
+anda `core/funding.py::rate_at` **None** döner ve maliyet işlenmez (uydurma yok). Bu,
+A ve B'yi **İYİMSER** yapar ve §6d'nin 3. sapmasının bu koşudaki hâlidir. Harness
+`--funding-periods` ile derinliği artırır (sınıf-1 bayrak: yalnızca derinleştirir), ama
+OKX'in kendi tavanı ~3 aylık KAYAN bir penceredir (karar 50, `probe_funding_depth.py`
+ölçtü) — yani derinleştirme bu pencerede işe yaramayacaktır ve **fonlama maliyetinin
+büyük kısmı işlenmeyecektir.** Gerçekleşen kapsam (funding kaydı bulunan pozisyon-bar
+oranı) sonuçla birlikte raporlanır.
+
+### 7. Kapılar
+
+**Repo kapıları birincildir ve canlıyla birebir aynı hesaptan okunur**
+(`core/metrics.py::acceptance_flags`): §3'ün **B-0/B-1/B-2**'si ve §4'ün **C-1..C-5**'i.
+
+⚠ **C-3 scalp katmanında DEĞERLENDİRİLEMEZ ve geçilmiş SAYILMAZ** (§4'ün kendi notu):
+katmanda referans çıpası yoktur — `vwap_clone` bir kopyadır, çıpa değil (kural 15b).
+`acceptance_flags` bunu `logger.warning` ile söyler. Scalp'e çıpa eklemek AYRI bir
+karardır ve bu ön-kayıt onu varsaymaz. **Sonuç: `ema_trend`/`xsec_mom`daki "yalnızca
+C-3'ten kalırsa DUR" istisnası bu modelde TETİKLENEMEZ** — eksik bir çıta, geçilmiş çıta
+gibi kullanılamaz, dolayısıyla istisnanın dayandığı "diğer tüm kapıları geçiyor" hâli
+burada kurulamaz.
+
+**Kontrol (C-2) `random_ctrl`dür ve katmanda YOKTUR.** `layers.scalp.models` bugün
+`scalp_fixed, scalp_patient, vwap_clone, vwap_managed` içeriyor; `acceptance.control_model`
+kökte `random_ctrl`dür. Kontrol kümede yoksa C-2 **değerlendirilemez** ve geçilmiş
+sayılmaz (Kabul Çıtası'nın yazılı kuralı). **Bu ön-kayıt kontrolü katmana EKLEMEZ** ve
+gerekçesi §7.1'dir: yeni bir model eklemek katmanın bugünkü koşullarını değiştirir ve
+canlı koşan dört modelin kıyas zemini olur. Sonuç dürüstçe yazılır: **bu koşuda C-2 ve
+C-3 değerlendirilemez, yani C-5 de tam anlamıyla kurulamaz.**
+
+> **Bunun anlamı açıkça yazılıyor: Aşama 1'in kapı çıktısı en iyi hâlde "C-1 ve C-4
+> sağlandı, C-2/C-3 değerlendirilemedi"dir. Bu, canlıya alma için YETERLİ DEĞİLDİR.**
+
+**Aşama 1 canlıya alma kararı VERMEZ.** C-5 yalnızca dönem B'de okunabilir ve dönem B bu
+aşamada kapalıdır.
+
+**Model sahibinin kapısı (K-2 analogu) — P4:** dönem A'da R'ye giren kapanmış pozisyon
+**≥ 300**. Bu, repo'nun B-1'inden (30) **ON KAT sıkıdır** ve talep onu bir tahmin
+tablosunda vermişti; burada statüsü netleştirilir: **hem ön-kayıtlı bir tahmin hem
+bağlayıcı bir okuma kapısıdır** (`ema_trend`in K-2'siyle aynı rol, §6d). `n < 300` ise
+dönem A satırı **okunmaz** ve Aşama 2 teşhislerden varyant TÜRETMEZ. Eşik sonuca göre
+İNDİRİLMEZ (§6g > TADİLAT-1'in "kapıyı kaldırmak ilkelidir, düşürmek değil" kuralı: bir
+gerekçe bulunursa kaldırılabilir, beklenen sayıya bakarak düşürülemez).
+
+**K-1 (coin başına PF) ve K-3 (max drawdown %25) bu koşuda BAĞLAYICI DEĞİLDİR ve
+raporlanır.** Gerekçe: ikisi de `ema_trend`in kapı setinden gelir ve o modelin sahibi
+tarafından o modelin tek-sembollü TradingView koşusu için tanımlandı; burada böyle bir dış
+referans koşusu yoktur. Coin başına koşu yine yapılır (madde 9) ve PF ile drawdown
+**bilgi olarak** yazılır — eşik uydurmak, kapıyı ölçüme bakarak tasarlamak olurdu.
+
+### 8. ÖN-KAYITLI TAHMİNLER (sonucu görmeden)
+
+| # | Ölçüm | Tahmin | Çürütür |
+|---|---|---|---|
+| **P1** | dönem A **net** ort. R | **≤ 0** | > 0 |
+| **P2** | dönem A `cost_per_r` **medyanı** | **≥ 0.08** | < 0.08 |
+| **P3** | dönem A **brüt** ort. R | **< +0.15** | ≥ +0.15 |
+| **P4** | örneklem | **n ≥ 300** | n < 300 → dönem A satırı OKUNMAZ (madde 7) |
+
+**P1 ve P2 kaynağın GÖRÜLMÜŞ defterinden türetildi** (09.09–21.09.2026: net −0.044,
+`cost_per_r` medyanı 0.081) ve bu **açıkça etiketlenir**: tutmaları bir sürpriz değildir
+ve bir doğrulama olarak okunmayacaktır. **Tutmamaları ise bilgidir** — o zaman kaynağın
+iki haftalık penceresi ile 10 aylık bir pencere ayrışmış demektir ve ayrışmanın yönü
+raporlanır.
+
+⚠ **P2'nin birimi MEDYANDIR, ortalama değil, ve bu koşudan önce seçildi:** `cost_per_r`
+dağılımı sağa çarpıktır (dar stop kuran tek bir kurulum ortalamayı tek başına taşır) ve
+ortalama, ölçülmek istenen "tipik friksiyon"u anlatmaz. `core/metrics.py` model/yön bazında
+ORTALAMA raporlar; medyan **pozisyon bazlı `cost_per_r` değerlerinden** okunacak ve
+kolonun ortalaması da yanında yazılacaktır — iki sayı arasındaki fark çarpıklığın ölçüsüdür.
+
+**P3, P1'den bağımsız bir eksendir:** P1 "para kazanıyor mu", P3 "sinyalin taşıdığı brüt
+sapma ne kadar" diye sorar. İkisi birlikte Aşama 2'nin tek anlamlı sorusunu kurar —
+*friksiyon mu yiyor, yoksa sinyalde sapma mı yok?* P1 düşüp P3 tutarsa (net ≤ 0, brüt
+< 0.15) cevap "sapma yok"tur ve maliyet ekseninde iyileştirme aramak boşunadır; P1 düşüp
+P3 çürürse (brüt ≥ 0.15) cevap "friksiyon yiyor"dur ve stop mesafesi ekseni açılır.
+
+**Sicil:** bu hipotez §6c'nin **5. satırıdır** ve satır bu commit'te, koşudan ÖNCE
+açılmıştır.
+
+### 9. Koşu kuralları (Aşama 1)
+
+- **Parametre araması YOK.** Izgara (12 kombinasyon), `sl_mult` (0.15), retrace aralığı
+  (0.236–0.886), eşik tabanı (%0.05), `epsilon` (0.25), `min_symbol_samples` (3), çıkış
+  yönetimi dörtlüsü ve evren (11 sembol) bu commit'te sabittir.
+- **Portföy koşusu = BİRİNCİL satır.** Kota (`max_positions` 5, `max_short_positions` 3)
+  bağlar ve kabul çıtası ondan okunur — canlı onu yapacak.
+- **Coin başına koşu = BİLGİ.** Kota bağlamaz; K-1/K-3 analogları buradan yazılır ama
+  bağlayıcı değildir (madde 7). İki koşu sınıfı AYRI durur ve toplanmaz.
+- **Tek tohum.** `random_seed = 20240217`. Bandit'in keşif dalı ve "denenmemiş kombinasyon"
+  seçimi bu tohumdan beslenir; koşu tek seferliktir ve **farklı tohumla yeniden
+  koşulmaz.** Gerekçe §6g'nin `xsec_random` için yazdığıyla birebir aynıdır: tohum serbest
+  bırakılsaydı "sonuç iyi çıkana kadar yeniden çek" mümkün olurdu.
+- **Tek workflow tetiklemesi, tek sonuç dosyası.** Cron YOKTUR (§7).
+- **Kapı 0 (§1) zorunludur ve İKİ parçalıdır:** (i) harness'ın canlı `emitted`
+  kayıtlarıyla karşılaştırması — bu model canlıda koşmadığı için BOŞTUR ve kapı
+  sayılmaz; (ii) yerine geçen **PARİTE TESTİ**: kaynağın `zigzag_pivots` +
+  `detect_wave3_setup` + `build_signal_levels` çıktısı ile bu repo'daki modülün çıktısı,
+  sabitlenmiş OHLC dizilerinde **birebir** aynı olmalıdır (pivot listesi, yön, seviyeler).
+  **Parite düşerse hiçbir sayı okunmaz** ve koşu hata koduyla biter (§1'in aynı mantığı).
+- **Kapıdan kalırsa ayar aranmaz.** Düşen tez sicilde kalır (§6c).
+- **Koşu sonrası ZORUNLU raporlama** (madde 10'un teşhisleri + madde 3'ün sayaçları):
+  `skipped_signals` (stop tavanı), `duplicate_position` ve boyutlandırma retleri,
+  kesimde açık kalan pozisyon sayısı, funding kapsamı, eşzamanlı pozisyon dağılımı.
+
+### 10. Teşhis çıktıları (dönem A) — GÖZLEM, karar değil
+
+Hepsi `core/metrics.py` ve `core/report.py`den okunur; **yeni metrik yazılmaz** (kural 7).
+Bu sayılar sicile GİRMEZ ve bir kapı değildir — Aşama 2'nin tek girdisidir.
+
+1. **Çıkış sebebi dağılımı** (`exit_rule` kırılımı: `tp` / `stop` / `stop:breakeven` /
+   `partial` / `stop:giveback` / `liquidation`) ve her grubun ort. R'si. ⚠ Birimi
+   **DİLİMDİR**, pozisyon değil (CLAUDE.md): kısmi çıkışlı pozisyon iki gruba düşer ve
+   grupların `trades` toplamı model tablosundan büyük olur. Bu, rapor başlığına yazılır.
+2. **Stop mesafesi % dağılımı** (p5/p25/p50/p75/p95) ve stop mesafesi KOVASINA göre
+   `cost_per_r` ile net R. Karar 35'in özdeşliği (`net R = (brüt sürüklenme% −
+   maliyet%) / stop%`) tam olarak burada okunur.
+3. **Tutuş süresi dağılımı** (medyan / p90 / **azami**). Azami değer **embargodur**
+   (madde 5).
+4. **Kombinasyon başına n ve net ort. R.** ⚠ Bunun **12 hücreli bir ızgara** olduğu ve
+   **BH düzeltmesi yapılmadan okunamayacağı** raporun BAŞINA yazılır: 12 hücrenin en
+   iyisine bakıp "şu kombinasyon çalışıyor" demek, sicilin (§6c) engellemek için var
+   olduğu şeyin hücre düzeyindeki hâlidir. Bandit zaten tahsis ediyor; ızgara tablosu
+   tahsisin NE gördüğünü anlatır, bir seçim önerisi DEĞİLDİR.
+5. **Giriş anında fiili R:R** (`|TP − giriş| / |giriş − stop|`) dağılımı. Kaynakta
+   dayatılmış bir R:R kapısı yoktur (ev kapıları uygulanmıyor, madde 3h); bu dağılım
+   geometrinin gerçekte ne ürettiğini gösterir.
+   **Hedef fiyatı `reason` kuyruğuna `target=` ETİKETİYLE yazılır** ve oran oradan
+   okunur: `trades.csv`de bir TP kolonu YOKTUR ve yeni kolon açılamaz (kural 13c —
+   başlık değişirse eski satırlar okunamaz hâle gelir). Payda defterin `stop_price`
+   kolonudur, yani İLK stop ve R'nin paydasıyla aynı; giriş ise DOLUM fiyatıdır, sinyal
+   barının kapanışı değil — "fiili" tam olarak budur (kural 13: emir bir sonraki barın
+   açılışından dolar ve oran o boşluk kadar kayar).
+6. **Yön (long/short) ve sembol kırılımı.** Projenin ana sorusu long/short ayrımıdır;
+   sembol kırılımı ise kayma varsayımının ince kitapta tutup tutmadığına dair İPUÇTUR,
+   kanıt değil (§8).
+
+### 11. İYİLEŞTİRME TURUNUN KURALLARI — Aşama 2, teşhis GÖRÜLMEDEN sabitlendi
+
+Emsal §6e'dir: kural, çıktıya bakılarak yazılamaz. Aşama 2 aşağıdakilere bağlı kalır.
+
+- **Değiştirilmiş sürüm YALNIZCA dönem A teşhislerinden türetilir.** Dönem B'nin hiçbir
+  sayısı — tek bir işlem, tek bir ortalama — görülmeden tasarlanır.
+- **TEK BİRİNCİL VARYANT seçilir.** Değerlendirilen ama seçilmeyen her aday sicile
+  "değerlendirildi, seçilmedi" olarak, gerekçesiyle yazılır. İki varyant koşmak BH
+  paydasını büyütür ve §6e'nin ölçtüğü güç sorununu iki katına çıkarır.
+- **Dönem B'de sadık sürüm ve varyant AYNI koşuda, BİR KEZ çalışır.** Kıyas pozisyon
+  başına EŞLEŞTİRİLMEZ — iki sürüm farklı işlemler üretir (§6e'nin eşleştirdiği durum
+  burada YOKTUR: orada çıkış varyantları aynı girişleri paylaşıyordu) — ve iki BAĞIMSIZ
+  satır olarak okunur; fark `bootstrap_diff_ci` ile kurulur.
+- **B'de düşen varyant için İKİNCİ DENEME YOKTUR.** Yeni tez yeni pencere ister (§7.1).
+- **Sadık sürüm dönem B'de de koşar ve satırı yayınlanır** — varyantın tek başına
+  okunması, iyileştirmenin neye göre iyileştirme olduğunu belirsiz bırakırdı.
+
+### 12. Bu ön-kayıt neyi SEÇMİYOR
+
+Canlıya alınmayı. Model katmanın `models` listesinde YOKTUR ve kapılar geçilse bile
+eklenmesi AYRI bir karardır (`scalp_patient`in bugünkü statüsü). Dönem B'yi de seçmiyor:
+B, Aşama 2'nin ön-kaydıyla birlikte tek seferde açılacaktır.
+
+Ayrıca **`scalp` katmanına kontrol (`random_ctrl`) ya da çıpa (`buyhold`) eklenmesini
+seçmiyor.** İkisinin yokluğu C-2 ve C-3'ü değerlendirilemez bırakıyor (madde 7) ve bu,
+bu modelin değil KATMANIN bir eksiğidir; onarımı katmanda koşan dört modelin koşullarını
+değiştirir, yani kendi kararını ve kendi ön-kaydını ister.
+
+### 13. Çoklu karşılaştırma
+
+Bu, sicilin (**§6c**) **5.** satırıdır ve §6c'deki "ev içi araştırmadan çıkan 10 öneri"
+paydasına **AİT DEĞİLDİR** — `ema_trend` satırıyla (2. satır) aynı gerekçe: hipotez dış
+bir sistemden geldi, ev içi arama uzayından seçilmedi. İki payda ayrı tutulur; aksi hâlde
+dışarıdan gelen her hipotez ev içi aramanın cezasını ödemiş gibi görünürdü. Bu satır
+**dış kökenli paydanın 2. üyesidir** (1. üye `ema_trend`).
+
+Aşama 2'nin varyantı ise **ev içi bir tez olacaktır** (teşhisten türetilir) ve o zaman ev
+içi paydaya girer. Bu ayrım şimdi, varyant tanımlanmadan yazılıyor.
+
+### EK-1 — kontrol modeli `wave_coinflip` *(2026-09-22)*
+
+**Bu ek §6h'yi DEĞİŞTİRMEZ.** Yukarıdaki hiçbir satır, hiçbir eşik ve hiçbir tahmin
+dokunulmadı; ek yalnızca eksik bir kapıyı (C-2) ölçülebilir hâle getirir. Talep bu eki
+"§6g'nin altına" diyordu; §6g `xsec_mom`un ön-kaydıdır ve wave ön-kaydı §6h'dir (bkz.
+§6h > NUMARALANDIRMA DÜZELTMESİ), bu yüzden ek buraya konuldu.
+
+#### ZAMANLAMA — talebin cümlesi DÜZELTİLDİ, çünkü doğru değildi
+
+Talep şu cümlenin yazılmasını istiyordu: *"Bu ek, dönem A'nın `wave_scalp` sonuçları
+görüldükten SONRA yazıldı."* **O cümle yazılmadı, çünkü yanlış olurdu.** Gerçek durum:
+
+> **Dönem A KOŞULMADI.** Bu ek, dönem A'nın `wave_scalp` sonuçları görülmeden yazıldı ve
+> commit edildi. Görülen tek şey, kapsam kapısını sınamak için koşulan **BİR HAFTALIK bir
+> probe**dur (aşağıda tek tek yazılı). Kontrolün ayarlanabilir parametresi yoktur ve C-2
+> marjı §4'te önceden sabittir. Bu ekteki tek serbest seçim **S1 toleransıdır** ve kontrol
+> koşusundan önce sabitlenmiştir.
+
+Ön-kayıt belgesine, doğru olmayan bir zamanlama beyanı yazmak §7'nin tamamını anlamsız
+kılar: belgenin kanıt değeri tarih damgasının DOĞRU olmasına dayanır. Ek, istenen cümleden
+daha GÜÇLÜ bir konumda duruyor — kontrol, sonuç görülmeden tanımlandı.
+
+#### GÖRÜLEN VERİ — bir haftalık probe, tek tek yazılı
+
+Kapsam kapısı (§6h > 5) ana koşudan önce cevaplanmak zorundaydı ve cevabı ancak veriye
+erişen bir koşu verebiliyordu. Koşu: **`backtest` #35701959605**, commit `494e3ea`,
+2026-09-22, pencere **2025-03-01 → 2025-03-08** (dönem A'nın ilk haftası), `wave_scalp`
+tek başına, canlı maliyet.
+
+**Cevap: OKX 15m geçmişi dönem A'nın başına ULAŞIYOR** — log 2025-03-07T21:15 ve 21:30
+barlarını işledi. Kapsam kapısının veri tarafı GEÇTİ.
+
+Aynı koşu kaçınılmaz olarak birkaç sayı da gösterdi ve **gizlenmeleri söz konusu değil**
+(karar 42'nin çerçevesi: görülen veri görülmüş sayılır):
+
+| Ölçüm | Bir haftalık probe |
+|---|---|
+| kapanmış pozisyon | 96 |
+| ort. R | −0.37 |
+| çıkış dağılımı (dilim) | tp 41, stop 40, partial 13, stop:breakeven 8, stop:partial 6, **likidasyon 1** |
+| tutuş süresi (bar) | medyan 9, p90 57, azami 140 |
+| en kötü sembol | ADA: n=6, ort. R −3.07, ort. kayıp −10.19R |
+
+⚠ **Bu sayılar dönem A'nın sonucu DEĞİLDİR ve hiçbir karara girmezler:** bir hafta,
+ön-kayıtlı pencerenin ~%2'sidir ve P4'ün (n ≥ 300) örneklem kapısının çok altındadır.
+Buraya yazılmalarının sebebi tersidir — dönem A koşulduğunda, "hiçbir şey görülmemişti"
+denemesin. §7.3'ün yasakladığı şey pencereyi sonuca göre KAYDIRMAKTIR; pencere
+kaydırılmadı ve kaydırılmayacak.
+
+⚠ **Likidasyon satırı (1 dilim, −20.30R) bir UYARIDIR, bir sonuç değil.** Kaynağın
+geometrisi stop'u `p2 ∓ dalga1 × 0.15`e koyuyor ve bu mesafe bazen çok dar çıkıyor; ev
+boyutlandırması (`risk / |giriş − stop|`) o durumda notional'ı büyütür, `leverage_cap` (5)
+onu kırpar ama likidasyon yine mümkün kalır (kural 15b'nin "likidasyon kapatılmaz"
+gerekçesiyle aynı yer). **Bu gözlem tasarımı DEĞİŞTİRMEZ** (§7.1) ve kontrolü de
+etkilemez: `wave_coinflip` aynı stop geometrisini taşır, yani etki iki tarafta da vardır
+ve C-2 farkından DÜŞER.
+
+#### Neden bu ek gerekiyor
+
+Scalp katmanında **kontrol modeli yoktur** (`config.yaml > layers.scalp.models`:
+`scalp_fixed`, `scalp_patient`, `vwap_clone`, `vwap_managed`). `core/metrics.py::
+acceptance_flags` kontrolü kümede bulamayınca ilgili koşulu düşürür, yani `edge` bayrağı
+fiilen `avg_r > 0`'a iner. §6h > 7 bunu zaten dürüstçe yazıyordu ("C-2 ve C-3
+değerlendirilemez"); bu ek, C-2'yi **ölçülebilir** hâle getirir. C-3 hâlâ
+değerlendirilemez ve bu ek onu AÇMAZ (çıpa eklemek ayrı bir karardır).
+
+**`scalp_coinflip` bu modelin kontrolü OLAMAZ** ve gerekçesi kural 14'ün kendisidir: o
+model scalp kollarının stop geometrisini (`stop_atr_multiple` 5.0 × ATR, %1 taban)
+taşıyacak, `wave_scalp` ise `p2 ∓ dalga1 × 0.15` taşıyor. İki farklı stop ölçeği demek,
+⚠B bandının yanması ve `cost_per_r`nin kıyaslanamaz olması demektir — yani fark
+"seçimin ölçüsü" olmaktan çıkar, "iki maliyet ölçeğinin farkı" olur (CLAUDE.md > Rapor
+Kolonları'nın tam olarak reddettiği kıyas). Bugün `scalp_coinflip` depoda YOKTUR; bu satır
+o model geldiğinde yanlış kontrolün seçilmesini engellemek için şimdi yazılıyor.
+
+#### Model: `wave_coinflip` (`strategies/wave_coinflip.py`)
+
+`wave_scalp`ten TÜRER. Zigzag eşiği, dalga-3 kuralı, seviye geometrisi, 12 hücreli bandit
+ızgarası, epsilon-greedy seçim sırası, üç aşamalı çıkış yönetimi, evren ve limitler
+**birebir aynıdır** — miras alınır, kopyalanmaz (`scalp_patient`in `ScalpFixed`ten
+türemesiyle aynı desen ve aynı gerekçe: kopyalanan bir kural bir gün sessizce ayrışır ve
+fark "seçimin ölçüsü" olmaktan çıkar).
+
+**Ayrışan TEK şey yöndür:** kurulumun yönü **adil bir yazı-tura** ile belirlenir.
+
+- "Aynı" gelirse sinyal `wave_scalp`in ürettiğinin birebir aynısıdır.
+- "Ters" gelirse yön çevrilir ve **stop ile hedef MESAFELERİ girişin öbür tarafına aynen
+  yansıtılır:**
+
+  ```
+  stop_ters   = giriş + (giriş − stop_özgün)
+  hedef_ters  = giriş + (giriş − hedef_özgün)
+  ```
+
+  Böylece `|giriş − stop|` ve `|hedef − giriş|` KORUNUR, `sl < giriş < tp` yapısı yönün
+  gerektirdiği tarafa geçer. Mesafeleri korumak S1'in ön koşuludur: yansıtma mesafeyi
+  değiştirseydi kontrol başka bir maliyet ölçeğinde koşar ve ⚠B yanardı — yani tam olarak
+  `scalp_coinflip`i reddetme gerekçemize kendimiz düşerdik.
+
+**Yazı-tura AYRI bir RNG akışındandır:** `random.Random(f"{random_seed}:{as_of}:
+wave_coinflip:{symbol}")`. Bandit'in ε çekilişi kendi akışında kalır
+(`{random_seed}:{as_of}:{model_adı}`) ve yazı-tura ona DOKUNMAZ. Paylaşılan tek bir akış,
+yazı-turanın ε dizisini kaydırması ve kontrolün kombinasyon seçimlerinin yön çekilişine
+bağlanması demekti — o zaman ölçülen şey "yönün katkısı" olmaktan çıkardı.
+
+**Bandit kontrolün KENDİ kapanmış işlemlerinden öğrenir** (kural 16) ve bu, modelin
+yapısının parçasıdır — kapatılmaz. Bedeli önceden yazılıyor: iki modelin kombinasyon
+seçimleri zamanla AYRIŞIR, çünkü posteriorları farklı defterlerden beslenir. Bu
+beklenen bir durumdur, raporlanır ve S1 toleransının (aşağıda) gerekçesinin bir
+parçasıdır. Alternatif — kontrolün `wave_scalp`in posteriorunu okuması — kural 4'ü
+(izolasyon) delerdi.
+
+**Denetim izi:** `reason` kuyruğuna `coin=same|flipped` eklenir. Yazı-turanın gerçekten
+adil olduğu (S2) yalnızca bu etiketten okunabilir.
+
+**Statü:** yarışmacı (`is_replica=False`, `is_benchmark=False`) — `wave_scalp` ile aynı
+sütunda, aynı boyutlandırmayla ve aynı maliyetle koşar; kabul çıtasının kontrolü olmasının
+şartı budur (`random_ctrl`ün `is_benchmark` olmamasıyla aynı gerekçe). `REGISTRY`de durur,
+**hiçbir katmanın `models` listesinde YOKTUR.**
+
+#### Kontrol bağlantısı — AÇIKÇA verilir, katmanın varsayılanı kullanılmaz
+
+`scripts/backtest_wave.py` kontrolü `control_model="wave_coinflip"` olarak açıkça geçirir
+ve değer `manifest.json > deviations.control_model`a yazılır. Katmanın kök varsayılanı
+(`acceptance.control_model` = `random_ctrl`) bu koşuda KULLANILMAZ ve bu bir sessiz
+tercih değil, manifest'te görünen bir karardır.
+
+Gerekçe ileriye dönüktür: scalp katmanı bir gün `scalp_coinflip` alırsa katmanın
+varsayılanı ona kayabilir ve o, wave için YANLIŞ kontroldür (yukarısı). Varsayılana
+güvenmek, doğru kontrolün bir başka modelin eklenmesiyle sessizce değişebilmesi demekti.
+
+#### Ölçümler — hipotez DEĞİL, BH paydasına (§6c) GİRMEZ
+
+Sicile yeni satır açılmaz: bu ek bir modelin performansı hakkında yeni bir iddia
+taşımıyor, mevcut bir kapının (C-2) ölçülebilmesini sağlıyor. §6c'nin 5. satırı
+(`wave_scalp`) olduğu gibi kalır.
+
+| # | Ölçüm | Tahmin / kural |
+|---|---|---|
+| **S1** | `avg_stop_distance_pct` farkı, `wave_scalp` ↔ `wave_coinflip` | **< %10 bağıl.** Aşarsa **C-2 OKUNMAZ** ve bu sonuca yazılır |
+| **S2** | kontrolün "ters" oranı (`coin=flipped` payı) | **0.5 ± 0.05** |
+| **M1** | kontrolün dönem A ort. R'si | %95 CI, **−`cost_per_r`'yi KAPSAR** (bilgisiz yön ≈ −maliyet) |
+| **C-2** | `wave_scalp.avg_r − wave_coinflip.avg_r` | §4'teki hâliyle: **≥ 0.15R** (artı bootstrap CI alt sınırı > 0) |
+
+**S1 toleransı %10'dur ve bu sayı koşudan ÖNCE sabittir.** Scalp raporundaki %1 DEĞİL,
+çünkü wave'de iki model aynı kurulumları GARANTİ ETMEZ: (a) bandit posteriorları ayrı
+defterlerden beslenir ve kombinasyon seçimleri ayrışır, (b) dolumlar ayrışır ve
+`max_positions` doluluğu zamanla farklılaşır, (c) `max_short_positions` (3) YÖNLE
+etkileşir — yazı-tura short üretince kota bağlar ve kontrol o kurulumu hiç açmaz. Üçü de
+mesafe dağılımını kaydırabilir. **Tolerans sonuca göre GEVŞETİLMEYECEKTİR** (§7.1); S1
+aşılırsa C-2 okunmaz ve sebebi yazılır.
+
+**M1 bir KAPI değil, bir tutarlılık kontrolüdür.** Bilgisiz bir yön seçiminin beklenen
+değeri sıfırdır ve gerçekleşen R, friksiyon kadar altındadır; CI bunu kapsamıyorsa ölçülen
+şey yönün bilgisizliği değil başka bir şeydir (ör. yansıtmanın mesafeyi bozması) ve önce o
+araştırılır.
+
+#### Koşu kuralları
+
+- **Dönem A'da `wave_coinflip` koşulur:** aynı pencere, aynı `random_seed`, aynı config,
+  portföy koşusu. `wave_scalp` **YENİDEN KOŞULMAZ** — mevcut sonucu kullanılır (determinizm
+  `random_seed` ile garanti; aynı girdiler aynı defteri verir).
+- **Dönem B'de (Aşama 3) kontrol, sadık sürüm ve varyantla AYNI koşuda çalışır.** Bu,
+  §6h > 9'a eklenen bir kuraldır: üç satırın aynı barları, aynı kotayı ve aynı
+  dolumları görmesi, aralarındaki farkın koşu koşullarından gelmemesinin şartıdır.
+- **Kontrolün tohumu tek seferliktir** ve farklı tohumla yeniden koşulmaz (§6g >
+  Kontrolün TOHUMU ile birebir aynı gerekçe: C-2 bir FARKA dayanır ve tohum serbest
+  bırakılsaydı "kontrol kötü çıkana kadar yeniden çek" mümkün olurdu).
 
 ---
 

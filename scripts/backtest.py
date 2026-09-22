@@ -166,6 +166,7 @@ def run_backtest(
     slippage_base: float | None = None,
     funding_periods: int | None = None,
     signal_cutoff: pd.Timestamp | None = None,
+    control_model: str | None = None,
 ) -> BacktestResult:
     """Katmanı `start`..`end` penceresinde koşturur ve ayrı bir deftere yazar.
 
@@ -198,6 +199,14 @@ def run_backtest(
     eleyip ortalamayı kısa işlemlere doğru çekerdi. Uygulaması modelin ÖRNEĞİNİ gölgeler
     (sınıfını değil): `type(strategy).observe_closed_trades` ile kurulan uyarlanabilirlik
     tespiti (Kapı 0) bozulmasın diye.
+
+    `control_model` kabul çıtasının KONTROLÜNÜ açıkça seçer ve katmanın kök varsayılanını
+    (`acceptance.control_model`) ezer. Eşiği DEĞİŞTİRMEZ — yalnızca farkın öteki tarafının
+    hangi model olduğunu söyler. Gerekçe `docs/backtest.md > 6h > EK-1`dedir: bir modelin
+    doğru kontrolü katmanın varsayılanı olmak zorunda değildir ve varsayılana güvenmek,
+    doğru kontrolün bir başka modelin eklenmesiyle SESSİZCE değişebilmesi demekti. Seçim
+    `manifest.json > deviations.control_model`a yazılır: bir kapının hangi zemine karşı
+    ölçüldüğü gizli kalamaz.
 
     `embargo_bars` bir OOS penceresinin başına konan boşluktur (docs/backtest.md > 6):
     parametresi `start`e kadarki veriyle seçilmiş bir model için, `start`ten hemen sonra
@@ -289,12 +298,22 @@ def run_backtest(
     if not names:
         raise ValueError(f"{layer.name} katmanında model yok")
 
+    layer_control = str(get_setting(config, "acceptance.control_model"))
+    resolved_control = layer_control if control_model is None else str(control_model)
+
     deviations: dict[str, Any] = {
         "signals_per_bar": {"live": signals_per_bar_was, "run": True},
         "history_bars": {
             "config": history_bars_was, "used": int(get_setting(config, "data.history_bars"))
         },
     }
+    if control_model is not None:
+        # Sessiz olamaz: hangi zemine karşı ölçüldüğü manifest'ten okunmalı.
+        deviations["control_model"] = {"layer": layer_control, "run": resolved_control}
+        logger.info(
+            "kontrol modeli AÇIKÇA verildi: %s (katmanın varsayılanı: %s)",
+            resolved_control, layer_control,
+        )
     if fee_rate is not None or slippage_base is not None:
         deviations["costs"] = {
             "live_fee_rate": float(load_config(config_path)["fee_rate"]),
@@ -431,7 +450,7 @@ def run_backtest(
         metrics,
         min_trades=int(get_setting(config, "acceptance.min_trades")),
         stop_band_ratio=float(get_setting(config, "acceptance.stop_band_ratio")),
-        control_model=str(get_setting(config, "acceptance.control_model")),
+        control_model=resolved_control,
         edge_margin_r=float(get_setting(config, "acceptance.edge_margin_r")),
         control_min_trades=int(get_setting(config, "acceptance.control_min_trades")),
         r_samples={name: r_series(rows) for name, rows in trades.items()},
@@ -980,6 +999,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             slippage_base=args.slippage_base,
             funding_periods=args.funding_periods,
             signal_cutoff=cutoff,
+            control_model=args.control_model,
         )
     except Exception as exc:  # noqa: BLE001 — CLI sınırı; gerekçe kullanıcıya gider
         logger.error("backtest koşulamadı: %s", exc)
@@ -1103,6 +1123,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "funding geçmişi derinliği; yalnızca DERİNLEŞTİRİR. Varsayılan 180 periyot "
             "≈ 60 gündür: yıllara uzanan pencerede kaydı olmayan an funding ÖDEMEZ ve "
             "eski dönem iyimser çıkar."
+        ),
+    )
+    parser.add_argument(
+        "--control-model", default=None, metavar="AD",
+        help=(
+            "kabul çıtasının KONTROLÜNÜ açıkça seçer ve katmanın varsayılanını "
+            "(acceptance.control_model) ezer. Eşiği DEĞİŞTİRMEZ; yalnızca farkın öteki "
+            "tarafının hangi model olduğunu söyler ve manifest.json'a yazılır. Bir modelin "
+            "doğru kontrolü katmanın varsayılanı olmak zorunda değildir "
+            "(docs/backtest.md > 6h > EK-1)."
         ),
     )
     parser.add_argument(

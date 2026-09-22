@@ -65,6 +65,12 @@ on:
         description: "Bu bardan sonra yeni sinyal yok (dönem ataması); boş = kesim yok"
         required: false
         default: ""
+      control_model:
+        description: >-
+          Kabul çıtasının kontrolü (boş = katmanın varsayılanı). Eşiği DEĞİŞTİRMEZ;
+          farkın öteki tarafını seçer ve manifest'e yazılır.
+        required: false
+        default: ""
 
 # Ölçüm turlarıyla YARIŞMAZ: kendi grubu. `run.yml`/`run-scalp.yml`in grubuna girmek, bir
 # backtest'in bir ölçüm turunu bekletmesi (ya da tersi) demekti.
@@ -78,7 +84,12 @@ permissions:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 45 dakika 4 SAATLİK pencereler için seçilmişti. 15 dakikalık katmanda 12 aylık bir
+    # pencere sembol başına ~35.000 bar demektir ve yalnızca veri çekimi (sayfa başına 100
+    # kayıt, `min_request_interval_sec` 0.15) 25 dakikayı aşar — ölçüldü: bir HAFTALIK
+    # pencere 24 dakika sürdü (run #35701959605). Tavan yükseltildi; düşürmek, koşuyu
+    # ölçümün ortasında kesmek olurdu.
+    timeout-minutes: 300
     steps:
       # fetch-depth: 0 ŞART — KAPI 0 canlı turların `emitted` kayıtlarını git GEÇMİŞİNDEN
       # okur. `docs/data/metrics_*.json` her turda üzerine yazıldığı için dosyanın son hâli
@@ -120,7 +131,15 @@ jobs:
             market-data-${{ inputs.layer }}-
 
       - name: Run backtest
+        env:
+          # Kontrol adı komut metnine GÖMÜLMEZ, ortam değişkeninden okunur (kabuk
+          # enjeksiyonu kapısı — `measure-funding.yml`in sembol girdisiyle aynı desen).
+          IN_CONTROL_MODEL: ${{ inputs.control_model }}
         run: |
+          CONTROL_ARGS=()
+          if [ -n "$IN_CONTROL_MODEL" ]; then
+            CONTROL_ARGS=(--control-model "$IN_CONTROL_MODEL")
+          fi
           python scripts/backtest.py \
             --layer "${{ inputs.layer }}" \
             --start "${{ inputs.start }}" \
@@ -134,6 +153,7 @@ jobs:
             ${{ inputs.slippage_base != '' && format('--slippage-base {0}', inputs.slippage_base) || '' }} \
             ${{ inputs.funding_periods != '' && format('--funding-periods {0}', inputs.funding_periods) || '' }} \
             ${{ inputs.signal_cutoff != '' && format('--signal-cutoff "{0}"', inputs.signal_cutoff) || '' }} \
+            "${CONTROL_ARGS[@]}" \
             --results-json "backtests/run/results.json" \
             --out "backtests/run" \
             --log-level INFO
