@@ -720,7 +720,23 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--report", default="docs/data/backtest_wave_scalp_A.json")
     parser.add_argument("--config", default=None)
     # Sınıf-1 bayraklar (§5g): yalnızca DERİNLEŞTİRİR, sonucu kaydırmaz.
-    parser.add_argument("--history-bars", type=int, default=40000)
+    #
+    # ⚠ DEĞER KEYFİ DEĞİL, ARİTMETİKTİR. `core/data.py::_download_candles` barları ŞU ANDAN
+    # geriye doğru sayfalar ve `data.history_bars` kadar bar toplayınca DURUR — pencerenin
+    # başına ATLAMAZ. Yani derinlik, bugünden dönem A'nın başına kadarki TÜM mesafeyi
+    # kapsamalı, yalnızca pencerenin kendisini değil:
+    #
+    #     2026-09 → 2025-03-01 ≈ 570 gün × 96 bar/gün ≈ 54.720 bar
+    #     + zigzag penceresi (300) + ATR ısınması (14)
+    #
+    # 60.000 o mesafeye pay bırakır. Yetmezse kapsam KAPISI düşer ve teşhis yanıltıcı olur:
+    # rapor "OKX veriyi vermiyor" derken aslında "biz o kadar geriye İSTEMEDİK" demiş
+    # olurdu. Emsali `scripts/backtest_ema.py`nin 12.000'idir (4H'de ≈ 5,5 yıl).
+    #
+    # Bedeli istek sayısıdır: 60.000 / 100 ≈ 600 sayfa × 13 sembol ≈ 7.800 istek ve
+    # `exchange.min_request_interval_sec` (0.15) ile en az ~20 dakika. Workflow'un
+    # timeout'u (180 dk) buna göre seçildi.
+    parser.add_argument("--history-bars", type=int, default=60000)
     parser.add_argument("--funding-periods", type=int, default=2000)
     parser.add_argument(
         "--skip-per-symbol", action="store_true",

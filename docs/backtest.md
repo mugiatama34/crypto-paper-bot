@@ -2129,6 +2129,21 @@ canlı derinliğinin (`layers.scalp.data.history_bars` = 1500) yaklaşık 20 kat
 15m geçmişinin o kadar geriye gittiği **VARSAYILMAZ**. Ana koşudan önce ayrı bir kapsam
 adımı koşar ve şunları tabloya yazar:
 
+⚠ **BİZİM ÇEKME YOLUMUZUN derinliği ayrı bir sayıdır ve pencereden BÜYÜKTÜR.**
+`core/data.py::_download_candles` barları ŞU ANDAN geriye doğru sayfalar ve
+`data.history_bars` kadar bar toplayınca durur — pencerenin başına ATLAMAZ. Yani derinlik,
+koşu gününden dönem A'nın başına kadarki TÜM mesafeyi kapsamalıdır:
+
+> 2026-09 → 2025-03-01 ≈ **570 gün × 96 bar/gün ≈ 54.720 bar**, artı zigzag penceresi
+> (300) ve ATR ısınması (14).
+
+Harness'ın varsayılanı bu yüzden **60.000**'dir (emsali `backtest_ema`nın 4H'deki
+12.000'i). Bu ayrım yazılı durmak zorunda, çünkü yetersiz bir derinlikte kapsam kapısı
+düşer ve teşhis YANILTICI olur: rapor "OKX veriyi vermiyor" derken aslında *"biz o kadar
+geriye istemedik"* demiş olurdu. Kapı düştüğünde bakılacak İLK şey bu sayıdır; ikinci şey
+borsanın kendi derinliğidir (karar 50'nin fonlama uç noktasında ölçtüğü şeyin mum
+tarafındaki karşılığı).
+
 - her sembolün **ilk 15m barı** (OKX'te fiilen ulaşılan en eski kapanmış bar);
 - dönem A ve B için **beklenen ↔ gerçekleşen bar sayısı** ve **eksik bar** sayısı;
 - `missing_bars` ve `unchecked_position_bars` (B-2).
