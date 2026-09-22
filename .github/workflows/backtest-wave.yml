@@ -74,6 +74,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Piyasa verisi önbelleği. `backtest.yml`de vardı, burada YOKTU ve bedeli ölçüldü:
+      # her koşu ~25 dakikayı yalnızca mumları yeniden çekmeye harcıyordu. Önbellek
+      # ölçümü DEĞİŞTİRMEZ — `core/data.py` önbellekteki barları yeniden çekmez ama
+      # eksikleri çeker ve `as_of` kuralı aynı kalır; koşu sonucu aynı, süresi kısa.
+      # Anahtar koşu başınadır, `restore-keys` ile en son önbelleğe düşer (aynı desen).
+      - name: Restore market data cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: market-data-scalp-wave-${{ github.run_id }}
+          restore-keys: |
+            market-data-scalp-wave-
+            market-data-scalp-
+
       # KAPI 0 — parite. Kaynağın kendi kodundan üretilmiş altın dosyaya karşı sınanır
       # (tests/data/wave_source_parity.json). Düşerse koşunun hiçbir sayısı okunmaz, bu
       # yüzden ana adımdan ÖNCE ve `continue-on-error` OLMADAN koşar (§1'in aynı mantığı).
