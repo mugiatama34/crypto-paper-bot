@@ -589,7 +589,8 @@ def reflect(setup: ArmSetup) -> ArmSetup:
     **`|giriş − stop|` ve `|hedef − giriş|` KORUNUR**, dolayısıyla `stop_distance_pct` ve
     `reward_risk` tanım gereği değişmez. Bu bir tercih değil ölçümün şartıdır: yansıtma
     mesafeyi değiştirseydi kontrol başka bir maliyet ölçeğinde koşar, ⚠B bandı yanar ve
-    `cost_per_r` kıyaslanamaz olurdu (S1 ölçümü bu korumanın denetimidir).
+    `cost_per_r` kıyaslanamaz olurdu (**S1a** ölçümü bu korumanın denetimidir; defter
+    düzeyindeki S1b ayrı bir şeydir — bkz. docs/backtest.md > 6i > 7 > DÜZELTME-1).
 
     `arm` ve `detail` DOKUNULMAZ: ikisi de kolun o barda GERÇEKTEN gördüğüdür ve denetim
     izidir (kol kırılımı `arm` etiketinden okunur). Yansıtılan şey pozisyonun yönü, kolun

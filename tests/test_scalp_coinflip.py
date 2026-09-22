@@ -4,7 +4,11 @@
 
 1. **Yansıtma mesafeyi KORUR.** "Ters" kurulumda stop ve hedef mesafeleri orijinalle
    birebir aynı; yön ve taraflar doğru. Mesafe kaysaydı kontrol başka bir maliyet
-   ölçeğinde koşar, ⚠B yanar ve C-2 okunamaz olurdu (S1'in ön koşulu).
+   ölçeğinde koşar, ⚠B yanar ve C-2 okunamaz olurdu. Bu, **S1a**'nın kendisidir
+   (§6i > 7 > DÜZELTME-1): kurulum düzeyinde BİREBİR eşitlik. Defter düzeyindeki **S1b**
+   (`avg_stop_distance_pct` farkı < %10 bağıl) burada SINANAMAZ ve sınanmamalıdır —
+   dolum kümeleri `max_positions`/`max_short_positions` yüzünden ayrışır, yani o bir kod
+   iddiası değil bir kıyas koşuludur ve ancak defterden okunur.
 2. **Yazı-tura AYRI akıştadır ve kol/sembol çekilişine dokunmaz.** Yazı-tura sabit "aynı"
    döndürürse model `scalp_patient` ile BİREBİR aynı sinyali üretir.
 3. **Yazı-tura ADİLDİR** (S2'nin kod tarafı: 10.000 çekilişte 0.5 ± 0.02).
@@ -150,15 +154,19 @@ def test_reflection_does_not_touch_the_arms_observation() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# (2) S1'in ön koşulu: aynı kurulum, aynı stop mesafesi
+# (2) S1a: aynı kurulum, aynı stop mesafesi (kurulum düzeyi — dolumdan BAĞIMSIZ)
 # --------------------------------------------------------------------------- #
 def test_the_control_trades_the_same_setup_at_the_same_stop_distance(
     monkeypatch, control, twin, data
 ) -> None:
-    """S1'in kod tarafı: aynı barda aynı sembol, BİREBİR aynı stop mesafesi.
+    """**S1a**: aynı barda aynı sembol, BİREBİR aynı stop mesafesi (§6i > 7 > DÜZELTME-1).
 
-    Defterdeki `avg_stop_distance_pct` farkının %1'in altında kalması bunun sonucudur;
-    aşarsa sebebi yansıtma DEĞİL, dolum kümelerinin ayrışmasıdır (ön-kayıt §6i > 7).
+    Ölçüt KURULUM düzeyindedir ve bu bilinçlidir: yansıtmanın mesafeyi koruduğu bir
+    aritmetik iddiadır, dolum kümesine bağlı değildir. Defterdeki `avg_stop_distance_pct`
+    farkı (S1b) bunun sonucu DEĞİLDİR ve buradan türetilemez — `max_positions` (5) ve
+    `max_short_positions` (3) `scalp_patient`in defterinde zaten bağlıyor, yani iki
+    modelin dolum kümeleri yönden bağımsız olarak da ayrışır. S1b bu yüzden %1 değil
+    **%10** toleransla ve yalnızca DEFTERDEN okunur.
     """
     _install(monkeypatch)
     mine = control.generate_signals(data)

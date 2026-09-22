@@ -2513,6 +2513,14 @@ etkileşir — yazı-tura short üretince kota bağlar ve kontrol o kurulumu hi�
 mesafe dağılımını kaydırabilir. **Tolerans sonuca göre GEVŞETİLMEYECEKTİR** (§7.1); S1
 aşılırsa C-2 okunmaz ve sebebi yazılır.
 
+> ⚠ **DİPNOT (2026-09-22):** yukarıdaki *"Scalp raporundaki %1 DEĞİL"* cümlesi ARTIK
+> GEÇERSİZDİR — scalp'in uygulanan toleransı da %10'dur (§6i > 7 > DÜZELTME-1). EK-1'in
+> kendi sayısı, gerekçesi ve kapsamı DEĞİŞMEDİ; değişen, kıyaslandığı öteki sayıdır.
+> Cümle silinmiyor: düzeltilen şey bir kaydın kendisi değil, o kaydın başka bir belgeye
+> yaptığı atıftır. ⚠ Ayrıca bir kayıt: yukarıdaki **(b) maddesi** (`max_positions`
+> doluluğunun zamanla farklılaşması) burada koşudan önce yazılmıştı ve §6i onu
+> DEVRALMADI — DÜZELTME-1'in kapattığı boşluk tam olarak budur.
+
 **M1 bir KAPI değil, bir tutarlılık kontrolüdür.** Bilgisiz bir yön seçiminin beklenen
 değeri sıfırdır ve gerçekleşen R, friksiyon kadar altındadır; CI bunu kapsamıyorsa ölçülen
 şey yönün bilgisizliği değil başka bir şeydir (ör. yansıtmanın mesafeyi bozması) ve önce o
@@ -2733,7 +2741,7 @@ ve `scalp_coinflip` aynı kopyayı alır.
 
 | # | Ölçüm | Tahmin / kural |
 |---|---|---|
-| **S1** | `avg_stop_distance_pct` farkı, `scalp_patient` ↔ `scalp_coinflip` | **< %1 bağıl.** Aşarsa **M1 ve C-2 OKUNMAZ** ve sebebi sonuca yazılır |
+| **S1** | `avg_stop_distance_pct` farkı, `scalp_patient` ↔ `scalp_coinflip` | **< %1 bağıl.** Aşarsa **M1 ve C-2 OKUNMAZ** ve sebebi sonuca yazılır — ⚠ **DÜZELTME-1 ile S1a + S1b olarak İKİYE BÖLÜNDÜ** (aşağısı); satır kayıt için duruyor, uygulanan hâli S1a/S1b'dir |
 | **S2** | kontrolün "ters" oranı (`coin=flipped` payı) | **0.5 ± 0.02** (10.000 çekilişlik kod sağlaması; defterdeki pay örneklem küçükken daha geniş salınır) |
 | **M1** | kontrolün ortalama R'si, n ≥ 30'da | %95 bootstrap CI'si **0'ı ve −`cost_per_r`'yi KAPSAR** (bilgisiz yön ≈ −maliyet) |
 | **M2** | `scalp_patient.avg_r − scalp_coinflip.avg_r` | §4'teki hâliyle **C-2**: ≥ 0.15R **ve** farkın bootstrap CI alt sınırı > 0 |
@@ -2745,6 +2753,83 @@ aynı kurulumu seçer. **Toleransı aşabilecek TEK bilinen mekanizma önceden y
 `max_short_positions` (3) YÖNLE etkileşir — yazı-tura short üretince kota bağlayabilir ve
 kontrol o kurulumu hiç açmaz, yani iki defterin DOLUM kümeleri ayrışır ve mesafe dağılımı
 kayar. S1 aşılırsa önce bu bakılır, **tolerans GEVŞETİLMEZ** (§7.1).
+
+#### DÜZELTME-1 — S1 İKİYE BÖLÜNDÜ: %1 yanlış kümede ölçülüyordu *(2026-09-22, merge'ten ÖNCE)*
+
+⚠ **Yukarıdaki S1 satırı SİLİNMEDİ ve silinmeyecek.** Yanlış yazılmış bir ön-kayıt satırını
+silmek, sicilin engellemek için var olduğu şeyin ta kendisidir (§6c'nin "düşen hipotez
+silinmez" kuralının aynısı). Satır olduğu gibi duruyor; aşağıdaki düzeltme onu **kapsam
+bakımından** ikiye ayırır ve ikinci parçanın toleransını değiştirir.
+
+**Bu düzeltme `scalp_coinflip`in HİÇBİR İŞLEMİ GÖRÜLMEDEN yazıldı.** Model bu satırlar
+yazılırken henüz tek tur koşmadı: defteri yok, tek bir `coin=` etiketi üretmedi ve
+`avg_stop_distance_pct` değeri hiçbir yerde hesaplanmadı. Düzeltmenin dayanağı kontrolün
+sonucu değil, **`scalp_patient`in ZATEN VAR OLAN defteridir** — yani §7.1'in yasakladığı
+"sonuca bakıp eşiği ayarlama" burada yapılamaz, çünkü bakılacak bir sonuç yok.
+
+**Ölçülen gerekçe (`ledgers_scalp/scalp_patient/`, 533 özsermaye barı / 22 kapanmış
+pozisyon):**
+
+| Gözlem | Değer | Anlamı |
+|---|---|---|
+| azami eşzamanlı pozisyon | **5** (11 barda, %2.1; şu an açık olan küme de tam 5) | **`max_positions` BAĞLIYOR** |
+| ≥ 4 pozisyon taşınan bar | 190 / 533 = **%35.6** | tavan sınırda gezen bir doluluk, istisna değil |
+| azami eşzamanlı short | **3** (şu an açık kümede de 3) | **`max_short_positions` BAĞLIYOR** |
+| yön dağılımı (kapanmış) | long %68.2 ↔ short %31.8 | kontrolün ~%50 short'u kotayı DAHA SIK bağlayacak |
+
+**Neden %1 yanlış kümede ölçülüyordu.** Ön-kayıt, dolum kümelerini ayrıştırabilecek TEK
+mekanizma olarak `max_short_positions`ı yazmıştı. Ölçüm bunu **eksik** buldu: toplam tavan
+(5) da bağlıyor ve bağladığı anda ayrışma yönden BAĞIMSIZ hâle gelir — kotası dolu bir
+barda iki modelin hangi kurulumu açabildiği, o ana kadar taşıdıkları pozisyonların
+ömürlerine bağlıdır ve o ömürler yön çevrildiği anda zaten ayrışmıştır. Yani
+`avg_stop_distance_pct`, iki modelin AYNI kurulumlarının değil **farklı ALT
+KÜMELERİNİN** ortalaması olur. Bir alt küme farkı üzerinde %1 bağıl tolerans aramak,
+aritmetik olarak korunan bir şeyi (mesafe) korunmayan bir şeyle (hangi kurulumun
+doldurulabildiği) sınamaktır.
+
+⚠ **Bu mekanizma ZATEN YAZILIYDI ve §6i onu devralmadı.** §6h > EK-1 wave için %10'u
+seçerken gerekçesini üç maddede saymıştı ve **(b) maddesi** birebir şuydu: *"dolumlar
+ayrışır ve `max_positions` doluluğu zamanla farklılaşır."* §6i aynı aileden bir kontrol
+tanımlarken bu maddeyi taşımadı, yalnızca (c)'yi (`max_short_positions`) yazdı. Yani
+DÜZELTME-1 yeni bir keşif değil, **bir kopyalama eksiğinin onarımıdır** — ve bu, eşiğin
+sonuca bakılarak seçilmediğinin ikinci kanıtıdır: devralınan sayı, zaten commit edilmiş
+bir ön-kayıtta duruyordu.
+
+**S1 ikiye bölünür ve ikisi AYRI şeyleri sınar:**
+
+| # | Ölçüm | Kural |
+|---|---|---|
+| **S1a** | aynı bar + aynı kol + aynı sembol kurulumunda stop mesafesi | **BİREBİR EŞİT** (`rel=1e-12`). Yansıtmanın mesafeyi koruduğunun kanıtı; dolum kümesinden BAĞIMSIZDIR, çünkü kurulum düzeyinde ölçülür. Mevcut test: `tests/test_scalp_coinflip.py::test_the_control_trades_the_same_setup_at_the_same_stop_distance` |
+| **S1b** | `avg_stop_distance_pct` farkı, `scalp_patient` ↔ `scalp_coinflip` (DEFTER) | **< %10 bağıl** (§6h > EK-1'in wave için seçtiği sayı). Aşarsa **M1 ve C-2 OKUNMAZ** ve sebebi sonuca yazılır |
+
+**S1a KAPI GİBİ davranır, S1b okuma koşuludur.** S1a düşerse yansıtma bozuktur ve ölçüm
+zaten geçersizdir — o bir kod hatasıdır, bir veri durumu değil. S1b düşerse kod doğru ama
+iki defter kıyaslanabilir ölçekte değildir; o zaman C-2 okunmaz (§4'ün C-4'ünün aynı
+mantığı: ⚠B bir kusur değil, bir kıyas koşuludur).
+
+**%10 neden EK-1'in sayısı ve neden gevşetme DEĞİL.** EK-1 wave için %10'u tam olarak bu
+üç mekanizmaya dayandırmıştı: (a) posterior ayrışması, (b) dolumların ayrışması, (c)
+`max_short_positions`ın yönle etkileşmesi. Burada (a) YOKTUR (kontrol öğrenmez) ama (b) ve
+(c) aynen vardır ve ölçüm (b)'nin `max_positions` üzerinden de işlediğini gösterdi. Yani
+aynı gerekçeye aynı sayı veriliyor — **`scalp_coinflip`in bir sonucuna bakılarak değil,
+kardeş bir ön-kaydın zaten sabitlenmiş sayısı devralınarak.** Yeni bir eşik uydurmak,
+tam da §7.1'in yasakladığı serbestliği açardı.
+
+⚠ **S1b bir kez daha aşılırsa tolerans YİNE GEVŞETİLMEYECEKTİR** (§7.1). O durumda
+yapılacak şey eşiği büyütmek değil, C-2'yi OKUMAMAK ve kotanın ayrıştırdığını
+raporlamaktır.
+
+**BİLGİ SATIRI — kapı değil, ölçüm** (`passed` üretmez, hiçbir eşiği yoktur):
+
+| # | Bilgi | Kaynak |
+|---|---|---|
+| **I1** | kontrolün LONG oranı (kapanmış pozisyonlarda) | defter; beklenen ~%50, `scalp_patient`in %68.2'si ile YAN YANA okunur — fark yazı-turanın kurulumun yön yanlılığını gerçekten sildiğini gösterir |
+| **I2** | kontrolün `max_short_positions` ret sayısı | `round.models[].rejections` (`core/engine.py`); kod ZATEN üretiyor, yeni bir alan açılmadı |
+| **I3** | kontrolün `max_positions` ret sayısı | aynı yer — DÜZELTME-1'in gerekçesi tam olarak bu kodun da bağladığıdır, yani ayrı sayılmalıdır |
+
+I1–I3 **S1b'yi AÇIKLAR, onun yerine geçmez:** S1b düşerse bu üç sayı sebebin kotada mı
+başka yerde mi olduğunu söyler. Hiçbiri bir eşiğe bağlanmaz — bağlansaydı sonucu gördükten
+sonra "hangi sayı kapı" diye seçme serbestliği doğardı.
 
 **M1 bir KAPI değil, bir tutarlılık kontrolüdür.** Bilgisiz bir yön seçiminin beklenen
 değeri sıfırdır ve gerçekleşen R friksiyon kadar altındadır; CI bunu kapsamıyorsa ölçülen

@@ -4372,7 +4372,7 @@ bir projeksiyondur.
 **Sapma düzeltilmedi ve gizlenmedi.** İki düzeltme yolu da daha kötüydü: ters yönde yeni bir
 engel hesaplamak kontrolü "aynı kurulum, ters yön" olmaktan çıkarıp kendi hedef kuralı olan
 İKİNCİ bir modele çevirirdi; hedefi olduğu yerde bırakmak ise `|hedef − giriş|`i değiştirir,
-S1'i tanım gereği düşürür ve ⚠B'yi yakardı.
+S1a'yı tanım gereği düşürür ve ⚠B'yi yakardı.
 
 **Sapmanın YÖNÜ ön-kayıtta, sonucu görmeden yazıldı:** engel çoğu zaman hedefi YAKINLAŞTIRIR
 (yakın olanı alınır), yani yansıtılmış hedef ortalamada projeksiyona eşit ya da ondan uzaktır.
@@ -4424,6 +4424,45 @@ olmayan bir override noktası eklenemez**. Karşılığı `scalp_patient` (16) �
 Nokta **SEÇİMDEN SONRA** çağrılır ve seçimi değiştiremez: kol çekilişi, sembol çekilişi ve
 tarama sayımı kolun kendi yön iddiası üzerinden yapılır. Yön kararı o akışın önüne geçseydi
 kontrol `scalp_patient` ile aynı kurulumları seçmez ve eşleştirilmiş deney bozulurdu.
+
+### DÜZELTME-1 (2026-09-22, merge'ten ÖNCE) — S1 yanlış kümede ölçülüyordu
+
+Ön-kayıt (§6i > 7) S1'i tek bir satır olarak yazmıştı: *`avg_stop_distance_pct` farkı
+< %1 bağıl.* **Bu tolerans yanlış kümede ölçülüyordu** ve merge'ten önce ikiye bölündü.
+Ön-kayıt satırı SİLİNMEDİ — kayıt için duruyor, uygulanan hâli S1a + S1b'dir.
+
+**Ölçülen gerekçe `scalp_patient`in ZATEN VAR OLAN defteridir** (533 özsermaye barı, 22
+kapanmış pozisyon): azami eşzamanlı pozisyon **5** (yani `max_positions` BAĞLIYOR; 11 barda
+tavanda, ≥4 pozisyon taşınan bar oranı %35.6) ve azami eşzamanlı short **3** (yani
+`max_short_positions` de BAĞLIYOR; şu an açık olan 5 pozisyonun 3'ü short). Ön-kayıt
+ayrışmanın TEK sebebi olarak short kotasını yazmıştı; toplam tavan da bağladığı için
+ayrışma yönden BAĞIMSIZ olarak da oluşur — o zaman defter ortalaması aynı kurulumların
+değil **farklı ALT KÜMELERİN** ortalamasıdır ve aritmetik olarak korunan bir şeyi (mesafe)
+korunmayan bir şeyle (hangi kurulumun doldurulabildiği) sınamak olur.
+
+| # | Yeni hâli | Statü |
+|---|---|---|
+| **S1a** | aynı bar + aynı kol + aynı sembol kurulumunda stop mesafesi BİREBİR eşit | kod hatası kapısı; dolum kümesinden BAĞIMSIZ (kurulum düzeyi). Mevcut test |
+| **S1b** | defterdeki `avg_stop_distance_pct` farkı **< %10 bağıl** | kıyas koşulu; aşarsa M1 ve C-2 OKUNMAZ |
+
+**%10 uydurulmadı, DEVRALINDI:** §6h > EK-1 wave için aynı sayıyı koşudan önce sabitlemişti
+ve gerekçesinin **(b) maddesi** birebir şuydu — *"dolumlar ayrışır ve `max_positions`
+doluluğu zamanla farklılaşır."* §6i aynı aileden bir kontrol tanımlarken o maddeyi
+taşımadı. Yani bu düzeltme yeni bir keşif değil, bir **kopyalama eksiğinin onarımıdır.**
+
+⚠ **Düzeltme `scalp_coinflip`in HİÇBİR İŞLEMİ GÖRÜLMEDEN yazıldı.** Model bu satırlar
+yazılırken tek tur koşmamıştı: defteri yok, tek bir `coin=` etiketi üretmedi,
+`avg_stop_distance_pct` değeri hiçbir yerde hesaplanmadı. §7.1'in yasakladığı "sonuca bakıp
+eşiği ayarlama" burada yapılamaz, çünkü bakılacak bir sonuç yok. S1b bir kez daha aşılırsa
+tolerans YİNE gevşetilmeyecek; yapılacak şey C-2'yi OKUMAMAK ve sebebi raporlamaktır.
+
+**Üç BİLGİ SATIRI eklendi (kapı değil, eşiği yok, `passed` üretmez):** kontrolün LONG oranı
+(beklenen ~%50; `scalp_patient`in %68.2'siyle yan yana okunur — yazı-turanın kurulumun yön
+yanlılığını gerçekten sildiğinin göstergesi), `max_short_positions` ret sayısı ve
+`max_positions` ret sayısı. Üçü de `round.models[].rejections`ten okunur; **kod zaten
+üretiyordu, yeni bir alan açılmadı.** S1b düşerse bu üç sayı sebebin kotada mı başka yerde
+mi olduğunu söyler — hiçbiri bir eşiğe bağlanmaz, bağlansaydı sonucu gördükten sonra
+"hangi sayı kapı" diye seçme serbestliği doğardı.
 
 ### 5. Ne YAPILMADI
 

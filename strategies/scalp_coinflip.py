@@ -37,8 +37,17 @@ eşleştirilmiş deneydir.
 aynı MESAFEYLE yansıtılır (`strategies/scalp/arms.py::reflect`), yani `|giriş − stop|` ve
 `|hedef − giriş|` değişmez; `stop_distance_pct` ve `reward_risk` tanım gereği aynı kalır.
 Bu bir tercih değil ölçümün şartıdır: mesafe değişseydi kontrol başka bir maliyet
-ölçeğinde koşar, ⚠B yanar ve `cost_per_r` kıyaslanamaz olurdu. Denetimi **S1** ölçümüdür
-(`avg_stop_distance_pct` farkı < %1 bağıl).
+ölçeğinde koşar, ⚠B yanar ve `cost_per_r` kıyaslanamaz olurdu.
+
+Denetimi İKİ parçalıdır (§6i > 7 > DÜZELTME-1) ve ayrı şeyleri sınar: **S1a** aynı bar +
+aynı kol + aynı sembol kurulumunda stop mesafesinin BİREBİR eşit olması (kod hatası
+kapısı; dolum kümesinden bağımsızdır, çünkü KURULUM düzeyinde ölçülür — test:
+`tests/test_scalp_coinflip.py`), **S1b** ise defterdeki `avg_stop_distance_pct` farkının
+**< %10 bağıl** kalması (kıyas koşulu; aşılırsa C-2 okunmaz). İkincisi bir zamanlar %1
+yazılıydı ve o sayı YANLIŞ KÜMEDE ölçülüyordu: `max_positions` (5) de `max_short_positions`
+(3) de `scalp_patient`in defterinde ZATEN bağlıyor (azami 5 eşzamanlı pozisyon, azami 3
+short — ölçüldü), yani iki modelin DOLUM kümeleri yönden bağımsız olarak da ayrışır ve
+defter ortalaması aynı kurulumların değil farklı alt kümelerin ortalaması olur.
 
 ⚠ **KABUL EDİLEN SAPMA — yansıtılan hedef yapısal engele DAYANMAZ.** Kolların hedefi
 projeksiyon (`target_reward_risk × stop`) ile kolun kendi yapısal engelinin (VWAP,
@@ -46,7 +55,7 @@ Bollinger orta bandı, aralığın ölçülü hareketi…) YAKIN olanıdır. Yan
 hedef aynı mesafededir ama orada kolun tezinden gelen bir engel yoktur — kontrolün hedefi
 saf bir projeksiyondur. Sapma DÜZELTİLMEZ: ters yönde yeni bir engel hesaplamak kontrolü
 "aynı kurulum, ters yön" olmaktan çıkarıp kendi hedef kuralı olan İKİNCİ bir modele
-çevirirdi; hedefi olduğu yerde bırakmak ise mesafeyi bozar ve S1'i tanım gereği düşürürdü.
+çevirirdi; hedefi olduğu yerde bırakmak ise mesafeyi bozar ve S1a'yı tanım gereği düşürürdü.
 Sapmanın YÖNÜ ön-kayıtta yazılıdır (docs/backtest.md > 6i > 5): kontrolü olduğundan KÖTÜ
 gösterme yönünde çalışır ve C-2 farkını şişirebilir — bu yüzden C-2 tek başına okunmaz,
 M1 ile birlikte okunur.
