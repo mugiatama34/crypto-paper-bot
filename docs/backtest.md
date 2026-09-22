@@ -2342,6 +2342,174 @@ dışarıdan gelen her hipotez ev içi aramanın cezasını ödemiş gibi görü
 Aşama 2'nin varyantı ise **ev içi bir tez olacaktır** (teşhisten türetilir) ve o zaman ev
 içi paydaya girer. Bu ayrım şimdi, varyant tanımlanmadan yazılıyor.
 
+### EK-1 — kontrol modeli `wave_coinflip` *(2026-09-22)*
+
+**Bu ek §6h'yi DEĞİŞTİRMEZ.** Yukarıdaki hiçbir satır, hiçbir eşik ve hiçbir tahmin
+dokunulmadı; ek yalnızca eksik bir kapıyı (C-2) ölçülebilir hâle getirir. Talep bu eki
+"§6g'nin altına" diyordu; §6g `xsec_mom`un ön-kaydıdır ve wave ön-kaydı §6h'dir (bkz.
+§6h > NUMARALANDIRMA DÜZELTMESİ), bu yüzden ek buraya konuldu.
+
+#### ZAMANLAMA — talebin cümlesi DÜZELTİLDİ, çünkü doğru değildi
+
+Talep şu cümlenin yazılmasını istiyordu: *"Bu ek, dönem A'nın `wave_scalp` sonuçları
+görüldükten SONRA yazıldı."* **O cümle yazılmadı, çünkü yanlış olurdu.** Gerçek durum:
+
+> **Dönem A KOŞULMADI.** Bu ek, dönem A'nın `wave_scalp` sonuçları görülmeden yazıldı ve
+> commit edildi. Görülen tek şey, kapsam kapısını sınamak için koşulan **BİR HAFTALIK bir
+> probe**dur (aşağıda tek tek yazılı). Kontrolün ayarlanabilir parametresi yoktur ve C-2
+> marjı §4'te önceden sabittir. Bu ekteki tek serbest seçim **S1 toleransıdır** ve kontrol
+> koşusundan önce sabitlenmiştir.
+
+Ön-kayıt belgesine, doğru olmayan bir zamanlama beyanı yazmak §7'nin tamamını anlamsız
+kılar: belgenin kanıt değeri tarih damgasının DOĞRU olmasına dayanır. Ek, istenen cümleden
+daha GÜÇLÜ bir konumda duruyor — kontrol, sonuç görülmeden tanımlandı.
+
+#### GÖRÜLEN VERİ — bir haftalık probe, tek tek yazılı
+
+Kapsam kapısı (§6h > 5) ana koşudan önce cevaplanmak zorundaydı ve cevabı ancak veriye
+erişen bir koşu verebiliyordu. Koşu: **`backtest` #35701959605**, commit `494e3ea`,
+2026-09-22, pencere **2025-03-01 → 2025-03-08** (dönem A'nın ilk haftası), `wave_scalp`
+tek başına, canlı maliyet.
+
+**Cevap: OKX 15m geçmişi dönem A'nın başına ULAŞIYOR** — log 2025-03-07T21:15 ve 21:30
+barlarını işledi. Kapsam kapısının veri tarafı GEÇTİ.
+
+Aynı koşu kaçınılmaz olarak birkaç sayı da gösterdi ve **gizlenmeleri söz konusu değil**
+(karar 42'nin çerçevesi: görülen veri görülmüş sayılır):
+
+| Ölçüm | Bir haftalık probe |
+|---|---|
+| kapanmış pozisyon | 96 |
+| ort. R | −0.37 |
+| çıkış dağılımı (dilim) | tp 41, stop 40, partial 13, stop:breakeven 8, stop:partial 6, **likidasyon 1** |
+| tutuş süresi (bar) | medyan 9, p90 57, azami 140 |
+| en kötü sembol | ADA: n=6, ort. R −3.07, ort. kayıp −10.19R |
+
+⚠ **Bu sayılar dönem A'nın sonucu DEĞİLDİR ve hiçbir karara girmezler:** bir hafta,
+ön-kayıtlı pencerenin ~%2'sidir ve P4'ün (n ≥ 300) örneklem kapısının çok altındadır.
+Buraya yazılmalarının sebebi tersidir — dönem A koşulduğunda, "hiçbir şey görülmemişti"
+denemesin. §7.3'ün yasakladığı şey pencereyi sonuca göre KAYDIRMAKTIR; pencere
+kaydırılmadı ve kaydırılmayacak.
+
+⚠ **Likidasyon satırı (1 dilim, −20.30R) bir UYARIDIR, bir sonuç değil.** Kaynağın
+geometrisi stop'u `p2 ∓ dalga1 × 0.15`e koyuyor ve bu mesafe bazen çok dar çıkıyor; ev
+boyutlandırması (`risk / |giriş − stop|`) o durumda notional'ı büyütür, `leverage_cap` (5)
+onu kırpar ama likidasyon yine mümkün kalır (kural 15b'nin "likidasyon kapatılmaz"
+gerekçesiyle aynı yer). **Bu gözlem tasarımı DEĞİŞTİRMEZ** (§7.1) ve kontrolü de
+etkilemez: `wave_coinflip` aynı stop geometrisini taşır, yani etki iki tarafta da vardır
+ve C-2 farkından DÜŞER.
+
+#### Neden bu ek gerekiyor
+
+Scalp katmanında **kontrol modeli yoktur** (`config.yaml > layers.scalp.models`:
+`scalp_fixed`, `scalp_patient`, `vwap_clone`, `vwap_managed`). `core/metrics.py::
+acceptance_flags` kontrolü kümede bulamayınca ilgili koşulu düşürür, yani `edge` bayrağı
+fiilen `avg_r > 0`'a iner. §6h > 7 bunu zaten dürüstçe yazıyordu ("C-2 ve C-3
+değerlendirilemez"); bu ek, C-2'yi **ölçülebilir** hâle getirir. C-3 hâlâ
+değerlendirilemez ve bu ek onu AÇMAZ (çıpa eklemek ayrı bir karardır).
+
+**`scalp_coinflip` bu modelin kontrolü OLAMAZ** ve gerekçesi kural 14'ün kendisidir: o
+model scalp kollarının stop geometrisini (`stop_atr_multiple` 5.0 × ATR, %1 taban)
+taşıyacak, `wave_scalp` ise `p2 ∓ dalga1 × 0.15` taşıyor. İki farklı stop ölçeği demek,
+⚠B bandının yanması ve `cost_per_r`nin kıyaslanamaz olması demektir — yani fark
+"seçimin ölçüsü" olmaktan çıkar, "iki maliyet ölçeğinin farkı" olur (CLAUDE.md > Rapor
+Kolonları'nın tam olarak reddettiği kıyas). Bugün `scalp_coinflip` depoda YOKTUR; bu satır
+o model geldiğinde yanlış kontrolün seçilmesini engellemek için şimdi yazılıyor.
+
+#### Model: `wave_coinflip` (`strategies/wave_coinflip.py`)
+
+`wave_scalp`ten TÜRER. Zigzag eşiği, dalga-3 kuralı, seviye geometrisi, 12 hücreli bandit
+ızgarası, epsilon-greedy seçim sırası, üç aşamalı çıkış yönetimi, evren ve limitler
+**birebir aynıdır** — miras alınır, kopyalanmaz (`scalp_patient`in `ScalpFixed`ten
+türemesiyle aynı desen ve aynı gerekçe: kopyalanan bir kural bir gün sessizce ayrışır ve
+fark "seçimin ölçüsü" olmaktan çıkar).
+
+**Ayrışan TEK şey yöndür:** kurulumun yönü **adil bir yazı-tura** ile belirlenir.
+
+- "Aynı" gelirse sinyal `wave_scalp`in ürettiğinin birebir aynısıdır.
+- "Ters" gelirse yön çevrilir ve **stop ile hedef MESAFELERİ girişin öbür tarafına aynen
+  yansıtılır:**
+
+  ```
+  stop_ters   = giriş + (giriş − stop_özgün)
+  hedef_ters  = giriş + (giriş − hedef_özgün)
+  ```
+
+  Böylece `|giriş − stop|` ve `|hedef − giriş|` KORUNUR, `sl < giriş < tp` yapısı yönün
+  gerektirdiği tarafa geçer. Mesafeleri korumak S1'in ön koşuludur: yansıtma mesafeyi
+  değiştirseydi kontrol başka bir maliyet ölçeğinde koşar ve ⚠B yanardı — yani tam olarak
+  `scalp_coinflip`i reddetme gerekçemize kendimiz düşerdik.
+
+**Yazı-tura AYRI bir RNG akışındandır:** `random.Random(f"{random_seed}:{as_of}:
+wave_coinflip:{symbol}")`. Bandit'in ε çekilişi kendi akışında kalır
+(`{random_seed}:{as_of}:{model_adı}`) ve yazı-tura ona DOKUNMAZ. Paylaşılan tek bir akış,
+yazı-turanın ε dizisini kaydırması ve kontrolün kombinasyon seçimlerinin yön çekilişine
+bağlanması demekti — o zaman ölçülen şey "yönün katkısı" olmaktan çıkardı.
+
+**Bandit kontrolün KENDİ kapanmış işlemlerinden öğrenir** (kural 16) ve bu, modelin
+yapısının parçasıdır — kapatılmaz. Bedeli önceden yazılıyor: iki modelin kombinasyon
+seçimleri zamanla AYRIŞIR, çünkü posteriorları farklı defterlerden beslenir. Bu
+beklenen bir durumdur, raporlanır ve S1 toleransının (aşağıda) gerekçesinin bir
+parçasıdır. Alternatif — kontrolün `wave_scalp`in posteriorunu okuması — kural 4'ü
+(izolasyon) delerdi.
+
+**Denetim izi:** `reason` kuyruğuna `coin=same|flipped` eklenir. Yazı-turanın gerçekten
+adil olduğu (S2) yalnızca bu etiketten okunabilir.
+
+**Statü:** yarışmacı (`is_replica=False`, `is_benchmark=False`) — `wave_scalp` ile aynı
+sütunda, aynı boyutlandırmayla ve aynı maliyetle koşar; kabul çıtasının kontrolü olmasının
+şartı budur (`random_ctrl`ün `is_benchmark` olmamasıyla aynı gerekçe). `REGISTRY`de durur,
+**hiçbir katmanın `models` listesinde YOKTUR.**
+
+#### Kontrol bağlantısı — AÇIKÇA verilir, katmanın varsayılanı kullanılmaz
+
+`scripts/backtest_wave.py` kontrolü `control_model="wave_coinflip"` olarak açıkça geçirir
+ve değer `manifest.json > deviations.control_model`a yazılır. Katmanın kök varsayılanı
+(`acceptance.control_model` = `random_ctrl`) bu koşuda KULLANILMAZ ve bu bir sessiz
+tercih değil, manifest'te görünen bir karardır.
+
+Gerekçe ileriye dönüktür: scalp katmanı bir gün `scalp_coinflip` alırsa katmanın
+varsayılanı ona kayabilir ve o, wave için YANLIŞ kontroldür (yukarısı). Varsayılana
+güvenmek, doğru kontrolün bir başka modelin eklenmesiyle sessizce değişebilmesi demekti.
+
+#### Ölçümler — hipotez DEĞİL, BH paydasına (§6c) GİRMEZ
+
+Sicile yeni satır açılmaz: bu ek bir modelin performansı hakkında yeni bir iddia
+taşımıyor, mevcut bir kapının (C-2) ölçülebilmesini sağlıyor. §6c'nin 5. satırı
+(`wave_scalp`) olduğu gibi kalır.
+
+| # | Ölçüm | Tahmin / kural |
+|---|---|---|
+| **S1** | `avg_stop_distance_pct` farkı, `wave_scalp` ↔ `wave_coinflip` | **< %10 bağıl.** Aşarsa **C-2 OKUNMAZ** ve bu sonuca yazılır |
+| **S2** | kontrolün "ters" oranı (`coin=flipped` payı) | **0.5 ± 0.05** |
+| **M1** | kontrolün dönem A ort. R'si | %95 CI, **−`cost_per_r`'yi KAPSAR** (bilgisiz yön ≈ −maliyet) |
+| **C-2** | `wave_scalp.avg_r − wave_coinflip.avg_r` | §4'teki hâliyle: **≥ 0.15R** (artı bootstrap CI alt sınırı > 0) |
+
+**S1 toleransı %10'dur ve bu sayı koşudan ÖNCE sabittir.** Scalp raporundaki %1 DEĞİL,
+çünkü wave'de iki model aynı kurulumları GARANTİ ETMEZ: (a) bandit posteriorları ayrı
+defterlerden beslenir ve kombinasyon seçimleri ayrışır, (b) dolumlar ayrışır ve
+`max_positions` doluluğu zamanla farklılaşır, (c) `max_short_positions` (3) YÖNLE
+etkileşir — yazı-tura short üretince kota bağlar ve kontrol o kurulumu hiç açmaz. Üçü de
+mesafe dağılımını kaydırabilir. **Tolerans sonuca göre GEVŞETİLMEYECEKTİR** (§7.1); S1
+aşılırsa C-2 okunmaz ve sebebi yazılır.
+
+**M1 bir KAPI değil, bir tutarlılık kontrolüdür.** Bilgisiz bir yön seçiminin beklenen
+değeri sıfırdır ve gerçekleşen R, friksiyon kadar altındadır; CI bunu kapsamıyorsa ölçülen
+şey yönün bilgisizliği değil başka bir şeydir (ör. yansıtmanın mesafeyi bozması) ve önce o
+araştırılır.
+
+#### Koşu kuralları
+
+- **Dönem A'da `wave_coinflip` koşulur:** aynı pencere, aynı `random_seed`, aynı config,
+  portföy koşusu. `wave_scalp` **YENİDEN KOŞULMAZ** — mevcut sonucu kullanılır (determinizm
+  `random_seed` ile garanti; aynı girdiler aynı defteri verir).
+- **Dönem B'de (Aşama 3) kontrol, sadık sürüm ve varyantla AYNI koşuda çalışır.** Bu,
+  §6h > 9'a eklenen bir kuraldır: üç satırın aynı barları, aynı kotayı ve aynı
+  dolumları görmesi, aralarındaki farkın koşu koşullarından gelmemesinin şartıdır.
+- **Kontrolün tohumu tek seferliktir** ve farklı tohumla yeniden koşulmaz (§6g >
+  Kontrolün TOHUMU ile birebir aynı gerekçe: C-2 bir FARKA dayanır ve tohum serbest
+  bırakılsaydı "kontrol kötü çıkana kadar yeniden çek" mümkün olurdu).
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
