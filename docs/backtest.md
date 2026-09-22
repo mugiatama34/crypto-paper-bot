@@ -121,6 +121,18 @@ Bir model ancak aşağıdakilerin **tamamı** sağlanırsa canlıya alınır:
 bu durumu zaten `logger.warning` ile söyler ve koşul düşer. Scalp'e bir çıpa eklemek AYRI
 bir karardır; bu belge onu varsaymaz ve eksik çıtayı geçilmiş çıta gibi göstermez.
 
+⚠ **C-2 de bu katmanda değerlendirilemiyordu — ve bu YAZILI DEĞİLDİ.** Yukarıdaki paragraf
+C-3 için yazıldığında C-2 aynı durumdaydı: `layers.scalp.models` listesinde kontrol
+(`random_ctrl`) de yoktu, yani `edge` bayrağının marj, güven aralığı ve çıpa koşullarının
+ÜÇÜ birden düşüyor ve bayrak fiilen `avg_r > 0`'a iniyordu. Eksik bir çıtanın geçilmiş
+çıta gibi görünmesi tam olarak bu paragrafın engellemek için var olduğu şeydi; C-3 için
+yazılıp C-2 için yazılmaması bir denetim boşluğuydu. **Kapatıldı:** katmanın kendi
+kontrolü `scalp_coinflip`tir (ön-kayıt §6h, karar 54) ve C-2 o model kendi örneklem
+kapısını (`acceptance.control_min_trades`) geçtiğinde ölçülebilir hâle gelir. O güne kadar
+`control_ready = False` olduğu için `edge` **değerlendirilemez** kalır — bu bir gerileme
+değil, kapının doğru çalışmasıdır: önceki hâlinde `scalp_patient` birkaç gün içinde
+`passed: true` gösterecekti ve o bayrak §4'ün çıtasının karşılığı olmayacaktı.
+
 ---
 
 ## 5. Bilerek kabul edilen sapmalar
@@ -385,6 +397,23 @@ kalacaktır.
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
 hakkında bir iddia taşımaz), 2'si reddedildi (işlem sıklığı tavanı, sembol eleme), 3'ü
 kuyrukta (maliyet modeli, rejim filtresi, portföy tavanı).
+
+**İKİNCİ araştırma turu (2026-09-22, `scalp_patient` incelemesi) — 6 öneri.** Ayrı
+sayılırlar çünkü ayrı bir turdur; tek bir sayaca toplamak, iki turun hangi soruları
+sorduğunu birbirine karıştırırdı. Dağılım:
+
+- **3'ü ÖLÇÜM** ve sicile girmez: katmanın kontrolü (§6h), `ScalpModel` survey'i (§6h),
+  eşleştirme kaybının niceliği (tek backtest koşusu, yeni kod istemez). Üçü de bir modelin
+  performansı hakkında iddia taşımaz.
+- **3'ü HİPOTEZ** ve BH paydasına GİRECEK — ama **henüz ön-kayıtlı değiller ve bu yüzden
+  sicilde satırları YOK**: piyasa-arındırılmış sürüklenme çıtası, kol ayrıştırması
+  (`scalp_patient_orb` / `_rsi2`), maliyet kaldıracının üst sınırı. Her biri koşulmadan
+  ÖNCE kendi ön-kayıt bölümünü ve sicil satırını alacaktır. Burada adlarıyla anılmalarının
+  sebebi paydanın kendisi değil, **kaç denemenin düşünüldüğünün görünmesidir** — 3. satırın
+  sicilde durma gerekçesiyle aynı.
+- **6'sı REDDEDİLDİ** ve gerekçeleri karar 54'te yazılı: zaman stop'u sınırını taşımak,
+  stop çarpanını küçültmek, volatilite kapısını yeniden açmak, seans/kayıp serisi filtresi,
+  korelasyon tavanı, mevcut modele trailing eklemek.
 
 ### Çoklu karşılaştırma düzeltmesi: Benjamini-Hochberg
 
@@ -1808,6 +1837,174 @@ long-only bir top-k modelin boğa dönemlerinde al-tut'un gerisinde kalması bek
 Canlıya alınmayı. `xsec` katmanının tetikleyicisi yoktur ve kapılar geçilse bile
 `run-xsec.yml` ayrı bir karardır — `ema` katmanının bugünkü statüsünün aynısı. Kod
 ölçülmeden yarışmaz; ölçülüp geçse bile canlıya alınması otomatik değildir.
+
+---
+
+## 6h. ÖN-KAYIT — `scalp` katmanının KONTROLÜ (`scalp_coinflip`) ve `ScalpModel` survey'i
+
+**İkisi de ÖLÇÜMDÜR, hipotez DEĞİL.** Bir modelin performansı hakkında iddia taşımazlar;
+§6c'nin sicil tablosuna satır açmazlar ve BH paydasına girmezler (aynı gerekçe: kabul
+kapısı, belge senkronu, dolum belirsizliği sayımı). Yine de ön-kayıtlıdırlar, çünkü ikisi
+de **sayı üretir** ve o sayıların nasıl okunacağı koşudan önce yazılmalıdır.
+
+### Sorunun kanıtı — C-2 scalp'te değerlendirilemiyordu ve bu YAZILI DEĞİLDİ
+
+`config.yaml > layers.scalp.models` bugün `["scalp_fixed", "scalp_patient", "vwap_clone",
+"vwap_managed"]`. Bu listede kontrol (`random_ctrl`) YOK, çıpa (`buyhold`) da YOK.
+
+`core/metrics.py::_flags_for`de `edge` beş koşulun VE'sidir ve üçü kümede kontrol/çıpa
+olmadığında DÜŞER:
+
+| koşul | kontrol/çıpa yokken |
+|---|---|
+| `control_ready` | `_control_trades` None döner → `True` (kapı düşer, engellemez) |
+| `avg_r - control_avg_r >= edge_margin_r` | `control_avg_r` nan → koşul düşer |
+| `ci_low > 0.0` | `diff_ci` boş örneklemden nan → koşul düşer |
+| `total_return > benchmark_return` | `benchmark_return` nan → koşul düşer |
+| `avg_r > 0.0` | **tek ayakta kalan koşul** |
+
+Yani **scalp katmanında `edge` bayrağı bugün kelimenin tam anlamıyla `avg_r > 0`
+demektir.** `docs/backtest.md > 4` C-3'ün bu katmanda değerlendirilemediğini yazıyordu;
+**C-2'nin de düştüğü hiçbir yerde yazılı değildi** ve ikisi aynı statüdeydi. Bu bölüm o
+boşluğu kapatır.
+
+Pratik aciliyet: `scalp_patient` `min_trades` kapısına yaklaşıyor. Kapıyı geçtiği anda
+`passed: true` görünecekti ve bu, §4'ün çıtasının karşılığı OLMAYACAKTI.
+
+### Model: `scalp_coinflip` (yarışmacı, referans DEĞİL)
+
+**Ölçtüğü eksen:** *kolun YÖN iddiası bilgi taşıyor mu?*
+
+`ScalpPatient`ten türer. Kollar, ev kapıları (%1 stop tabanı, 1.5R), 5×ATR stop
+geometrisi, 100 barlık zaman stop'u, barda tek sinyal kuralı ve `rng_identity` **birebir
+aynıdır** — yani aynı kurulumları, aynı sırayla, aynı kolla seçer.
+
+| Aynı | Farklı |
+|---|---|
+| kol kümesi, kurulum geometrisi, stop mesafesi, hedef/stop oranı, ev kapıları, zaman stop'u (100 bar), kol çekilişi ve sembol çekilişi, boyutlandırma, maliyet, funding, likidasyon | **yön**: kapılardan geçmiş kurulumun yönü adil bir yazı-turayla belirlenir |
+
+**Yön çevrildiğinde geometri YANSITILIR, yeniden kurulmaz.** Stop ve hedef *mesafeleri*
+girişin öbür tarafına aynen taşınır. Sonuç: `stop_distance_pct` ve `reward_risk` çevirme
+işleminden ETKİLENMEZ — kontrolün maliyet ölçeği tanım gereği `scalp_patient`inkiyle
+aynıdır ve kural 14'ün bandı ikisini aynı hücreye koyar.
+
+**Neden `random_ctrl` değil.** Base katmanının kontrolü scalp geometrisini okumaz: kendi
+stop mantığını taşır, %1 tabanını ve 1.5R kapısını görmez. Katmana eklenseydi
+`avg_stop_distance_pct` ayrışır, ⚠B bandı yanar ve `cost_per_r` kıyaslanamaz hâle
+gelirdi — yani kontrol, kıyas zemini olmaktan çıkıp ayrı bir maliyet ölçeğinde koşan
+ikinci bir model olurdu. Yazı-turada bu risk YOKTUR ve bu bir tercih değil bir
+özdeşliktir.
+
+**Çekiliş NEDEN paylaşılıyor.** CLAUDE.md'nin kuralı: *çekiliş, ölçülmeyen eksende
+PAYLAŞILIR, ölçülen eksende BAĞIMSIZDIR.* Burada ölçülen eksen yön; kol ve sembol seçimi
+ölçülmüyor. `rng_identity = "scalp_fixed"` mirasla korunur, böylece kontrol ile
+`scalp_patient` her barda **aynı kurulumu** görür ve aradaki fark yalnızca yöndendir
+(eşleştirilmiş deney — model 12 ↔ 15'in deseni).
+
+**Yazı-tura AYRI bir RNG akışından çekilir.** Tohum
+`random_seed:as_of:scalp_coinflip:<sembol>`; kol/kurulum çekilişinin akışına (`_round_rng`)
+DOKUNULMAZ. Aynı `random.Random` örneğinden çekilseydi akış ilerler ve kontrol,
+`scalp_patient`ten BAŞKA bir kurulum seçerdi — eşleştirme, tam da onu kurmak için eklenen
+şey tarafından bozulurdu. Sembolün tohuma girmesi, aynı barda birden çok kurulum
+fiyatlandığında her birinin bağımsız yazı-tura görmesi içindir.
+
+**Kontrol bir REFERANS değil yarışmacıdır** (`is_benchmark = False`) ve katmanın
+`acceptance.control_model`ü odur. Bilgisiz bir çekilişin sıralamada nerede durduğu
+gizlenecek bir kusur değil, raporlanacak bir sonuçtur (CLAUDE.md > Kabul Çıtası).
+
+### KABUL EDİLEN SAPMA — yansıtılan hedef yapısal engele dayanmaz
+
+`strategies/scalp/arms.py::_maybe_setup` hedefi **projeksiyon ile kolun yapısal engelinin
+YAKIN olanı** yapar. Yön çevrildiğinde hedef mesafesi yansıtılır, yani yeni hedef artık
+ters yöndeki bir engele (VWAP, aralık, Bollinger orta bandı) dayanmaz — o mesafenin ters
+tarafta yapısal bir karşılığı YOKTUR.
+
+**Bu bilinçli ve tek yönlü bir seçimdir.** Alternatif, çevrilmiş yön için engeli yeniden
+hesaplamaktı; o yol `reward_risk`i değiştirir ve kontrolün maliyet ölçeğini
+`scalp_patient`inkinden ayırırdı — yani S1 sağlamasını yapısal olarak imkânsız kılardı.
+Sapmanın bedeli açıkça yazılır: **kontrolün hedefi bir tezden değil bir simetriden
+gelir.** Ölçülen şey zaten "yön iddiası bilgi taşıyor mu" olduğu için bu doğru sapmadır —
+kontrolün bir tezi olmamalıdır.
+
+**Denetim izi:** `reason` kuyruğuna `coin=same|flipped` etiketi yazılır. Etiket olmadan
+"kontrol gerçekten çevirdi mi" sorusu defterden cevaplanamazdı.
+
+### ÖN-KAYITLI ÖLÇÜMLER (sonucu görmeden)
+
+| # | Ölçüm | Tahmin | Nereden okunur |
+|---|---|---|---|
+| **M1** | kontrolün ortalama R'si, kendi n ≥ 30'unda | %95 bootstrap CI hem `0`'ı hem `−cost_per_r`yi KAPSAR (bilgisiz yön ≈ −maliyet) | `metrics_scalp.json > models[scalp_coinflip]` |
+| **M2** | `scalp_patient.avg_r − scalp_coinflip.avg_r` | ≥ 0.15R **ve** farkın bootstrap alt sınırı > 0 | `acceptance.models[scalp_patient]` — bu, `scalp_patient` için **C-2'nin ta kendisidir** |
+| **S1** | stop mesafesi farkı | `|patient − coinflip| / patient < %1` | `avg_stop_distance_pct`, iki satır |
+
+**S1 bir SAĞLAMADIR, bir tahmin değil.** Sağlanmazsa M1 ve M2 **okunmaz**: kontrol
+bozulmuş demektir (yansıtma geometriyi korumamış ya da çekiliş ayrışmış). Karar 36'nın P2
+deseninin aynısı — mekanik bir geçerlilik kontrolü, sonucun kendisi değil.
+
+**M1 neden `−cost_per_r` civarında.** Yön bilgisizse brüt beklenen değer sıfırdır (5×ATR
+stop ↔ 10×ATR hedef geometrisinde `(1/3)(+2R) + (2/3)(−1R) = 0`) ve geriye yalnızca
+friksiyon kalır. CI'nin sıfırı da `−cost_per_r`yi de kapsaması beklenir çünkü n=30'da
+aralık geniştir; **bu bir "başarısızlık" tahmini değil, kontrolün DOĞRU çalıştığının
+tahminidir.** M1 tutmazsa (CI tamamen sıfırın üstünde ya da altında) kontrolün kendisi bir
+şey ölçüyor demektir ve önce o araştırılır.
+
+### Kontrolün TOHUMU (scalp) — SABİT ve tek seferlik
+
+**`random_seed = 20240217`** (`config.yaml`, kök) — `xsec_random`ınkiyle aynı sayı ve aynı
+söz (§6g > Kontrolün TOHUMU): **koşu tek seferliktir, farklı tohumla yeniden
+koşulmaz.** M2 bağlayıcı bir kapıdır (C-2) ve tohum serbest bırakılsaydı "kontrol kötü
+çıkana kadar yeniden koş" mümkün olurdu. Bilgisiz bir çekiliş de yeniden çekilebilir;
+kontrolü manipülasyona kapatan şey bilgisizliği değil tohumunun sabitliğidir.
+
+Tohum değişirse koşu **yeni bir tez** sayılır ve §6c'ye ayrı bir satır olarak girer.
+
+### KAPSAM — bu ön-kayıt neyi ÖLÇMÜYOR
+
+- **`scalp_patient`in kendi eksenini.** Süre ekseni (`scalp_fixed ↔ scalp_patient`) bu
+  karardan bağımsızdır ve değişmez; kontrol onun ÜSTÜNE bir kapı koymaz, yanına bir zemin
+  koyar.
+- **C-3'ü.** Scalp katmanında hâlâ çıpa yoktur ve §4'ün o satırı düşmeye devam eder.
+  Çıpa eklemek AYRI bir karardır; bu ön-kayıt onu varsaymaz.
+- **Canlıya alınmayı.** `scalp` bir KÂĞIT ölçüm katmanıdır; C-2'nin ölçülebilir hâle
+  gelmesi hiçbir modeli gerçek parayla işleme sokmaz.
+
+### `ScalpModel.take_survey` — kol × eleme sebebi sayımı
+
+**Denetim izidir (kural 15):** sinyalleri, sıralarını, çekilişi ve dolumları
+DEĞİŞTİRMEZ. `rejections` "emir neden dolmadı"yı sayar; survey "sinyal neden hiç
+üretilmedi"yi.
+
+Gerekçe karar 34 ve 48'in açık işidir: `momentum_burst` ve `funding_spike_fade` katmanın
+tüm ömrü boyunca tek sinyal üretmedi. Birincisinin sebebi türetildi (kapı aritmetiği),
+**ikincisininki BİLİNMİYOR** — çünkü `ScalpModel` sayım tutmuyor ve tur raporunda
+`survey: {}` duruyor. `scalp_vol` (model 17) sayım tutar ama katmanda koşmaz, yani bugün
+hiçbir canlı scalp modeli bu soruyu cevaplayamıyor.
+
+Sayım **kol × sebep** olarak tutulur (`<kol>:<sebep>`), çünkü "kaç kurulum elendi" sorusu
+kol bilinmeden okunamaz: ölü kolun teşhisi tam olarak "HANGİ kolun kurulumları nerede
+öldü"dür.
+
+**Ayrık sayım sağlaması (mekanik, testle sabit):** her bar, her kol için sebeplerin
+toplamı o kolun taradığı sembol sayısına eşittir. `vwap` modellerinin `Σ counts ==
+examined` sözleşmesinin aynısı. Kümülatif kova (`extensions`) YOKTUR — bu kolların
+ölçeklenecek tek bir sürekli değişkeni yok.
+
+**ÖN-KAYITLI ÖLÇÜMLER** (30 tur sonra okunur; ikisi de bir modelin performansı hakkında
+iddia DEĞİL):
+
+| # | Ölçüm | Tahmin |
+|---|---|---|
+| **V1** | `funding_spike_fade`in kurulumları hangi sebepte eleniyor | **TAHMİN YAZILMIYOR** — sebep bilinmiyor; tahmin yazmak, bilinmeyeni bir beklentiye çevirirdi |
+| **V2** | `momentum_burst`ün elendiği sebep | kurulumların ~tamamı `hedef_stop_alti`nda (1.5R kapısı), `kurulum_yok`ta DEĞİL — karar 34'ün türetimi |
+
+**V1'e tahmin yazılmaması bilinçlidir.** Karar 48 sebebin bilinmediğini açıkça kaydetti;
+bir tahmin uydurmak, ölçümün cevaplayacağı soruyu önceden cevaplamış gibi görünürdü. Ölçüm
+bir tahmini sınamak için değil, bir BOŞLUĞU kapatmak için yapılıyor.
+
+**V2 tutmazsa karar 34'ün aritmetiği eksiktir** ve karara bir DÜZELTME alt başlığıyla
+yazılır (karar 50'nin "~300-400 kayıt tavanı" okumasının çürümesiyle aynı desen). Bu cümle
+sonucu görmeden yazıldı: düzeltmenin nereye yazılacağı sonradan kararlaştırılırsa,
+yazılmama ihtimali doğar.
 
 ---
 
