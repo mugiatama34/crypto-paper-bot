@@ -439,6 +439,7 @@ defter yazan modeller), **katalog** (`strategies/registry.py`'de kayıtlı ama l
 |---|---|---|---|
 | 12 | `scalp_fixed` | long + short | beş kol (üçü canlı, bkz. karar 48), eşit ağırlıklı çekiliş, öğrenme yok — eksenlerin KONTROLÜ |
 | 16 | `scalp_patient` | long + short | `scalp_fixed`in ikizi, tek farkı zaman stop'u sınırı (16 ↔ 100 bar) |
+| 21 | `scalp_coinflip` | long + short | `scalp_patient`in ikizi, tek farkı YÖNÜN adil yazı-turayla belirlenmesi — katmanın **KONTROLÜ** (`acceptance.control_model`, karar 54) |
 | 13 | `vwap_clone` | long + short | **dış sistem kopyası** (kural 15b), yarışmacı değil |
 | 14 | `vwap_managed` | long + short | VWAP sapma-dönüş sinyali, ev kurallarıyla (risk boyutlandırma, %1 taban, 1.5R) |
 

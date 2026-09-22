@@ -27,6 +27,7 @@ from strategies.meanrev import MeanReversion
 from strategies.momentum import Momentum
 from strategies.random_ctrl import RandomControl
 from strategies.scalp_bandit import ScalpBandit
+from strategies.scalp_coinflip import ScalpCoinflip
 from strategies.scalp_fixed import ScalpFixed
 from strategies.scalp_managed import ScalpManaged
 from strategies.scalp_patient import ScalpPatient
@@ -72,9 +73,15 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     #   scalp_managed — scalp_fixed'in ikizi, tek farkı üç aşamalı çıkış yönetimi
     ScalpManaged.name: ScalpManaged,
     # scalp_patient — scalp_fixed'in ikizi, tek farkı zaman stop'unun SINIRI (16 ↔ 100).
-    # Katmanın `models` listesinde YOKTUR: canlıya alınmadan önce taze bir OOS penceresinde
-    # doğrulanmalı (docs/backtest.md > 4, C-5). Backtest onu `--models` ile çağırır.
+    # Katmanın `models` listesinde VARDIR (karar 33): `scalp` bir KÂĞIT ölçüm katmanıdır
+    # ve ileriye dönük kanıt ancak orada birikir. Bu, canlıya alma eşiğinin geçildiği
+    # anlamına GELMEZ — C-1 sağlanmıyor (docs/backtest.md > 4).
     ScalpPatient.name: ScalpPatient,
+    # scalp_coinflip — scalp_patient'in ikizi, tek farkı YÖNÜN adil yazı-turayla
+    # belirlenmesi. Katmanın KONTROLÜDÜR (acceptance.control_model) ve yarışmacıdır:
+    # onsuz `edge` bayrağının marj/CI/çıpa koşullarının üçü birden düşüyor ve bayrak
+    # fiilen `avg_r > 0`a iniyordu. Ön-kayıt: docs/backtest.md > 6h, karar 54.
+    ScalpCoinflip.name: ScalpCoinflip,
     # scalp_vol — scalp_patient'in ikizi, tek farkı KESİTSEL volatilite rejimi kapısı.
     # Katmanın `models` listesinde YOKTUR: önce taze bir OOS penceresinde ölçülür.
     ScalpVol.name: ScalpVol,

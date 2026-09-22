@@ -352,7 +352,11 @@ layers:
     # tetiklemedi, yani bandit'in tahsis edecek bir şeyi yok ("1 uygun kol"). Eksenleri
     # kapatmak bilgi kaybı değil, iki kez alınan "fark yok" cevabını kabul etmektir.
     # Hareket eden TEK eksen süredir (scalp_patient ↔ scalp_fixed: −0.01 ↔ −0.15).
-    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
+    # scalp_coinflip KONTROLDÜR (karar 54, ön-kayıt docs/backtest.md > 6h): listede
+    # kontrol yokken `edge` bayrağının marj, güven aralığı ve çıpa koşullarının ÜÇÜ
+    # birden düşüyordu (core/metrics.py::_flags_for) ve bayrak fiilen `avg_r > 0`
+    # demekti — scalp_patient örneklem kapısını geçtiği anda `passed: true` görünecekti.
+    models: ["scalp_fixed", "scalp_patient", "scalp_coinflip", "vwap_clone", "vwap_managed"]
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle
@@ -379,6 +383,14 @@ layers:
 
     ledger_dir: "ledgers_scalp"
     metrics_file: "docs/data/metrics_scalp.json"
+
+    # Kontrol bu katmanda `scalp_coinflip`tir: E kapısı onun ortalama R'sine göre ölçülür.
+    # Kök değer (`random_ctrl`) bu katmanda YOKTUR ve bırakılsaydı kapı kümede olmayan bir
+    # modele bakıp sessizce düşerdi — `xsec` katmanının aynı gerekçesi (CLAUDE.md > Kabul
+    # Çıtası). Kontrol kendi örneklem kapısını (control_min_trades) geçene kadar `edge`
+    # DEĞERLENDİRİLEMEZ kalır; bu bir gerileme değil, kapının doğru çalışmasıdır.
+    acceptance:
+      control_model: "scalp_coinflip"
 
     # Stop mesafesi tavanı (kural 14) scalp'te 8×ATR'dir, 3× değil. Gerekçe: scalp
     # modellerinin stop TABANI %1'dir (tur maliyeti ~%0.25; daha dar stop'ta maliyet

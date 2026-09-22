@@ -4279,3 +4279,136 @@ getirisi** olmalıdır, ortalama R değil. Ort. R kolonu katman İÇİNDE okunur
   yaklaşan kurulumlar "Gelişmiş" altında varsayılan kapalı panellerde duruyor; metodoloji
   metni "Nasıl okunur?" bölümünde. Silmek, her biri bir kararın kaydı olan gerekçeleri
   kaybetmek olurdu — katlamak yalnızca sayfanın asıl işini öne alır.
+
+## 54. Scalp katmanına KONTROL ve survey: `edge` bayrağı bir kapı değil, bir tekrardı
+
+**Sorun.** `config.yaml > layers.scalp.models` listesi `["scalp_fixed", "scalp_patient",
+"vwap_clone", "vwap_managed"]`di. Bu listede kontrol (`random_ctrl`) YOK, çıpa (`buyhold`)
+da YOK. `core/metrics.py::_flags_for`de `edge` beş koşulun VE'sidir ve üçü kümede
+kontrol/çıpa olmadığında DÜŞER:
+
+| koşul | kontrol/çıpa yokken |
+|---|---|
+| `control_ready` | `_control_trades` None → `True` (kapı düşer, engellemez) |
+| `avg_r − control_avg_r >= edge_margin_r` | `control_avg_r` nan → düşer |
+| `ci_low > 0.0` | boş örneklem → nan → düşer |
+| `total_return > benchmark_return` | `benchmark_return` nan → düşer |
+| `avg_r > 0.0` | **tek ayakta kalan koşul** |
+
+Yani scalp katmanında `edge` bayrağı **kelimenin tam anlamıyla `avg_r > 0`** demekti.
+`docs/backtest.md > 4` C-3'ün bu katmanda değerlendirilemediğini yazıyordu; **C-2'nin de
+düştüğü hiçbir yerde yazılı değildi.** İkisi aynı statüdeydi ve biri yazılıp öteki
+yazılmamıştı — paragrafın engellemek için var olduğu şey tam olarak buydu.
+
+**Aciliyet ölçüldü.** `scalp_patient` 22 kapanmış pozisyonda (`metrics_scalp.json`,
+as_of 2026-09-22T06:30Z) ortalama R +0.4498 ve `sample: false` (22 < 30). Bugünkü kadansla
+(4.05 işlem/gün) kapı ~2 günde geçiliyordu ve o anda `passed: true` görünecekti. O bayrak
+§4'ün çıtasının karşılığı OLMAYACAKTI.
+
+⚠ Aynı defterde `market_r = +0.4077` duruyor: beta=1 varsayımı altında ortalama R'nin
+neredeyse tamamı BTC'nin o penceredeki hareketiyle açıklanabiliyor. Yani bayrak yalnızca
+zayıf değil, yanlış okunmaya da en açık anda zayıftı.
+
+**Karar.** Katmana kendi kontrolü eklendi (`scalp_coinflip`) ve `ScalpModel` sayım tutmaya
+başladı. İkisi de ÖLÇÜMDÜR, hipotez değil: §6c'nin sicil tablosuna satır açmazlar ve BH
+paydasına girmezler. Ön-kayıt koşudan ÖNCE commit edildi (`docs/backtest.md > 6h`,
+commit `7e01fa8`).
+
+### `scalp_coinflip` — neden yazı-tura, neden `random_ctrl` değil
+
+Model `ScalpPatient`ten türer ve **tek farkı yöndür**: ev kapılarından geçmiş kurulumun
+yönü adil bir yazı-turayla belirlenir. Ölçtüğü eksen *kolun YÖN iddiası bilgi taşıyor mu?*
+
+`random_ctrl` katmana eklenemezdi ve gerekçe bir tercih değil bir ÖLÇÜM koşuludur: base
+katmanının kontrolü scalp geometrisini okumaz — kendi stop mantığını taşır, %1 tabanını ve
+1.5R kapısını görmez. Eklenseydi `avg_stop_distance_pct` ayrışır, kural 14'ün bandı (⚠B)
+yanar ve `cost_per_r` kıyaslanamaz hâle gelirdi; yani kontrol, kıyas ZEMİNİ olmaktan çıkıp
+ayrı bir maliyet ölçeğinde koşan ikinci bir model olurdu. Yazı-turada bu risk YOKTUR ve bu
+bir özdeşliktir: **yön çevrilse de stop mesafesi aynı sayıdır.**
+
+Çevirme geometriyi YANSITIR, yeniden KURMAZ (`strategies/scalp_coinflip.py::flip`): stop ve
+hedef mesafeleri girişin öbür tarafına aynen taşınır, yani `stop_distance_pct` ve
+`reward_risk` çevirmeden ETKİLENMEZ (test: `tests/test_scalp_coinflip.py`). Ön-kayıtlı S1
+sağlaması tam olarak budur.
+
+**Çekiliş PAYLAŞILIR** (`rng_identity` mirasla `scalp_fixed`) çünkü ölçülen eksen yön; kol
+ve sembol seçimi ölçülmüyor. Yazı-tura AYRI bir RNG akışından çekilir
+(`random_seed:as_of:scalp_coinflip:<sembol>`) ve bu zorunludur: `_round_rng`in akışından
+çekilseydi akış ilerler, `choose_arm` ve `rng.choice` başka değerler görür ve kontrol
+`scalp_patient`ten BAŞKA bir kurulum seçerdi — eşleştirme, tam da onu kurmak için eklenen
+şey tarafından bozulurdu. Sentetik bir motor koşusuyla doğrulandı: iki model aynı barda
+aynı sembolleri aynı sırada seçiyor ve `coin=same` satırları kaynağınkiyle BİREBİR aynı
+(aynı giriş, aynı stop, aynı hedef).
+
+### KABUL EDİLEN SAPMA — yansıtılan hedef yapısal engele dayanmaz
+
+`arms.py::_maybe_setup` hedefi "projeksiyon ile kolun yapısal engelinin YAKIN olanı" yapar.
+Çevrilmiş yönde o mesafenin yapısal bir karşılığı YOKTUR. Alternatif (engeli ters yön için
+yeniden hesaplamak) `reward_risk`i değiştirir ve S1'i yapısal olarak imkânsız kılardı.
+
+Sapma bilinçlidir ve doğru yöndedir: ölçülen şey "yön iddiası bilgi taşıyor mu" olduğuna
+göre **kontrolün bir tezi OLMAMALIDIR** — hedefi bir tezden değil bir simetriden gelir.
+
+### `ScalpModel.take_survey` — karar 34 ve 48'in açık işi
+
+`momentum_burst` ve `funding_spike_fade` katmanın tüm ömrü boyunca tek sinyal üretmedi.
+Birincisinin sebebi türetildi (kapı aritmetiği, karar 34), **ikincisininki BİLİNMİYOR** —
+çünkü `ScalpModel` sayım tutmuyordu ve tur raporunda `survey: {}` duruyordu. `scalp_vol`
+(model 17) sayım tutar ama katmanda koşmaz, yani hiçbir CANLI scalp modeli bu soruyu
+cevaplayamıyordu.
+
+Sayım **kol × sebep** olarak tutulur (`<kol>:<sebep>`) ve ayrıktır: her kol için
+sebeplerin toplamı o barda taranan sembol sayısına eşittir (test:
+`tests/test_scalp_survey.py`). Ayrıklığın çalışması için `propose_all` iki yan bilgi
+döndürür (`ArmScan`): taranan sembol sayısı ve PATLAYAN kollar — patlayan kol da boş liste
+döndürdüğü için "kurulum üretmedi" ile "çöktü" dönüş değerinden ayırt edilemezdi ve ikisini
+aynı sebebe yazmak bir arızayı olağan bir eleme gibi gösterirdi.
+
+⚠ **KAPSAM SINIRI — `kurulum_yok` kolun İÇİNİ açmaz.** Kolun kendi koşullarından hangisinin
+tutmadığı (funding serisi yok mu, sıçrama tabanın altında mı, VWAP hesaplanamadı mı) bu
+sayımda GÖRÜNMEZ; hepsi tek bir kovaya düşer. Beş kolun iç koşullarını ayrı ayrı
+etiketlemek `arms.py`yi baştan yazmak demekti ve o AYRI bir karardır. Ön-kayıt V1'e tam da
+bu yüzden TAHMİN YAZMADI: `kurulum_yok` baskın çıkarsa cevap **"daha derin sayım
+gerekiyor"** olacaktır, "sebep yok" değil.
+
+`scalp_vol`ün kendi `dusuk_vol`/`gecti` sayaçları KALDIRILDI: aynı olayın kolsuz ve daha
+kaba hâliydiler, ikisini birden tutmak aynı olayı iki ayrıntı düzeyinde iki kez saymak
+olurdu. Ortak sayımda karşılığı olmayan tek sayaç kaldı (`rejim_kapisi_yok`: medyanın
+tanımsız olduğu barlar) ve o, kol bazlı OLMADIĞI için ayrık sayımın dışında durur.
+
+### Yan karar — `extra_tags` kancası
+
+`reason` kuyruğuna `coin=same|flipped` yazabilmek için `ScalpModel`e dar bir kanca eklendi.
+**Bir override NOKTASI değildir** ve "her override bir eksene karşılık gelir" kuralına tabi
+değildir: buradan dönen şey sinyalin hiçbir alanını — yön, stop, hedef, boyut, sıra —
+etkilemez, yalnızca deftere yazılan gerekçeye bir `| anahtar=değer` çifti ekler
+(`take_survey` ile aynı statüde bir denetim izi, kural 15). Alternatif `_signal`ı alt
+sınıfta baştan yazmaktı; o yol sinyal kurulumunu ikinci kez yazmak, yani tam olarak
+`ScalpModel` gövdesinin engellemek için var olduğu şeydi.
+
+Etiket olmadan "kontrol gerçekten çevirdi mi" sorusu defterden CEVAPLANAMAZDI: çevrilmiş
+bir long ile kolun kendi short'u satırda birbirinin aynısı görünür.
+
+### Ne DEĞİŞMEDİ
+
+- **Hiçbir mevcut defter sıfırlanmadı ya da silinmedi** (kural 1). `ledgers_scalp/` altındaki
+  her model kendi geçmişiyle koşmaya devam ediyor.
+- **Hiçbir modelin kuralı değişmedi.** `scalp_patient`, `scalp_fixed`, `vwap_clone` ve
+  `vwap_managed`ın parametreleri, geometrisi, kapıları ve zaman stop'ları aynı
+  (`docs/backtest.md > 7.1`). Süre ekseni (`scalp_fixed ↔ scalp_patient`) bu karardan
+  bağımsızdır: kontrol onun ÜSTÜNE bir kapı koymaz, YANINA bir zemin koyar.
+- **`core/` altında maliyet, dolum, likidasyon ve metrik kuralları değişmedi.** Eklenen tek
+  şey `ScalpModel`in override noktası ve survey kancasıdır; `core/metrics.py`ye hiç
+  dokunulmadı — `edge` zaten doğru yazılmıştı, eksik olan kümedeki kontroldü.
+- **C-3 hâlâ değerlendirilemez:** katmanda çıpa yok. Scalp'e bir çıpa eklemek AYRI bir
+  karardır ve bu karar onu varsaymaz.
+
+### Beklenen kısa vadeli etki — ve bunun bir GERİLEME OLMADIĞI
+
+Kontrol kendi örneklem kapısını (`control_min_trades` = 30) geçene kadar `control_ready`
+False'tur ve `edge` **DEĞERLENDİRİLEMEZ** kalır. Yani `scalp_patient` önümüzdeki günlerde
+`passed: true` GÖRMEYECEK.
+
+Bu bir gerileme değil, kapının doğru çalışmasıdır: önceki hâlinde görünecek olan bayrak,
+belgelenen çıtanın karşılığı değildi. `core/metrics.py` bu durumu zaten `logger.warning` ile
+söylüyor — eksik bir çıtanın geçilmiş çıta gibi görünmemesi kuralının ta kendisi.

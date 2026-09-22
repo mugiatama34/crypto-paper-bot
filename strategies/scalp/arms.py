@@ -42,7 +42,7 @@ matematiğini yazmaz — hepsi `core/indicators.py`'dedir.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
 import pandas as pd
@@ -114,6 +114,21 @@ class ArmSetup:
     @property
     def reward_risk(self) -> float:
         return abs(self.target_price - self.entry_price) / self.stop_distance
+
+
+@dataclass
+class ArmScan:
+    """`propose_all`ın YAN BİLGİSİ: kaç sembol tarandı, hangi kollar patladı.
+
+    Dönüş değerinden okunamayan iki şeyi taşır (bkz. `propose_all`). Sayımın ayrık
+    olması — her kol için Σsebep == taranan sembol — bu iki alana dayanır: `examined`
+    paydayı, `failed` ise "kurulum yok" ile "kol çöktü"nün ayrımını verir.
+
+    `frozen` DEĞİLDİR: çağıran onu boş kurar ve `propose_all` doldurur.
+    """
+
+    examined: int = 0
+    failed: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -523,14 +538,29 @@ ARMS: dict[str, ArmFunction] = {
 ARM_NAMES: tuple[str, ...] = tuple(ARMS)
 
 
-def propose_all(market: MarketData, params: ArmParams) -> dict[str, list[ArmSetup]]:
+def propose_all(
+    market: MarketData,
+    params: ArmParams,
+    *,
+    scan: ArmScan | None = None,
+) -> dict[str, list[ArmSetup]]:
     """Her kolun o turdaki kurulumları. Kol hata verirse tur düşmez, kol boş geçer.
 
     Kolun patlaması modelin turunu tümden düşürseydi, tek bir sembolün bozuk serisi beş
     kolu birden susturur ve iki modelin de o turu sessizce boş geçerdi. Kol bazında
     izolasyon, hatayı hem daraltır hem görünür kılar.
+
+    `scan` verilirse taranan sembol sayısı ve PATLAYAN kollar oraya yazılır — sayımın
+    (`ScalpModel.take_survey`) ihtiyaç duyduğu iki bilgi de dönüş değerinden OKUNAMAZ:
+    patlayan kol da boş liste döndürür ve "kurulum üretmedi" ile "çöktü" aynı görünür.
+    İkisini aynı sebebe yazmak, bir arızayı olağan bir eleme gibi gösterirdi.
+
+    Parametre ZORUNLU DEĞİLDİR ve varsayılan davranış değişmez: sayım tutmayan çağıran
+    (bugün `scripts/proximity.py`) hiçbir şey fark etmez.
     """
     views = symbol_views(market, atr_period=params.atr_period)
+    if scan is not None:
+        scan.examined = len(views)
     results: dict[str, list[ArmSetup]] = {}
     for name, arm in ARMS.items():
         try:
@@ -538,4 +568,6 @@ def propose_all(market: MarketData, params: ArmParams) -> dict[str, list[ArmSetu
         except Exception as exc:
             logger.error("scalp kolu %s %s barında hata verdi: %s", name, market.as_of, exc)
             results[name] = []
+            if scan is not None:
+                scan.failed.add(name)
     return results

@@ -60,7 +60,8 @@ class ScalpVol(ScalpPatient):
 
     def __init__(self, *, config: Mapping[str, object] | None = None) -> None:
         super().__init__(config=config)  # type: ignore[arg-type]
-        self._survey: dict[str, int] = {}
+        # Ortak sayımda karşılığı olmayan TEK sayaç (bkz. `take_survey`).
+        self._undefined = 0
 
     def regime_filter(
         self, setups: Sequence[ArmSetup], market: MarketData
@@ -82,7 +83,7 @@ class ScalpVol(ScalpPatient):
             # Medyan tanımsız/anlamsız: kapı UYGULANMAZ ve bu sessiz olmaz. Elemek,
             # veri boşluğunu bir rejim kararıymış gibi gösterirdi.
             logger.info("%s: evren %d sembol, rejim kapısı uygulanmadı", self.name, len(ratios))
-            self._survey["rejim_kapisi_yok"] = self._survey.get("rejim_kapisi_yok", 0) + 1
+            self._undefined += 1
             return list(setups)
 
         threshold = median(ratios.values())
@@ -96,13 +97,27 @@ class ScalpVol(ScalpPatient):
                     self.name, setup.arm, setup.symbol,
                     (ratio or 0.0) * 100, threshold * 100,
                 )
-                self._survey["dusuk_vol"] = self._survey.get("dusuk_vol", 0) + 1
                 continue
-            self._survey["gecti"] = self._survey.get("gecti", 0) + 1
             kept.append(setup)
         return kept
 
     def take_survey(self) -> Mapping[str, int] | None:
-        """Kapının kaç kurulumu elediği — denetim izi, ölçüme girmez (kural 15)."""
-        survey, self._survey = dict(self._survey), {}
+        """Ortak KOL × SEBEP sayımı + bu modele özgü tek ek sayaç (kural 15).
+
+        Kapının kaç kurulumu elediği artık `ScalpModel`in ortak sayımında `<kol>:
+        rejim_kapisi` olarak duruyor ve KOL BAZINDA — bu modelin eski `dusuk_vol`/`gecti`
+        sayaçları o bilginin kolsuz ve daha kaba hâliydi, yani ikisini birden tutmak aynı
+        olayı iki farklı ayrıntı düzeyinde iki kez saymak olurdu.
+
+        Geriye ortak sayımda KARŞILIĞI OLMAYAN tek şey kalıyor: medyanın tanımsız olduğu
+        (evren < 2 sembol) barların sayısı. Orada kapı hiç UYGULANMAZ ve hiçbir kurulum
+        elenmez, yani `rejim_kapisi` sıfır görünür — "kapı hiçbir şey elemedi" ile "kapı
+        hiç çalışmadı" aynı hücreye düşerdi. Sayaç KOL BAZLI DEĞİLDİR (bar düzeyinde bir
+        olgudur) ve bu yüzden ayrık sayım değişmezinin dışında durur: `Σ` kontrolü
+        yalnızca `<kol>:<sebep>` biçimli anahtarlar üzerinde tanımlıdır.
+        """
+        survey = dict(super().take_survey() or {})
+        if self._undefined:
+            survey["rejim_kapisi_yok"] = self._undefined
+        self._undefined = 0
         return survey or None

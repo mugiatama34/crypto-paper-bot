@@ -115,15 +115,38 @@ def test_the_gate_is_not_applied_when_the_median_is_undefined(
 # --------------------------------------------------------------------------- #
 # Denetim izi (karar 34'ün dersi)
 # --------------------------------------------------------------------------- #
-def test_survey_counts_what_the_gate_dropped(config: dict[str, Any]) -> None:
-    """`momentum_burst`ün ölü olduğu iki backtest sonra öğrenildi çünkü sayım yoktu."""
-    model = ScalpVol(config=config)
+def test_survey_counts_what_the_gate_dropped(
+    config: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`momentum_burst`ün ölü olduğu iki backtest sonra öğrenildi çünkü sayım yoktu.
+
+    Sayım artık ORTAK gövdededir (`ScalpModel.take_survey`, karar 54) ve KOL BAZLIDIR:
+    bu modelin eski `dusuk_vol`/`gecti` sayaçları aynı olayın kolsuz ve daha kaba hâliydi.
+    Bu yüzden sayım `generate_signals` üzerinden okunur — `regime_filter`ı tek başına
+    çağırmak turun yalnızca bir adımını koşturur ve gövdenin sayacı hiç çalışmaz.
+    """
+    import strategies.scalp.model as model_module
+
+    symbols = ("AAA-USDT-SWAP", "DDD-USDT-SWAP")
     data = _market({
         "AAA-USDT-SWAP": 0.05, "BBB-USDT-SWAP": 0.10,
         "CCC-USDT-SWAP": 5.00, "DDD-USDT-SWAP": 8.00,
     })
-    model.regime_filter([_setup(s) for s in ("AAA-USDT-SWAP", "DDD-USDT-SWAP")], data)
-    assert model.take_survey() == {"dusuk_vol": 1, "gecti": 1}
+
+    def stub(market_data: MarketData, params: Any, *, scan: Any = None) -> dict[str, list[ArmSetup]]:
+        if scan is not None:
+            scan.examined = len(symbols)
+        return {"momentum_burst": [_setup(symbol) for symbol in symbols]}
+
+    monkeypatch.setattr(model_module, "propose_all", stub)
+
+    model = ScalpVol(config=config)
+    model.generate_signals(data)
+    survey = dict(model.take_survey() or {})
+
+    # AAA evrenin medyanının ALTINDA (elenir), DDD üstünde (geçer ve oynanır).
+    assert survey.get("momentum_burst:rejim_kapisi") == 1
+    assert survey.get("momentum_burst:secildi") == 1
     assert model.take_survey() is None, "okunan sayım sıfırlanır, tur tur birikmez"
 
 
