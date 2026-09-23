@@ -2687,10 +2687,47 @@ gerekçesi.
 pozisyon taşır, karma yön üreten `dc_coinflip` ise 5 — ölçülen eksenle (yön seçimi)
 ilgisi olmayan bir **kapasite asimetrisi**, ve E kapısının farkını kısmen kapasite
 farkından üretirdi. Kotayı `max_positions`e eşitlemek iki modelin taşıma kapasitesini
-eşitler. ⚠ Bu, katman bloğunun bugüne kadar taşımadığı bir ayar sınıfıdır (bugün yalnızca
-`max_stop_atr_multiple` katman başına ayrışıyor). Sınır korunur: `risk_per_trade`,
-`fee_rate`, `slippage_*`, `leverage_cap`, `initial_capital`, `maintenance_margin` kökte
-kalır — kural 6'nın kendisi orasıdır.
+eşitler. ⚠ Bu, depo tarafından KORUNAN bir değişmezin bilerek daraltılmasıdır — bkz.
+TADİLAT-2 (ilk metin burada "katman bloğunun taşımadığı bir ayar sınıfı" diyordu ve eksik
+anlatıyordu).
+
+### TADİLAT-2 — kota override'ı KORUNAN bir değişmezi daraltıyor *(koşudan önce, uygulama testleri koşarken, hiçbir sonuç görülmeden)*
+
+> **Önceki iddia YANLIŞTI.** Plan aşamasında ve ön-kayıt metninde (`03e9e2e`)
+> `max_short_positions`ı katman bloğunda ezmenin **"yapısal olarak izinli"** olduğu yazıldı.
+> Bu, `max_stop_atr_multiple`ın katman başına ayrışmasından yapılmış yanlış bir
+> genellemeydi. Kota sabitleri katmanlar arası PAYLAŞILIR ve depo bunu bir testle korur:
+> `tests/test_layers.py::test_cost_and_risk_constants_are_identical_in_every_layer`,
+> `max_positions` ve `max_short_positions`ı `fee_rate`, `risk_per_trade`, `leverage_cap`
+> ile AYNI listede — kural 6'nın paylaşılan sabitleri olarak — sayar. Uygulama o test
+> kırmızıya döndüğünde bulundu. Kullanıcı kararı öncülün yanlış olduğu bilinerek YENİDEN
+> verildi.
+
+**Karar: 5 kalır, değişmez DAR bir istisnayla daraltılır.** Gerekçe projenin birinci
+ilkesidir (CLAUDE.md > Amaç: ölçümün adilliğini bozan her şey reddedilir): kök değerle
+short-only model 3, karma yönlü kontrolü 5 pozisyon taşır ve bu kapasite asimetrisi E
+kapısının farkına sızar — yani ölçülen eksen (yön) ile ölçülmeyen bir değişken (kapasite)
+karışır.
+
+**İstisnanın sınırları — mekanik olarak sabitlenir:**
+
+- Test anahtarı paylaşılan listeden **ÇIKARMAZ.** İzinli katman başına kota istisnaları
+  AÇIKÇA sayılır (`{dc: {max_short_positions}}`); başka her katmanın ayrışması ve bu
+  katmanın başka her sabitte ayrışması yine kırmızıdır.
+- İstisna yalnızca KOTA anahtarlarına açıktır (`max_positions`, `max_short_positions`).
+  Maliyet ve risk-oranı sabitleri (`fee_rate`, `slippage_*`, `risk_per_trade`,
+  `leverage_cap`, `initial_capital`, `maintenance_margin`, `random_seed`) istisna
+  listesine GİREMEZ — test bunu da sınar.
+- İstisna ölü kalamaz: listedeki anahtar katmanda gerçekten ayrışmıyorsa test kırmızıdır
+  (bayat bir istisna, bir gün sessizce kullanılabilecek bir delik olurdu).
+
+**Neden kotayı paylaşılan bir sabit saymak hâlâ doğru — ve neden bu istisna onu
+çürütmüyor.** Kota bir risk varsayımıdır: katmanlar arası ayrışsaydı "aynı kurallar" iddiası
+bir katmanda sessizce gevşeyebilirdi. Buradaki ayrışma sessiz değildir (ön-kayıtta, karar
+54'te, testte ve config'te yazılı), bir katmanla sınırlıdır ve YÖNÜ bellidir: short
+kotasını toplam kotaya EŞİTLER, toplam kotayı (`max_positions` 5) aşmaz. Katmanlar arası
+kıyas zaten yapılmadığı için (CLAUDE.md > Katmanlar) bir katmanın kotası başka bir katmanın
+okumasını değiştirmez; katman İÇİNDE ise iki model aynı kotayı görür (kural 6).
 
 ### 6. Pencereler, veri derinliği, embargo
 

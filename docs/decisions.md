@@ -4318,6 +4318,13 @@ kuralı, niyeti ifadeden bağımsız kılar.
   bir kapasite asimetrisi E kapısının farkına sızardı. Maliyet ve risk sabitleri
   (`risk_per_trade`, `fee_rate`, `slippage_*`, `leverage_cap`, `initial_capital`,
   `maintenance_margin`) kökte kalır; kural 6'nın sınırı orasıdır.
+  ⚠ **TADİLAT-2 (§6i, koşudan önce):** plan ve ilk ön-kayıt metni bu override'ın "yapısal
+  olarak izinli" olduğunu söylüyordu — `max_stop_atr_multiple`dan yapılmış yanlış bir
+  genelleme. Kota sabitleri katmanlar arası paylaşılır ve depo bunu bir testle korur
+  (`tests/test_layers.py`). Karar öncülün yanlış olduğu bilinerek yeniden verildi: 5 kalır,
+  değişmez DAR ve SAYILI bir istisnayla daraltılır — yalnızca kota anahtarları, yalnızca bu
+  katman, bayat kalamaz. **Ders:** bir anahtarın katman bloğunda ezilebilir olması, onun
+  ezilmesinin serbest olduğu anlamına gelmez; paylaşılan sabitlerin listesi testtedir.
 - **Görüş penceresi bu modelde bir serbest parametre olmaktan çıkarıldı:** 3000 bar, canlıda
   ve backtest'te aynı, çünkü hedef kesişim barına bağlıdır ve pencerenin dışında kalan
   kesişim sinyali yok eder. `cross_not_visible` payı raporlanır; %5'i aşarsa bu bir
