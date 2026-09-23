@@ -380,6 +380,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 | 5 | `wave_scalp`: Elliott Wave Dalga-3 (15m, zigzag + retrace 0.236–0.886) bir edge taşır (dış sistemden) | §6h, bu commit | A: 2025-03-01 → 2025-12-31, B: A+embargo → 2026-08-31 (**Aşama 2'de**) | P1: dönem A net ort. R ≤ 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -399,6 +400,10 @@ girer ve kendi satırını açar (§6h > 13).
 **Sicildeki 6. satır (`dc_short`) da dış kökenli paydaya girer** — kaynak bir eğitim
 görselidir, ev içi arama uzayından seçilmedi. **Dış kökenli payda bugün 3'tür**
 (`ema_trend`, `wave_scalp`, `dc_short`).
+
+**Sicildeki 7. satır (TimesFM yön isabeti) da dış kökenli paydaya girer** — kaynak
+`klonnist/hemstir`dir. **Dış kökenli payda bugün 4'tür** (`ema_trend`, `wave_scalp`,
+`dc_short`, `timesfm_direction`); ev içi BH paydası değişmez (§6k > 11).
 
 **Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
 hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
@@ -3385,6 +3390,212 @@ uzayından seçilmedi — §6c'nin kuralına göre **dış kökenli paydaya** gi
 
 Canlıya alınmayı. `dc` katmanının tetikleyicisi yoktur; kapılar geçilse bile `run-dc.yml`
 ayrı bir karardır — `ema` ve `xsec` katmanlarının bugünkü statüsü.
+
+## 6k. ÖN-KAYIT — TimesFM 2.5 (zero-shot) YÖN İSABETİ: harici bir tahmin modelinin salt okunur araştırması *(2026-09-23)*
+
+**Bu belge koşudan ÖNCE yazıldı ve AYRI bir commit olarak işlendi** — ölçüm betiği,
+workflow ve testler SONRAKİ commit'lerdedir. §7'nin tamamı bu bölüme uygulanır.
+
+### 1. Köken, statü, kapsam
+
+**Köken dıştır:** `klonnist/hemstir` — Google TimesFM 2.5 (200M, zero-shot, yeniden
+eğitim yok) ile OKX `<COIN>-USDT-SWAP` 1H kapanışlarından 48 saatlik tahmin üreten ve
+`docs/forecasts.json`'ı 6 saatte bir `main`'e commit'leyen bir sistem. Yön kuralı:
+48. saat tahmini ≥ son kapanış → BUY, değilse SELL.
+
+**Statü: MODEL DEĞİL, salt okunur bir araştırma.** Bu ön-kayıt hiçbir modeli `REGISTRY`e,
+hiçbir katmanın `models` listesine, hiçbir deftere sokmaz; `config.yaml`, `strategies/`,
+`core/` ve defterler DEĞİŞMEZ. Cevaplanan soru tek: *TimesFM'in 48 saatlik yön tahmini,
+aynı noktalarda üç basit kuraldan daha isabetli mi?* Geçse bile bir model önerisi ayrı bir
+ön-kayıtla gelir (§6k > 12).
+
+### 2. Körlük beyanı (sonuç görülmeden yazıldı)
+
+- **Ön-kaydı yazan taraf hemstir'in sonuç dosyalarını görmedi; incelenen README sürümü
+  sonuç içermiyordu.** (Kullanıcının beyanı: README'ye bir kez bakıldı — dosya listesi,
+  sinyal kuralı, coinler, lisans, Actions açıklaması; hiçbir isabet rakamı yoktu.
+  `evaluation.json`, `backtest.json`, `research_locked.json` açılmadı. Kodu yazan ajan da
+  bu dosyaları ve README'nin sonuç bölümlerini açmadı; yalnızca `generate_forecasts.py`,
+  `okx_client.py`, `requirements.txt` ve `docs/forecasts.json`'ın ŞEMASI — fiyat alanları
+  maskelenerek — okundu.)
+- **Ferhat'ın beyanı:** hemstir sonuç dosyalarını okuyup okumadığını ayrıca kendisi
+  söyleyecek; beyan gelene kadar bu satır **AÇIK**tır ve sonuç raporunda olduğu gibi
+  yazılır.
+- **hemstir'in sonuç dosyaları** (`docs/evaluation.json`, `docs/backtest.json`,
+  `docs/research_dev.json`, `docs/research_locked.json`, `docs/locked_test_run.json`,
+  `docs/diagnostics.json`, README'nin sonuç bölümleri) **bizim sonucumuz bu belgeye
+  kayda geçene kadar AÇILMAZ.** Sonra açılırlarsa bağımsız bir çapraz kontroldür; önce
+  açılırlarsa ön-kaydı kirletir. Ölçüm betiği bu dosyaları okumaz (test sınar).
+
+### 3. İŞ 1 — git geçmişi sayımı ve kapı (koşudan önce görülen TEK veri)
+
+Kapı sayım görülmeden sabitlendi: **çakışmasız 48 saatlik pencere sayısı < 200 ise git
+geçmişi tek başına değerlendirilmez** (%60 isabeti %50'den ayırmak ~200, %55 için ~800
+bağımsız gözlem ister). Sayım (2026-09-23, hemstir HEAD `f6ae0f4`) — gerçekleşen
+fiyatlarla hiçbir karşılaştırma yapılmadı:
+
+| | |
+|---|---|
+| `docs/forecasts.json` commit'i | 54 (2026-09-12 20:23Z → 2026-09-23 06:09Z, ~10.4 gün) |
+| coin × tahmin serisi | 713 (4×10 + 47×14 + 3×5) |
+| Coin listesi | 10 → 14 (09-13 07:34; ETHFI, CRV, NEAR, BNB) → 5 (09-22 18:09; BTC ETH XRP SOL AVAX) |
+| Enstrüman | 09-13 07:39'a kadar karışık spot/SWAP, sonra tamamı `-USDT-SWAP` |
+| Şema | `generated_at, model, checkpoint, bar, context_hours=300, horizon_hours=48`; coin başına `inst_id`, `history[300]{ts,close}`, `forecast[48]{ts,value,lower,upper}`, `signal{side,strength,entry_price,atr,expected_move(_pct),take_profit,stop_loss,risk_reward}` (ilk commit'te `signal` yok) |
+| Çakışmasız 48s çapa | 6 (5'i olgun) → 66 coin-pencere, ema evreniyle kesişimde 52; **etkin küme ≤ 5** |
+
+**KAPI GEÇİLMEDİ.** Git geçmişi yalnızca PARİTE KONTROLÜ olur (§6k > 5); değerlendirme
+geçmiş veride TimesFM'i bizim koşmamızla yapılır.
+
+### 4. Değerlendirme tanımı
+
+**Evren:** `ema` katmanının 13 sembolü ∩ hemstir'in tüm-zaman listesi = **11 sembol:**
+BTC ETH SOL XRP DOGE BNB AVAX LINK ADA NEAR ETHFI (`-USDT-SWAP`). Dışarıda kalanlar:
+hemstir'de DOT/LTC/CRV, `ema`da SUI/PENGU. Sembol, çapa anında gerekli barlara sahip
+değilse (listelenmemiş: ETHFI dönem A'nın büyük kısmında) o çapada düşer ve SAYILIR.
+
+**Veri:** OKX 1H, yalnızca KAPANMIŞ barlar (kural 12). Ölçüm betiği `data/cache/`e
+yazmaz; OKX bu oturumda erişilebilir değilse veri CI workflow'unda çekilir.
+
+**Çapa ızgarası (sabit, sonuçtan bağımsız):** OKX açılış damgası `T_k = 2022-01-01T00:00Z
++ k × 48s`. Çapa barı açılış damgası `T` olan 1H bardır; **son kapanış** `c₀ = close(T)`,
+**gerçekleşen** `c₄₈ = close(T + 48s)` (tam 48 bar ileride; hemstir'in `forecast[47]`
+damgası `last_ts + 48s` ile aynı indeks). **Girdi:** açılış damgası `T−299s … T` olan
+300 kapanış. Girdide ya da hedefte eksik bar varsa (sembol, çapa) düşer ve sayılır —
+doldurma/ara değer yok.
+
+**Dört yön tahmini (aynı çapalar, aynı semboller):**
+- **TimesFM:** `ŷ₄₈ ≥ c₀` → yukarı, değilse aşağı (hemstir'in `>=` kuralı, parite gereği).
+- **(a) hep yukarı.**
+- **(b) momentum:** `c₀ ≥ close(T − 48s)` → yukarı, değilse aşağı (eşitlik kuralı TimesFM'le aynı).
+- **(c) yazı-tura:** tohum `"{random_seed}:{T}:{sembol}:timesfm_coin"` — (sembol, çapa)
+  başına bağımsız, koşudan koşuya aynı.
+
+**İsabet:** `sign(tahmin) == sign(c₄₈ − c₀)`. `c₄₈ == c₀` olan gözlem DÖRT kuraldan da
+aynı anda düşer ve sayılır.
+
+**TimesFM çağrısı hemstir'le BİREBİR:** `timesfm[torch]==2.0.2`,
+`google/timesfm-2.5-200m-pytorch`, `TimesFM_2p5_200M_torch.from_pretrained(...,
+torch_compile=False)`, `ForecastConfig(max_context=300, max_horizon=48,
+normalize_inputs=True, use_continuous_quantile_head=True, force_flip_invariance=True,
+infer_is_positive=True, fix_quantile_crossing=True)`. Checkpoint REVİZYONU (HF commit
+sha'sı) ve `torch` sürümü koşu manifestine yazılır. Bağımlılık YALNIZCA workflow'da
+kurulur; `requirements.txt` değişmez.
+
+### 5. Parite kapıları (değerlendirmeden ÖNCE; tutmazsa hiçbir sayı okunmaz)
+
+- **P0 — model paritesi.** hemstir'in commit'lediği her serinin KENDİ `history[300]`
+  girdisi bizim çıkarımımıza verilir; `forecast[0..47].value`, `lower`, `upper` yeniden
+  üretilmelidir. Tolerans: her noktada `|bizim − commit| / |commit| ≤ 1e-4` ve `side`
+  %100 aynı. Tek istisna: `|expected_move| / entry_price < 1e-4` olan serilerde `side`
+  sayısal gürültüyle dönebilir — bunlar ayrıca SAYILIR ve istisnaya yalnızca onlar girer.
+  Kapsam: `forecast` taşıyan 54 commit'in tamamı (girdi dosyadan geldiği için enstrüman
+  türü ve kapanmamış bar P0'ı etkilemez).
+- **P1 — veri paritesi.** Yalnızca `inst_id` `-USDT-SWAP` olan ve evrendeki serilerde,
+  bizim OKX 1H kapanışlarımız commit'lenmiş `history`nin ilk **299** barıyla BİREBİR
+  eşit olmalıdır. **Son bar (indeks 299) HARİÇ** — bkz. §6k > 6, S1. P1 dönem B/C'ye
+  düşen damgalarda fiyat okur ama kapanışı kapanışla karşılaştırır; tahminle gerçekleşen
+  karşılaştırılmaz.
+
+### 6. Kabul edilen sapmalar
+
+- **S1 — kapanmamış bar.** Canlı hemstir OKX `/market/candles`'ın `confirm` alanını
+  filtrelemez: tahmin saatin ~9. dakikasında üretilir ve girdinin son satırı OLUŞMAKTA
+  olan barın o anki fiyatıdır. Bizim sürüm kural 12 gereği yalnızca kapanmış barı
+  kullanır. **Backtest, canlı hemstir'den hafifçe farklı ve daha temiz bir modeli ölçer.**
+  P0 hemstir'in kendi girdisini kullandığı için bu sapmadan etkilenmez; P1'de son bar
+  hariç tutulur.
+- **S2 — çapa fazı.** Izgara 00:00Z'ye sabittir (her 48 saatte bir, hep aynı saat);
+  hemstir 00/06/12/18Z'de koşar. Sabit faz seçim serbestliğini kapatır; bedeli gün içi
+  mevsimselliğin tek fazdan okunmasıdır ve bu yazılır.
+
+### 7. Dönemler ve Katman C (sızıntı kapısı)
+
+| Dönem | Çapa aralığı (`T`) | Not |
+|---|---|---|
+| **A** | 2022-01-01 → 2024-06-30 (`backtest_ema.PERIOD_A_START/CUTOFF`'tan İTHAL) | hedef 2024-07-02'ye kadar uzanır |
+| **B** | 2024-07-02 → son olgun çapa (`T + 48s` ≤ son kapanmış bar) | embargo = ufuk = 48s; ufuk SABİT olduğu için ölçülmez |
+| **C** | `C_start` → son olgun çapa | **B'nin alt kümesidir**; ayrı ve bağlayıcı |
+
+**Katman C'nin gerekçesi — bu ön-kaydın en önemli kapısı.** Sıfırdan eğitilmemiş bir temel
+modelde asıl tehdit sızıntıdır: 2022–2024 kripto serileri ön-eğitim verisindeyse model o
+dönemi tahmin etmiyor, HATIRLIYOR olabilir. A'nın tamamı ve B'nin büyük kısmı bu riski
+taşır; modelin görmüş olamayacağı tek veri checkpoint yayınından sonrasıdır.
+
+**`C_start` — kaynağıyla, koşudan önce:** resmi `google-research/timesfm` README'si,
+*"Update - Sept. 15, 2025 — TimesFM 2.5 is out!"* (depo HEAD `e31dadd`, 2026-09-15;
+2.5 kodunun ilk commit'i `7d8f3d9`, 2025-09-12). **`C_start = 2025-09-15T00:00Z`**,
+ızgaranın o tarihe eşit ya da sonraki ilk çapası. ⚠ HF model kartı bu oturumda
+erişilemedi (proxy reddi); bu yüzden kural MEKANİKTİR: workflow, koşunun kullandığı
+checkpoint revizyonunun HF commit tarihini okur ve manifest'e yazar; **o tarih
+2025-09-15'ten SONRAysa `C_start` o tarihe kayar** (ağırlıklar yayından sonra
+değişmişse, sızıntı sınırı yeni ağırlıkların tarihidir). Geriye kaymaz.
+
+### 8. Geçme koşulu (ön-kayıtlı, bağlayıcı)
+
+Her dönem d ∈ {A, B, C} ve her basit kural r ∈ {(a), (b), (c)} için:
+
+`Δ_{d,r} = isabet(TimesFM) − isabet(r)` > 0 **ve** Δ'nın küme bootstrap aralığının ALT
+SINIRI > 0.
+
+**Hipotez yalnızca dokuz koşulun TAMAMI sağlanırsa geçer.** Üç kurala AYRI AYRI karşı
+test edilir ("o dönemin en iyi kuralı" seçilmez — seçim yanlılığını geri getirirdi);
+kesişim-birleşim testi olduğu için çoklu karşılaştırma düzeltmesi gerekmez.
+
+**Küme bootstrap:** küme = çapa damgası `T` (aynı anda 11 coin korelasyonludur). Çapalar
+yerine koymalı yeniden örneklenir; her örneklemde Δ = Σ(isabet farkı) / Σ(gözlem) —
+EŞLEŞTİRİLMİŞ (TimesFM ve kural aynı çapa-sembol çiftlerinde; `backtest_dc`'nin
+gerekçesi). Yüzdelik aralık, `α = acceptance.edge_ci_alpha` (0.05, iki yanlı),
+`acceptance.bootstrap_samples` (2000) örnek, tohum `random_seed`den türer. Dönemde
+**< 10 küme** → değerlendirilemez ve geçilmiş SAYILMAZ.
+
+**Sıra:** P0 → P1 → A → (A geçerse) B ve C. A'daki dokuz koşuldan biri düşerse hipotez
+düşmüştür ve B/C koşulmaz — B'yi gereksiz yere görmek sonraki bir ön-kaydın OOS
+penceresini harcar.
+
+### 9. Güç — sonuç görülmeden, dürüst
+
+Etkin gözlem `n_eff = K × m / (1 + (m−1)ρ)` (K çapa, m sembol, ρ çapa-içi korelasyon).
+Saptanabilir en küçük fark (%80 güç, α 0.05 iki yanlı): isabet için `2.802 × 0.5 / √n_eff`;
+**asıl test olan eşleştirilmiş fark için `2.802 × √(δ / n_eff)`**, δ = iki kuralın
+ayrıştığı gözlem payı.
+
+| Dönem | K | m | ρ = 1 (n_eff = K) | ρ = 0.8 | ρ = 0.5 |
+|---|---|---|---|---|---|
+| A | 456 | ~10 | %50'ye karşı 6.6 pp; fark δ=0.3 / 0.5: 7.2 / 9.3 pp | 5.9; 6.5 / 8.4 | 4.9; 5.3 / 6.9 |
+| B | 406 | 11 | 7.0; 7.6 / 9.8 | 6.3; 6.9 / 8.9 | 5.1; 5.6 / 7.3 |
+| **C** | **186** | 11 | **10.3; 11.3 / 14.5** | **9.3; 10.2 / 13.1** | **7.6; 8.3 / 10.7** |
+
+(K'ler 2026-09-21'e kadar olan olgun çapalardır; koşu günü B ve C'yi birkaç çapa uzatır.)
+
+**Okuma:** **%55 isabetli bir model bu tasarımla hiçbir dönemde ayırt edilemez.** C'de
+ayırt edilebilir fark ~8–15 puandır; yani C, gerçek ama mütevazı bir kenarı
+"ayırt edilemedi" diye engelleyebilir. **Bu bedel kabul edildi:** görmediği veride
+çalıştığı gösterilemeyen bir modele güvenilemez. Kripto 48 saatlik yönlerinde ρ'nun
+yüksek (0.5 ve üstü) olması beklenir, yani gerçekçi satırlar sağ sütunlar değil orta ve
+sol sütunlardır. Koşudan sonra her Δ'nın yanında GERÇEKLEŞEN küme SE'si ve ondan
+türeyen MDE (`2.802 × SE_küme`) raporlanır — okuma yardımıdır, kapı değildir.
+
+### 10. Rapor (koşudan sonra, hepsi)
+
+Dönem başına: çapa sayısı, (sembol, çapa) gözlemi, düşenler (sebep koduyla: listelenmemiş,
+eksik bar, sıfır hareket), dört kuralın isabeti, üç Δ ve aralıkları, gerçekleşen SE/MDE,
+TimesFM'in yukarı-tahmin payı ve **gerçekleşen yukarı hareket payı** (boğa/ayı zemini —
+"hep yukarı"nın neden iyi ya da kötü olduğunu gösterir). P0/P1 sayıları, checkpoint
+revizyonu ve HF tarihi, `C_start`, `torch` sürümü.
+
+### 11. Sicil
+
+§6c'de **7. satır.** Hipotez dış kökenlidir (`klonnist/hemstir`), ev içi arama uzayından
+seçilmedi — **dış kökenli paydaya** girer: **3 → 4** (`ema_trend`, `wave_scalp`,
+`dc_short`, `timesfm_direction`). Ev içi BH paydası değişmez. Bir modelin DEFTER
+performansı değil bir tahmincinin yön isabeti hakkında bir iddiadır; sicile yine de girer,
+çünkü sicilin saydığı şey denenen hipotezlerdir.
+
+### 12. Bu ön-kayıt neyi SEÇMİYOR
+
+Bir modeli. Geçerse bile TimesFM'e dayanan bir strateji kendi ön-kaydıyla gelir (boyut,
+stop, maliyet, kontrol, ⚠B — isabet bir R değildir ve maliyet öncesidir). Düşerse satır
+sicilde kalır ve hemstir'in sonuç dosyaları çapraz kontrol olarak ancak o zaman açılır.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
