@@ -3603,6 +3603,34 @@ performansı değil bir tahmincinin yön isabeti hakkında bir iddiadır; sicile
 Bir modeli. Geçerse bile TimesFM'e dayanan bir strateji kendi ön-kaydıyla gelir (boyut,
 stop, maliyet, kontrol, ⚠B — isabet bir R değildir ve maliyet öncesidir). Düşerse satır
 sicilde kalır ve hemstir'in sonuç dosyaları çapraz kontrol olarak ancak o zaman açılır.
+
+### 13. PARİTE SONUCU *(2026-09-23 — HİÇBİR isabet sayısı görülmeden kayda geçti)*
+
+Bu kayıt değerlendirme koşusundan ÖNCE, ayrı bir commit olarak yazıldı: parite bilgisi
+sonuçtan bağımsız olarak tarih damgalı durur.
+
+**Koşu:** `measure-timesfm` #35855127596 (`--stage parity`; tetikleyici
+`.github/triggers/timesfm-parity-2.run`). İlk tetikleme #35853769262 workflow'un aşama
+çözümünde, betik hiç çalışmadan durmuştu (`head_commit.added` boş) — hiçbir sayı üretilmedi.
+Ortam: Python 3.12.14, `timesfm` 2.0.2, `torch` 2.14.0, checkpoint revizyonu
+`1d952420fba87f3c6dee4f240de0f1a0fbc790e3`. hemstir `f6ae0f4`: 54 commit / 713 seri (§6k > 3
+ile birebir).
+
+| Kapı | Sonuç |
+|---|---|
+| **P0 — model paritesi** | **GEÇTİ.** 713/713 seri; değer uyuşmazlığı 0, yön uyuşmazlığı 0. En kötü göreli hata: değer 2.2e-7, alt bant 3.6e-7, üst bant 3.1e-7 (tolerans 1e-4). İstisnaya UYGUN 2 seri, AFFEDİLEN 0 (tavan %5 → pay %0). 54 commit'in hiçbirinde düşüş yok — torch sürümü koşudan koşuya değişmiş olsa bile hemstir'in 10 günlük geçmişi tek bir ortamda birebir yeniden üretiliyor. |
+| **P1 — veri paritesi** | **GEÇTİ.** 527 SWAP serisi, 157 573 kapanış (her serinin kapanmamış son barı hariç, S1); uyuşmazlık 0. |
+
+TimesFM derlemede bağlamı 320'ye, ufku 128'e yuvarlıyor (yama boyları); hemstir'le aynı
+kütüphane ve bayraklar olduğu için bu ikisinde ortaktır ve P0 bunu kanıtlıyor.
+
+**`C_start` KAYDI — §6k > 7'nin mekanik kuralı uygulandı.** HF revizyonunun son değişiklik
+tarihi **2025-10-02T17:21:38Z**, resmi yayın notundan (2025-09-15) SONRA; kural "geç olan"
+dediği için **`C_start = 2025-10-02T17:21:38Z`**, ilk C çapası **2025-10-04T00:00Z**. Katman
+C ~186 yerine ~181 çapayla koşar; §6k > 9'un C satırı pratikte değişmez. ⚠ Bu tarih
+deponun son değişikliğidir (ağırlık dosyası dışındaki bir dosyanın düzenlenmesi de onu
+ileri iter) — kural bu yüzden ihtiyatlı tarafta çalışır. Değerlendirme koşusu tarihi ve
+revizyonu yeniden okur; revizyon koşu sırasında değişirse betik 1 koduyla durur.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
