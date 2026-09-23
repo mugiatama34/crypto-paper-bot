@@ -3418,9 +3418,9 @@ aynı noktalarda üç basit kuraldan daha isabetli mi?* Geçse bile bir model ö
   bu dosyaları ve README'nin sonuç bölümlerini açmadı; yalnızca `generate_forecasts.py`,
   `okx_client.py`, `requirements.txt` ve `docs/forecasts.json`'ın ŞEMASI — fiyat alanları
   maskelenerek — okundu.)
-- **Ferhat'ın beyanı:** hemstir sonuç dosyalarını okuyup okumadığını ayrıca kendisi
-  söyleyecek; beyan gelene kadar bu satır **AÇIK**tır ve sonuç raporunda olduğu gibi
-  yazılır.
+- **Ferhat'ın beyanı (2026-09-23, koşudan önce):** hemstir'in README'sindeki sonuç
+  bölümünü ve `evaluation.json` / `research_locked.json` / `backtest.json` dosyalarını
+  okumadı.
 - **hemstir'in sonuç dosyaları** (`docs/evaluation.json`, `docs/backtest.json`,
   `docs/research_dev.json`, `docs/research_locked.json`, `docs/locked_test_run.json`,
   `docs/diagnostics.json`, README'nin sonuç bölümleri) **bizim sonucumuz bu belgeye
@@ -3488,6 +3488,9 @@ kurulur; `requirements.txt` değişmez.
   üretilmelidir. Tolerans: her noktada `|bizim − commit| / |commit| ≤ 1e-4` ve `side`
   %100 aynı. Tek istisna: `|expected_move| / entry_price < 1e-4` olan serilerde `side`
   sayısal gürültüyle dönebilir — bunlar ayrıca SAYILIR ve istisnaya yalnızca onlar girer.
+  **İstisna raporlanır ve SINIRLIDIR:** istisnaya düşen seri sayısı P0 kapsamındaki
+  toplam serinin **%5'ini aşarsa parite DÜŞMÜŞ sayılır** — istisna, kuralı fiilen
+  askıya alacak kadar genişleyemez.
   Kapsam: `forecast` taşıyan 54 commit'in tamamı (girdi dosyadan geldiği için enstrüman
   türü ve kapanmamış bar P0'ı etkilemez).
 - **P1 — veri paritesi.** Yalnızca `inst_id` `-USDT-SWAP` olan ve evrendeki serilerde,
@@ -3546,7 +3549,8 @@ yerine koymalı yeniden örneklenir; her örneklemde Δ = Σ(isabet farkı) / Σ
 EŞLEŞTİRİLMİŞ (TimesFM ve kural aynı çapa-sembol çiftlerinde; `backtest_dc`'nin
 gerekçesi). Yüzdelik aralık, `α = acceptance.edge_ci_alpha` (0.05, iki yanlı),
 `acceptance.bootstrap_samples` (2000) örnek, tohum `random_seed`den türer. Dönemde
-**< 10 küme** → değerlendirilemez ve geçilmiş SAYILMAZ.
+**< 10 küme** → değerlendirilemez ve **değerlendirilemez = GEÇMEDİ:** dokuz koşulun
+hepsi gerektiği için ölçülemeyen bir dönem kapıyı açamaz.
 
 **Sıra:** P0 → P1 → A → (A geçerse) B ve C. A'daki dokuz koşuldan biri düşerse hipotez
 düşmüştür ve B/C koşulmaz — B'yi gereksiz yere görmek sonraki bir ön-kaydın OOS
