@@ -1,0 +1,111 @@
+# TimesFM 2.5 yön isabeti araştırmasının tetikleyicisi (docs/backtest.md > 6k,
+# `scripts/measure_timesfm.py`). Salt okunur; model DEĞİL.
+#
+# İKİ AŞAMA, İKİ TETİKLEYİCİ DOSYA. `workflow_dispatch` yalnızca dosya VARSAYILAN dalda
+# olduğunda çalışır; ön-kayıt bir çalışma dalında. Bu yüzden `backtest-dc.yml`in deseni:
+# dar bir push tetikleyicisi, TEK dosyaya bağlı, yalnızca `claude/**` dallarında.
+#   - `.github/triggers/timesfm-parity.run` → `--stage parity` (P0 + P1; isabet YOK)
+#   - `.github/triggers/timesfm-eval.run`   → `--stage evaluate` (P0 → P1 → A → B, C)
+# Dosyanın EKLENDİĞİ commit koşunun kendisidir ve dosya bir daha DEĞİŞTİRİLMEZ
+# (değiştirmek ikinci bir koşu olurdu — §7'nin "sonucu görüp tekrar koşma" yasağı).
+# Kod ya da belge push'ları koşuyu tetikleyemez.
+#
+# DÖNEM SINIRLARI, TOLERANSLAR, TOHUM, hemstir COMMIT'İ GİRDİ DEĞİLDİR: hepsi ön-kayıtlıdır
+# ve betikte sabittir.
+#
+# BAĞIMLILIK: `timesfm[torch]==2.0.2` YALNIZCA bu işte kurulur (§6k > 4); depo
+# `requirements.txt`i değişmez. Python 3.12 hemstir'in koşu ortamıdır (parite).
+#
+# `permissions: contents: read` — bu iş YAZAMAZ. `cron` YOKTUR (docs/backtest.md > 7).
+# Çıktı log'a basılır ve artifact'e çıkar; depoya hiçbir dosya girmez.
+name: measure-timesfm
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "parity | evaluate"
+        required: true
+        default: "parity"
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - ".github/triggers/timesfm-parity.run"
+      - ".github/triggers/timesfm-eval.run"
+
+concurrency:
+  group: measure-timesfm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    # evaluate: ~11 sembol × ~42.000 1H bar (A + B) indirme + ~9.000 CPU çıkarımı.
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      # Aşama, push'ta EKLENEN tetikleyici dosyadan okunur; ikisi aynı commit'te
+      # eklenirse değerlendirme SEÇİLMEZ (sıra: önce parite okunur).
+      - name: Resolve stage
+        id: stage
+        env:
+          DISPATCH_STAGE: ${{ inputs.stage }}
+          ADDED: ${{ join(github.event.head_commit.added, ' ') }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            STAGE="$DISPATCH_STAGE"
+          elif echo "$ADDED" | grep -q "timesfm-parity.run"; then
+            STAGE=parity
+          elif echo "$ADDED" | grep -q "timesfm-eval.run"; then
+            STAGE=evaluate
+          else
+            echo "::error::tetikleyici dosya bu commit'te EKLENMEDİ (değiştirilmiş olabilir) — koşu yok"
+            exit 1
+          fi
+          case "$STAGE" in parity|evaluate) ;; *) echo "::error::geçersiz aşama: $STAGE"; exit 1;; esac
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+          echo "aşama: $STAGE"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install "timesfm[torch]==2.0.2"
+
+      # hemstir'in TAM geçmişi gerekir (P0 her `forecasts.json` sürümünü okur). Betik
+      # yalnızca `docs/forecasts.json`u ve yalnızca ön-kayıtlı commit'e kadar okur.
+      - name: Clone hemstir
+        run: git clone --quiet https://github.com/klonnist/hemstir.git "$RUNNER_TEMP/hemstir"
+
+      - name: Run
+        env:
+          STAGE: ${{ steps.stage.outputs.stage }}
+        run: |
+          set -o pipefail
+          python scripts/measure_timesfm.py --stage "$STAGE" \
+            --hemstir "$RUNNER_TEMP/hemstir" --out-dir out/timesfm
+
+      - name: Print results
+        if: always()
+        run: |
+          echo "=== RESULTS.JSON BEGIN ==="
+          cat out/timesfm/results.json || echo "(yok)"
+          echo "=== RESULTS.JSON END ==="
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: measure-timesfm-${{ steps.stage.outputs.stage }}
+          path: out/timesfm
+          if-no-files-found: warn
+          retention-days: 14
