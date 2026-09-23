@@ -4280,10 +4280,216 @@ getirisi** olmalıdır, ortalama R değil. Ort. R kolonu katman İÇİNDE okunur
   metni "Nasıl okunur?" bölümünde. Silmek, her biri bir kararın kaydı olan gerekçeleri
   kaybetmek olurdu — katlamak yalnızca sayfanın asıl işini öne alır.
 
-## 54. `dc_short` ön-kaydı: yeni `dc` katmanı ve KÜME bootstrap — i.i.d. aralık bu modelde bağlayıcı olamaz
+---
+
+## 54. Scalp katmanına KONTROL ve TARAMA SAYIMI: iki ölçüm, tek eksen, sıfır defter kaybı
+
+**Ön-kayıt: `docs/backtest.md > 6i`, commit `2de4f7f`** — koşudan ve koddan ÖNCE, ayrı bir
+commit'te. Bu karar iki işi kapsar ve **ikisi de ÖLÇÜMDÜR, hipotez değil:** §6c'nin siciline
+satır açmazlar ve BH paydasına girmezler (karar 49'un §6h > EK-1'de kurduğu ayrımın aynısı).
+
+### Sorunun kanıtı — iki satır
+
+`config.yaml > layers.scalp.models` şuydu:
+
+```yaml
+models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
+```
+
+Bu listede **kontrol modeli yok** (`random_ctrl` base katmanındadır) ve **çıpa da yok**
+(`vwap_clone` bir KOPYADIR — kural 15b). `core/metrics.py::acceptance_flags` kontrolü kümede
+bulamayınca marj, bootstrap güven aralığı ve çıpa koşullarını DÜŞÜRÜR (`_control_avg_r` /
+`_benchmark_return`, ikisi de `logger.warning` yazar). Geriye kalan tek koşul `avg_r > 0`'dır.
+
+Pratikteki sonucu şuydu: **`scalp_patient` örneklem kapısını (n = 30) geçtiği anda
+`passed: true` görünecekti** — oysa §4'ün çıtası C-1'den ibaret değildir. Rozet "doğrulandı"
+derken ölçülmüş olan yalnızca "ortalamanın işareti pozitif" olurdu.
+
+Boşluk bir test ile de KAYDA GEÇTİ (`tests/test_scalp_coinflip.py::
+test_without_a_control_the_edge_gate_was_effectively_avg_r_positive`): kontrol kümeden
+çıkarıldığında `edge` bugün de kendiliğinden geçiyor. Test yeşil kalır ve bu bir gerileme
+değildir — düzeltilen davranışın kanıtıdır.
+
+⚠ **Bu boşluk yazılı DEĞİLDİ ve asıl kusur budur.** §6h > 7 aynı eksikliği `wave_scalp` için
+dürüstçe yazıyordu ("C-2 ve C-3 değerlendirilemez"), §4 ise yalnızca C-3'ü sayıyordu. C-2'nin
+statüsü C-3'ünkiyle BİREBİR AYNIYDI — tek farkı belgeye geçmemiş olmasıydı, ve sessizce düşen
+bir çıta tam olarak geçilmiş bir çıta gibi görünür. §4'e eklendi.
+
+### 1. `scalp_coinflip` (model 23) — katmanın kontrolü
+
+`ScalpPatient`ten TÜRER; beş kol, ev kapıları (%1 stop tabanı, 1.5R), 5×ATR stop geometrisi,
+100 barlık zaman stop'u, `choose_arm` ve **çekiliş kimliği (`rng_identity`)** MİRAS ALINIR.
+İki model her barda aynı kolu ve aynı sembolü seçer — eşleştirilmiş deney. **Ayrışan TEK şey
+yöndür:** seçilmiş kurulumun yönü adil bir yazı-turayla belirlenir; "ters" gelirse stop ve
+hedef MESAFELERİ girişin öbür tarafına yansıtılır (`strategies/scalp/arms.py::reflect`), yani
+`stop_distance_pct` ve `reward_risk` tanım gereği değişmez.
+
+Cevapladığı soru: *kolun YÖN iddiası bilgi taşıyor mu, yoksa taşıdığı şey yalnızca
+"oynanabilir bir kurulum" mu?*
+
+**Neden `random_ctrl` olmadı.** O model base katmanının kontrolüdür ve scalp geometrisini HİÇ
+okumaz: kendi stop kuralı vardır, `scalp.*` bloğunu (5×ATR, %1 taban, 1.5R) görmez ve 15
+dakikalık barın ölçeğinde kurulmamıştır. İki farklı stop ölçeğini aynı C-2 farkında toplamak
+**⚠B bandını yakar** ve `cost_per_r`yi kıyaslanamaz kılar — fark "yönün ölçüsü" olmaktan çıkar,
+"iki maliyet ölçeğinin farkı" olur (CLAUDE.md > Rapor Kolonları'nın tam olarak reddettiği
+kıyas). Kontrolün katmanın kendi gövdesinden türemesinin sebebi budur.
+
+⚠ **§6h > EK-1'in `scalp_coinflip` reddi GEÇERLİDİR ve bu karar onu delmez.** O red
+`scalp_coinflip`i **wave'in** kontrolü olmaktan reddediyordu: `wave_scalp` `p2 ∓ dalga1 × 0.15`
+stop'u taşır, scalp kolları 5×ATR — aynı itirazın kendisi. EK-1 o satırı "bugün bu model depoda
+YOK, geldiğinde yanlış kontrolün seçilmesini engellemek için şimdi yazılıyor" diye kurmuştu ve
+**öngördüğü durum tam olarak gerçekleşti:** katmanın `acceptance.control_model` varsayılanı artık
+`scalp_coinflip`tir. Koruma tutuyor — `scripts/backtest_wave.py` kontrolünü (`wave_coinflip`)
+AÇIKÇA geçirir ve katman varsayılanını kullanmaz; bu, bir testle de sabitlendi.
+
+**Statü: YARIŞMACI** (`is_benchmark=False`, `is_replica=False`) ve katmanın `models` listesinde
+KOŞAR. Gerekçe: C-2 bir FARKA dayanır ve farkın öteki tarafı ancak canlı kâğıt defterinde
+birikir; ayrıca kontrol, yarışmacılarla aynı boyutlandırma, aynı maliyet ve aynı limitlerle
+koşmazsa aralarındaki fark sinyalin değil koşulların ölçüsü olur (`random_ctrl` ve
+`xsec_random`ın aynı gerekçesi).
+
+**İki RNG akışı ayrıdır:** kol/sembol çekilişi `{seed}:{as_of}:{rng_identity}` ile PAYLAŞILIR
+(ölçülmeyen eksen), yazı-tura `{seed}:{as_of}:scalp_coinflip:{sembol}` ile KENDİNE AİTTİR. Tek
+akış olsaydı her yazı-tura çekilişi bir adım kaydırır ve kontrol `scalp_patient`in seçtiği
+kurulumu hiç görmezdi. Akış sembol bazında çatallanır, yoksa "adil yazı-tura" bar başına tek
+çekilişe inerdi.
+
+**Denetim izi:** `reason` kuyruğunda `coin=same|flipped`.
+
+**Bildirim:** `run-scalp.yml`de SUSTURULDU (`--mute vwap_clone,scalp_coinflip`). `run.yml`in
+`random_ctrl`ü bildirmeme gerekçesiyle birebir aynı: bilgisiz bir çekilişin yönünü telefona
+düşürmek, susturma penceresinin engellemek için var olduğu gürültünün kendisi olurdu. Bu bir
+BİLDİRİM ayarıdır, ölçüm değil — model koşar, deftere yazar, tabloda görünür. (Bayrak VİRGÜLLE
+ayrılır: `--mute` bir `store`dur ve ikinci bir `--mute` birincisini sessizce ezerdi.)
+
+### 2. KABUL EDİLEN SAPMA — yansıtılan hedef yapısal engele dayanmaz
+
+Kolların hedefi projeksiyon (`target_reward_risk × stop`) ile kolun kendi **yapısal engelinin**
+(VWAP, Bollinger orta bandı, aralığın ölçülü hareketi…) YAKIN olanıdır. Yansıtılan kurulumda
+hedef aynı MESAFEDEDİR ama orada kolun tezinden gelen bir engel YOKTUR — kontrolün hedefi saf
+bir projeksiyondur.
+
+**Sapma düzeltilmedi ve gizlenmedi.** İki düzeltme yolu da daha kötüydü: ters yönde yeni bir
+engel hesaplamak kontrolü "aynı kurulum, ters yön" olmaktan çıkarıp kendi hedef kuralı olan
+İKİNCİ bir modele çevirirdi; hedefi olduğu yerde bırakmak ise `|hedef − giriş|`i değiştirir,
+S1a'yı tanım gereği düşürür ve ⚠B'yi yakardı.
+
+**Sapmanın YÖNÜ ön-kayıtta, sonucu görmeden yazıldı:** engel çoğu zaman hedefi YAKINLAŞTIRIR
+(yakın olanı alınır), yani yansıtılmış hedef ortalamada projeksiyona eşit ya da ondan uzaktır.
+Bu, kontrolü olduğundan **kötü** gösterme yönünde çalışır ve C-2 farkını şişirebilir. Bu yüzden
+C-2 tek başına okunmaz: M1 aynı anda kontrolün ortalamasının ≈ −`cost_per_r` olmasını bekler ve
+tutmazsa önce bu sapma araştırılır.
+
+### 3. `ScalpModel.take_survey` — karar 48'in açık işi kapandı
+
+`ScalpModel` `take_survey` uygulamıyordu, yani `metrics_scalp.json > round.models[].survey`
+beş kollu her model için `{}`'di. Sonucu: **`funding_spike_fade`in katmanın tüm ömrü boyunca
+neden tek sinyal üretmediği hiçbir yere yazılmıyordu** (karar 48 bunu açık iş olarak bırakmıştı)
+ve `momentum_burst`ün sebebi (karar 34) yalnızca bir TÜRETMEYDİ, ölçüm değil.
+
+Sayım **kol × eleme sebebi**dir ve sebepler AYRIKTIR: her kol için toplamları o barda taranan
+sembol sayısına (`taranan`) eşittir — sağlama bir testtir, bir niyet değil. Sebepler:
+`kurulum_yok`, `stop_tabani`, `hedef_stop`, `rejim_kapisi`, `kota`, `secildi`, `kol_hatasi`.
+
+- **`kol_hatasi` ayrı durur.** `propose_all` bir kolun hatasını yutup boş liste döndürüyordu;
+  `kurulum_yok`a yazmak "tez tutmadı" ile "kol patladı"yı aynı hücreye koymak olurdu — tam
+  olarak sayımın ayırt etmek için var olduğu iki durum. Hata artık `ArmScan.failed`de taşınır.
+- **`kota` tek bir sebeptir.** "Başka kol seçildi" ile "bu kolda başka sembol çekildi" ayrı
+  sayılabilirdi; ikisi de aynı şeyi söyler ve ayırmak sayımı seçim mekaniğinin bir kopyasına
+  çevirirdi. Seçimin kendisi zaten `emitted` ve kol kırılımındadır.
+- **`take_survey` bir override noktası DEĞİLDİR.** Gövde onu tek kopya olarak uygular; alt
+  sınıf yalnızca `_note_survey` ile kendi teşhis anahtarını EKLEYEBİLİR. `scalp_vol`ün kendi
+  `take_survey` uygulaması bu yüzden KALDIRILDI ve anahtarları (`dusuk_vol`, `gecti`,
+  `rejim_kapisi_yok`) ortak sayıma taşındı — iki uygulama, aynı eksenin iki tarafında iki
+  farklı "taranan sembol" tanımı demekti. Bu anahtarlar kolsuzdur ve AYRIK sağlamanın
+  dışındadır (`strategies/vwap/signal.py`nin `extensions` kovalarını `counts`tan ayrı
+  tutmasıyla aynı gerekçe).
+
+Sayım `rejections`/`emitted`/`proximity` ile **aynı statüde bir denetim izidir** (kural 15):
+ölçüme girmez, hangi kolun seçileceğini ve sıralarını değiştirmez — ve bu bir testle sabittir
+(sayım kapalıyken ve açıkken üretilen sinyaller birebir aynıdır).
+
+**Ön-kayıtlı okumalar (30 tur sonra):** V1 — `funding_spike_fade`in eleme sebebi adıyla
+raporlanır ve **tahmin YOKTUR** (bugün bilinmiyor; bir tahmin uydurmak sayımın varlık sebebini
+sonradan "zaten biliyorduk"a çevirirdi). V2 — `momentum_burst`ün kurulumlarının neredeyse
+tamamı `hedef_stop`ta elenmeli, `kurulum_yok`ta değil; doğrulamazsa **karar 34'ün aritmetiği
+eksiktir** ve karara bir DÜZELTME alt başlığı yazılır.
+
+### 4. Yeni override noktası: `direction_policy`
+
+`ScalpModel`in override listesi bir uzadı ve bedeli ödendi — **karşılığı ölçülen bir eksen
+olmayan bir override noktası eklenemez**. Karşılığı `scalp_patient` (16) ↔ `scalp_coinflip`
+(23) eksenidir ve katmanın eksen tablosuna yazıldı.
+
+Nokta **SEÇİMDEN SONRA** çağrılır ve seçimi değiştiremez: kol çekilişi, sembol çekilişi ve
+tarama sayımı kolun kendi yön iddiası üzerinden yapılır. Yön kararı o akışın önüne geçseydi
+kontrol `scalp_patient` ile aynı kurulumları seçmez ve eşleştirilmiş deney bozulurdu.
+
+### DÜZELTME-1 (2026-09-22, merge'ten ÖNCE) — S1 yanlış kümede ölçülüyordu
+
+Ön-kayıt (§6i > 7) S1'i tek bir satır olarak yazmıştı: *`avg_stop_distance_pct` farkı
+< %1 bağıl.* **Bu tolerans yanlış kümede ölçülüyordu** ve merge'ten önce ikiye bölündü.
+Ön-kayıt satırı SİLİNMEDİ — kayıt için duruyor, uygulanan hâli S1a + S1b'dir.
+
+**Ölçülen gerekçe `scalp_patient`in ZATEN VAR OLAN defteridir** (533 özsermaye barı, 22
+kapanmış pozisyon): azami eşzamanlı pozisyon **5** (yani `max_positions` BAĞLIYOR; 11 barda
+tavanda, ≥4 pozisyon taşınan bar oranı %35.6) ve azami eşzamanlı short **3** (yani
+`max_short_positions` de BAĞLIYOR; şu an açık olan 5 pozisyonun 3'ü short). Ön-kayıt
+ayrışmanın TEK sebebi olarak short kotasını yazmıştı; toplam tavan da bağladığı için
+ayrışma yönden BAĞIMSIZ olarak da oluşur — o zaman defter ortalaması aynı kurulumların
+değil **farklı ALT KÜMELERİN** ortalamasıdır ve aritmetik olarak korunan bir şeyi (mesafe)
+korunmayan bir şeyle (hangi kurulumun doldurulabildiği) sınamak olur.
+
+| # | Yeni hâli | Statü |
+|---|---|---|
+| **S1a** | aynı bar + aynı kol + aynı sembol kurulumunda stop mesafesi BİREBİR eşit | kod hatası kapısı; dolum kümesinden BAĞIMSIZ (kurulum düzeyi). Mevcut test |
+| **S1b** | defterdeki `avg_stop_distance_pct` farkı **< %10 bağıl** | kıyas koşulu; aşarsa M1 ve C-2 OKUNMAZ |
+
+**%10 uydurulmadı, DEVRALINDI:** §6h > EK-1 wave için aynı sayıyı koşudan önce sabitlemişti
+ve gerekçesinin **(b) maddesi** birebir şuydu — *"dolumlar ayrışır ve `max_positions`
+doluluğu zamanla farklılaşır."* §6i aynı aileden bir kontrol tanımlarken o maddeyi
+taşımadı. Yani bu düzeltme yeni bir keşif değil, bir **kopyalama eksiğinin onarımıdır.**
+
+⚠ **Düzeltme `scalp_coinflip`in HİÇBİR İŞLEMİ GÖRÜLMEDEN yazıldı.** Model bu satırlar
+yazılırken tek tur koşmamıştı: defteri yok, tek bir `coin=` etiketi üretmedi,
+`avg_stop_distance_pct` değeri hiçbir yerde hesaplanmadı. §7.1'in yasakladığı "sonuca bakıp
+eşiği ayarlama" burada yapılamaz, çünkü bakılacak bir sonuç yok. S1b bir kez daha aşılırsa
+tolerans YİNE gevşetilmeyecek; yapılacak şey C-2'yi OKUMAMAK ve sebebi raporlamaktır.
+
+**Üç BİLGİ SATIRI eklendi (kapı değil, eşiği yok, `passed` üretmez):** kontrolün LONG oranı
+(beklenen ~%50; `scalp_patient`in %68.2'siyle yan yana okunur — yazı-turanın kurulumun yön
+yanlılığını gerçekten sildiğinin göstergesi), `max_short_positions` ret sayısı ve
+`max_positions` ret sayısı. Üçü de `round.models[].rejections`ten okunur; **kod zaten
+üretiyordu, yeni bir alan açılmadı.** S1b düşerse bu üç sayı sebebin kotada mı başka yerde
+mi olduğunu söyler — hiçbiri bir eşiğe bağlanmaz, bağlansaydı sonucu gördükten sonra
+"hangi sayı kapı" diye seçme serbestliği doğardı.
+
+### 5. Ne YAPILMADI
+
+- **Hiçbir defter sıfırlanmadı** (kural 1: `trades.csv` append-only) ve **hiçbir modelin kuralı
+  değişmedi** (§7.1). `scalp_fixed`, `scalp_patient`, `vwap_clone` ve `vwap_managed`in
+  parametreleri, geometrileri ve çekiliş kimlikleri aynen duruyor; `scalp_coinflip` katmana
+  yeni bir SATIR olarak eklendi.
+- **`core/` altında maliyet, dolum ve metrik kuralı değişmedi.** Eklenen tek şey bir override
+  noktası ve bir sayım kancasıdır; ikisi de `strategies/` altındadır.
+- **Scalp'e çıpa EKLENMEDİ:** C-3 hâlâ değerlendirilemez ve bu karar onu varsaymaz. Ayrı bir
+  karardır.
+- **`scalp_patient` canlıya ALINMADI:** C-1 bugün sağlanmıyor (−0.01) ve bu karar o sayıya
+  dokunmuyor. Kontrol kendi örneklem kapısını (30) geçene kadar `edge` DEĞERLENDİRİLEMEZ ve
+  `passed` FALSE kalır — bu bir gerileme değil, ölçülmemiş bir kapının ölçülmemiş görünmesidir.
+  Skorboard bunu rozetin ipucunda zaten söylüyor ("⚠ KONTROL HENÜZ ÖLÇÜLMEDİ: n / 30"), yani
+  arayüz tarafında kod değişikliği gerekmedi.
+- **Ölü kollar silinmedi ve onarılmadı** (karar 48'in sözü): V1/V2 tam olarak onarımın nerede
+  yapılacağını ölçmek içindir.
+
+---
+
+## 55. `dc_short` ön-kaydı: yeni `dc` katmanı ve KÜME bootstrap — i.i.d. aralık bu modelde bağlayıcı olamaz
+
+**Numaralandırma notu.** Bu karar ön-kayıt commit'lerinde **54**, ön-kayıt **§6i**, kontrol **model 23** olarak yazıldı; `main`'deki karar 54 / §6i / model 23 (`scalp_coinflip`) ile çakıştığı için birleştirmede 55 / §6j / model 24 oldu. İçerik değişmedi.
 
 **Ne.** Model 22 (`dc_short`, ölüm kesişimi + EMA50'ye geri çekilme short) ve kontrolü
-model 23 (`dc_coinflip`) için ön-kayıt (docs/backtest.md > 6i). Uygulamadan AYRI ve ÖNCE
+model 24 (`dc_coinflip`) için ön-kayıt (docs/backtest.md > 6j). Uygulamadan AYRI ve ÖNCE
 commit edildi; koşudan önce görülen tek veri ölçülebilirlik sayımıdır (commit `f5df1bb`,
 koşu `#35718873885`: dönem A birincil kurulum 1090 ≥ 150).
 
@@ -4318,7 +4524,7 @@ kuralı, niyeti ifadeden bağımsız kılar.
   bir kapasite asimetrisi E kapısının farkına sızardı. Maliyet ve risk sabitleri
   (`risk_per_trade`, `fee_rate`, `slippage_*`, `leverage_cap`, `initial_capital`,
   `maintenance_margin`) kökte kalır; kural 6'nın sınırı orasıdır.
-  ⚠ **TADİLAT-2 (§6i, koşudan önce):** plan ve ilk ön-kayıt metni bu override'ın "yapısal
+  ⚠ **TADİLAT-2 (§6j, koşudan önce):** plan ve ilk ön-kayıt metni bu override'ın "yapısal
   olarak izinli" olduğunu söylüyordu — `max_stop_atr_multiple`dan yapılmış yanlış bir
   genelleme. Kota sabitleri katmanlar arası paylaşılır ve depo bunu bir testle korur
   (`tests/test_layers.py`). Karar öncülün yanlış olduğu bilinerek yeniden verildi: 5 kalır,
@@ -4329,7 +4535,7 @@ kuralı, niyeti ifadeden bağımsız kılar.
   ve backtest'te aynı, çünkü hedef kesişim barına bağlıdır ve pencerenin dışında kalan
   kesişim sinyali yok eder. `cross_not_visible` payı raporlanır; %5'i aşarsa bu bir
   bulgudur ama koşuda pencere değiştirilmez (§7.3).
-  ⚠ **TADİLAT-1 (§6i, koşudan önce):** ilk metin 3000'i `data.history_bars`a bağlıyordu.
+  ⚠ **TADİLAT-1 (§6j, koşudan önce):** ilk metin 3000'i `data.history_bars`a bağlıyordu.
   O ayar backtest'te verinin başlangıcını, canlıda modelin çerçevesini belirliyor ve motor
   backtest'te her bara başlangıçtan o bara kadar HER ŞEYİ veriyor (`core/engine.py::
   _snapshot`) — yani "aynı sayı" iki ortamda iki farklı pencere demekti. 3000 artık bir

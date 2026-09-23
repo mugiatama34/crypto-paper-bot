@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`dc_short`un ÖN-KAYITLI koşusu (docs/backtest.md > 6i). Ölçümün parçası DEĞİL.
+"""`dc_short`un ÖN-KAYITLI koşusu (docs/backtest.md > 6j). Ölçümün parçası DEĞİL.
 
 Ön-kayıt `03e9e2e` (TADİLAT-1 `5ad7653`) bu betikten ÖNCE commit edildi. Betik o metni
 MEKANİK olarak uygular: sıra (A → embargo ölçümü → B), kapılar, küme bootstrap'ı, karar.
@@ -10,16 +10,16 @@ R, ortalama R, kâr faktörü, drawdown, kırılımlar ve i.i.d. aralıklar `cor
 gelir (kural 7). Burada hesaplanan YALNIZCA üç şey vardır ve üçü de ön-kayıtta bu betiğe
 verilmiştir:
 
-1. **Küme bootstrap aralıkları ve kesinlik** (§6i > 8-9). `core/metrics.py`nin canlı yolu
-   DEĞİŞMEZ (karar 54): canlı tablo i.i.d. aralıkla okunmaya devam eder; bu koşunun
+1. **Küme bootstrap aralıkları ve kesinlik** (§6j > 8-9). `core/metrics.py`nin canlı yolu
+   DEĞİŞMEZ (karar 55): canlı tablo i.i.d. aralıkla okunmaya devam eder; bu koşunun
    bağlayıcı aralığı buradadır. R'nin tanımı yine `merge_fills` + `r_multiple`tır.
 2. **Hedef-R dağılımı** (`rr=` etiketinden) — bir getiri değil, bir GEOMETRİ.
-3. **Huni** (§6i > 6) — tur raporundaki sayaçların (`survey`, `skipped_signals`,
+3. **Huni** (§6j > 6) — tur raporundaki sayaçların (`survey`, `skipped_signals`,
    `rejections`) dizilişi.
 
 **Pencereler `scripts/backtest_ema.py`den İTHAL EDİLİR** (sayımla, `ema_trend`le ve
 `xsec_mom`la aynı). **Dönem B, A koşulup embargo ÖLÇÜLMEDEN başlatılamaz** ve betik tek bir
-çağrıda ikisini de koşar — `--only` yoktur: tek tetikleme, tek sonuç dosyası (§6i > 12).
+çağrıda ikisini de koşar — `--only` yoktur: tek tetikleme, tek sonuç dosyası (§6j > 12).
 
 **Derinlik** (`--history-bars 12000`) §5b'nin 1. sınıfıdır: modelin gördüğü pencere
 `dc.lookback_bars`tır (TADİLAT-1), veri ne kadar eskiden başlarsa başlasın.
@@ -65,20 +65,20 @@ LAYER = "dc"
 MODEL = "dc_short"
 CONTROL = "dc_coinflip"
 
-# --- Ön-kayıtlı sayılar (docs/backtest.md > 6i). Hiçbiri koşu sonucuna göre değişmez. ---
-K1_MIN_COINS = 6              # §6i > 10: dönem B'de en az bu kadar coinde
+# --- Ön-kayıtlı sayılar (docs/backtest.md > 6j). Hiçbiri koşu sonucuna göre değişmez. ---
+K1_MIN_COINS = 6              # §6j > 10: dönem B'de en az bu kadar coinde
 K1_MIN_PROFIT_FACTOR = 1.1    # ... PF bunun ÜSTÜNDE
-K3_MAX_DRAWDOWN_PCT = 25.0    # §6i > 10
+K3_MAX_DRAWDOWN_PCT = 25.0    # §6j > 10
 K2_REFERENCE_TRADES = 300     # RAPORLANIR, bağlayıcı değil (§6g > TADİLAT-1'in gerekçesi)
-MIN_CLUSTERS = 10             # §6i > 8: altında aralık DEĞERLENDİRİLEMEZ
-CROSS_NOT_VISIBLE_FINDING = 0.05   # §6i > 6: aşarsa BULGU (pencere değiştirilmez)
-S1_MAX_RELATIVE_GAP = 0.10    # §6i > 10: aşarsa E kapısı OKUNMAZ
+MIN_CLUSTERS = 10             # §6j > 8: altında aralık DEĞERLENDİRİLEMEZ
+CROSS_NOT_VISIBLE_FINDING = 0.05   # §6j > 6: aşarsa BULGU (pencere değiştirilmez)
+S1_MAX_RELATIVE_GAP = 0.10    # §6j > 10: aşarsa E kapısı OKUNMAZ
 S2_CENTER, S2_TOLERANCE = 0.5, 0.05
-P3_MIN_RATIO = 1.5            # §6i > 11
-POWER = 0.80                  # §6i > 9
-COUNT_REFERENCE = {"raw": 1773, "primary": 1090}   # §6i > 2, commit f5df1bb
+P3_MIN_RATIO = 1.5            # §6j > 11
+POWER = 0.80                  # §6j > 9
+COUNT_REFERENCE = {"raw": 1773, "primary": 1090}   # §6j > 2, commit f5df1bb
 CLUSTER_DEFINITIONS = ("regime", "month")
-HISTORY_BARS = 12000          # §6i > 12 (TADİLAT-1): §5b 1. sınıf derinlik
+HISTORY_BARS = 12000          # §6j > 12 (TADİLAT-1): §5b 1. sınıf derinlik
 FUNDING_PERIODS = 6000        # `ema_trend`in koşusuyla aynı; derinleştirir, kısaltmaz
 
 
@@ -122,7 +122,7 @@ def read_rows(result: BacktestResult, model: str) -> list[dict[str, str]]:
 
 
 def cluster_key(position: Position, definition: str) -> str:
-    """Küme kimliği (§6i > 8). `regime`: sembol + kesişim barı; `month`: `opened_at` ayı (UTC).
+    """Küme kimliği (§6j > 8). `regime`: sembol + kesişim barı; `month`: `opened_at` ayı (UTC).
 
     `regime` etiketi YOKSA hata fırlatılır: etiketsiz bir pozisyonu tek başına bir küme
     saymak, bağımlılığı tam da ölçülmek istenen yerde yok sayardı (`core/tags.py`nin
@@ -146,7 +146,7 @@ def group(positions: Sequence[Position], definition: str) -> dict[str, list[floa
 
 
 # --------------------------------------------------------------------------- #
-# Küme bootstrap (§6i > 8)
+# Küme bootstrap (§6j > 8)
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, kw_only=True)
 class ClusterCI:
@@ -212,7 +212,7 @@ def cluster_diff_ci(
     iterations: int,
     seed: str,
 ) -> ClusterCI:
-    """`ort(model) − ort(kontrol)` — EŞLEŞTİRİLMİŞ küme bootstrap'ı (§6i > 8).
+    """`ort(model) − ort(kontrol)` — EŞLEŞTİRİLMİŞ küme bootstrap'ı (§6j > 8).
 
     Kümeler iki modelde ORTAKTIR (kontrol aynı kurulum barlarında yazı-tura atar), bu
     yüzden her iterasyonda küme etiketleri BİR KEZ, iki modelin kümelerinin BİRLEŞİMİNDEN
@@ -260,7 +260,7 @@ def cluster_diff_ci(
 
 
 def binding_low(intervals: Sequence[ClusterCI]) -> float | None:
-    """BAĞLAYICI alt sınır: iki tanımın alt sınırlarının MİNİMUMU (§6i > 8).
+    """BAĞLAYICI alt sınır: iki tanımın alt sınırlarının MİNİMUMU (§6j > 8).
 
     Tanımlardan biri değerlendirilemezse (küme < 10 ya da hesaplanamadı) bağlayıcı sınır
     YOKTUR ve kapı geçilmiş sayılmaz — eksik bir çıta geçilmiş çıta gibi görünmemeli.
@@ -271,7 +271,7 @@ def binding_low(intervals: Sequence[ClusterCI]) -> float | None:
 
 
 # --------------------------------------------------------------------------- #
-# Kesinlik ve MDE (§6i > 9) — formül ön-kayıtlı, sayı koşudan
+# Kesinlik ve MDE (§6j > 9) — formül ön-kayıtlı, sayı koşudan
 # --------------------------------------------------------------------------- #
 def _z() -> float:
     normal = statistics.NormalDist()
@@ -305,7 +305,7 @@ def precision(groups: Mapping[str, Sequence[float]]) -> dict[str, Any]:
 def precision_diff(
     model: Mapping[str, Sequence[float]], control: Mapping[str, Sequence[float]]
 ) -> dict[str, Any]:
-    """Fark: `d_g = Σ(r−r̄_m)/n_m − Σ(r−r̄_c)/n_c`, `SE = sqrt(Σ d_g²)` (§6i > 9)."""
+    """Fark: `d_g = Σ(r−r̄_m)/n_m − Σ(r−r̄_c)/n_c`, `SE = sqrt(Σ d_g²)` (§6j > 9)."""
     m_values = [r for rs in model.values() for r in rs]
     c_values = [r for rs in control.values() for r in rs]
     n_m, n_c = len(m_values), len(c_values)
@@ -340,7 +340,7 @@ def precision_diff(
 # Geometri ve huni — hesap değil, dizilim
 # --------------------------------------------------------------------------- #
 def rr_distribution(positions: Sequence[Position]) -> dict[str, Any]:
-    """Hedef-R çarpanı (`rr=`): medyan, p25, p75, p90 ve `rr < 1.0` SAYISI/PAYI (§6i > 13)."""
+    """Hedef-R çarpanı (`rr=`): medyan, p25, p75, p90 ve `rr < 1.0` SAYISI/PAYI (§6j > 13)."""
     values = [p.rr for p in positions if p.rr is not None]
     missing = sum(1 for p in positions if p.rr is None)
     if not values:
@@ -359,7 +359,7 @@ def rr_distribution(positions: Sequence[Position]) -> dict[str, Any]:
 
 
 def funnel(result: BacktestResult, model: str = MODEL) -> dict[str, Any]:
-    """Sayım ↔ backtest hunisi (§6i > 6). Sayaçlar tur raporundandır; burada dizilir."""
+    """Sayım ↔ backtest hunisi (§6j > 6). Sayaçlar tur raporundandır; burada dizilir."""
     report = result.report.by_model(model)
     if report is None:
         return {"available": False}
@@ -491,7 +491,7 @@ def statistics_block(
     out["model_mean"]["binding_low"] = binding_low(model_cis)
     out["control_mean"]["binding_low"] = binding_low(control_cis)
     out["diff"]["binding_low"] = binding_low(diff_cis)
-    # MDE'nin bağlayıcı okuması BÜYÜK olanıdır (minimum kuralının güç tarafı, §6i > 9).
+    # MDE'nin bağlayıcı okuması BÜYÜK olanıdır (minimum kuralının güç tarafı, §6j > 9).
     mdes = [out["precision"][d]["model"].get("mde") for d in CLUSTER_DEFINITIONS]
     diff_mdes = [out["precision"][d]["diff"].get("mde") for d in CLUSTER_DEFINITIONS]
     out["mde_binding"] = {
@@ -504,7 +504,7 @@ def statistics_block(
 def consistency(
     payload: Mapping[str, Any], model_positions: Sequence[Position], control_positions: Sequence[Position]
 ) -> dict[str, Any]:
-    """S1 / S2 / M1 (§6i > 10): hipotez değil, kıyasın okunabilirliği."""
+    """S1 / S2 / M1 (§6j > 10): hipotez değil, kıyasın okunabilirliği."""
     model_row = payload.get("model") or {}
     control_row = payload.get("control") or {}
     a, b = model_row.get("avg_stop_distance_pct"), control_row.get("avg_stop_distance_pct")
@@ -582,7 +582,7 @@ def period_payload(
 
 
 # --------------------------------------------------------------------------- #
-# Kapılar ve karar — MEKANİK (§6i > 10)
+# Kapılar ve karar — MEKANİK (§6j > 10)
 # --------------------------------------------------------------------------- #
 def period_gates(period: Mapping[str, Any]) -> dict[str, Any]:
     """Bir dönemin bağlayıcı kapıları. i.i.d. dışı sayılar `acceptance_flags`ten okunur."""
@@ -660,7 +660,7 @@ def evaluate_gates(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _verdict(periods: Mapping[str, Mapping[str, bool]], failures: Sequence[str]) -> str:
-    """Karar sırası (§6i > 10): geçerlilik → küme tabanı → S1 → kapılar → çıpa istisnası."""
+    """Karar sırası (§6j > 10): geçerlilik → küme tabanı → S1 → kapılar → çıpa istisnası."""
     invalid = [name for name, g in periods.items() if not g["validity"]]
     if invalid:
         return f"DEĞERLENDİRİLEMEZ — geçerlilik kapısı (B-1/B-2) düştü: {', '.join(invalid)}"
@@ -786,7 +786,7 @@ def run(
         "layer": LAYER,
         "model": MODEL,
         "control": CONTROL,
-        "preregistration": "docs/backtest.md > 6i (03e9e2e, TADİLAT-1 5ad7653)",
+        "preregistration": "docs/backtest.md > 6j (03e9e2e, TADİLAT-1 5ad7653)",
         "history_bars": history_bars,
         "embargo_bars": embargo,
         "periods": {
@@ -825,7 +825,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="dc_short ön-kayıtlı koşusu (docs/backtest.md > 6i)")
+    parser = argparse.ArgumentParser(description="dc_short ön-kayıtlı koşusu (docs/backtest.md > 6j)")
     parser.add_argument("--out-dir", default="backtests/dc")
     parser.add_argument("--config", default=None)
     # Dönem sınırları ve derinlik GİRDİ DEĞİLDİR: ön-kayıtlıdır ve ithal edilir. Yalnızca

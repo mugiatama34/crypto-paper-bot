@@ -439,6 +439,7 @@ defter yazan modeller), **katalog** (`strategies/registry.py`'de kayıtlı ama l
 |---|---|---|---|
 | 12 | `scalp_fixed` | long + short | beş kol (üçü canlı, bkz. karar 48), eşit ağırlıklı çekiliş, öğrenme yok — eksenlerin KONTROLÜ |
 | 16 | `scalp_patient` | long + short | `scalp_fixed`in ikizi, tek farkı zaman stop'u sınırı (16 ↔ 100 bar) |
+| 23 | `scalp_coinflip` | long + short | **kabul çıtasının KONTROLÜ** (`acceptance.control_model`): `scalp_patient`in ikizi, tek farkı kurulumun YÖNÜNÜN adil bir yazı-turayla seçilmesi. Stop ve hedef MESAFELERİ yansıtılarak korunur, yani aynı maliyet ölçeğinde kalır (docs/backtest.md > 6i) |
 | 13 | `vwap_clone` | long + short | **dış sistem kopyası** (kural 15b), yarışmacı değil |
 | 14 | `vwap_managed` | long + short | VWAP sapma-dönüş sinyali, ev kurallarıyla (risk boyutlandırma, %1 taban, 1.5R) |
 
@@ -514,7 +515,7 @@ haftalarda kümelenir, i.i.d. aralık bu yüzden sahte biçimde dar olurdu.
 |---|---|---|---|
 | — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
 | 22 | `dc_short` | **yalnızca short** | ölüm kesişimi rejiminde EMA50 reddi; stop EMA200, hedef önceki dip, çıkış yalnızca stop/hedef |
-| 23 | `dc_coinflip` | long + short | **kontrol grubu**: aynı kurulum, yön yazı-tura, mesafeler kapanış etrafında aynalanmış |
+| 24 | `dc_coinflip` | long + short | **kontrol grubu**: aynı kurulum, yön yazı-tura, mesafeler kapanış etrafında aynalanmış |
 
 ### Katalog — kayıtlı ama listede değil
 

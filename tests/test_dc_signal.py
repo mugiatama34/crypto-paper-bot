@@ -1,4 +1,4 @@
-"""`strategies/dc/signal.py`: ön-kayıtlı tanımların (docs/backtest.md > 6i > 3) sınaması.
+"""`strategies/dc/signal.py`: ön-kayıtlı tanımların (docs/backtest.md > 6j > 3) sınaması.
 
 Gösterge ölçekleri testte KÜÇÜLTÜLÜR (EMA5/EMA20, ısınma 40) — tanımın kendisi periyottan
 bağımsızdır ve 50/200'lük bir kurgu binlerce bar isterdi. Canlı değerler (50/200/600/3000)
@@ -75,7 +75,7 @@ def test_setup_geometry_is_the_preregistered_one():
 
 
 def test_target_excludes_the_setup_bar_itself():
-    """Kurulum barının kendi low'u ne kadar derin olursa olsun hedefe girmez (§6i > 3)."""
+    """Kurulum barının kendi low'u ne kadar derin olursa olsun hedefe girmez (§6j > 3)."""
     frame = _pullback()
     _, reference = _evaluate(frame)
     _set(frame, "low", 100.0)

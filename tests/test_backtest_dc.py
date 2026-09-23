@@ -1,4 +1,4 @@
-"""`scripts/backtest_dc.py`: ön-kayda (docs/backtest.md > 6i) MEKANİK sadakat.
+"""`scripts/backtest_dc.py`: ön-kayda (docs/backtest.md > 6j) MEKANİK sadakat.
 
 Sınanan: (1) pencereler ve embargo yöntemi İTHAL EDİLİR; (2) küme bootstrap'ı i.i.d.
 aralıktan geniştir, deterministiktir ve < 10 kümede DEĞERLENDİRİLEMEZ; (3) bağlayıcı alt
@@ -50,7 +50,7 @@ def test_windows_and_embargo_are_imported_not_redefined():
 
 
 def test_period_bounds_are_not_cli_inputs():
-    """Dönem sınırları girdi DEĞİLDİR; yalnızca B'nin sonu açıktır (§6i > 12)."""
+    """Dönem sınırları girdi DEĞİLDİR; yalnızca B'nin sonu açıktır (§6j > 12)."""
     args = harness._parse_args([])
     assert not hasattr(args, "a_start") and not hasattr(args, "a_cutoff")
     assert not hasattr(args, "history_bars")
@@ -113,7 +113,7 @@ def _ci(low, high, *, evaluable=True, definition="regime"):
 
 
 def test_binding_low_is_the_minimum_not_the_widest_interval():
-    """Geniş ama yukarı kaymış bir aralık kuralı GEVŞETEMEZ (§6i > 8, düzeltme kaydı)."""
+    """Geniş ama yukarı kaymış bir aralık kuralı GEVŞETEMEZ (§6j > 8, düzeltme kaydı)."""
     narrow_low = _ci(0.05, 0.10, definition="regime")    # dar, alt sınırı düşük
     wide_high = _ci(0.20, 0.90, definition="month")      # geniş, alt sınırı yüksek
     assert wide_high.width > narrow_low.width

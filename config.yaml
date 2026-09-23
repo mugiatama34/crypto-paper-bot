@@ -329,7 +329,7 @@ layers:
 
   dc:
     # Ölüm kesişimi + geri çekilme katmanı (4H) — `dc_short` (model 22) ve kontrolü
-    # `dc_coinflip` (model 23). Ön-kayıt: docs/backtest.md > 6i (bu blok, o belge commit
+    # `dc_coinflip` (model 24). Ön-kayıt: docs/backtest.md > 6j (bu blok, o belge commit
     # edildikten SONRA kuruldu).
     #
     # NEDEN `ema` KATMANINA EKLENMEDİ: stop kurulum barındaki EMA200'dür ve ölçülebilirlik
@@ -359,11 +359,11 @@ layers:
     ledger_dir: "ledgers_dc"
     metrics_file: "docs/data/metrics_dc.json"
 
-    # Sayımın GEOMETRİSİNDEN seçildi, sonuçtan değil (§6i > 2): 3.0'da kurulumların %48'i,
+    # Sayımın GEOMETRİSİNDEN seçildi, sonuçtan değil (§6j > 2): 3.0'da kurulumların %48'i,
     # 6.0'da %15'i elenir. Eleme motorundur; model kendisi süzmez.
     max_stop_atr_multiple: 6.0
 
-    # KATMAN BAŞINA ilk kota override'ı (§6i > 5 ve TADİLAT-2, karar 54) — kota sabitleri
+    # KATMAN BAŞINA ilk kota override'ı (§6j > 5 ve TADİLAT-2, karar 55) — kota sabitleri
     # katmanlar arası PAYLAŞILIR; bu, `tests/test_layers.py::QUOTA_EXEMPTIONS`te SAYILI dar
     # bir istisnadır. Kök değerle (3) short-only
     # `dc_short` en fazla 3, karma yönlü `dc_coinflip` 5 pozisyon taşırdı — ölçülen eksenle
@@ -413,7 +413,26 @@ layers:
     # tetiklemedi, yani bandit'in tahsis edecek bir şeyi yok ("1 uygun kol"). Eksenleri
     # kapatmak bilgi kaybı değil, iki kez alınan "fark yok" cevabını kabul etmektir.
     # Hareket eden TEK eksen süredir (scalp_patient ↔ scalp_fixed: −0.01 ↔ −0.15).
-    models: ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
+    #
+    # KONTROL EKLENDİ (docs/backtest.md > 6i): `scalp_coinflip` (23), `scalp_patient`in
+    # ikizi — tek farkı kurulumun YÖNÜNÜN adil bir yazı-turayla seçilmesi. Katmanda
+    # kontrol modeli YOKTU (`random_ctrl` base katmanındadır), bu yüzden
+    # `core/metrics.py::acceptance_flags` marj ve bootstrap koşullarını düşürüyordu:
+    # `edge` fiilen `avg_r > 0`'a inmişti ve `scalp_patient` örneklem kapısını geçtiği
+    # anda `passed: true` görünecekti. Kontrol canlı kâğıt katmanında KOŞAR, çünkü C-2
+    # bir FARKA dayanır ve farkın öteki tarafı ancak defterde birikir.
+    models: ["scalp_fixed", "scalp_patient", "scalp_coinflip", "vwap_clone", "vwap_managed"]
+
+    # Kontrol bu katmanda `scalp_coinflip`tir: kabul çıtasının E kapısı onun ortalama
+    # R'sine göre ölçülür. Kök değer (`random_ctrl`) bu katmanda YOKTUR ve bırakılsaydı
+    # kapı kümede olmayan bir modele bakıp sessizce düşerdi (CLAUDE.md > Kabul Çıtası;
+    # `xsec` katmanının `xsec_random` ataması ile birebir aynı gerekçe).
+    #
+    # `random_ctrl` buraya EKLENEMEZDİ: scalp geometrisini (5×ATR stop, %1 taban, 1.5R)
+    # hiç okumaz ve kendi stop kuralıyla koşar — iki farklı stop ölçeğini aynı C-2
+    # farkında toplamak ⚠B bandını yakar ve `cost_per_r`yi kıyaslanamaz kılardı.
+    acceptance:
+      control_model: "scalp_coinflip"
 
     # SABİT evren, hacimden otomatik seçim YOK. Gerekçe: evren zamanla kayarsa geçmiş
     # performans başka bir sembol kümesine ait olur ve kıyas bozulur. 13 sembol elle
@@ -584,7 +603,7 @@ xsec:
   stop_atr_multiple: 5.0    # haftalık oynaklık ölçeği: baskın çıkış rebalance olsun, gürültü stop'u değil
 
 # --- Ölüm kesişimi + geri çekilme (modeller 22-23) ---
-# YALNIZCA `dc_short` ve `dc_coinflip` okur. Dört sayı da docs/backtest.md > 6i'de
+# YALNIZCA `dc_short` ve `dc_coinflip` okur. Dört sayı da docs/backtest.md > 6j'de
 # ÖN-KAYITLIDIR: süpürülmez, koşu sonucuna göre değiştirilemez (§7.1).
 #
 # ATR burada YOKTUR: model ATR kullanmaz (stop EMA200, hedef önceki dip); ATR yalnızca

@@ -1,6 +1,6 @@
-"""Model 23 — `dc_coinflip`: `dc_short`un KONTROLÜ. Aynı kurulum, yönü yazı-tura.
+"""Model 24 — `dc_coinflip`: `dc_short`un KONTROLÜ. Aynı kurulum, yönü yazı-tura.
 
-Ön-kayıt: docs/backtest.md > 6i > 4. Desen `wave_coinflip`in (§6h > EK-1) aynısıdır.
+Ön-kayıt: docs/backtest.md > 6j > 4. Desen `wave_coinflip`in (§6h > EK-1) aynısıdır.
 Kurulum tespiti, geometri, evren, sıra ve sayım `dc_short`tan MİRAS ALINIR, kopyalanmaz;
 ayrışan TEK şey yöndür — ölçülen eksen odur.
 
@@ -11,7 +11,7 @@ ayrışan TEK şey yöndür — ölçülen eksen odur.
 
 **RNG ayrı akıştır ve SEMBOL bazında çatallanır:** `random_seed:as_of:dc_coinflip:sembol`.
 Bar başına tek çekiliş, o bardaki bütün kurulumları aynı yöne çevirirdi ve S2 (ters payı
-0.5 ± 0.05) bunu denetler. **Tohum tek seferliktir** (§6i > 4): farklı tohumla yeniden
+0.5 ± 0.05) bunu denetler. **Tohum tek seferliktir** (§6j > 4): farklı tohumla yeniden
 koşmak, E kapısının dayandığı FARKIN zeminini seçmek olurdu.
 
 **Denetim izi:** `coin=same|flipped`. S2 yalnızca bu etiketten okunur.

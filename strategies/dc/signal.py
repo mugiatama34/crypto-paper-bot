@@ -1,6 +1,6 @@
-"""Ölüm kesişimi + geri çekilme kurulumunun TEK tanımı (modeller 22-23 aynı kopyayı okur).
+"""Ölüm kesişimi + geri çekilme kurulumunun TEK tanımı (modeller 22 ve 24 aynı kopyayı okur).
 
-Ön-kayıt: docs/backtest.md > 6i. Tanımlar ölçülebilirlik sayımıyla
+Ön-kayıt: docs/backtest.md > 6j. Tanımlar ölçülebilirlik sayımıyla
 (`scripts/measure_death_cross.py`) BİREBİR aynıdır; bu modül onları DEĞİŞTİRMEZ:
 
 - **Ölüm kesişimi:** bar c'de `EMA50 < EMA200`, bar c−1'de `EMA50 ≥ EMA200`.
@@ -11,7 +11,7 @@
 Modelin eklediği tek şey GEOMETRİDİR ve o da ön-kayıtlıdır:
 
 - **Stop:** kurulum barındaki EMA200.
-- **Hedef:** `min(low[c .. t−1])` — kurulum barı HARİÇ (§6i > 3). Dâhil edilseydi hedef
+- **Hedef:** `min(low[c .. t−1])` — kurulum barı HARİÇ (§6j > 3). Dâhil edilseydi hedef
   tanım gereği `≤ low[t] ≤ close[t]` olur ve "hedef zaten geçilmiş" kuralı fiilen boş
   kalırdı. `t = c` ise aralık boştur: `target_undefined`.
 - `close ≤ hedef` ise sinyal yok (`target_passed`). Bu kural bir tercih değil, kural 8'in
@@ -22,13 +22,13 @@ Modelin eklediği tek şey GEOMETRİDİR ve o da ön-kayıtlıdır:
 _within_stop_band`) — model kendisi süzseydi eleme iki yerde yazılı olurdu ve model ile
 kontrol farklı yerlerde süzülebilirdi.
 
-**Görüş penceresi bir MODEL kuralıdır** (`dc.lookback_bars`, §6i > TADİLAT-1): canlıda
+**Görüş penceresi bir MODEL kuralıdır** (`dc.lookback_bars`, §6j > TADİLAT-1): canlıda
 modele `data.history_bars` bar verilir, backtest'te ise motor her bara yüklenen verinin
 TAMAMINI verir (`core/engine.py::_snapshot`). Kesişimin görülebilirliği pencereye bağlı
 olduğu için pencere burada, iki ortamda aynı olacak biçimde kesilir. Pencerenin ilk
 `warmup_bars` barı EMA200'ün ısınmasıdır ve kesişim o sınırdan SONRA aranır.
 
-**Tarama sırası ve sayım kodları sabittir** (§6i > 3): her sembol TAM OLARAK bir koda
+**Tarama sırası ve sayım kodları sabittir** (§6j > 3): her sembol TAM OLARAK bir koda
 düşer, yani `Σ counts == taranan sembol` değişmezi korunur. Sayım salt denetim izidir:
 hangi kurulumun üretileceğini ve sırasını etkilemez.
 """
@@ -45,7 +45,7 @@ from core.config import get_setting
 from core.indicators import bars_until, ema_series
 from strategies.base import Direction, MarketData
 
-# Sayım kodları — sıra ön-kayıtlıdır (§6i > 3) ve `scan` onu bu sırayla uygular.
+# Sayım kodları — sıra ön-kayıtlıdır (§6j > 3) ve `scan` onu bu sırayla uygular.
 NO_DATA = "no_data"
 NO_REGIME = "no_regime"
 CANDLE_FAILS = "candle_fails"
@@ -59,7 +59,7 @@ SURVEY_CODES: tuple[str, ...] = (
 )
 
 # Kurulum barı olup (rejim + mum tuttu) kesişimi görülen ya da görülemeyen her şey. Payda
-# `cross_not_visible`in %5 eşiği içindir (§6i > 6) ve kurulum barlarıdır, rejim barları değil.
+# `cross_not_visible`in %5 eşiği içindir (§6j > 6) ve kurulum barlarıdır, rejim barları değil.
 SETUP_BAR_CODES: tuple[str, ...] = (CROSS_NOT_VISIBLE, TARGET_UNDEFINED, TARGET_PASSED, SETUP)
 
 ARM = "dc_pullback"
@@ -67,7 +67,7 @@ ARM = "dc_pullback"
 
 @dataclass(frozen=True, kw_only=True)
 class DcRules:
-    """Ön-kayıtlı parametreler (`config.yaml > dc`). Süpürülmez (§6i > 12)."""
+    """Ön-kayıtlı parametreler (`config.yaml > dc`). Süpürülmez (§6j > 12)."""
 
     fast_period: int
     slow_period: int
@@ -119,14 +119,14 @@ class DcSetup:
 
     @property
     def reward_risk(self) -> float:
-        """Hedef mesafesi ÷ stop mesafesi — kurulum kapanışından ölçülür (§6i > 3)."""
+        """Hedef mesafesi ÷ stop mesafesi — kurulum kapanışından ölçülür (§6j > 3)."""
         return self.target_distance / self.stop_distance
 
 
 def reflect(setup: DcSetup) -> DcSetup:
     """Yönü çevirir, stop ve hedef MESAFELERİNİ kurulum kapanışı etrafında aynalar.
 
-    `stop_ters = close + (close − stop)`, `hedef_ters = close + (close − hedef)` (§6i > 4).
+    `stop_ters = close + (close − stop)`, `hedef_ters = close + (close − hedef)` (§6j > 4).
     Kapanış etrafında aynalanır çünkü doğrulamanın ve tavan kapısının referansı odur
     (`core/engine.py::_reference_price`): `|close − stop|` korunduğu için tavan kapısı iki
     modelde birebir aynı çalışır. Geometri yalnızca BURADA yazılıdır; kontrol onu yeniden

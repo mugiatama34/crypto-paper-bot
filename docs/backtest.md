@@ -121,6 +121,17 @@ Bir model ancak aşağıdakilerin **tamamı** sağlanırsa canlıya alınır:
 bu durumu zaten `logger.warning` ile söyler ve koşul düşer. Scalp'e bir çıpa eklemek AYRI
 bir karardır; bu belge onu varsaymaz ve eksik çıtayı geçilmiş çıta gibi göstermez.
 
+**Scalp katmanında C-2 de 2026-09-22'ye kadar DEĞERLENDİRİLEMİYORDU — ve bu yazılı
+değildi.** Katmanın `models` listesinde kontrol modeli yoktu (`random_ctrl` base
+katmanındadır), yani `acceptance_flags` marj ve bootstrap koşullarını düşürüyordu: scalp'te
+`edge` fiilen `avg_r > 0`'a iniyordu. Statü C-3'ün eksikliğiyle BİREBİR AYNIYDI, tek farkı
+belgeye geçmemiş olmasıydı — ve bir çıtanın sessizce düşmesi, geçilmiş bir çıta gibi
+görünmesinin tam da yoludur. Boşluk §6i ile kapatıldı (`scalp_coinflip`, model 23:
+`scalp_patient`in ikizi, yönü adil bir yazı-turayla seçilmiş). **Kontrol kendi örneklem
+kapısını (`acceptance.control_min_trades` = 30) geçene kadar C-2 hâlâ değerlendirilemez ve
+`passed` FALSE kalır** — bu bir gerileme değil, ölçülmemiş bir kapının ölçülmemiş
+görünmesidir.
+
 ---
 
 ## 5. Bilerek kabul edilen sapmalar
@@ -368,7 +379,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 49 |
 | 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 | 5 | `wave_scalp`: Elliott Wave Dalga-3 (15m, zigzag + retrace 0.236–0.886) bir edge taşır (dış sistemden) | §6h, bu commit | A: 2025-03-01 → 2025-12-31, B: A+embargo → 2026-08-31 (**Aşama 2'de**) | P1: dönem A net ort. R ≤ 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
-| 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6i, bu commit (uygulama sonraki commit'te) | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -399,6 +410,15 @@ kalacaktır.
 senkronu, dolum belirsizliği sayımı, sicilin kendisi — hiçbiri bir modelin performansı
 hakkında bir iddia taşımaz), 2'si reddedildi (işlem sıklığı tavanı, sembol eleme), 3'ü
 kuyrukta (maliyet modeli, rejim filtresi, portföy tavanı).
+
+**§6i'nin iki işi de sicile GİRMEZ** (`scalp_coinflip` kontrolü ve `ScalpModel.
+take_survey`). Gerekçe yukarıdaki "4'ü ölçüm katmanı" cümlesinin aynısıdır ve §6h >
+EK-1'in gerekçesiyle birebir örtüşür: ikisi de bir modelin performansı hakkında yeni bir
+iddia taşımıyor — biri var olan bir kapıyı (C-2) scalp katmanında ölçülebilir kılıyor,
+öteki hâlihazırda üretilen bir sayımı tur raporuna düşürüyor. Ortada düzeltilecek bir `p`
+değeri yoktur, yani **BH paydası değişmez.** ⚠ Kontrolün EKLENMESİ bir hipotez değildir,
+ama `scalp_patient`in onunla ölçülecek C-2'si sicildeki bir satırın parçası olduğunda o
+satırın kendi tahmini olarak yazılır — kontrol zemin, hipotez değildir.
 
 ### Çoklu karşılaştırma düzeltmesi: Benjamini-Hochberg
 
@@ -2498,6 +2518,14 @@ etkileşir — yazı-tura short üretince kota bağlar ve kontrol o kurulumu hi�
 mesafe dağılımını kaydırabilir. **Tolerans sonuca göre GEVŞETİLMEYECEKTİR** (§7.1); S1
 aşılırsa C-2 okunmaz ve sebebi yazılır.
 
+> ⚠ **DİPNOT (2026-09-22):** yukarıdaki *"Scalp raporundaki %1 DEĞİL"* cümlesi ARTIK
+> GEÇERSİZDİR — scalp'in uygulanan toleransı da %10'dur (§6i > 7 > DÜZELTME-1). EK-1'in
+> kendi sayısı, gerekçesi ve kapsamı DEĞİŞMEDİ; değişen, kıyaslandığı öteki sayıdır.
+> Cümle silinmiyor: düzeltilen şey bir kaydın kendisi değil, o kaydın başka bir belgeye
+> yaptığı atıftır. ⚠ Ayrıca bir kayıt: yukarıdaki **(b) maddesi** (`max_positions`
+> doluluğunun zamanla farklılaşması) burada koşudan önce yazılmıştı ve §6i onu
+> DEVRALMADI — DÜZELTME-1'in kapattığı boşluk tam olarak budur.
+
 **M1 bir KAPI değil, bir tutarlılık kontrolüdür.** Bilgisiz bir yön seçiminin beklenen
 değeri sıfırdır ve gerçekleşen R, friksiyon kadar altındadır; CI bunu kapsamıyorsa ölçülen
 şey yönün bilgisizliği değil başka bir şeydir (ör. yansıtmanın mesafeyi bozması) ve önce o
@@ -2517,11 +2545,347 @@ araştırılır.
 
 ---
 
-## 6i. ÖN-KAYIT — `dc_short` (model 22): ölüm kesişimi + geri çekilme short, ve `dc` katmanı
+## 6i. ÖN-KAYIT — scalp katmanının KONTROLÜ (`scalp_coinflip`, model 23) ve `ScalpModel` taraması *(2026-09-22)*
+
+**Bu bölüm bir HİPOTEZ ön-kaydı DEĞİLDİR ve §6c'nin siciline satır AÇMAZ.** İki iş de
+ÖLÇÜMDÜR: biri hâlihazırda var olan bir kapıyı (C-2) scalp katmanında **ölçülebilir**
+kılar, öteki hâlihazırda üretilen ama hiçbir yere yazılmayan bir sayımı tur raporuna
+düşürür. Hiçbiri bir modelin performansı hakkında yeni bir iddia taşımıyor, yani ortada
+düzeltilecek bir `p` değeri yoktur — **BH paydasına girmezler** (§6h > EK-1'in "Ölçümler —
+hipotez DEĞİL" başlığıyla birebir aynı gerekçe).
+
+Ön-kayıt yine de **koşudan ÖNCE** yazılıyor ve ayrı bir commit'tedir. Gerekçe §7.4'ün
+kendisidir: ölçümlerin tahminleri (M1, M2, S1) sonucu gördükten sonra yazılsaydı,
+"zaten beklediğimiz buydu" cümlesi denetlenemez olurdu — bir ölçümün tahmini de bir
+tahmindir.
+
+### 1. Sorun — scalp katmanında `edge` fiilen `avg_r > 0`'a iniyor
+
+`config.yaml > layers.scalp.models` bugün şudur:
+
+```yaml
+models: [scalp_fixed, scalp_patient, vwap_clone, vwap_managed]
+```
+
+Bu listede **kontrol modeli yoktur** (`random_ctrl` base katmanındadır) ve **çıpa da
+yoktur** (`vwap_clone` bir KOPYADIR, çıpa değil — kural 15b). `core/metrics.py::
+acceptance_flags` kontrolü kümede bulamayınca marj, bootstrap güven aralığı ve çıpa
+koşullarını DÜŞÜRÜR (`_control_avg_r` / `_benchmark_return`; ikisi de `logger.warning`
+yazar). Geriye kalan tek koşul `avg_r > 0`'dır.
+
+Bunun pratikteki sonucu şudur: **`scalp_patient` örneklem kapısını (n = 30) geçtiği anda
+`passed: true` görünecektir** — oysa §4'ün çıtası C-1'den ibaret değildir. Rozet
+"doğrulandı" derken ölçülmüş olan yalnızca "ortalamanın işareti pozitif" olurdu.
+
+§6h > 7 bu boşluğu `wave_scalp` için zaten dürüstçe yazıyordu ("C-2 ve C-3
+değerlendirilemez"); bu bölüm C-2'yi katmanın **kendi kadrosu** için ölçülebilir kılar.
+**C-3 hâlâ değerlendirilemez ve bu bölüm onu AÇMAZ** — scalp'e bir çıpa eklemek ayrı bir
+karardır ve burada varsayılmaz.
+
+### 2. Model: `scalp_coinflip` (model 23, `strategies/scalp_coinflip.py`)
+
+**Cevapladığı soru tek:** *Kolun YÖN iddiası bilgi taşıyor mu, yoksa taşıdığı şey yalnızca
+"oynanabilir bir kurulum" mu?*
+
+`ScalpPatient`ten TÜRER. Beş kol, ev kapıları (%1 stop tabanı, 1.5R), `stop_atr_multiple`
+(5.0 × ATR), 100 barlık zaman stop'u, kol seçimi (`choose_arm`) ve **çekiliş kimliği
+(`rng_identity`)** birebir aynıdır — **miras alınır, kopyalanmaz** (`scalp_patient`in
+`ScalpFixed`ten türemesiyle aynı desen ve aynı gerekçe: kopyalanan bir kural bir gün
+sessizce ayrışır ve fark "yönün ölçüsü" olmaktan çıkar). Yani iki model her barda **aynı
+kolu ve aynı sembolü** seçer; eşleştirilmiş deneydir.
+
+**Ayrışan TEK şey yöndür.** Kapılardan geçmiş ve SEÇİLMİŞ kurulumun yönü **adil bir
+yazı-tura** ile belirlenir:
+
+- "Aynı" gelirse sinyal `scalp_patient`in ürettiğinin birebir aynısıdır.
+- "Ters" gelirse yön çevrilir ve **stop ile hedef MESAFELERİ girişin öbür tarafına aynen
+  yansıtılır:**
+
+  ```
+  stop_ters   = giriş + (giriş − stop_özgün)
+  hedef_ters  = giriş + (giriş − hedef_özgün)
+  ```
+
+  Böylece `|giriş − stop|` ve `|hedef − giriş|` KORUNUR ve `stop_distance_pct` ile
+  `reward_risk` tanım gereği değişmez.
+
+**Mesafeyi korumak bir tercih değil, ölçümün ŞARTIDIR.** Yansıtma mesafeyi değiştirseydi
+kontrol başka bir maliyet ölçeğinde koşar, ⚠B bandı yanar ve `cost_per_r` kıyaslanamaz
+olurdu — yani §6h > EK-1'in `scalp_coinflip`i *wave'in kontrolü olmaktan* reddetme
+gerekçesine kendimiz düşerdik. Denetimi **S1**'dir.
+
+⚠ **EK-1'in reddi bu modeli reddetmez, bir EŞLEŞTİRMEYİ reddeder.** EK-1 şunu yazmıştı:
+`scalp_coinflip` scalp kollarının stop geometrisini (5 × ATR) taşır, `wave_scalp` ise
+`p2 ∓ dalga1 × 0.15` taşır; iki farklı stop ölçeğini aynı C-2 farkında toplamak "seçimin
+ölçüsü"nü "iki maliyet ölçeğinin farkı"na çevirirdi. O cümle `scalp_coinflip`i **wave'in
+kontrolü** olarak reddediyordu ve o red BUGÜN DE GEÇERLİDİR — `scripts/backtest_wave.py`
+kontrolü (`wave_coinflip`) açıkça geçirir ve katmanın varsayılanını KULLANMAZ, tam olarak
+bu satır yazılırken öngörülen durum gerçekleştiği için. Burada eşleştirilen çift ise
+`scalp_patient ↔ scalp_coinflip`tir ve ikisi AYNI stop geometrisini taşır; EK-1'in itirazı
+bu çifte uygulanmaz.
+
+**Yazı-tura AYRI bir RNG akışındandır:**
+
+```
+kol / sembol çekilişi   {random_seed}:{as_of}:{rng_identity}            ← PAYLAŞILIR
+yazı-tura               {random_seed}:{as_of}:scalp_coinflip:{sembol}   ← KENDİNE AİT
+```
+
+Tek akış olsaydı her yazı-tura kol/sembol çekilişini bir adım kaydırır, model
+`scalp_patient` ile aynı kurulumları seçmez ve eşleştirme bozulurdu — o zaman ölçülen şey
+"yönün katkısı" olmaktan çıkar, tesadüfün ölçüsü olurdu (CLAUDE.md > *"çekiliş,
+ölçülmeyen eksende PAYLAŞILIR, ölçülen eksende BAĞIMSIZDIR"*). Akış SEMBOL bazında
+çatallanır: aynı barda iki sembolün yazı-turası bağımsız olmalıdır, yoksa "adil yazı-tura"
+bar başına tek bir çekilişe inerdi.
+
+**Denetim izi:** `reason` kuyruğuna `coin=same|flipped` eklenir. Yazı-turanın gerçekten
+adil olduğu (S2) yalnızca bu etiketten okunabilir; yönü geometriden geri hesaplamak aynı
+cevabı verir ama ikinci bir doğruluk kaynağı yaratırdı.
+
+**Statü: YARIŞMACI** (`is_benchmark = False`, `is_replica = False`) — `random_ctrl` ve
+`xsec_random` ile birebir aynı gerekçe: kontrol, yarışmacılarla AYNI boyutlandırma, AYNI
+maliyet ve AYNI limitlerle koşmazsa aralarındaki fark sinyalin değil koşulların ölçüsü
+olur.
+
+**Tasarımı bozulamaz** (`random_ctrl` ve `xsec_random`ın aynı sözü): buraya eklenecek her
+filtre — "kötü yönü ele", "trende karşı çevirme" — kontrolü sessizce bir stratejiye
+çevirir ve C-2 farkının neye karşı ölçüldüğü bilinemez hâle gelir.
+
+### 3. Neden `random_ctrl` bu katmanın kontrolü OLAMAZ
+
+`random_ctrl` base katmanının kontrolüdür ve scalp geometrisini HİÇ okumaz: kendi stop
+kuralı vardır, `scalp.*` bloğunu (5 × ATR, %1 taban, 1.5R) görmez ve 15 dakikalık barın
+ölçeğinde kurulmamıştır. Onu scalp'e eklemek tam olarak EK-1'in reddettiği kıyası
+üretirdi — iki farklı stop ölçeği, yanan bir ⚠B ve kıyaslanamaz bir `cost_per_r`. Kontrol
+ile ölçtüğü modelin **aynı maliyet ölçeğinde** olması C-2'nin ön koşuludur; bu yüzden
+kontrol katmanın kendi gövdesinden türetildi.
+
+### 4. Katman bağlantısı — ve kontrolün birikeceği süre
+
+- `scalp_coinflip` katmanın `models` listesine EKLENİR. Kâğıt katmanında koşar: C-2 bir
+  FARKA dayanır ve farkın öteki tarafı ancak canlı defterde birikir.
+- `layers.scalp.acceptance.control_model: "scalp_coinflip"` tanımlanır. Emsal `xsec`
+  katmanıdır (`control_model: "xsec_random"`); kök varsayılan (`random_ctrl`) yalnızca
+  base ve ema katmanlarında kalır.
+- **Kontrol kendi örneklem kapısını (`acceptance.control_min_trades` = 30) geçene kadar
+  katmanda `edge` DEĞERLENDİRİLEMEZ ve `passed` FALSE kalır.** Bu bir gerileme değil,
+  **beklenen ve istenen** davranıştır: `scalp_patient`in yakında göreceği `passed: true`
+  yanlış olurdu. `core/metrics.py::acceptance_flags` bunu `logger.warning` ile söyler ve
+  skorboard rozetin ipucunda "⚠ KONTROL HENÜZ ÖLÇÜLMEDİ: n / 30" olarak gösterir (bu
+  görünüm bugün de vardır, kod değişikliği gerektirmez).
+- **Bildirim kadrosu:** `run-scalp.yml`de `scalp_coinflip` SUSTURULUR (`--mute`).
+  Gerekçesi `run.yml`in `random_ctrl` için yazdığının aynısıdır — bilgisiz bir çekilişin
+  yönünü telefona düşürmek, susturma penceresinin engellemek için var olduğu gürültünün
+  kendisi olurdu. Susturma bir BİLDİRİM ayarıdır, ölçüm değil: model koşmaya, deftere
+  yazmaya ve tabloda görünmeye devam eder.
+
+### 5. KABUL EDİLEN SAPMA — yansıtılan hedef yapısal engele DAYANMAZ
+
+`strategies/scalp/arms.py`de hedef iki parçanın YAKIN olanıdır: projeksiyon
+(`target_reward_risk × stop`) ile kolun kendi **yapısal engeli** (VWAP, Bollinger orta
+bandı, aralığın ölçülü hareketi…). Yansıtılan bir kurulumda hedef, girişin öbür tarafında
+aynı MESAFEDEDİR ama orada kolun tezinden gelen bir engel YOKTUR — yani kontrolün hedefi
+saf bir projeksiyondur.
+
+**Sapma düzeltilmez ve gizlenmez.** Düzeltmenin iki yolu vardı, ikisi de daha kötüdür:
+
+1. *Ters yönde yeni bir yapısal engel hesaplamak* — o zaman kontrol "aynı kurulum, ters
+   yön" olmaktan çıkar, kendi hedef kuralı olan İKİNCİ bir model olurdu ve fark artık
+   yönün değil iki hedef kuralının ölçüsü olurdu.
+2. *Hedefi olduğu yerde bırakmak* — `|hedef − giriş|` değişirdi, yani S1 tanım gereği
+   düşer, ⚠B yanar ve C-2 okunamaz hâle gelirdi.
+
+Sapmanın YÖNÜ de önceden yazılıyor: engelsiz bir hedef, engelli olana göre **daha az sık**
+ulaşılır değildir — engel çoğu zaman hedefi YAKINLAŞTIRIR (yakın olanı alınır), yani
+yansıtılmış hedef ortalamada **projeksiyona eşit ya da ondan uzaktır**. Bu, kontrolü
+olduğundan **kötü** gösterme yönünde çalışır ve C-2 farkını (model − kontrol) **şişirebilir.**
+Bu yüzden C-2 tek başına okunmaz: M1 aynı anda kontrolün ortalamasının ≈ −`cost_per_r`
+olmasını bekler ve o beklenti tutmazsa önce bu sapma araştırılır.
+
+### 6. `ScalpModel.take_survey` — karar 34'ün açık işi
+
+Bugün `ScalpModel` `take_survey` uygulamıyor, yani `metrics_scalp.json > round.models[].
+survey` alanı beş kollu her model için `{}`. Sonucu şudur: **`funding_spike_fade`in
+katmanın tüm ömrü boyunca neden tek sinyal üretmediği hiçbir yere yazılmıyor** (karar 48
+bunu açık iş olarak bırakmıştı) ve `momentum_burst`ün sebebi (karar 34: kapı aritmetiği)
+yalnızca bir TÜRETMEDİR, ölçüm değil.
+
+Sayım `rejections` / `emitted` / `proximity` ile **aynı statüde bir DENETİM İZİDİR**
+(kural 15): ölçüme girmez, hangi kolun seçileceğini, hangi sembolün çekileceğini ve
+sıralarını DEĞİŞTİRMEZ.
+
+**Birim: kol × eleme sebebi.** Sebepler AYRIKTIR ve her kol için toplamları o barda
+taranan sembol sayısına eşittir:
+
+| sebep | anlamı |
+|---|---|
+| `kurulum_yok` | kol o sembolde hiç kurulum üretmedi (tez tutmadı ya da veri yetmedi) |
+| `stop_tabani` | kurulum var, stop mesafesi %1'in altında (`scalp.min_stop_pct`) |
+| `hedef_stop` | kurulum var, hedef/stop < 1.5 (`scalp.min_reward_risk`) |
+| `rejim_kapisi` | ek rejim kapısı eledi (yalnızca `regime_filter` uygulayan modelde) |
+| `kota` | tüm kapıları geçti ama o barda oynanmadı (barda tek sinyal) |
+| `secildi` | oynanan kurulum |
+
+**Neden `kota` tek bir sebep.** "Başka bir kol seçildi" ile "bu kolda başka bir sembol
+çekildi" ayrı ayrı sayılabilirdi; ikisi de aynı şeyi söyler — kurulum oynanabilirdi ve
+oynanmadı, çünkü barda tek sinyal oynanır. Ayırmak sayımı seçim mekaniğinin bir kopyası
+hâline getirirdi, oysa taramanın cevapladığı soru "sinyal neden hiç ÜRETİLMEDİ"dir;
+seçimin kendisi zaten `emitted` ve kol kırılımından okunur.
+
+**Ayrık sayım bir SAĞLAMADIR, bir tercih değil:** toplam taranan sembol sayısını vermeyen
+bir sayım, bir kolun sessizce düştüğünü gizleyebilirdi (`propose_all` bir kolu hata
+verdiğinde boş liste döndürür). Bu yüzden kolun patladığı bar ayrı bir sebeple
+(`kol_hatasi`) sayılır ve `kurulum_yok`a KARIŞTIRILMAZ: "tez tutmadı" ile "kol patladı"
+aynı hücreye yazılamaz.
+
+Sayım bar bazında TOPLANIR (`core/engine.py::ModelReport.survey`; telafi edilen bar da
+kendi taramasını yapar) ve alt sınıfta override EDİLMEZ — `scalp_fixed`, `scalp_patient`
+ve `scalp_coinflip` aynı kopyayı alır.
+
+### 7. ÖN-KAYITLI ÖLÇÜMLER (sonucu görmeden)
+
+| # | Ölçüm | Tahmin / kural |
+|---|---|---|
+| **S1** | `avg_stop_distance_pct` farkı, `scalp_patient` ↔ `scalp_coinflip` | **< %1 bağıl.** Aşarsa **M1 ve C-2 OKUNMAZ** ve sebebi sonuca yazılır — ⚠ **DÜZELTME-1 ile S1a + S1b olarak İKİYE BÖLÜNDÜ** (aşağısı); satır kayıt için duruyor, uygulanan hâli S1a/S1b'dir |
+| **S2** | kontrolün "ters" oranı (`coin=flipped` payı) | **0.5 ± 0.02** (10.000 çekilişlik kod sağlaması; defterdeki pay örneklem küçükken daha geniş salınır) |
+| **M1** | kontrolün ortalama R'si, n ≥ 30'da | %95 bootstrap CI'si **0'ı ve −`cost_per_r`'yi KAPSAR** (bilgisiz yön ≈ −maliyet) |
+| **M2** | `scalp_patient.avg_r − scalp_coinflip.avg_r` | §4'teki hâliyle **C-2**: ≥ 0.15R **ve** farkın bootstrap CI alt sınırı > 0 |
+
+**S1 toleransı %1'dir ve bu sayı koşudan ÖNCE sabittir.** §6h > EK-1'in wave için seçtiği
+%10 DEĞİL, çünkü buradaki eşleştirme daha sıkıdır: yansıtma mesafeyi aritmetik olarak
+korur (test: birebir eşitlik) ve iki model `rng_identity`yi paylaştığı için aynı barda
+aynı kurulumu seçer. **Toleransı aşabilecek TEK bilinen mekanizma önceden yazılıyor:**
+`max_short_positions` (3) YÖNLE etkileşir — yazı-tura short üretince kota bağlayabilir ve
+kontrol o kurulumu hiç açmaz, yani iki defterin DOLUM kümeleri ayrışır ve mesafe dağılımı
+kayar. S1 aşılırsa önce bu bakılır, **tolerans GEVŞETİLMEZ** (§7.1).
+
+#### DÜZELTME-1 — S1 İKİYE BÖLÜNDÜ: %1 yanlış kümede ölçülüyordu *(2026-09-22, merge'ten ÖNCE)*
+
+⚠ **Yukarıdaki S1 satırı SİLİNMEDİ ve silinmeyecek.** Yanlış yazılmış bir ön-kayıt satırını
+silmek, sicilin engellemek için var olduğu şeyin ta kendisidir (§6c'nin "düşen hipotez
+silinmez" kuralının aynısı). Satır olduğu gibi duruyor; aşağıdaki düzeltme onu **kapsam
+bakımından** ikiye ayırır ve ikinci parçanın toleransını değiştirir.
+
+**Bu düzeltme `scalp_coinflip`in HİÇBİR İŞLEMİ GÖRÜLMEDEN yazıldı.** Model bu satırlar
+yazılırken henüz tek tur koşmadı: defteri yok, tek bir `coin=` etiketi üretmedi ve
+`avg_stop_distance_pct` değeri hiçbir yerde hesaplanmadı. Düzeltmenin dayanağı kontrolün
+sonucu değil, **`scalp_patient`in ZATEN VAR OLAN defteridir** — yani §7.1'in yasakladığı
+"sonuca bakıp eşiği ayarlama" burada yapılamaz, çünkü bakılacak bir sonuç yok.
+
+**Ölçülen gerekçe (`ledgers_scalp/scalp_patient/`, 533 özsermaye barı / 22 kapanmış
+pozisyon):**
+
+| Gözlem | Değer | Anlamı |
+|---|---|---|
+| azami eşzamanlı pozisyon | **5** (11 barda, %2.1; şu an açık olan küme de tam 5) | **`max_positions` BAĞLIYOR** |
+| ≥ 4 pozisyon taşınan bar | 190 / 533 = **%35.6** | tavan sınırda gezen bir doluluk, istisna değil |
+| azami eşzamanlı short | **3** (şu an açık kümede de 3) | **`max_short_positions` BAĞLIYOR** |
+| yön dağılımı (kapanmış) | long %68.2 ↔ short %31.8 | kontrolün ~%50 short'u kotayı DAHA SIK bağlayacak |
+
+**Neden %1 yanlış kümede ölçülüyordu.** Ön-kayıt, dolum kümelerini ayrıştırabilecek TEK
+mekanizma olarak `max_short_positions`ı yazmıştı. Ölçüm bunu **eksik** buldu: toplam tavan
+(5) da bağlıyor ve bağladığı anda ayrışma yönden BAĞIMSIZ hâle gelir — kotası dolu bir
+barda iki modelin hangi kurulumu açabildiği, o ana kadar taşıdıkları pozisyonların
+ömürlerine bağlıdır ve o ömürler yön çevrildiği anda zaten ayrışmıştır. Yani
+`avg_stop_distance_pct`, iki modelin AYNI kurulumlarının değil **farklı ALT
+KÜMELERİNİN** ortalaması olur. Bir alt küme farkı üzerinde %1 bağıl tolerans aramak,
+aritmetik olarak korunan bir şeyi (mesafe) korunmayan bir şeyle (hangi kurulumun
+doldurulabildiği) sınamaktır.
+
+⚠ **Bu mekanizma ZATEN YAZILIYDI ve §6i onu devralmadı.** §6h > EK-1 wave için %10'u
+seçerken gerekçesini üç maddede saymıştı ve **(b) maddesi** birebir şuydu: *"dolumlar
+ayrışır ve `max_positions` doluluğu zamanla farklılaşır."* §6i aynı aileden bir kontrol
+tanımlarken bu maddeyi taşımadı, yalnızca (c)'yi (`max_short_positions`) yazdı. Yani
+DÜZELTME-1 yeni bir keşif değil, **bir kopyalama eksiğinin onarımıdır** — ve bu, eşiğin
+sonuca bakılarak seçilmediğinin ikinci kanıtıdır: devralınan sayı, zaten commit edilmiş
+bir ön-kayıtta duruyordu.
+
+**S1 ikiye bölünür ve ikisi AYRI şeyleri sınar:**
+
+| # | Ölçüm | Kural |
+|---|---|---|
+| **S1a** | aynı bar + aynı kol + aynı sembol kurulumunda stop mesafesi | **BİREBİR EŞİT** (`rel=1e-12`). Yansıtmanın mesafeyi koruduğunun kanıtı; dolum kümesinden BAĞIMSIZDIR, çünkü kurulum düzeyinde ölçülür. Mevcut test: `tests/test_scalp_coinflip.py::test_the_control_trades_the_same_setup_at_the_same_stop_distance` |
+| **S1b** | `avg_stop_distance_pct` farkı, `scalp_patient` ↔ `scalp_coinflip` (DEFTER) | **< %10 bağıl** (§6h > EK-1'in wave için seçtiği sayı). Aşarsa **M1 ve C-2 OKUNMAZ** ve sebebi sonuca yazılır |
+
+**S1a KAPI GİBİ davranır, S1b okuma koşuludur.** S1a düşerse yansıtma bozuktur ve ölçüm
+zaten geçersizdir — o bir kod hatasıdır, bir veri durumu değil. S1b düşerse kod doğru ama
+iki defter kıyaslanabilir ölçekte değildir; o zaman C-2 okunmaz (§4'ün C-4'ünün aynı
+mantığı: ⚠B bir kusur değil, bir kıyas koşuludur).
+
+**%10 neden EK-1'in sayısı ve neden gevşetme DEĞİL.** EK-1 wave için %10'u tam olarak bu
+üç mekanizmaya dayandırmıştı: (a) posterior ayrışması, (b) dolumların ayrışması, (c)
+`max_short_positions`ın yönle etkileşmesi. Burada (a) YOKTUR (kontrol öğrenmez) ama (b) ve
+(c) aynen vardır ve ölçüm (b)'nin `max_positions` üzerinden de işlediğini gösterdi. Yani
+aynı gerekçeye aynı sayı veriliyor — **`scalp_coinflip`in bir sonucuna bakılarak değil,
+kardeş bir ön-kaydın zaten sabitlenmiş sayısı devralınarak.** Yeni bir eşik uydurmak,
+tam da §7.1'in yasakladığı serbestliği açardı.
+
+⚠ **S1b bir kez daha aşılırsa tolerans YİNE GEVŞETİLMEYECEKTİR** (§7.1). O durumda
+yapılacak şey eşiği büyütmek değil, C-2'yi OKUMAMAK ve kotanın ayrıştırdığını
+raporlamaktır.
+
+**BİLGİ SATIRI — kapı değil, ölçüm** (`passed` üretmez, hiçbir eşiği yoktur):
+
+| # | Bilgi | Kaynak |
+|---|---|---|
+| **I1** | kontrolün LONG oranı (kapanmış pozisyonlarda) | defter; beklenen ~%50, `scalp_patient`in %68.2'si ile YAN YANA okunur — fark yazı-turanın kurulumun yön yanlılığını gerçekten sildiğini gösterir |
+| **I2** | kontrolün `max_short_positions` ret sayısı | `round.models[].rejections` (`core/engine.py`); kod ZATEN üretiyor, yeni bir alan açılmadı |
+| **I3** | kontrolün `max_positions` ret sayısı | aynı yer — DÜZELTME-1'in gerekçesi tam olarak bu kodun da bağladığıdır, yani ayrı sayılmalıdır |
+
+I1–I3 **S1b'yi AÇIKLAR, onun yerine geçmez:** S1b düşerse bu üç sayı sebebin kotada mı
+başka yerde mi olduğunu söyler. Hiçbiri bir eşiğe bağlanmaz — bağlansaydı sonucu gördükten
+sonra "hangi sayı kapı" diye seçme serbestliği doğardı.
+
+**M1 bir KAPI değil, bir tutarlılık kontrolüdür.** Bilgisiz bir yön seçiminin beklenen
+değeri sıfırdır ve gerçekleşen R friksiyon kadar altındadır; CI bunu kapsamıyorsa ölçülen
+şey yönün bilgisizliği değil başka bir şeydir (ör. yansıtmanın mesafeyi ya da hedef
+yapısını bozması, §5) ve önce o araştırılır.
+
+**`take_survey` için ön-kayıtlı ölçümler (30 tur sonra okunur):**
+
+| # | Ölçüm | Tahmin / kural |
+|---|---|---|
+| **V1** | `funding_spike_fade`in kurulumlarının hangi sebepte elendiği | **TAHMİN YOK** — bugün bilinmiyor ve bir tahmin uydurmak, sayımın var olma sebebini (karar 48'in açık işi) sonradan "zaten biliyorduk"a çevirirdi. Sebep adıyla raporlanır |
+| **V2** | `momentum_burst`ün eleme sebebi | kurulumlarının **neredeyse tamamı `hedef_stop`ta** elenmeli, `kurulum_yok`ta değil — karar 34'ün aritmetiğinin türetimi budur. Doğrulamazsa **karar 34 eksiktir** ve karara bir DÜZELTME alt başlığı yazılır |
+
+V2 bir modelin performansı hakkında bir iddia değil, **var olan bir kararın türetiminin
+sağlamasıdır**; bu yüzden o da sicile girmez.
+
+### 8. Koşu kuralları
+
+- **Hiçbir mevcut defter sıfırlanmaz ve hiçbir modelin kuralı değişmez** (§7.1).
+  `scalp_fixed`, `scalp_patient`, `vwap_clone` ve `vwap_managed`in parametreleri,
+  geometrileri ve çekiliş kimlikleri aynen kalır; `scalp_coinflip` katmana yeni bir satır
+  olarak EKLENİR.
+- **Kontrolün tohumu tek seferliktir** ve farklı tohumla yeniden çekilmez (§6g >
+  "Kontrolün TOHUMU" ile birebir aynı gerekçe: C-2 bir FARKA dayanır ve tohum serbest
+  bırakılsaydı "kontrol kötü çıkana kadar yeniden çek" mümkün olurdu). Tohum
+  `random_seed`dir ve zaten sabittir.
+- **Kontrolün birikmesi beklenirken C-2 okunmaz.** `n < 30` iken yazılacak tek cümle
+  "kontrol birikiyor"dur; ara bir okuma, çıtayı örneklem büyüdükçe defalarca sorgulamak
+  (ve en uygun anda durmak) demekti.
+- `scalp_coinflip` **wave koşularının kontrolü DEĞİLDİR** ve olmayacaktır (§6h > EK-1);
+  `scripts/backtest_wave.py` kontrolü açıkça geçirmeye devam eder.
+
+### 9. Bu ön-kayıt neyi SEÇMİYOR
+
+- Scalp katmanına **çıpa eklemiyor**: C-3 değerlendirilemez kalır (§4).
+- `scalp_patient`i canlıya ALMIYOR: C-1 bugün sağlanmıyor (−0.01) ve bu bölüm o sayıya
+  dokunmuyor.
+- Kolların tezine, eşiklerine ya da geometrisine dokunmuyor: `take_survey` yalnızca
+  SAYAR.
+- Ölü kolları (`momentum_burst`, `funding_spike_fade`) silmiyor ya da onarmıyor —
+  V1/V2 tam olarak onarımın hangi yerde yapılacağını ölçmek içindir.
+
+---
+
+## 6j. ÖN-KAYIT — `dc_short` (model 22): ölüm kesişimi + geri çekilme short, ve `dc` katmanı
+
+> **NUMARALANDIRMA NOTU (birleştirmede, içerik değişmeden).** Bu ön-kayıt `03e9e2e`, `5ad7653` ve `cd8fb54` commit'lerinde **§6i**, kararı **54**, kontrolü **model 23** olarak yazıldı. Aynı günlerde `main` kendi ön-kaydını da §6i, kararını 54 ve `scalp_coinflip`i model 23 olarak işledi; birleştirmede `main`'in numaraları korundu ve bu bölüm **§6j**, kararı **55**, kontrolü **model 24** oldu. Metnin hiçbir kuralı, sayısı ya da tarihi değişmedi — yalnızca numaralar. O commit mesajlarındaki "§6i" bu bölümü kasteder.
 
 **Bu belge koşudan ÖNCE yazıldı ve AYRI bir commit olarak işlendi** — uygulama (strateji,
 config, harness, testler) SONRAKİ commit'tedir. Koşudan önce görülen TEK veri
-ölçülebilirlik sayımıdır (§6i > 2): olay sayısı ve stop MESAFESİ. Getiri, R, PnL, kazanma
+ölçülebilirlik sayımıdır (§6j > 2): olay sayısı ve stop MESAFESİ. Getiri, R, PnL, kazanma
 oranı görülmedi. §7'nin tamamı bu bölüme uygulanır.
 
 ### 1. Köken, mekanizma, statü
@@ -2539,13 +2903,13 @@ trendin devamına işaret eder. Karşı taraf: düşüşte "dip avlayan" erken a
 işlemleri model sahibinin BTC iskelet testinde **her iki dönemde de kaybetti: dönem A
 −127 USDT, dönem B −178 USDT.** Parametreler ve giriş kuralı farklı, aile aynı. Kaynağı
 model sahibidir; sayı bu deponun defterinden okunmadı ve burada doğrulanamaz — ama yönü
-nettir ve P1'i (§6i > 11) **riskli bir tahmin** yapar. Önsel kanıtı yazmamak, olası bir
+nettir ve P1'i (§6j > 11) **riskli bir tahmin** yapar. Önsel kanıtı yazmamak, olası bir
 olumlu sonucu olduğundan şaşırtıcı olmayan gösterirdi.
 
 ### 2. Ölçülebilirlik sayımı — kapı GEÇİLDİ (koşudan önce görülen TEK veri)
 
 `scripts/measure_death_cross.py`, commit `f5df1bb`, workflow koşusu `#35718873885`.
-Tanımlar §6i > 3'tekilerin aynısı; ChopZone yok (sayı bir ÜST SINIRDIR). Kapı sayı
+Tanımlar §6j > 3'tekilerin aynısı; ChopZone yok (sayı bir ÜST SINIRDIR). Kapı sayı
 görülmeden sabitlenmişti: **dönem A birincil sayım ≥ 150.**
 
 | | Dönem A |
@@ -2563,9 +2927,9 @@ sayıldı (OKX'in verdiği ilk bar + 600 barlık ısınma).
 
 ⚠ **Kapı bir ÜST SINIRA uygulandı.** Sayımın 6 barlık kümeleme kuralı modelde YOKTUR;
 modelin fiili kümelemesi "sembolde açık pozisyon varken yeni pozisyon açılmaz" kuralıdır
-(`duplicate_position`, §6i > 3) ve o, tutuş süresi boyunca sürdüğü için daha uzundur. Yani
+(`duplicate_position`, §6j > 3) ve o, tutuş süresi boyunca sürdüğü için daha uzundur. Yani
 gerçekleşen pozisyon sayısı 1090'ın **altında** olacaktır. Fark koşudan sonra bir huni
-olarak raporlanır (§6i > 6).
+olarak raporlanır (§6j > 6).
 
 **Stop tavanı (6.0) bu geometriden seçildi, sonuçtan DEĞİL:** stop EMA200'de kalırsa
 kurulumların %48'i `ema` katmanının 3.0 tavanını aşıyor, 6.0'da %15'i elenir. Sayı bu
@@ -2601,18 +2965,18 @@ dip olduğunu varsayıyor; bu yüzden aralık `[c, t−1]`dir.
 
 **`target_undefined` raporlanır.** Kurulum kesişim barının kendisindeyse (`t = c`) aralık
 boştur, hedef tanımsızdır ve sinyal üretilmez. Sayımda 1090 birincilin 4'ü bu durumdaydı —
-az, ama sayı raporlanır ki elenen kurulumlar görünür olsun (huni, §6i > 6).
+az, ama sayı raporlanır ki elenen kurulumlar görünür olsun (huni, §6j > 6).
 
 **Bu seçim hedef-R dağılımını DOĞRUDAN etkiler ve o yüzden dağılım ayrıca önemlidir.**
 Hariç tutmak bile erken rejim kurulumlarında hedefi yakın bırakır: kesişimden birkaç bar
 sonraki bir kurulumda "önceki dip" çoğu zaman girişin hemen altındadır ve R:R 1'in altına
 düşer. **Filtre EKLENMEZ.** Koşudan sonra bakılacak şey: kaç pozisyon `rr < 1.0` hedefle
-girdi (§6i > 13). Büyük bir kısmıysa modelin geometrisi baştan zayıf demektir — ama bu bir
+girdi (§6j > 13). Büyük bir kısmıysa modelin geometrisi baştan zayıf demektir — ama bu bir
 SONUÇ olarak öğrenilir, şimdi bir filtreyle önlenmez.
 
 **Kesişimin GÖRÜLEBİLİRLİĞİ — veri derinliği bu modelde sinyali DEĞİŞTİREBİLİR.** Hedef
 kesişim barına bağlıdır; model ise her barda yalnızca son **`dc.lookback_bars` = 3000**
-barı görür — bu bir MODEL kuralıdır ve canlıda da backtest'te de aynıdır (bkz. §6i >
+barı görür — bu bir MODEL kuralıdır ve canlıda da backtest'te de aynıdır (bkz. §6j >
 TADİLAT-1). Pencerenin ilk **600 barı** EMA200'ün ısınmasıdır (tohumun ağırlığı `(1 − 2/201)^400 ≈
 %1.4`; sayımın `WARMUP_BARS`ının AYNISI) ve kesişim yalnızca o sınırdan SONRA aranır.
 Kural: `t` barından geriye `EMA50 < EMA200` sürdüğü müddetçe yürünür; ısınma sınırına
@@ -2633,10 +2997,10 @@ Mum koşulu kesişim aramasından ÖNCE gelir, çünkü `cross_not_visible`in an
 olurdu ama kesişimi göremedik"tir — paydası kurulum barlarıdır, rejim barları değil.
 
 **Defter etiketleri** (`core/tags.py`): `arm=dc_pullback | regime=<kesişim barı ISO> |
-rr=<hedef mesafesi ÷ stop mesafesi>`. `regime` küme bootstrap'ının kimliğidir (§6i > 8),
+rr=<hedef mesafesi ÷ stop mesafesi>`. `regime` küme bootstrap'ının kimliğidir (§6j > 8),
 `rr` koşu sonrası hedef-R dağılımının kaynağıdır. Mesafeler kurulum kapanışından ölçülür.
 
-### 4. Kontrol: `dc_coinflip` (model 23, yarışmacı)
+### 4. Kontrol: `dc_coinflip` (model 24, yarışmacı)
 
 `wave_coinflip`in (§6h > EK-1) deseni. `dc_short`tan TÜRER; kurulum tespiti, geometri,
 evren, sıra ve sayım **miras alınır, kopyalanmaz**. Ayrışan TEK şey yöndür — ölçülen eksen
@@ -2671,10 +3035,10 @@ yarıdan** beslenir. Farkın kesinliği bu yüzden `n` değil kabaca `n/2` üzer
 | `models` | `buyhold`, `dc_short`, `dc_coinflip` | çıpa (C-3), model, kontrol — kıyas katman İÇİNDE |
 | `universe` | `ema` katmanının 13 sembolü, SABİT | sayımla aynı evren |
 | Defter / rapor | `ledgers_dc/`, `docs/data/metrics_dc.json` | katmanlar defter paylaşmaz |
-| `max_stop_atr_multiple` | **6.0** | §6i > 2 |
+| `max_stop_atr_multiple` | **6.0** | §6j > 2 |
 | `max_short_positions` | **5** (= `max_positions`) | aşağısı |
 | `acceptance.control_model` | `dc_coinflip` | kök değer (`random_ctrl`) bu katmanda YOK; bırakılsaydı kapı kümede olmayan bir modele bakıp sessizce düşerdi (`xsec`in aynı gerekçesi) |
-| `data.history_bars` | **3000** — canlı çekim derinliği; `dc.lookback_bars`dan küçük olamaz | §6i > 6, TADİLAT-1 |
+| `data.history_bars` | **3000** — canlı çekim derinliği; `dc.lookback_bars`dan küçük olamaz | §6j > 6, TADİLAT-1 |
 | `breakdowns` | `symbol`, `exit_rule`, `session`, `loss_streak` | `ema`/`xsec` ile aynı statüde ölçüm |
 | Tetikleyici | **YOK** | tanım var, koşu yok (`ema`/`xsec` statüsü) |
 
@@ -2745,7 +3109,7 @@ VARSAYILMAZ, dönem A'dan ÖLÇÜLÜR** (`measured_embargo_bars`): modelin zaman
 3000 bar (≈ 500 gün), `dc.lookback_bars` ile modelin KENDİSİNDE sabitlenir** (bkz.
 TADİLAT-1 — ilk metin bunu `data.history_bars`a bağlıyordu ve motorun mekaniğiyle
 çelişiyordu). Kesişim bu pencerenin dışında kalırsa hedef tanımsızdır ve sinyal üretilmez
-(§6i > 3). Pencere modelde sabitlendiği için backtest'in `--history-bars` değeri (12000)
+(§6j > 3). Pencere modelde sabitlendiği için backtest'in `--history-bars` değeri (12000)
 §5b'nin 1. sınıfına geri döner: yalnızca verinin nereden başladığını belirler, modelin
 gördüğünü DEĞİŞTİRMEZ.
 
@@ -2764,7 +3128,7 @@ daha az" sorusu cevapsız kalır. Huni (dönem A, `dc_short`):
 
 | Aşama | Kaynak |
 |---|---|
-| sayım: ham 1773 / birincil 1090 | §6i > 2 |
+| sayım: ham 1773 / birincil 1090 | §6j > 2 |
 | modelin kurulum barları (`setup + target_undefined + target_passed + cross_not_visible`) | `survey` |
 | fark: `cross_not_visible` + kalıntı (pencere tohumu kaynaklı EMA farkı) | `survey` |
 | − `target_undefined`, − `target_passed` → üretilen sinyal (`setup`) | `survey` |
@@ -2803,7 +3167,7 @@ lookback_bars` şartını KURULUMDA sınar). Backtest `--history-bars 12000` ile
 eskiden başlar ama model yine son 3000 barı görür. Gösterge ATR'si (tavan kapısı) son 15
 barı okuduğu için derinlikten etkilenmez.
 
-**Kararın ÖZÜ DEĞİŞMEDİ, yalnızca doğru yere konuldu.** Kullanıcının kararı (§6i > 6):
+**Kararın ÖZÜ DEĞİŞMEDİ, yalnızca doğru yere konuldu.** Kullanıcının kararı (§6j > 6):
 "3000 bar; serbest parametre değil; canlıda ve backtest'te aynı; `cross_not_visible`
 raporlanır, %5'i aşarsa bulgudur ama koşuda değiştirilmez." Bu kararın dört parçası da
 aynen yürürlükte — tek fark 3000'in `history_bars` yerine `lookback_bars`ta durmasıdır ve
@@ -2921,7 +3285,7 @@ aralıkların işidir.
 | DEFF (ay tanımı) | **3 – 6** (2022'nin ortak yönü) |
 | n_etkin | **~50 – 150** |
 | **MDE, C-1 (tek örneklem)** | **~0.3 – 0.6 R** |
-| **MDE, E kapısı (fark)** | **~0.4 – 0.8 R** — farkın bilgisi esasen "ters" yarıdan gelir (§6i > 4) |
+| **MDE, E kapısı (fark)** | **~0.4 – 0.8 R** — farkın bilgisi esasen "ters" yarıdan gelir (§6j > 4) |
 
 > **Bu kurulum ancak BÜYÜK bir etkiyi tespit edebilir. "Ayırt edilemedi" beklenen
 > sonuçlardan biridir ve tezin reddi olarak okunmaz.** Gerçekleşen sd, DEFF ve n_etkin bu
@@ -2938,7 +3302,7 @@ tek tanım.
 |---|---|---|
 | B-0/B-1/B-2 | geçerlilik (§3) | harness sadakati; ≥ 30 pozisyon; `missing_bars = 0` ve `unchecked_position_bars = 0` |
 | **C-1** | ortalama R | **> 0** |
-| **CI** | ortalama R'nin KÜME aralığı | bağlayıcı alt sınır (§6i > 8) **> 0** |
+| **CI** | ortalama R'nin KÜME aralığı | bağlayıcı alt sınır (§6j > 8) **> 0** |
 | **E** | kontrol farkı | `avg_r − dc_coinflip.avg_r ≥ 0.15R` **ve** farkın KÜME aralığının bağlayıcı alt sınırı **> 0** |
 | **C-3** | çıpa | hesap getirisi `buyhold`u geçer |
 | **C-5** | OOS | C-1, CI, E ve C-3 **dönem B'de de** sağlanır |
@@ -2952,7 +3316,7 @@ raporlanır ama bağlayıcı değildir.
 
 **Raporlanan, bağlayıcı DEĞİL:** K-2 toplam işlem (§6g > TADİLAT-1'in gerekçesi: bağlayıcı
 kapılar CI bazlı ve örneklemi içeriyor) · i.i.d. aralıklar · DEFF, n_etkin, MDE ·
-huni (§6i > 6) · `cross_not_visible` payı.
+huni (§6j > 6) · `cross_not_visible` payı.
 
 **Tutarlılık kontrolleri (hipotez değil, `wave_coinflip`in S1/S2/M1'i):**
 
@@ -2982,7 +3346,7 @@ DEĞERLENDİRİLEMEZ; (2) S1 — aşılırsa E okunmaz; (3) bağlayıcı kapıla
 | **P3** | bağımlılığın büyüklüğü | dönem A, `dc_short` ort. R: `max(genişlik_regime, genişlik_month) / genişlik_iid` **> 1.5** | ≤ 1.5 |
 | **P4** | çıpa | dönem A'da hesap getirisi `buyhold`un **altında**, yani C-3 düşer | çıpayı geçerse |
 
-**P1 riskli bir tahmindir** ve önsel kanıt ona karşıdır (§6i > 1). **P3 i.i.d. aralığın
+**P1 riskli bir tahmindir** ve önsel kanıt ona karşıdır (§6j > 1). **P3 i.i.d. aralığın
 ne kadar yanılttığının ölçüsüdür:** tutmazsa bağımlılık beklenenden zayıftır — bu da bir
 bulgudur ve küme kuralını gevşetmez. **P4 bir paradoks değildir:** short-only bir model
 dönem A'da ortalama R'de kazanırken, sermayenin tamamını piyasada tutan çıpaya getiride
@@ -2999,14 +3363,14 @@ yetişemeyebilir (dönem A'nın sonu 2023–24 boğasıdır).
 - **Dönem B'ye koşu öncesi DOKUNULMAZ.**
 - **Tek workflow tetiklemesi, tek sonuç dosyası.** Sıra betiğin içindedir: A (portföy +
   13 tek-sembollü) → embargo A'dan ÖLÇÜLÜR → B (portföy + 13 tek-sembollü).
-- **Tek tohum** (§6i > 4).
+- **Tek tohum** (§6j > 4).
 
 ### 13. Koşu sonrası ZORUNLU rapor
 
 Çıkış sebebi dağılımı (stop / hedef / likidasyon — `exit_rule`) · tutuş süresi dağılımı ·
 **hedef R çarpanı dağılımı** (`rr=` etiketinden: medyan, p25, p75, p90) **ve `rr < 1.0` ile
-açılan pozisyonların SAYISI ve PAYI** (§6i > 3; filtre değil, geometrinin ölçüsü) · sembol
-ve YIL kırılımı · huni (§6i > 6) · `target_undefined` sayısı · `cross_not_visible` payı ·
+açılan pozisyonların SAYISI ve PAYI** (§6j > 3; filtre değil, geometrinin ölçüsü) · sembol
+ve YIL kırılımı · huni (§6j > 6) · `target_undefined` sayısı · `cross_not_visible` payı ·
 gerçekleşen pozisyon sayısı ↔
 projeksiyon · gerçekleşen sd, DEFF, n_etkin ↔ projeksiyon · iki küme tanımının küme
 sayıları, aralıkları ve genişlikleri · atılan bootstrap çekilişi sayısı · S1/S2/M1.
@@ -3021,7 +3385,6 @@ uzayından seçilmedi — §6c'nin kuralına göre **dış kökenli paydaya** gi
 
 Canlıya alınmayı. `dc` katmanının tetikleyicisi yoktur; kapılar geçilse bile `run-dc.yml`
 ayrı bir karardır — `ema` ve `xsec` katmanlarının bugünkü statüsü.
-
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR

@@ -1,4 +1,4 @@
-"""`dc_short` (model 22) ve `dc_coinflip` (model 23): ön-kayda (docs/backtest.md > 6i) sadakat.
+"""`dc_short` (model 22) ve `dc_coinflip` (model 24): ön-kayda (docs/backtest.md > 6j) sadakat.
 
 Sınanan: (1) canlı değerler config'ten gelir ve sayımla aynıdır; (2) sinyal doğrulama
 kapısından geçer ve etiketleri taşır; (3) kontrol yalnızca YÖNDE ayrışır, mesafeleri

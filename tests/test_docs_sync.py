@@ -41,7 +41,7 @@ _ACTIVE_HEADINGS = {
     # `xsec` de TANIMLI ama tetikleyicisi yok (`ema` ile aynı statü): ön-kayıt
     # docs/backtest.md > 6g, canlıya alma ayrı bir karar.
     "xsec": "### Kadro — `xsec` (tanımlı, tetikleyicisi YOK)",
-    # `dc` de TANIMLI ama tetikleyicisi yok: ön-kayıt docs/backtest.md > 6i.
+    # `dc` de TANIMLI ama tetikleyicisi yok: ön-kayıt docs/backtest.md > 6j.
     "dc": "### Kadro — `dc` (tanımlı, tetikleyicisi YOK)",
 }
 _CATALOG_HEADING = "### Katalog — kayıtlı ama listede değil"
@@ -209,14 +209,14 @@ def test_xsec_preregistration_pins_the_control_seed() -> None:
 
 
 def test_dc_preregistration_pins_the_control_seed() -> None:
-    """`dc_coinflip`in tohumu §6i'de SABİT ve `config.yaml` ile aynı olmalı.
+    """`dc_coinflip`in tohumu §6j'de SABİT ve `config.yaml` ile aynı olmalı.
 
     Gerekçe `xsec`inkinin aynısıdır: E kapısı bir FARKA dayanır ve tohum serbest kalsaydı
     "kontrol kötü çıkana kadar yeniden koş" mümkün olurdu.
     """
     seed = int(load_config()["random_seed"])
     prereg = (PROJECT_ROOT / "docs/backtest.md").read_text(encoding="utf-8")
-    heading = "### 4. Kontrol: `dc_coinflip` (model 23, yarışmacı)"
+    heading = "### 4. Kontrol: `dc_coinflip` (model 24, yarışmacı)"
     assert heading in prereg, "§6i'de kontrolü tanımlayan bölüm yok"
     section = prereg.split(heading, 1)[1].split("\n### ", 1)[0]
     assert f"`random_seed = {seed}`" in section, (

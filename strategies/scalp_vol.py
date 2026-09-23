@@ -34,7 +34,15 @@ sürenin üstüne ne kattığı" yapar. `scalp_fixed`in üstüne konsaydı fark 
 **Çekiliş PAYLAŞILIR** (`rng_identity` mirasla `scalp_fixed`): üçü de her barda aynı kolu ve
 aynı sembolü seçer. Defterlerin ayrışması yalnızca kapının ELEDİĞİ kurulumlardan gelir.
 
-**`take_survey` UYGULANIR ve bu bilinçlidir.** `momentum_burst`ün hiç tetiklenmediği iki
+**Sayım `ScalpModel`in TEK kopyasına yazılır, `take_survey` EZİLMEZ.** Kapının kendi
+teşhis anahtarları (`dusuk_vol`, `gecti`, `rejim_kapisi_yok`) gövdenin kol × sebep
+sayımının YANINA `_note_survey` ile eklenir; ayrı bir `take_survey` uygulaması, aynı
+eksenin iki tarafında iki farklı sayım tanımı demekti. Bu anahtarlar gövdenin AYRIK
+sağlamasının (`Σ <kol>/<sebep> == taranan`) DIŞINDADIR: kolsuzdurlar ve kol bazlı
+sebeplerle üst üste binerler — `strategies/vwap/signal.py`nin `extensions` kovalarının
+`counts`tan ayrı tutulmasıyla aynı gerekçe.
+
+**Sayım tutmak bilinçlidir.** `momentum_burst`ün hiç tetiklenmediği iki
 backtest sonra öğrenildi çünkü `ScalpModel` sayım tutmuyordu (karar 34). Bu modelde kapının
 kaç kurulumu elediği ilk turun yük dosyasında görünür.
 
@@ -46,7 +54,7 @@ from __future__ import annotations
 
 import logging
 from statistics import median
-from typing import Mapping, Sequence
+from typing import Sequence
 
 from strategies.base import MarketData
 from strategies.scalp.arms import ArmSetup, symbol_views
@@ -58,9 +66,8 @@ logger = logging.getLogger(__name__)
 class ScalpVol(ScalpPatient):
     name = "scalp_vol"
 
-    def __init__(self, *, config: Mapping[str, object] | None = None) -> None:
-        super().__init__(config=config)  # type: ignore[arg-type]
-        self._survey: dict[str, int] = {}
+    # Kurucu YOK: `ScalpPatient`inki yeterli. Sayım artık gövdenin tek `_survey`sine
+    # yazılıyor (karar 54), yani bu modelin kendi sayacını kurmasına gerek kalmadı.
 
     def regime_filter(
         self, setups: Sequence[ArmSetup], market: MarketData
@@ -82,7 +89,7 @@ class ScalpVol(ScalpPatient):
             # Medyan tanımsız/anlamsız: kapı UYGULANMAZ ve bu sessiz olmaz. Elemek,
             # veri boşluğunu bir rejim kararıymış gibi gösterirdi.
             logger.info("%s: evren %d sembol, rejim kapısı uygulanmadı", self.name, len(ratios))
-            self._survey["rejim_kapisi_yok"] = self._survey.get("rejim_kapisi_yok", 0) + 1
+            self._note_survey("rejim_kapisi_yok", 1)
             return list(setups)
 
         threshold = median(ratios.values())
@@ -96,13 +103,8 @@ class ScalpVol(ScalpPatient):
                     self.name, setup.arm, setup.symbol,
                     (ratio or 0.0) * 100, threshold * 100,
                 )
-                self._survey["dusuk_vol"] = self._survey.get("dusuk_vol", 0) + 1
+                self._note_survey("dusuk_vol", 1)
                 continue
-            self._survey["gecti"] = self._survey.get("gecti", 0) + 1
+            self._note_survey("gecti", 1)
             kept.append(setup)
         return kept
-
-    def take_survey(self) -> Mapping[str, int] | None:
-        """Kapının kaç kurulumu elediği — denetim izi, ölçüme girmez (kural 15)."""
-        survey, self._survey = dict(self._survey), {}
-        return survey or None

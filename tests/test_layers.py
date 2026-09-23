@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.config import ConfigError, load_config
+from core.config import ConfigError, get_setting, load_config
 from core.layers import DEFAULT_LAYER, layer_names, resolve_layer
 
 SHARED_KEYS = (
@@ -48,7 +48,12 @@ def test_scalp_layer_overrides_only_the_conditions() -> None:
     scalp = resolve_layer(config, "scalp")
 
     assert scalp.timeframe == "15m"
-    assert scalp.models == ["scalp_fixed", "scalp_patient", "vwap_clone", "vwap_managed"]
+    assert scalp.models == [
+        "scalp_fixed", "scalp_patient", "scalp_coinflip", "vwap_clone", "vwap_managed",
+    ]
+    # Kontrol katmanın KENDİ gövdesinden türer; kök değer (`random_ctrl`) scalp
+    # geometrisini hiç okumaz (docs/backtest.md > 6i > 3).
+    assert get_setting(scalp.config, "acceptance.control_model") == "scalp_coinflip"
     assert scalp.ledger_root.name == "ledgers_scalp"
     assert scalp.metrics_path.name == "metrics_scalp.json"
     assert scalp.breakdowns == ("arm", "symbol", "exit_rule", "session", "loss_streak")
@@ -76,7 +81,7 @@ def test_cost_and_risk_constants_are_identical_in_every_layer() -> None:
 
 # Katman başına KOTA istisnaları — SAYILIDIR, anahtar paylaşılan listeden çıkarılmaz.
 # `dc`: short-only model ile karma yönlü kontrolünün taşıma kapasitesini eşitlemek için
-# `max_short_positions` = `max_positions` (docs/backtest.md > 6i > TADİLAT-2, karar 54).
+# `max_short_positions` = `max_positions` (docs/backtest.md > 6j > TADİLAT-2, karar 55).
 # Kapasite asimetrisi, ölçülen eksenin (yön) farkına ölçülmeyen bir değişken sokardı.
 QUOTA_EXEMPTIONS: dict[str, frozenset[str]] = {"dc": frozenset({"max_short_positions"})}
 _QUOTA_KEYS = frozenset({"max_positions", "max_short_positions"})
