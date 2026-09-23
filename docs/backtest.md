@@ -3631,6 +3631,17 @@ C ~186 yerine ~181 çapayla koşar; §6k > 9'un C satırı pratikte değişmez. 
 deponun son değişikliğidir (ağırlık dosyası dışındaki bir dosyanın düzenlenmesi de onu
 ileri iter) — kural bu yüzden ihtiyatlı tarafta çalışır. Değerlendirme koşusu tarihi ve
 revizyonu yeniden okur; revizyon koşu sırasında değişirse betik 1 koduyla durur.
+
+### 14. SONUÇ ÖNCESİ BEKLENTİ *(2026-09-23, değerlendirme koşusu #35861965835 başladıktan SONRA, sonucu OKUNMADAN önce)*
+
+Ferhat'ın beyanı, olduğu gibi: **dönem A'nın düşmesi beklenir; en muhtemel sebep TimesFM'in
+momentum kuralından (b) ayırt edilemeyeceğidir.** Gerekçe: dalgalı serilerde bu tür modeller
+son eğilimi yumuşatarak sürdürür — yani büyük ihtimalle momentumun biraz gecikmeli bir
+kopyasını üretir. Yanılırsa bu gerçek bir bulgudur.
+
+Bu bir TAHMİNDİR, kapı değildir; geçme koşulu §6k > 8'deki gibidir. Okuma yardımı olarak
+`comparisons.momentum.discordance` (TimesFM ile momentumun ayrıştığı gözlem payı) bu
+tahminin doğrudan sınamasıdır: pay küçükse "gecikmeli kopya" okuması desteklenir.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
