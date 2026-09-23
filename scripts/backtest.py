@@ -365,8 +365,11 @@ def run_backtest(
         _seed_start_bar(ledger, strategy.name, start=start)
 
     # Anlık görüntü `end`e kadar kesilir: `now` verildiğinde core/data.py hem çıpayı hem
-    # tüm serileri oraya kadar budar, yani model geleceği GÖREMEZ (kural 12). Backtest'in
-    # look-ahead güvencesi burada başlar ve motorun bar bazlı dilimlemesiyle sürer.
+    # tüm serileri oraya kadar budar — ÖNBELLEKTEN okunan barlar dâhil (`_closed_by`).
+    # ⚠ Bu cümle bir zaman doğru DEĞİLDİ: önbellek `end`den sonrasını taşıyorsa kesim
+    # yapılmıyordu ve pencere sessizce önbelleğin ucuna taşıyordu (docs/decisions.md > 56).
+    # Model geleceği yine görmedi — motor her barı ayrıca keser (`_snapshot`) —, ama
+    # pencere ön-kayıttakinden UZUN koştu. Aşağıdaki kapı bunun bir daha sessiz olmamasıdır.
     # `now` GELECEKTE olamaz. `load_market_data` bunu "şimdi" sayar ve çıpanın tazeliğini
     # ona göre ölçer (`data.max_staleness_bars`); gelecek bir `end` ile BTC'nin son kapanmış
     # barı zorunlu olarak "bayat" çıkar ve anlık görüntü hiç üretilmez. Oysa istenen şey
@@ -376,6 +379,13 @@ def run_backtest(
     if end > now:
         logger.warning("istenen bitiş (%s) gelecekte; anlık görüntü şimdiye (%s) kadar kurulur", end, now)
     market = load_market_data(config, symbols=universe, now=min(end, now))
+    if market.as_of > end:
+        # İstenen pencerenin DIŞINDA bir bar işlenecekti: sonuç ön-kayıttaki pencereyi
+        # ölçmez. Kısalmanın aksine (aşağıdaki uyarı) bu bir sapma değil, bir arızadır.
+        raise RuntimeError(
+            f"anlık görüntü istenen bitişi AŞIYOR: as_of={market.as_of} > end={end} "
+            "(docs/decisions.md > 56)"
+        )
     logger.info(
         "katman=%s pencere=(%s, %s] as_of=%s sembol=%d model=%d",
         layer.name, start, end, market.as_of, len(market.ohlcv), len(strategies),

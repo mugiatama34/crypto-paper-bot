@@ -397,6 +397,92 @@ def test_history_bars_override_reaches_the_snapshot(monkeypatch: pytest.MonkeyPa
 
 
 # --------------------------------------------------------------------------- #
+# Pencere taşması: önbellek `end`den sonrasını taşırken (docs/decisions.md > 56)
+# --------------------------------------------------------------------------- #
+def test_a_warm_cache_past_the_end_does_not_stretch_the_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ölçülmüş arızanın uçtan uca hâli: `load_market_data` STUB'LANMAZ.
+
+    Diğer uçtan uca testler (ör. tests/test_backtest_dc.py) anlık görüntüyü `now`da KENDİ
+    kesen bir stub'la kurar — tam da bu yüzden arızayı göremediler. Burada gerçek yol
+    koşar: önbellek diskte, `end`den 100 bar sonrasına kadar dolu; borsa hiçbir şey
+    vermiyor (geçmiş bir `now` için yeni bar yoktur). Düzeltmeden önce `as_of` önbelleğin
+    ucuna, yani pencerenin 100 bar dışına düşüyordu.
+    """
+    import yaml
+
+    from core import data as data_module
+    from scripts.backtest import run_backtest
+
+    config = load_config()
+    config["data"]["cache_dir"] = str(tmp_path / "cache")
+    config["funding"]["enabled"] = False
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+
+    index = pd.date_range("2022-01-01", periods=400, freq="4h", tz="UTC", name="ts")
+    for k, symbol in enumerate(("BTC-USDT-SWAP", "ETH-USDT-SWAP")):
+        close = pd.Series(100.0 + k + 0.1 * pd.RangeIndex(len(index)), index=index)
+        frame = pd.DataFrame(
+            {"open": close, "high": close + 0.5, "low": close - 0.5, "close": close, "volume": 1.0}
+        )
+        data_module._write_cache(data_module._cache_path(config, symbol, "4H"), frame)
+
+    class _Silent:
+        def get(self, url: str, *, params: dict[str, str], timeout: float) -> Any:
+            class _Response:
+                status_code = 200
+                text = ""
+
+                @staticmethod
+                def json() -> dict[str, Any]:
+                    return {"code": "0", "msg": "", "data": []}
+
+            return _Response()
+
+    monkeypatch.setattr(data_module, "_default_session", _Silent)
+
+    start, end = index[100], index[300]
+    result = run_backtest(
+        layer_name="ema",
+        start=start,
+        end=end,
+        out_dir=tmp_path / "out",
+        models=["buyhold"],
+        symbols=["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+        config_path=str(config_path),
+    )
+
+    last_closed = end - pd.Timedelta("4h")  # `end` anında kapanmış son bar
+    assert result.end == last_closed
+    assert all(pd.Timestamp(c["last_bar"]) <= last_closed for c in result.coverage.values())
+    equity = Ledger(tmp_path / "out" / "ledger").read_equity("buyhold")
+    assert pd.Timestamp(equity[-1]["ts"]) == last_closed
+    # Önbellek dokunulmadan kalır: sonraki barlar başka bir `now`un verisidir.
+    cached = pd.read_parquet(data_module._cache_path(config, "BTC-USDT-SWAP", "4H"))
+    assert pd.Timestamp(cached.index.max()) == index[-1]
+
+
+def test_a_snapshot_past_the_end_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """İkinci savunma: veri katmanı bir gün yine `end`in ötesini verirse koşu DÜŞER."""
+    frame = _frame()
+    beyond = MarketData(ohlcv={SYMBOL: frame}, btc=frame, funding={}, as_of=frame.index[-1])
+    monkeypatch.setattr("scripts.backtest.load_market_data", lambda *a, **k: beyond)
+
+    from scripts.backtest import run_backtest
+
+    with pytest.raises(RuntimeError, match="AŞIYOR"):
+        run_backtest(
+            layer_name="scalp",
+            start=INDEX[0],
+            end=INDEX[4],
+            out_dir=Path(tempfile.mkdtemp()),
+            models=["scalp_fixed"],
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Embargo (docs/backtest.md > 6.1)
 # --------------------------------------------------------------------------- #
 def test_embargo_shifts_the_window_forward_by_whole_bars() -> None:

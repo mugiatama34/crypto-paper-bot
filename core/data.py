@@ -377,7 +377,12 @@ def fetch_ohlcv(
     merged = _merge_frames(cached, fresh)
     if not merged.empty:
         _write_cache(cache_file, merged)
-    return merged.tail(history_bars)
+    # Önbellek `now`dan SONRAKİ barları taşıyabilir (geçmiş bir pencereyi koşan backtest,
+    # daha yeni bir koşunun bıraktığı önbelleği okur). Kesim derinlikten ÖNCE yapılır:
+    # tersi `as_of`'u önbelleğin ucuna taşır ve pencere sessizce ileri kayardı
+    # (docs/decisions.md > 56). Önbelleğin kendisi kesilmez — sonraki barlar başka bir
+    # `now`un verisidir.
+    return _closed_by(merged, now=stamp, duration=duration).tail(history_bars)
 
 
 def _download_candles(
@@ -464,6 +469,12 @@ def _parse_candle(
     return ts, values
 
 
+def _closed_by(frame: pd.DataFrame, *, now: pd.Timestamp, duration: pd.Timedelta) -> pd.DataFrame:
+    """`now` anında KAPANMIŞ barlar: `_parse_candle`ın indirmede uyguladığı kuralın,
+    diskten okunan çerçeveye uygulanan TEK kopyası (kural 12)."""
+    return frame.loc[frame.index + duration <= now]
+
+
 def _rows_to_frame(rows: dict[pd.Timestamp, tuple[float, ...]]) -> pd.DataFrame:
     if not rows:
         return _empty_frame(OHLCV_COLUMNS)
@@ -528,10 +539,11 @@ def fetch_funding(
     if not fresh.empty:
         fresh.index.name = "ts"
         fresh = fresh.sort_index()
-    merged = _merge_frames(cached, fresh).tail(periods)
+    merged = _merge_frames(cached, fresh)
     if not merged.empty:
-        _write_cache(cache_file, merged)
-    return merged[FUNDING_COLUMN].rename(symbol)
+        _write_cache(cache_file, merged.tail(periods))
+    # Mumdaki kesimin aynısı: `now`dan sonraki kayıtlar önce atılır, derinlik SONRA sayılır.
+    return merged.loc[:stamp].tail(periods)[FUNDING_COLUMN].rename(symbol)
 
 
 def _empty_funding_series() -> pd.Series:
@@ -669,7 +681,7 @@ def load_cached_market_data(
         if frame.empty:
             logger.warning("%s önbellekte yok ya da boş, atlanıyor", symbol)
             continue
-        frames[symbol] = frame.tail(history_bars)
+        frames[symbol] = _closed_by(frame, now=stamp, duration=duration).tail(history_bars)
 
     if btc_symbol not in frames:
         raise OKXError(
@@ -699,7 +711,7 @@ def load_cached_market_data(
             cached = _read_cache(_cache_path(config, symbol, "funding"), (FUNDING_COLUMN,))
             if cached.empty:
                 continue
-            funding[symbol] = cached.tail(periods)[FUNDING_COLUMN].rename(symbol).loc[:as_of]
+            funding[symbol] = cached.loc[:stamp].tail(periods)[FUNDING_COLUMN].rename(symbol).loc[:as_of]
 
     return MarketData(
         ohlcv=ohlcv,
@@ -738,6 +750,13 @@ def _anchor_as_of(
     üretmek, borsa/veri kesintisi sırasında eski bir barı yeniymiş gibi işlemek olurdu.
     """
     as_of = btc_frame.index[-1]
+    # İkinci savunma: kesim çağıranda (`_closed_by`) yapılır; bir veri yolu onu atlarsa
+    # pencere sessizce `now`un ötesine taşmak yerine tur düşer (docs/decisions.md > 56).
+    if as_of + duration > now:
+        raise OKXError(
+            f"{symbol} çıpasının son barı ({as_of}) {now} anında kapanmamış: "
+            "anlık görüntü `now`un ötesini taşıyor (kural 12)"
+        )
     expected = now.floor(duration) - duration
     if as_of < expected - duration * max_staleness_bars:
         raise OKXError(
