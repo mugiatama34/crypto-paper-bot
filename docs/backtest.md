@@ -3643,6 +3643,25 @@ Bu bir TAHMİNDİR, kapı değildir; geçme koşulu §6k > 8'deki gibidir. Okuma
 `comparisons.momentum.discordance` (TimesFM ile momentumun ayrıştığı gözlem payı) bu
 tahminin doğrudan sınamasıdır: pay küçükse "gecikmeli kopya" okuması desteklenir.
 
+**EK (2026-09-23, koşu #35867807908 sürerken, sonucu OKUNMADAN önce).**
+
+- **Düşme eşiği (Ferhat):** A'da düşen gözlem payı **%5'i aşarsa**, isabet sayısına
+  bakılmadan ÖNCE sebep raporlanır. Eksik bar ve sıfır hareket nadir olmalıdır; %5'in üstü
+  başka bir alet sorununa işaret edebilir. Bu bir okuma SIRASIDIR, geçme koşulu değildir.
+- **Öngörülen istisna (Claude, eşik yazıldığı anda):** ETHFI-USDT-SWAP OKX'te 2024-03
+  civarında listelendi; 300 saatlik bağlam kuralı (§6k > 4) gereği dönem A'nın 456
+  çapasının ~410'unda ETHFI gözlemi KURULAMAZ → A'nın 5016 gözleminin **~%8'i yalnızca
+  `listelenmemis`ten** düşer. Beklenen durum: toplam düşme payı %5'i aşar, ama bunun
+  neredeyse tamamı ETHFI'nin `listelenmemis` kodundadır. Rapor düşenleri sebep × sembol
+  ayırarak verir; ETHFI dışı düşme ve `eksik_bar` + `sifir_hareket` payı ayrıca yazılır ve
+  alet sorunu sorusu o paydan okunur.
+- **Ayrışma payının okunuşu (Ferhat):** TimesFM ile momentum gözlemlerin **%85-90'ından
+  fazlasında** aynı yönü veriyorsa (discordance ≲ 0.10-0.15), aralarındaki fark yalnızca
+  kalan küçük dilimden ölçülür ve o dilimde güç çok düşüktür. "Momentumdan ayırt edilemedi"
+  sonucu çıkarsa ayrışma payı İKİ farklı bulgudan hangisi olduğunu söyler: **(i) ikisi aynı
+  şeyi yapıyor** (düşük ayrışma) ya da **(ii) farklı şeyler yapıyorlar ama fark gürültüde
+  kayboluyor** (yüksek ayrışma, geniş CI).
+
 ### 15. GEÇERSİZ KOŞU — #35861965835 *(2026-09-23; hiçbir isabet sayısı üretilmedi)*
 
 İlk değerlendirme koşusu parite tekrarını geçti (P0 713/713, P1 157 573/0 — §6k > 13 ile
