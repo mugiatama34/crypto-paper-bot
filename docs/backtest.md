@@ -264,6 +264,19 @@ rolling anahtar). Önbellek ölçümü değiştiremez: `core/data.py` yalnızca 
 yanlış bar değil — ve eksik bar B-2 kapısında (`missing_bars`,
 `unchecked_position_bars`) görünür, sessizce geçmez.
 
+> ⚠ **DÜZELTME (2026-09-23, karar 56): bu paragraf YANLIŞTI ve iki yerden.**
+> (1) Bayat değil, pencerenin `end`inden YENİ bir önbellek de vardır ve o eksik değil
+> FAZLA bar üretiyordu: `core/data.py` önbelleği `now`da kesmiyordu, `as_of` önbelleğin
+> ucuna düşüyor ve pencere sessizce uzuyordu (`backtest-dc` #35839008498 ve
+> `diagnose-ema-exits` #35435506689 dönem A'da 2026-09'a taştı). Kural 12'nin kendisi
+> ihlal edilmedi — motor her barı ayrıca keser, `tests/test_lookahead.py` bunu ölçer —,
+> ama ÖLÇÜLEN pencere ön-kayıttaki değildi. Düzeltme: `core/data.py::_closed_by`; ikinci
+> savunma `run_backtest`in `as_of > end` kapısı. (2) "Eksik bar B-2'de görünür" yalnızca
+> B-2'yi UYGULAYAN harness için doğrudur: `scripts/backtest_xsec.py` uygulamıyor ve
+> `backtest-xsec` #35578057311'in dönem A'sı, soğuk önbellek + `--history-bars 3000` ile
+> 2022-01'e hiç ulaşmadan **2023-02-16'dan** başladı (5465 barın 3000'i) — koşu yeşil döndü. Paragraf silinmedi:
+> bu varsayımla koşuldu.
+
 **Pencere uzadıkça §5b'nin evren look-ahead uyarısı AĞIRLAŞIR.** `scalp`in sabit 13
 sembolü bugün bilinerek seçildi; 2023'e uzanan bir pencerede bu listenin bir kısmı ya
 listelenmemişti ya da ince kitaplıydı, ve o dönemde likit olup bugün düşmüş semboller hiç
@@ -377,9 +390,9 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 1 | `scalp_vol`: edge σ ile ölçeklenir | §6b, commit `a7c08ae` | 2026-07-19 → 09-04 | P1: brüt sürüklenme% `vol` > `patient` | **DÜŞTÜ** (0.253 < 0.263) — karar 36 |
 | 2 | `ema_trend`: EMA(21/55) kesişimi long-only bir edge taşır (dış sistemden) | §6d, commit `e912efd` (TADİLAT-1: `93cd891`) | A: 2022-01-01 → 2024-12-30 (sinyal kesimi 06-30), B: 2024-07-21 → 2026-09-18 | P1: BTC tek-sembollü PF A 1.551±0.2 / B 1.299±0.2 | **P1 TUTTU** (1.549 / 1.206) ama **hipotez DÜŞTÜ**: ortalama R A −0.0015 / B −0.0165 (C-1), çıpa da geçilemedi (C-3) → **BLOKE**, §6d > SONUÇ |
 | 3 | `ema_trend` çıkış varyantları: kenar giriş sinyalinde, çıkış geometrisi yiyor | §6e (güç ve kabul kuralları), commit `9ce4f34`; varyant tanımları HİÇ yazılmadı | A: 2022-01-01 → 2024-12-30 (teşhis; B'ye dokunulmadı) | ön-kayıtlı seçim kuralının bir dalının tetiklemesi | **DÜŞTÜ — teşhis aşamasında** (M2 0.153 < 0.25, M1 0.552 < 1.0, M4 0.667 < 2.0): tur kapandı, varyant kurulmadı — §6e > SONUÇ, karar 49 |
-| 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | ⚠ **KOŞULDU ama ÖN-KAYITTAKİ PENCERE ÖLÇÜLMEDİ** (`backtest-xsec` #35578057311, 2026-09-21; karar 56): soğuk önbellek + `--history-bars 3000` ile dönem A 2022-01-01'e hiç ulaşmadı, **2023-02-16 → 2024-06-29** koştu (5465 barın 3000'i; `missing_bars` 2465 — harness B-2'yi uygulamadığı için koşu yeşil döndü); dönem B de aynı mekanizmayla 2025-05-09'dan başladı (yeniden üretimle doğrulandı). Koşunun kendi verdikti ("BLOKE — K-3") ve sayıları bu satırın SONUCU DEĞİLDİR. **Sonuç: DEĞERLENDİRİLEMEDİ** — doğru pencerede koşu kullanıcının kararıdır |
 | 5 | `wave_scalp`: Elliott Wave Dalga-3 (15m, zigzag + retrace 0.236–0.886) bir edge taşır (dış sistemden) | §6h, bu commit | A: 2025-03-01 → 2025-12-31, B: A+embargo → 2026-08-31 (**Aşama 2'de**) | P1: dönem A net ort. R ≤ 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
-| 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 56): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%** |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -1015,6 +1028,20 @@ sırası ya da dal tanımı koşudan sonra dokunulmadı.
 #35391881083) dönem A sayılarını birebir üretti: 369 pozisyon, 130 tp, 239 stop,
 ortalama R −0.0014889765, azami tutuş 129 bar. `missing_bars = 0`,
 `unchecked_position_bars = 0`. Yani yol istatistiği okunabilir.
+
+> ⚠ **DÜZELTME (2026-09-23, karar 56) — pencere taştı; bu bölümün SAYILARI değişmez.**
+> Bu koşunun penceresi ön-kayıttaki gibi `2024-12-30T20:00`'de değil, önbelleğin ucunda
+> (**`2026-09-18T12:00`**) bitti: geri yüklenen önbellek `end`den sonrasını taşıyordu ve
+> `core/data.py` onu `now`da kesmiyordu (özet yükünün `window.end` alanı bunu yazıyor).
+> Neden sayılar değişmez — kanıt, varsayım değil: (1) determinizm kapısı karara giren koşuyu
+> BİREBİR üretti (369/130/239, aynı ortalama R, aynı azami tutuş); (2) okunan her ölçü bir
+> pozisyonun tutuşu içindeki ya da çıkışından sonraki en fazla **40 bar** içindeki barlardan
+> gelir — son giriş sinyal kesiminde (2024-06-30), azami tutuş 129 bar, yani okunan en geç
+> bar ≈ **2024-07-29**, doğru pencerenin (2024-12-30) içinde. ⚠ Aşağıdaki okuma notundaki
+> **"Dönem B bu koşuda HİÇ okunmadı"** cümlesi bir VERİ iddiası olarak YANLIŞTIR: anlık
+> görüntü 2026-09'a kadar yüklendi ve motor o barları (çıpa ve kontrol için) işledi. Doğru
+> olan dar hâlidir: `ema_trend`in hiçbir yol istatistiği dönem B barından türemedi.
+> Cümle silinmedi: koşunun kaydıdır.
 
 **Kuralın uygulanması (bir kez çalıştı):**
 
@@ -1842,6 +1869,31 @@ long-only bir top-k modelin boğa dönemlerinde al-tut'un gerisinde kalması bek
 Canlıya alınmayı. `xsec` katmanının tetikleyicisi yoktur ve kapılar geçilse bile
 `run-xsec.yml` ayrı bir karardır — `ema` katmanının bugünkü statüsünün aynısı. Kod
 ölçülmeden yarışmaz; ölçülüp geçse bile canlıya alınması otomatik değildir.
+
+### ⚠ KOŞU KAYDI — koşuldu, ama ön-kayıttaki pencere ÖLÇÜLMEDİ *(2026-09-23, karar 56)*
+
+`backtest-xsec` #35578057311 (2026-09-21, `main` @ `2fdb812`) koştu ve "BLOKE — K-3" verdikti
+basarak YEŞİL döndü. **Bu verdikt ve sayıları §6g'nin SONUCU DEĞİLDİR**, çünkü ölçülen
+pencereler ön-kayıttakiler değil:
+
+| | ön-kayıt | fiilen ölçülen | kanıt |
+|---|---|---|---|
+| Dönem A | 2022-01-01 → 2024-06-29T20:00 (**5465 bar**) | **2023-02-16 → 2024-06-29T20:00 (3000 bar)** | yeniden üretim `backtest` #35845392990 (aynı koşullar, yalnızca `buyhold`): çıpa **+122.97%** birebir, `missing_bars` **2465** |
+| Dönem B | 2024-06-30 + embargo → koşu günü | **2025-05-09T08:00 → 2026-09-21T04:00 (3000 bar)** | yeniden üretim `backtest` #35845714003: çıpa **−4.77%** birebir; veri 2025-05-09'dan önce YOK |
+
+**Mekanizma:** workflow önbellek taşımaz (soğuk indirme) ve `--history-bars` varsayılanı
+**3000**tü; soğuk indirme `now`dan geriye tam 3000 kapanmış bar toplar. Dönem A'yı kapsamak
+~5600 bar isterdi (126 bar geriye bakış dâhil). Motor eksik barları SAYDI (`missing_bars`),
+ama `scripts/backtest_xsec.py` B-2 geçerlilik kapısını UYGULAMIYOR — `backtest.py`nin kendi
+CLI'si aynı durumda kırmızı döner (yeniden üretim koşusu tam olarak öyle döndü).
+
+**Neyi değiştirir:** kayıtlı her sayı (ort. R'ler, K-3, E, çıpalar: A **+122.97%**, B −4.77%)
+kısaltılmış pencerelerin ölçüsüdür. Doğru pencerede dönem A çıpası **+9.97%** (`backtest` #35845559976, 5465 bar, yalnızca `buyhold`) — kayıttakinin on ikide biri.
+Verdiktin doğru pencerede aynı kalıp kalmayacağı **BİLİNMİYOR**: modelin kendisi de kısaltılmış
+pencerede ölçüldü ve bu kayıt onu yeniden koşmadan doğrulayamaz. **Sonuç: DEĞERLENDİRİLEMEDİ.**
+Doğru pencerede koşmak bir §7 ihlali DEĞİLDİR (ön-kayıttaki koşu hiç yapılmadı; sonucu
+görülen koşu başka bir pencereyi ölçtü) ama "sonuç görüldükten sonra tekrar koşma"ya
+yakın durduğu için kararı kullanıcınındır.
 
 ---
 
@@ -3385,6 +3437,106 @@ uzayından seçilmedi — §6c'nin kuralına göre **dış kökenli paydaya** gi
 
 Canlıya alınmayı. `dc` katmanının tetikleyicisi yoktur; kapılar geçilse bile `run-dc.yml`
 ayrı bir karardır — `ema` ve `xsec` katmanlarının bugünkü statüsü.
+
+### SONUÇ — koşuldu, kapılar okundu: **BLOKE**
+
+Koşu: `backtest-dc` #35839008498, `main` @ `da56a1e` (PR #52'nin birleştirmesi; uygulama
+`54dd3aa`), `workflow_dispatch`, 2026-09-23. Tetik dosyası (`.github/triggers/backtest-dc.run`)
+eklenmedi — tek koşu budur. Ham çıktı `results.json` (artifact + log). **Bu bölüm sonucu KAYDEDER, kuralları
+değiştirmez** — yukarıdaki hiçbir eşik, tahmin, küme tanımı ya da istisna koşudan sonra
+dokunulmadı; koşu TEKRARLANMADI.
+
+> ⚠ **SAPMA — dönem A'nın penceresi taştı (karar 56).** Geri yüklenen önbellek 2026-09'a
+> kadar uzanıyordu ve `core/data.py` onu `now`da kesmiyordu: dönem A `2024-12-31` yerine
+> **`2026-09-18T12:00`**'de bitti (`coverage.last_bar`). Etkisi ÖLÇÜLDÜ, varsayılmadı:
+>
+> | Etkilenen | Nasıl | Kararı değiştirir mi |
+> |---|---|---|
+> | Modellerin dönem A işlemleri | **Hayır**: sinyal kesimi 2024-06-30'da çalıştı; en uzun tutuş 728 bar, son pozisyon ≈ 2024-10-29'da kapandı — doğru pencerenin içinde. Portföy özsermayesi o tarihten sonra düz; K-3 drawdown'u etkilenmedi | — |
+> | **C-3(A) çıpa getirisi** | **Evet**: `buyhold` hiç satmadığı için 2026-09'a kadar ölçüldü. Kayıtlı **+18.87%** YANLIŞTIR; doğru pencerede (2022-01-01 → 2024-12-30T20:00, 6569 bar) **+43.39%** (`backtest` #35845311846, yalnızca `buyhold`, düzeltmeden sonra) | Hayır — model −17.0%; çıpa her iki değerde de geçilemiyor |
+> | Erken dönem A'da görüş penceresi (TADİLAT-1) | **Evet, sınırlı**: anlık görüntü `tail(12000)` ile 2026'dan geriye sayıldı ve 2021-03'te başladı; dönem A'nın ilk ~7 ayında model 3000 yerine ~1700 bar gördü. Üst sınırı: `cross_not_visible` = 36 kurulum barı (%2.0) | Hayır — bkz. aşağıdaki "karar dönem A'ya bağlı değil" |
+>
+> **Karar dönem A'ya bağlı DEĞİLDİR:** dönem B (temiz: 2024-10-29T12:00 → 2026-09-23T04:00,
+> koşu anında biter) tek başına dört bağlayıcı kapıdan kalıyor (küme CI, E, K-3, K-1). BLOKE,
+> A'nın hiçbir sayısı değişmeden de BLOKE'dir. Koşu §7 gereği TEKRARLANMADI.
+
+**Pencereler ve embargo.** A `2022-01-01` → `2024-06-30` (sinyal kesimi; kuyruk `2024-12-31`,
+yukarıdaki sapmayla). A'da `dc_short`un azami tutuşu **728 bar (121.3 gün)** → embargo.
+B `2024-10-29T12:00` → `2026-09-23T04:00`. `missing_bars = 0`, B-2 iki dönemde de temiz.
+
+#### Kapılar
+
+| Kapı | Dönem A | Dönem B |
+|---|---|---|
+| C-1 ort. R > 0 | ❌ **−0.035** (335 poz.) | ✅ +0.052 (246 poz.) |
+| Küme CI alt sınırı > 0 (bağlayıcı = iki tanımın minimumu) | ❌ −0.299 (ay) | ❌ −0.198 (ay) |
+| E: fark ≥ 0.15R **ve** küme fark CI alt sınırı > 0 | ❌ fark +0.051, alt −0.224 | ❌ fark +0.112, alt −0.142 |
+| S1 (E okunabilir mi) | ✅ %7.1 < %10 | ✅ %1.6 |
+| C-3 çıpa | ❌ −17.0% ↔ **+43.39%** *(kayıtlı +18.87% ⚠)* | ❌ +9.06% ↔ +9.96% |
+| K-3 drawdown ≤ %25 (portföy) | ❌ **−53.8%** | ❌ −26.8% |
+| K-1 (B, ≥ 6 coinde PF > 1.1) | — | ❌ **5**: AVAX 1.65, DOGE 2.52, NEAR 2.29, SUI 1.73, XRP 2.25 (BTC 1.08, PENGU 1.09 eşiğin altında) |
+| K-2 (raporlanır) | 335 | 246 |
+
+**Verdikt: BLOKE.** Çıpa istisnası UYGULANMAZ: model çıpanın yanında C-1, CI, E ve K-3'ten de
+kalıyor.
+
+#### Tahminler (hepsi, düşen dâhil)
+
+| # | Tahmin | Sonuç |
+|---|---|---|
+| **P1** *(birincil)* | A ort. R > 0 | **DÜŞTÜ** (−0.035) |
+| P2 | B < A | **DÜŞTÜ** (B +0.052 > A −0.035) |
+| P3 | küme/i.i.d. genişlik > 1.5 | **DÜŞTÜ**: rejim 0.94, ay 1.36 |
+| P4 | A'da çıpanın altında | **TUTTU** (düzeltilmiş çıpayla da: −17.0% < +43.39%) |
+
+**Yıl kırılımı mekanizmanın kendisini okur:** 2022 **+0.272R** (136 poz., PF 1.44), 2023
+−0.256R (117), 2024 −0.229R (82); B'de 2025 +0.167R (154), 2026 −0.169R (78). Short'lar ayı
+yılında taşıdı, kalan yıllarda geri verdi. Bu bir GÖZLEMDİR, rejim filtresi gerekçesi değil
+(§7.1) — öyle bir filtre yeni bir ön-kayıtla, yeni bir model olarak gelir.
+
+#### Kesinlik (projeksiyon ↔ gerçekleşen)
+
+| | projeksiyon | A gerçekleşen | B gerçekleşen |
+|---|---|---|---|
+| pozisyon | 200 – 500 | 335 | 246 |
+| R sd | 1.0 – 1.8 | 1.90 | 1.83 |
+| DEFF (ay) | 3 – 6 | **1.74** | 1.04 |
+| DEFF (rejim) | — | 0.83 | 0.71 |
+| n_etkin (ay) | ~50 – 150 | 193 | 235 |
+| MDE C-1 (bağlayıcı) | ~0.3 – 0.6R | **0.38R** | 0.33R |
+| MDE fark (bağlayıcı) | ~0.4 – 0.8R | **0.37R** | 0.34R |
+
+Küme sayıları (A): rejim 117 / ay 29 (model), fark 121 / 29; atılan bootstrap çekilişi 0.
+Aralık genişlikleri (A, model): rejim 0.370, ay 0.531, i.i.d. 0.392. **Bağımlılık öngörülenden
+ZAYIF çıktı** (P3'ün düşüşü): rejim kümeleri pozisyonları neredeyse bağımsız dağıttı (DEFF < 1).
+Bu, küme kuralını gevşetmez; bağlayıcı sınır kurala göre yine iki tanımın minimumudur.
+
+#### Zorunlu rapor kalemleri (§13)
+
+| | Dönem A | Dönem B |
+|---|---|---|
+| Çıkış | stop 214 (%63.9) / hedef 121 (%36.1) / likidasyon 0 | stop 150 (%61.0) / hedef 96 (%39.0) |
+| Tutuş (bar) | medyan 11, p90 87.6, azami 728 | medyan 8.5, p90 88.5, azami 656 |
+| Hedef R çarpanı | medyan 2.22, p25 1.00, p75 4.70, p90 8.84 | medyan 1.89, p25 1.10, p75 4.12, p90 8.72 |
+| **`rr < 1.0` ile açılan** | **84 (%25.1)** | 53 (%21.5) |
+| `cross_not_visible` | 36 (%2.0 < %5 — bulgu DEĞİL; ⚠ sapmadan etkilendi) | 8 (%0.4) |
+| `target_undefined` / `target_passed` | 5 / 6 | 12 / 5 |
+| S2 (kontrolde "ters" payı, 0.5 ± 0.05) | ❌ **0.562** (402 pozisyon) | ✅ 0.515 |
+| M1 (kontrol aralığı −`cost_per_r`'yi kapsar) | ✅ (−0.100) | ✅ (−0.088) |
+
+**Huni (A):** sayım 1773 ham / 1090 birincil ↔ model 1807 kurulum barı (fark %2) → 36
+`cross_not_visible`, 5 `target_undefined`, 6 `target_passed` → **1760 sinyal** → tavan 254
+eledi → **1506 kuyruk** → ret: 878 `duplicate_position`, 196 `max_positions`, 97
+`zero_size` → **335 pozisyon**. B: 1968 → 1943 → tavan 287 → 1656 → ret 789 / 556 / 64 → 247.
+
+**S2'nin A'daki düşüşü** (402 çekilişte 226 "ters") E kapısını değiştirmez — E zaten düştü —
+ama kontrolün DOLAN pozisyonlarında yazı-turanın dengesiz kaldığını söyler: yansıtılan long'lar
+short kotasına takılmadığı için daha sık DOLUYOR olabilir (çekiliş değil dolum seçimi).
+Bu bir açıklama ADAYIDIR, ölçülmedi.
+
+**`zero_size`** (A 97, B 64): kaldıraç gerektiğinde serbest nakdin tamamı teminata bağlanıyor
+ve sonraki emir sıfır boyut alıyor. Kural iki modelde de aynı işliyor (kural 6 bozulmadı);
+kapasiteyi ne kadar kıstığı ayrı bir ölçüm sorusudur.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
