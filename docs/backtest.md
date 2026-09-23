@@ -3488,9 +3488,12 @@ kurulur; `requirements.txt` değişmez.
   üretilmelidir. Tolerans: her noktada `|bizim − commit| / |commit| ≤ 1e-4` ve `side`
   %100 aynı. Tek istisna: `|expected_move| / entry_price < 1e-4` olan serilerde `side`
   sayısal gürültüyle dönebilir — bunlar ayrıca SAYILIR ve istisnaya yalnızca onlar girer.
-  **İstisna raporlanır ve SINIRLIDIR:** istisnaya düşen seri sayısı P0 kapsamındaki
-  toplam serinin **%5'ini aşarsa parite DÜŞMÜŞ sayılır** — istisna, kuralı fiilen
-  askıya alacak kadar genişleyemez.
+  **İstisna raporlanır ve SINIRLIDIR:** istisna SAYESİNDE geçen seri sayısı (yönü ters
+  çıkan ama `|beklenen hareket| / fiyat < 1e-4` olduğu için affedilen) P0 kapsamındaki
+  toplam serinin **%5'ini aşarsa parite DÜŞMÜŞ sayılır** — istisna, kuralı fiilen askıya
+  alacak kadar genişleyemez. *(Düzeltme, 2026-09-23, sonuç görülmeden: tavan istisnaya
+  UYGUN serilere değil, yalnızca AFFEDİLENLERE uygulanır — yönü hemstir'le aynı çıkan
+  küçük-hareketli seri uyuşmazlık değildir. İki sayı da raporlanır, kapı dar olana bağlıdır.)*
   Kapsam: `forecast` taşıyan 54 commit'in tamamı (girdi dosyadan geldiği için enstrüman
   türü ve kapanmamış bar P0'ı etkilemez).
 - **P1 — veri paritesi.** Yalnızca `inst_id` `-USDT-SWAP` olan ve evrendeki serilerde,

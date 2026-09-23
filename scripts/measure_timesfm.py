@@ -260,6 +260,7 @@ def p0_series_check(
     values_ok = all(err <= PARITY_REL_TOL for err in errors.values())
     return {
         "commit": series.commit[:7],
+        "generated_at": series.generated_at,
         "coin": series.coin,
         "max_rel_err": errors,
         "values_ok": values_ok,
@@ -275,8 +276,15 @@ def p0_verdict(checks: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     eligible = sum(1 for c in checks if c["exception_eligible"])
     excused = sum(1 for c in checks if c["exception_eligible"] and not c["side_match"])
     failures = [c for c in checks if not c["passed"]]
-    share = eligible / total if total else float("nan")
+    # Tavan AFFEDİLENLERE uygulanır, uygun olanlara değil (§6k > 5, düzeltme): yönü
+    # tutan küçük-hareketli seri istisnaya hiç ihtiyaç duymadı.
+    share = excused / total if total else float("nan")
     cap_ok = total > 0 and share <= PARITY_EXCEPTION_CAP
+    by_commit: dict[str, dict[str, Any]] = {}
+    for c in checks:
+        row = by_commit.setdefault(c["commit"], {"generated_at": c["generated_at"], "series": 0, "failed": 0})
+        row["series"] += 1
+        row["failed"] += 0 if c["passed"] else 1
     worst = {
         key: max((c["max_rel_err"][key] for c in checks), default=float("nan"))
         for key in ("value", "lower", "upper")
@@ -286,11 +294,13 @@ def p0_verdict(checks: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "value_failures": sum(1 for c in checks if not c["values_ok"]),
         "side_failures": sum(1 for c in checks if not c["side_match"] and not c["exception_eligible"]),
         "exception_eligible": eligible,
-        "exception_eligible_share": share,
         "exception_excused_side_mismatch": excused,
+        "exception_excused_share": share,
         "exception_cap": PARITY_EXCEPTION_CAP,
         "worst_rel_err": worst,
         "failures_sample": failures[:20],
+        # torch sürümü koşudan koşuya değişmiş olabilir: düşüşler tarihle örtüşüyor mu?
+        "by_commit": by_commit,
         "passed": total > 0 and not failures and cap_ok,
     }
 

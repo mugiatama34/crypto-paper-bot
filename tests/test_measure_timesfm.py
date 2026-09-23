@@ -174,13 +174,31 @@ def test_p0_side_flip_only_excused_for_tiny_moves():
     assert check["exception_eligible"] and check["passed"]
 
 
-def test_p0_exception_share_above_five_percent_fails_parity():
-    tiny = _series(end=100.005, side="BUY")
+def test_p0_cap_counts_only_excused_series_not_all_eligible():
+    """Tavan DAR: yalnızca istisna SAYESİNDE geçenler (yön ters + küçük hareket) sayılır."""
     normal = _series()
     ok = p0_series_check(normal, normal.value, _quantiles(normal.value))
-    eligible = p0_series_check(tiny, tiny.value, _quantiles(tiny.value))
-    assert p0_verdict([ok] * 95 + [eligible] * 5)["passed"]
-    assert not p0_verdict([ok] * 94 + [eligible] * 6)["passed"]
+    agree = _series(end=100.005, side="BUY")    # uygun ama yön tutuyor: affa ihtiyaç yok
+    flip = _series(end=100.005, side="SELL")    # uygun VE yön ters: affedilen
+    agreeing = p0_series_check(agree, agree.value, _quantiles(agree.value))
+    excused = p0_series_check(flip, flip.value, _quantiles(flip.value))
+
+    many_agreeing = p0_verdict([ok] * 50 + [agreeing] * 50)
+    assert many_agreeing["passed"] and many_agreeing["exception_eligible"] == 50
+    assert many_agreeing["exception_excused_side_mismatch"] == 0
+
+    assert p0_verdict([ok] * 95 + [excused] * 5)["passed"]
+    assert not p0_verdict([ok] * 94 + [excused] * 6)["passed"]
+
+
+def test_p0_reports_failures_by_commit_with_timestamp():
+    s = _series()
+    far = s.value * (1 + 5e-4)
+    verdict = p0_verdict([
+        p0_series_check(s, s.value, _quantiles(s.value)),
+        p0_series_check(s, far, _quantiles(far)),
+    ])
+    assert verdict["by_commit"] == {"abc1234": {"generated_at": "g", "series": 2, "failed": 1}}
 
 
 def test_p0_of_nothing_is_not_a_pass():
