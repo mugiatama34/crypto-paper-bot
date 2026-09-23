@@ -3659,6 +3659,26 @@ Onarım (ayrı commit): her yükleme kendi önbellek dizinini kullanır; dönen 
 önce kapanmış barlara kesilir; HİÇ gözlem kurulamayan dönem bir karar değil **veri
 kapısıdır** (çıkış 3, karar 51). Bu koşunun "DÜŞTÜ" kararının hükmü ve yeniden koşu
 kararı aşağıdaki bir sonraki kayda bağlıdır.
+
+### 16. #35861965835'in HÜKMÜ: geçersiz, yeniden koşulur *(2026-09-23)*
+
+Ferhat'ın kararı: **bu bir ölçüm değil, bir alet arızasıdır.** "10'dan az çapa = geçmedi"
+kuralının amacı ölçülmüş ama yetersiz kalmış bir dönemin kapıyı açmasını engellemektir;
+burada dönem ölçülmedi — veri yüklenmedi, tek tahmin yapılmadı. Kural harfiyen uygulansaydı
+bir araç hatası tezin reddi olarak kayda geçerdi, yani kuralın korumak istediği şeyin tersi.
+Belirleyici olan: **hiçbir isabet sayısı görülmedi.** Kural genel hâliyle §7 > 6'ya yazıldı.
+
+Koşunun "DÜŞTÜ" kararı hükümsüzdür; değerlendirme `timesfm-eval-2.run` ile yeniden koşulur
+(onarım `0707df6`). §6k > 14'teki beklenti değişmedi.
+
+⚠ **Açık denetim işi — aynı sınıftan İKİNCİ hata.** `dc` koşusunda `fetch_ohlcv`in önbellekteki
+`now` sonrası barları kesmediği bulunmuştu; burada P1'in önbelleği A'nın veri isteğini kör
+etti. İkisinin ortak deseni: **önbellek + pencere** — bir çağrının önbelleği, başka bir
+pencereyle yapılan sonraki çağrının sonucunu belirliyor. Onarımın ilkesi (her yükleme kendi
+önbellek dizini + her seri, kaynağı ne olursa olsun `now`a kesilir) doğrudur ama yalnızca
+bu betikte uygulandı. **Desen repo genelinde aranmalıdır** (`dc`den açık kalan denetim
+işi): `fetch_ohlcv`/`load_market_data`i farklı `now` ya da `history_bars` ile aynı önbellek
+dizininde birden çok kez çağıran her yol adaydır. Üçüncüsü başka bir koşuda sessizce çıkabilir.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
@@ -3677,6 +3697,14 @@ Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıka
    **sonucu ne olursa olsun orada kalır.** 6 modelden 1'inin kıl payı geçmesi gürültüdür,
    bulgu değil — ~%26 olasılıkla şansa bağlıdır. Düşen satırı sicilden silmek, paydayı
    küçültüp kalanları olduğundan anlamlı göstermek olurdu.
+6. **Sıfır gözlem = ölçememe, karar DEĞİL** *(2026-09-23, §6k > 16)*. Bir dönemde bir ARAÇ
+   HATASI yüzünden HİÇ gözlem kurulamamışsa ve HİÇBİR sonuç sayısı görülmemişse, koşu
+   geçersiz sayılır ve yeniden koşulur — bu, 1. maddenin istisnası değil dışıdır: o madde
+   sonucu görüp beğenmeyince zar atmayı yasaklar, burada görülecek bir sonuç yoktur. Veri
+   gerçekten az olduğu için eşik altında kalan dönem (ör. `< 10` küme) ise
+   "değerlendirilemez = GEÇMEDİ" olarak KALIR. Ayrım tek bir sayıdadır: **gözlem sayısı sıfır
+   mı, yoksa sıfırdan büyük ama yetersiz mi.** Araç tarafında karşılığı karar 51'in "boş
+   rapor yeşil dönmez" kuralıdır: sıfır gözlem bir karar yazmaz, veri kapısıyla (çıkış 3) durur.
 
 ---
 
