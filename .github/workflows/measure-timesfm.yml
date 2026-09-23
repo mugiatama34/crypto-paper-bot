@@ -4,8 +4,10 @@
 # İKİ AŞAMA, İKİ TETİKLEYİCİ DOSYA. `workflow_dispatch` yalnızca dosya VARSAYILAN dalda
 # olduğunda çalışır; ön-kayıt bir çalışma dalında. Bu yüzden `backtest-dc.yml`in deseni:
 # dar bir push tetikleyicisi, TEK dosyaya bağlı, yalnızca `claude/**` dallarında.
-#   - `.github/triggers/timesfm-parity.run` → `--stage parity` (P0 + P1; isabet YOK)
-#   - `.github/triggers/timesfm-eval.run`   → `--stage evaluate` (P0 → P1 → A → B, C)
+#   - `.github/triggers/timesfm-parity*.run` → `--stage parity` (P0 + P1; isabet YOK)
+#   - `.github/triggers/timesfm-eval*.run`   → `--stage evaluate` (P0 → P1 → A → B, C)
+# Yeni bir dosya yalnızca önceki tetikleme HİÇBİR ŞEY HESAPLAMADAN düştüyse eklenir ve
+# gerekçesi dosyanın içinde yazılır.
 # Dosyanın EKLENDİĞİ commit koşunun kendisidir ve dosya bir daha DEĞİŞTİRİLMEZ
 # (değiştirmek ikinci bir koşu olurdu — §7'nin "sonucu görüp tekrar koşma" yasağı).
 # Kod ya da belge push'ları koşuyu tetikleyemez.
@@ -31,8 +33,7 @@ on:
     branches:
       - "claude/**"
     paths:
-      - ".github/triggers/timesfm-parity.run"
-      - ".github/triggers/timesfm-eval.run"
+      - ".github/triggers/timesfm-*.run"
 
 concurrency:
   group: measure-timesfm
@@ -48,24 +49,39 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # Aşama, push'ta EKLENEN tetikleyici dosyadan okunur; ikisi aynı commit'te
-      # eklenirse değerlendirme SEÇİLMEZ (sıra: önce parite okunur).
+      # Aşama, bu push'ta EKLENEN tetikleyici dosyanın adından okunur (`timesfm-parity*` /
+      # `timesfm-eval*`). Liste git'ten çıkarılır: push olayının `head_commit.added`
+      # alanı boş geliyor (ilk koşu #35853769262 bu yüzden hiçbir şey hesaplamadan durdu).
+      # Aynı push'ta iki aşama eklenirse koşu YOK — sırayı bir insan seçer.
       - name: Resolve stage
         id: stage
         env:
+          EVENT: ${{ github.event_name }}
           DISPATCH_STAGE: ${{ inputs.stage }}
-          ADDED: ${{ join(github.event.head_commit.added, ' ') }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT" = "workflow_dispatch" ]; then
             STAGE="$DISPATCH_STAGE"
-          elif echo "$ADDED" | grep -q "timesfm-parity.run"; then
-            STAGE=parity
-          elif echo "$ADDED" | grep -q "timesfm-eval.run"; then
-            STAGE=evaluate
           else
-            echo "::error::tetikleyici dosya bu commit'te EKLENMEDİ (değiştirilmiş olabilir) — koşu yok"
-            exit 1
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              ADDED=$(git diff-tree --no-commit-id --name-only --diff-filter=A -r "$GITHUB_SHA" -- .github/triggers/)
+            else
+              ADDED=$(git diff --name-only --diff-filter=A "$BEFORE" "$GITHUB_SHA" -- .github/triggers/)
+            fi
+            echo "eklenen tetikleyiciler: ${ADDED:-(yok)}"
+            HAS_PARITY=$(echo "$ADDED" | grep -c "timesfm-parity" || true)
+            HAS_EVAL=$(echo "$ADDED" | grep -c "timesfm-eval" || true)
+            if [ "$HAS_PARITY" -gt 0 ] && [ "$HAS_EVAL" -gt 0 ]; then
+              echo "::error::aynı push'ta iki aşama eklendi — koşu yok"; exit 1
+            elif [ "$HAS_PARITY" -gt 0 ]; then STAGE=parity
+            elif [ "$HAS_EVAL" -gt 0 ]; then STAGE=evaluate
+            else
+              echo "::error::bu push'ta tetikleyici dosya EKLENMEDİ (değiştirilmiş olabilir) — koşu yok"
+              exit 1
+            fi
           fi
           case "$STAGE" in parity|evaluate) ;; *) echo "::error::geçersiz aşama: $STAGE"; exit 1;; esac
           echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
