@@ -1,0 +1,99 @@
+# `dc_short` ön-kayıtlı koşusunun tetikleyicisi (docs/backtest.md > 6i).
+#
+# TEK TETİKLEME, TEK SONUÇ DOSYASI (§6i > 12). Sıra betiğin içindedir: dönem A (portföy +
+# 13 tek-sembollü) → embargo A'dan ÖLÇÜLÜR → dönem B (aynısı). Betikte `--only` yoktur;
+# sıra workflow girdilerine bırakılmaz.
+#
+# NASIL TETİKLENİR — ve neden kod push'ları TETİKLEMEZ. `workflow_dispatch` yalnızca
+# workflow dosyası VARSAYILAN dalda olduğunda çalışır; ön-kayıt ise bir çalışma dalında.
+# Bu yüzden ikinci yol, TEK bir dosyaya bağlı dar bir push tetikleyicisidir:
+# `.github/triggers/backtest-dc.run`. O dosyanın EKLENDİĞİ commit koşunun kendisidir ve
+# dosya bir daha DEĞİŞTİRİLMEZ (değiştirmek ikinci bir koşu olurdu — §7'nin "sonucu görüp
+# tekrar koşma" yasağı). Kod, config ya da belge push'ları bu yolu tetikleyemez. Tetikleyici
+# yalnızca `claude/**` dallarında dinler: dal bir gün varsayılana birleştirilirse o
+# birleştirme ikinci bir koşu BAŞLATMAZ.
+#
+# DÖNEM SINIRLARI, DERİNLİK VE TOHUM GİRDİ DEĞİLDİR: hepsi ön-kayıtlıdır ve betikte ithal
+# ya da sabittir. Açık olan tek girdi B'nin sonudur (varsayılan: koşu anı).
+#
+# `permissions: contents: read` — bu iş YAZAMAZ. `cron` YOKTUR (docs/backtest.md > 7).
+name: backtest-dc
+
+on:
+  workflow_dispatch:
+    inputs:
+      b_end:
+        description: "Dönem B sonu (ISO); boş = koşu anı"
+        required: false
+        default: ""
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - ".github/triggers/backtest-dc.run"
+
+concurrency:
+  group: backtest-dc
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    # 2 dönem × (1 portföy + 13 tek sembol) = 28 koşu; ilk koşu ~12.000 barlık geçmişi
+    # sembol başına indirir (`backtest-ema.yml` ile aynı ölçek).
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Mum önbelleği koşular arasında TAŞINIR (docs/backtest.md > 5f); ölçümü
+      # değiştiremez — yalnızca EKSİK barlar çekilir, eksik bar B-2'de görünür.
+      - name: Restore market data cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: market-data-dc-${{ github.run_id }}
+          restore-keys: |
+            market-data-dc-
+            market-data-ema-
+            market-data-base-
+
+      - name: Run pre-registered backtest (A → embargo → B)
+        env:
+          B_END: ${{ inputs.b_end }}
+        run: |
+          set -o pipefail
+          ARGS=(--out-dir backtests/dc)
+          if [ -n "$B_END" ]; then ARGS+=(--b-end "$B_END"); fi
+          python scripts/backtest_dc.py "${ARGS[@]}"
+
+      # Sonuç dosyası log'a da BASILIR: iş salt okunurdur ve artifact deposu her ağ
+      # politikasından indirilemiyor (`backtest-ema.yml`in aynı gerekçesi).
+      - name: Print results
+        if: always()
+        run: |
+          echo "=== RESULTS.JSON BEGIN ==="
+          cat backtests/dc/results.json || echo "(yok)"
+          echo "=== RESULTS.JSON END ==="
+
+      - name: Upload results and ledgers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-dc
+          path: backtests/dc
+          if-no-files-found: warn
+          retention-days: 14

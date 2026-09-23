@@ -327,6 +327,67 @@ layers:
     # olarak bu kırılımdan okunur. symbol/session/loss_streak `ema` ile aynı statüde ÖLÇÜM.
     breakdowns: ["symbol", "exit_rule", "session", "loss_streak"]
 
+  dc:
+    # Ölüm kesişimi + geri çekilme katmanı (4H) — `dc_short` (model 22) ve kontrolü
+    # `dc_coinflip` (model 23). Ön-kayıt: docs/backtest.md > 6i (bu blok, o belge commit
+    # edildikten SONRA kuruldu).
+    #
+    # NEDEN `ema` KATMANINA EKLENMEDİ: stop kurulum barındaki EMA200'dür ve ölçülebilirlik
+    # sayımında kurulumların %48'i `ema`nın 3.0×ATR tavanını aşıyordu. Tavanı yükseltmek
+    # TAMAMLANMIŞ ve ön-kayıtlı bir koşunun (#35391881083) katman koşulunu geriye dönük
+    # değiştirirdi — `xsec`in aynı gerekçesi.
+    #
+    # TETİKLEYİCİSİ YOKTUR: tanım var, koşu yok (`ema`/`xsec` statüsü).
+    models: ["buyhold", "dc_short", "dc_coinflip"]
+
+    # `ema` katmanının evreninin AYNISI — ölçülebilirlik sayımı bu evrende yapıldı.
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "SUI-USDT-SWAP"
+      - "NEAR-USDT-SWAP"
+      - "PENGU-USDT-SWAP"
+      - "ETHFI-USDT-SWAP"
+
+    ledger_dir: "ledgers_dc"
+    metrics_file: "docs/data/metrics_dc.json"
+
+    # Sayımın GEOMETRİSİNDEN seçildi, sonuçtan değil (§6i > 2): 3.0'da kurulumların %48'i,
+    # 6.0'da %15'i elenir. Eleme motorundur; model kendisi süzmez.
+    max_stop_atr_multiple: 6.0
+
+    # KATMAN BAŞINA ilk kota override'ı (§6i > 5 ve TADİLAT-2, karar 54) — kota sabitleri
+    # katmanlar arası PAYLAŞILIR; bu, `tests/test_layers.py::QUOTA_EXEMPTIONS`te SAYILI dar
+    # bir istisnadır. Kök değerle (3) short-only
+    # `dc_short` en fazla 3, karma yönlü `dc_coinflip` 5 pozisyon taşırdı — ölçülen eksenle
+    # (yön) ilgisi olmayan bir kapasite asimetrisi E kapısının farkına sızardı. Maliyet ve
+    # risk sabitleri kökte kalır; kural 6'nın sınırı orasıdır.
+    max_short_positions: 5
+
+    # Kök değer (`random_ctrl`) bu katmanda YOK; bırakılsaydı E kapısı kümede olmayan bir
+    # modele bakıp sessizce düşerdi (`xsec`in aynı gerekçesi).
+    acceptance:
+      control_model: "dc_coinflip"
+
+    data:
+      # CANLI çekim derinliği; modelin gördüğü pencere `dc.lookback_bars`tır (TADİLAT-1) ve
+      # bu sayı ondan KÜÇÜK OLAMAZ (kurulumda sınanır). Backtest `--history-bars 12000`
+      # ile DERİNLEŞTİRİR (§5b 1. sınıf): model yine son 3000 barı görür.
+      history_bars: 3000
+
+    retention:
+      equity_compaction_days: null
+      model_trade_limit: 100
+
+    breakdowns: ["symbol", "exit_rule", "session", "loss_streak"]
+
   scalp:
     # 15 dakikalık scalp katmanı: iki model (model 11 adaptif, model 12 kontrol).
     timeframe: "15m"
@@ -521,6 +582,20 @@ xsec:
   lookback_bars: 126        # 126 × 4H = 21 gün; kesitsel momentum literatüründeki 1-4 hafta bandının ortası
   top_k: 3                  # portföy büyüklüğü; `max_positions` (5) bunu bağlamaz
   stop_atr_multiple: 5.0    # haftalık oynaklık ölçeği: baskın çıkış rebalance olsun, gürültü stop'u değil
+
+# --- Ölüm kesişimi + geri çekilme (modeller 22-23) ---
+# YALNIZCA `dc_short` ve `dc_coinflip` okur. Dört sayı da docs/backtest.md > 6i'de
+# ÖN-KAYITLIDIR: süpürülmez, koşu sonucuna göre değiştirilemez (§7.1).
+#
+# ATR burada YOKTUR: model ATR kullanmaz (stop EMA200, hedef önceki dip); ATR yalnızca
+# motorun tavan kapısındadır ve projenin tanımıyla ölçülür (`trailing.atr_period`, simple).
+dc:
+  fast_period: 50           # EMA50 — kaynağın tanımı
+  slow_period: 200          # EMA200 — kaynağın tanımı; stop da budur
+  warmup_bars: 600          # pencerenin ilk 600 barı EMA200 ısınması; kesişim ondan SONRA aranır.
+                            # Ölçülebilirlik sayımının `WARMUP_BARS`ıyla AYNI (test sınar)
+  lookback_bars: 3000       # modelin GÖRÜŞ penceresi — canlıda ve backtest'te aynı (TADİLAT-1);
+                            # kesişim daha eskiyse `cross_not_visible`
 
 vwap:
   band_mult: 2.0            # MODEL 14: VWAP'ten kaç hacim ağırlıklı standart sapma "bant dışı"

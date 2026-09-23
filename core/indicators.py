@@ -96,6 +96,29 @@ def ema(series: pd.Series, period: int) -> float | None:
     return current
 
 
+def ema_series(series: pd.Series, period: int) -> pd.Series:
+    """Her bar için EMA; ilk `period − 1` barda NaN. `ema`nın BAR BAZLI hâlidir.
+
+    İkinci bir tanım DEĞİLDİR: aynı tohum (ilk `period` barın SMA'sı) ve aynı özyineleme.
+    Özyineleme `ewm(adjust=False)`a bırakılır, çünkü `y₀ = tohum, yₜ = α·xₜ + (1−α)·yₜ₋₁`
+    tam olarak onun tanımıdır — tohumu dizinin başına KOYMAK koşuluyla. Varsayılana (ilk
+    değer = ilk kapanış) bırakmak tohumu değiştirirdi ve bu modülün kuralını delerdi.
+
+    Neden gerekli: kesişim ya da rejim gibi GEÇMİŞ barların EMA'sına bakan bir model, her
+    bar için `ema(series[:t+1])` çağırsaydı pencere başına O(n²) işlem yapardı. Eşitlik
+    varsayılmaz, sınanır (`tests/test_indicators.py`).
+    """
+    _require_positive(period, "period")
+    values = series.to_numpy(dtype="float64")
+    out = np.full(len(values), np.nan, dtype="float64")
+    if len(values) >= period:
+        seeded = values[period - 1 :].copy()
+        seeded[0] = float(values[:period].mean())
+        alpha = 2.0 / (period + 1.0)
+        out[period - 1 :] = pd.Series(seeded).ewm(alpha=alpha, adjust=False).mean().to_numpy()
+    return pd.Series(out, index=series.index, dtype="float64")
+
+
 def rsi(series: pd.Series, period: int) -> float | None:
     """Son `period` değişimin kazanç/kayıp ortalamasından RSI; yeterli veri yoksa None.
 

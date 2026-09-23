@@ -19,6 +19,8 @@ from strategies.avwap import Avwap
 from strategies.base import Strategy
 from strategies.buyhold import BuyHold
 from strategies.confluence import Confluence
+from strategies.dc_coinflip import DcCoinflip
+from strategies.dc_short import DcShort
 from strategies.downtrend_rally import DowntrendRally
 from strategies.ema_trend import EmaTrend
 from strategies.ensemble import Ensemble
@@ -64,6 +66,12 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # ölçülen eksen tam olarak o farktır. Ön-kayıt: docs/backtest.md > 6g.
     XsecMomentum.name: XsecMomentum,
     XsecRandom.name: XsecRandom,
+    # dc_short / dc_coinflip — `dc` katmanının (4H, sabit 13 sembol) ölçtüğü çift. Ölüm
+    # kesişimi rejiminde EMA50'ye geri çekilmenin reddi, short. İkisi `strategies/dc/`
+    # altındaki TEK kopyayı paylaşır ve yalnızca YÖNDE ayrışır (kontrol yazı-tura atar,
+    # mesafeleri aynalar). Ön-kayıt: docs/backtest.md > 6i.
+    DcShort.name: DcShort,
+    DcCoinflip.name: DcCoinflip,
     # 15 dakikalık scalp katmanı (config.yaml > layers.scalp). Kayıt defteri katmandan
     # bağımsızdır: hangi modelin hangi turda koşacağını katmanın `models` listesi söyler.
     ScalpBandit.name: ScalpBandit,
