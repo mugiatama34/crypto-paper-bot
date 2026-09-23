@@ -402,3 +402,20 @@ def test_count_mismatch_is_a_usage_error(tmp_path):
     _commit(repo, {"docs/forecasts.json": _forecasts({"BTC": "BTC-USDT-SWAP"})}, "1")
     pin = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     assert mt.check_counts(read_hemstir(repo, pin)) is not None
+
+
+def test_icc_is_one_when_every_coin_moves_together_and_near_zero_when_independent():
+    together = []
+    for k in range(40):
+        t = mt.GRID_ORIGIN + k * mt.HORIZON_DELTA
+        up = k % 2 == 0
+        together += [Observation(anchor=t, symbol=s, realized_up=up, predictions={}) for s in "ABCDE"]
+    assert mt.anchor_icc(together) == pytest.approx(1.0)
+    assert abs(mt.anchor_icc(_obs(400, tfm_right=0.5, symbols=tuple("ABCDEFGHIJ")))) < 0.05
+
+
+def test_report_carries_effective_sample_and_implied_rho():
+    result = evaluate_period("A", _obs(100, tfm_right=0.6), alpha=0.05, samples=300, seed=2)
+    assert result["mean_cluster_size"] == 3
+    for c in result["comparisons"].values():
+        assert c["n_eff"] > 0 and "rho_implied" in c

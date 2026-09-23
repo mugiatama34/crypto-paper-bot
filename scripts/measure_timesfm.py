@@ -502,6 +502,27 @@ def _hit(obs: Observation, rule: str) -> float:
     return 1.0 if obs.predictions[rule] == obs.realized_up else 0.0
 
 
+def anchor_icc(observations: Sequence[Observation]) -> float:
+    """Gerçekleşen yönün çapa-içi korelasyonu (tek yönlü ANOVA kestiricisi).
+
+    §6k > 9'un güç tablosu ρ'yu VARSAYDI; bu, aynı ρ'nun ÖLÇÜLEN karşılığıdır. İsabete
+    bakmaz — yalnızca aynı çapada coinlerin birlikte hareket etme derecesidir. Kapı değildir.
+    """
+    groups: dict[pd.Timestamp, list[float]] = {}
+    for obs in observations:
+        groups.setdefault(obs.anchor, []).append(1.0 if obs.realized_up else 0.0)
+    sizes = np.asarray([len(v) for v in groups.values()], dtype="float64")
+    k, total = len(groups), float(sizes.sum())
+    if k < 2 or total <= k:
+        return float("nan")
+    grand = sum(sum(v) for v in groups.values()) / total
+    msb = sum(len(v) * (np.mean(v) - grand) ** 2 for v in groups.values()) / (k - 1)
+    msw = sum(len(v) * np.mean(v) * (1 - np.mean(v)) for v in groups.values()) / (total - k)
+    n0 = (total - float((sizes ** 2).sum()) / total) / (k - 1)
+    denom = msb + (n0 - 1) * msw
+    return float((msb - msw) / denom) if denom > 0 else float("nan")
+
+
 def evaluate_period(
     name: str,
     observations: Sequence[Observation],
@@ -532,13 +553,18 @@ def evaluate_period(
         se_iid = float(diffs.std(ddof=1) / math.sqrt(n)) if n > 1 else float("nan")
         discordance = float(np.mean([o.predictions["timesfm"] != o.predictions[rule] for o in observations])) if n else float("nan")
         passed = evaluable and ci["estimate"] > 0 and ci["low"] > 0
+        deff = (ci["se"] / se_iid) ** 2 if se_iid and se_iid > 0 else float("nan")
+        mean_size = n / len(anchors) if anchors else float("nan")
         comparisons[rule] = {
             "delta": ci["estimate"],
             "ci_low": ci["low"],
             "ci_high": ci["high"],
             "se_cluster": ci["se"],
             "mde": MDE_FACTOR * ci["se"],
-            "deff": (ci["se"] / se_iid) ** 2 if se_iid and se_iid > 0 else float("nan"),
+            "deff": deff,
+            # Okuma yardımı (kapı değil): etkin gözlem ve DEFF'ten geri çözülen ρ.
+            "n_eff": n / deff if deff and deff > 0 else float("nan"),
+            "rho_implied": (deff - 1) / (mean_size - 1) if mean_size > 1 else float("nan"),
             "discordance": discordance,
             "passed": bool(passed),
         }
@@ -547,6 +573,8 @@ def evaluate_period(
         "clusters": len(anchors),
         "observations": n,
         "evaluable": evaluable,
+        "mean_cluster_size": n / len(anchors) if anchors else float("nan"),
+        "realized_direction_icc": anchor_icc(observations),
         "accuracy": accuracy,
         "up_share": {
             "timesfm_predicted": float(np.mean([o.predictions["timesfm"] for o in observations])) if n else float("nan"),
