@@ -600,14 +600,29 @@ def load_closes(
     config: dict[str, Any], symbols: Sequence[str], *, since: pd.Timestamp, now: pd.Timestamp,
     client: OKXClient | None = None,
 ) -> dict[str, pd.Series]:
-    """Kapanmış 1H kapanışları, `now`dan İLERİSİ ÇEKİLMEZ (dönem kapısı isteğin kendisi)."""
+    """Kapanmış 1H kapanışları; `now`dan İLERİSİ ne çekilir ne DÖNDÜRÜLÜR.
+
+    Her çağrı KENDİ önbellek dizinini kullanır. Paylaşılan önbellek bir kez ölçülmüş bir
+    arızadır (koşu #35861965835): P1'in yazdığı 2026-09 barları önbellekte kaldı,
+    `fetch_ohlcv` "önbellek zaten güncel" deyip dönem A için hiç geriye gitmedi ve A'nın
+    serisi yalnızca `now`dan SONRAKİ barlardan oluştu — 5016 gözlemin tamamı düştü. İkinci
+    savunma kesimdir: dönen seri, kaynağı ne olursa olsun `now`dan önce kapanmış barlara
+    indirilir; dönem kapısı böylece önbelleğin durumuna değil tek bir satıra bağlanır.
+    """
     bars = int((now - since) / HOUR) + 2
-    run_config = {**config, "timeframe": BAR, "data": {**config["data"], "history_bars": bars}}
+    base = Path(config["data"]["cache_dir"])
+    base.mkdir(parents=True, exist_ok=True)
+    own_cache = tempfile.mkdtemp(prefix="load-", dir=base)
+    run_config = {
+        **config, "timeframe": BAR,
+        "data": {**config["data"], "history_bars": bars, "cache_dir": own_cache},
+    }
     active = client if client is not None else OKXClient.from_config(run_config)
     closes: dict[str, pd.Series] = {}
     for symbol in symbols:
         frame = fetch_ohlcv(run_config, symbol, client=active, now=now)
-        closes[symbol] = frame["close"].astype("float64") if not frame.empty else pd.Series(dtype="float64")
+        series = frame["close"].astype("float64") if not frame.empty else pd.Series(dtype="float64")
+        closes[symbol] = series[series.index + HOUR <= now]
     return closes
 
 
@@ -660,6 +675,14 @@ def run_period(
 ) -> dict[str, Any]:
     anchors = grid_anchors(start, end)
     collected = collect(anchors, closes)
+    if anchors and not collected.pending:
+        # Karar 51: HİÇ gözlem kurulamadıysa bu bir ölçüm değil, ölçememedir — "< 10 küme
+        # = geçmedi" kuralı ölçülmüş ama yetersiz bir dönem içindir, yüklenemeyen veri için
+        # değil. Sonuç yazılmaz, çıkış 3.
+        raise DataGate(
+            f"dönem {name}: {len(anchors)} çapanın hiçbirinde gözlem kurulamadı "
+            f"(düşenler: {dict(sorted(collected.dropped.items()))})"
+        )
     observations = predict(collected.pending, ctx.forecaster, seed=ctx.seed)
     result = evaluate_period(name, observations, alpha=ctx.alpha, samples=ctx.samples, seed=ctx.seed)
     result.update({

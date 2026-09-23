@@ -419,3 +419,58 @@ def test_report_carries_effective_sample_and_implied_rho():
     assert result["mean_cluster_size"] == 3
     for c in result["comparisons"].values():
         assert c["n_eff"] > 0 and "rho_implied" in c
+
+
+class _FakeOKX:
+    """`after` imlecine uyan, en yeniden eskiye sayfalayan sahte OKX (1H)."""
+
+    def __init__(self, start: str, end: str) -> None:
+        self.index = pd.date_range(start, end, freq="1h", tz="UTC")
+
+    def get(self, path, params):
+        limit = int(params["limit"])
+        after = params.get("after")
+        idx = self.index if after is None else self.index[self.index < pd.Timestamp(int(after), unit="ms", tz="UTC")]
+        return [
+            [str(int(t.timestamp() * 1000)), "1", "1", "1", "100", "1", "1", "1", "1"]
+            for t in idx[::-1][:limit]
+        ]
+
+
+def _ema_config(tmp_path):
+    from core.config import load_config
+    from core.layers import resolve_layer
+
+    cfg = resolve_layer(load_config(), "ema").config
+    return {**cfg, "data": {**cfg["data"], "cache_dir": str(tmp_path)}}
+
+
+def test_recent_load_does_not_poison_a_later_historical_load(tmp_path):
+    """Regresyon (#35861965835): P1'in yakın tarihli önbelleği dönem A'nın isteğini yutuyordu."""
+    cfg, client = _ema_config(tmp_path), _FakeOKX("2021-06-01", "2026-09-23T10:00")
+    mt.load_closes(cfg, ["BTC-USDT-SWAP"], since=pd.Timestamp("2026-08-30T00:00Z"),
+                   now=pd.Timestamp("2026-09-23T11:00Z"), client=client)
+    a_now = pd.Timestamp(mt.PERIOD_A_CUTOFF) + mt.HORIZON_DELTA + mt.HOUR
+    since = pd.Timestamp(mt.PERIOD_A_START) - mt.CONTEXT * mt.HOUR
+    series = mt.load_closes(cfg, ["BTC-USDT-SWAP"], since=since, now=a_now, client=client)["BTC-USDT-SWAP"]
+    assert series.index.min() <= since
+    assert series.index.max() + mt.HOUR <= a_now
+
+
+def test_loaded_series_never_extends_past_now_even_if_the_cache_does(tmp_path):
+    cfg, client = _ema_config(tmp_path), _FakeOKX("2024-06-01", "2026-09-23T10:00")
+    now = pd.Timestamp("2024-07-02T01:00Z")
+    series = mt.load_closes(cfg, ["BTC-USDT-SWAP"], since=pd.Timestamp("2024-06-20T00:00Z"),
+                            now=now, client=client)["BTC-USDT-SWAP"]
+    assert (series.index + mt.HOUR <= now).all()
+
+
+def test_period_with_no_observation_at_all_is_a_data_gate_not_a_verdict():
+    ctx = mt.Context(
+        config={}, universe=["BTC-USDT-SWAP"], snapshots=[], forecaster=_Fake(0.0),
+        load=lambda *a, **k: {"BTC-USDT-SWAP": _hourly("2026-09-01T00:00Z", np.ones(100))},
+        now=pd.Timestamp("2026-09-23T07:00Z"), hf_last_modified=None,
+        alpha=0.05, samples=100, seed=1,
+    )
+    with pytest.raises(mt.DataGate):
+        mt.evaluate(ctx)

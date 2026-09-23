@@ -3642,6 +3642,23 @@ kopyasını üretir. Yanılırsa bu gerçek bir bulgudur.
 Bu bir TAHMİNDİR, kapı değildir; geçme koşulu §6k > 8'deki gibidir. Okuma yardımı olarak
 `comparisons.momentum.discordance` (TimesFM ile momentumun ayrıştığı gözlem payı) bu
 tahminin doğrudan sınamasıdır: pay küçükse "gecikmeli kopya" okuması desteklenir.
+
+### 15. GEÇERSİZ KOŞU — #35861965835 *(2026-09-23; hiçbir isabet sayısı üretilmedi)*
+
+İlk değerlendirme koşusu parite tekrarını geçti (P0 713/713, P1 157 573/0 — §6k > 13 ile
+birebir) ama dönem A'da **tek bir gözlem kuramadı**: 456 çapa × 11 sembol = 5016 gözlemin
+tamamı `listelenmemis` koduyla düştü; bütün isabet ve fark alanları `NaN`, betik "DÜŞTÜ"
+kararı yazdı. **Sebep bir araç hatasıdır, veri değil:** P1 ile dönem A aynı geçici
+önbelleği paylaştı; P1'in yazdığı 2026-09 barları önbellekte kaldı, `fetch_ohlcv` "önbellek
+güncel" deyip A için geriye hiç gitmedi ve A'nın serisi yalnızca `now`dan SONRAKİ barlardan
+oluştu. Mekanizma sahte bir OKX istemcisiyle yerelde birebir yeniden üretildi. Bu barlar
+bellekte durdu ama üzerlerinde HİÇBİR tahmin ve karşılaştırma yapılmadı (her gözlem
+çapa-öncesi bağlam kontrolünde düştü).
+
+Onarım (ayrı commit): her yükleme kendi önbellek dizinini kullanır; dönen seri `now`dan
+önce kapanmış barlara kesilir; HİÇ gözlem kurulamayan dönem bir karar değil **veri
+kapısıdır** (çıkış 3, karar 51). Bu koşunun "DÜŞTÜ" kararının hükmü ve yeniden koşu
+kararı aşağıdaki bir sonraki kayda bağlıdır.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
