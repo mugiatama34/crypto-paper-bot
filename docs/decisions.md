@@ -4318,10 +4318,18 @@ kuralı, niyeti ifadeden bağımsız kılar.
   bir kapasite asimetrisi E kapısının farkına sızardı. Maliyet ve risk sabitleri
   (`risk_per_trade`, `fee_rate`, `slippage_*`, `leverage_cap`, `initial_capital`,
   `maintenance_margin`) kökte kalır; kural 6'nın sınırı orasıdır.
-- **Veri derinliği bu modelde bir serbest parametre olmaktan çıkarıldı:** katman ve backtest
-  aynı sayıyı (3000 bar) kullanır, çünkü hedef kesişim barına bağlıdır ve pencerenin dışında
-  kalan kesişim sinyali yok eder. `cross_not_visible` payı raporlanır; %5'i aşarsa bu bir
-  bulgudur ama koşuda derinlik değiştirilmez (§7.3).
+- **Görüş penceresi bu modelde bir serbest parametre olmaktan çıkarıldı:** 3000 bar, canlıda
+  ve backtest'te aynı, çünkü hedef kesişim barına bağlıdır ve pencerenin dışında kalan
+  kesişim sinyali yok eder. `cross_not_visible` payı raporlanır; %5'i aşarsa bu bir
+  bulgudur ama koşuda pencere değiştirilmez (§7.3).
+  ⚠ **TADİLAT-1 (§6i, koşudan önce):** ilk metin 3000'i `data.history_bars`a bağlıyordu.
+  O ayar backtest'te verinin başlangıcını, canlıda modelin çerçevesini belirliyor ve motor
+  backtest'te her bara başlangıçtan o bara kadar HER ŞEYİ veriyor (`core/engine.py::
+  _snapshot`) — yani "aynı sayı" iki ortamda iki farklı pencere demekti. 3000 artık bir
+  model kuralıdır (`dc.lookback_bars`); backtest derinliği (12000) §5b'nin 1. sınıfına
+  döndü. Kararın özü değişmedi, mekanik olarak doğru yere konuldu. **Ders:** bu repoda
+  `data.history_bars` canlıda "modelin gördüğü", backtest'te "verinin başladığı yer"dir;
+  pencereye DUYARLI bir model görüşünü kendisi sınırlamalıdır.
 - **Ölçülebilirlik sayımı ön-kaydın ön koşulu oldu** (`scripts/measure_death_cross.py`):
   getiri görmeden olay sayısını ve stop geometrisini ölçmek, 6.0 tavanının SONUÇTAN değil
   GEOMETRİDEN seçilmesini mümkün kıldı. Kapı bir üst sınıra uygulandı; gerçekleşen sayı

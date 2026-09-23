@@ -2611,8 +2611,9 @@ girdi (§6i > 13). Büyük bir kısmıysa modelin geometrisi baştan zayıf deme
 SONUÇ olarak öğrenilir, şimdi bir filtreyle önlenmez.
 
 **Kesişimin GÖRÜLEBİLİRLİĞİ — veri derinliği bu modelde sinyali DEĞİŞTİREBİLİR.** Hedef
-kesişim barına bağlıdır; model ise yalnızca `data.history_bars` kadar geçmiş görür.
-Pencerenin ilk **600 barı** EMA200'ün ısınmasıdır (tohumun ağırlığı `(1 − 2/201)^400 ≈
+kesişim barına bağlıdır; model ise her barda yalnızca son **`dc.lookback_bars` = 3000**
+barı görür — bu bir MODEL kuralıdır ve canlıda da backtest'te de aynıdır (bkz. §6i >
+TADİLAT-1). Pencerenin ilk **600 barı** EMA200'ün ısınmasıdır (tohumun ağırlığı `(1 − 2/201)^400 ≈
 %1.4`; sayımın `WARMUP_BARS`ının AYNISI) ve kesişim yalnızca o sınırdan SONRA aranır.
 Kural: `t` barından geriye `EMA50 < EMA200` sürdüğü müddetçe yürünür; ısınma sınırına
 kesişim bulunmadan varılırsa kurulum `cross_not_visible` olarak sayılır ve sinyal
@@ -2673,7 +2674,7 @@ yarıdan** beslenir. Farkın kesinliği bu yüzden `n` değil kabaca `n/2` üzer
 | `max_stop_atr_multiple` | **6.0** | §6i > 2 |
 | `max_short_positions` | **5** (= `max_positions`) | aşağısı |
 | `acceptance.control_model` | `dc_coinflip` | kök değer (`random_ctrl`) bu katmanda YOK; bırakılsaydı kapı kümede olmayan bir modele bakıp sessizce düşerdi (`xsec`in aynı gerekçesi) |
-| `data.history_bars` | **3000** | §6i > 6 |
+| `data.history_bars` | **3000** — canlı çekim derinliği; `dc.lookback_bars`dan küçük olamaz | §6i > 6, TADİLAT-1 |
 | `breakdowns` | `symbol`, `exit_rule`, `session`, `loss_streak` | `ema`/`xsec` ile aynı statüde ölçüm |
 | Tetikleyici | **YOK** | tanım var, koşu yok (`ema`/`xsec` statüsü) |
 
@@ -2703,11 +2704,13 @@ Sınırlar `scripts/backtest_ema.py`den İTHAL EDİLİR (`PERIOD_A_START`, `PERI
 VARSAYILMAZ, dönem A'dan ÖLÇÜLÜR** (`measured_embargo_bars`): modelin zaman stop'u yok,
 §6.1'in dayandığı üst sınır tanım gereği yok. **Dönem B'ye koşu öncesi DOKUNULMAZ.**
 
-**Veri derinliği bir serbest parametre DEĞİLDİR: katman ve backtest AYNI sayıyı kullanır
-(3000 bar ≈ 500 gün).** Bu modelde derinlik, §5b'nin "sonucu değiştirmemesi sınanan
-derinlik ayarı" sınıfına **GİRMEZ** — kesişim pencerenin dışında kalırsa hedef tanımsızdır
-ve sinyal üretilmez (§6i > 3). Bu yüzden `--history-bars` bu koşuda bir "derinleştirme"
-değil katmanın kendi değeridir ve öyle raporlanır.
+**Modelin görüş penceresi bir serbest parametre DEĞİLDİR: canlıda ve backtest'te AYNI
+3000 bar (≈ 500 gün), `dc.lookback_bars` ile modelin KENDİSİNDE sabitlenir** (bkz.
+TADİLAT-1 — ilk metin bunu `data.history_bars`a bağlıyordu ve motorun mekaniğiyle
+çelişiyordu). Kesişim bu pencerenin dışında kalırsa hedef tanımsızdır ve sinyal üretilmez
+(§6i > 3). Pencere modelde sabitlendiği için backtest'in `--history-bars` değeri (12000)
+§5b'nin 1. sınıfına geri döner: yalnızca verinin nereden başladığını belirler, modelin
+gördüğünü DEĞİŞTİRMEZ.
 
 **`cross_not_visible` eşiği — koşudan ÖNCE yazılır:** dönem A'da `cross_not_visible`,
 kurulum barlarının (`setup + target_undefined + target_passed + cross_not_visible`)
@@ -2733,6 +2736,49 @@ daha az" sorusu cevapsız kalır. Huni (dönem A, `dc_short`):
 
 1090'ın modelde karşılığı yoktur (6 barlık kural modelde yok); modelin kümelemesi
 `duplicate_position` satırıdır ve huni onu AYRI gösterir.
+
+### TADİLAT-1 — görüş penceresi MODELE taşındı *(koşudan önce, uygulama yazılırken, hiçbir sonuç görülmeden)*
+
+> **İlk metin (`03e9e2e`) şunu diyordu:** "Veri derinliği bir serbest parametre DEĞİLDİR:
+> katman ve backtest AYNI sayıyı kullanır (3000 bar ≈ 500 gün) … `--history-bars` bu
+> koşuda bir 'derinleştirme' değil katmanın kendi değeridir." **Bu cümle motorun
+> mekaniğiyle çelişiyordu ve uygulanamazdı.**
+
+**Ne bulundu.** `data.history_bars` backtest'te ve canlıda İKİ AYRI şey belirliyor:
+
+- **Canlıda** modele verilen çerçeve tam olarak `history_bars` bardır
+  (`core/data.py::fetch_ohlcv` → `tail(history_bars)`).
+- **Backtest'te** aynı sayı yüklenen verinin BAŞLANGICINI belirler ve motor her bara, o
+  başlangıçtan o bara kadar olan HER ŞEYİ verir (`core/engine.py::_snapshot` →
+  `bars_until`). Görüş penceresi bar ilerledikçe BÜYÜR.
+
+İki sonuç: (a) backtest'e `--history-bars 3000` vermek dönem A'yı son ~3000 barına
+keserdi (A + kuyruk ≈ 6570 bar) — koşu kullanılamazdı; (b) doğru derinlikle bile modelin
+backtest'te gördüğü pencere canlıdakinden BÜYÜK olurdu ve `cross_not_visible` canlıda
+olacağından az görünürdü — tam olarak §5b'nin engellemek için var olduğu canlı ↔ backtest
+ayrışması.
+
+**Düzeltme.** 3000 barlık görüş bir MODEL kuralı olur: `dc.lookback_bars: 3000` ve model
+her barda çerçevenin son `lookback_bars` barını kullanır (diğer modellerin `tail(...)`
+deseni). Katmanın `data.history_bars`ı 3000 kalır (canlı çekim; uygulama `history_bars ≥
+lookback_bars` şartını KURULUMDA sınar). Backtest `--history-bars 12000` ile koşar
+(`ema_trend`in koşusuyla aynı derinlik) ve bu artık §5b'nin 1. sınıfıdır: veri daha
+eskiden başlar ama model yine son 3000 barı görür. Gösterge ATR'si (tavan kapısı) son 15
+barı okuduğu için derinlikten etkilenmez.
+
+**Kararın ÖZÜ DEĞİŞMEDİ, yalnızca doğru yere konuldu.** Kullanıcının kararı (§6i > 6):
+"3000 bar; serbest parametre değil; canlıda ve backtest'te aynı; `cross_not_visible`
+raporlanır, %5'i aşarsa bulgudur ama koşuda değiştirilmez." Bu kararın dört parçası da
+aynen yürürlükte — tek fark 3000'in `history_bars` yerine `lookback_bars`ta durmasıdır ve
+o, kararı mekanik olarak DOĞRU kılan tek yerdir. Sayım ↔ backtest farkının gerekçesi
+("backtest 3000 barlık kayan bir pencereyle sınırlı") ilk metinde bir varsayımdı; bu
+tadilatla gerçek oldu.
+
+**Yan sonuç — dönem A'nın ilk barlarında görüş.** A 2022-01-01'de başlar; tam 3000 barlık
+görüş için sembolün ~2020-08'den beri verisi olmalıdır. Daha geç listelenen sembollerde
+(SOL, NEAR ve sayımdaki BNB/SUI/ETHFI gibi) görüş mevcut veriyle sınırlıdır — canlıda da
+aynısı olurdu. Isınma kuralı (ilk 600 bar) pencere kısa da olsa aynen uygulanır; etkisi
+`cross_not_visible` ve `no_data` sayımlarında görünür, gizlenmez.
 
 ### 7. Maliyet — canlı config, değişiklik YOK
 
@@ -2908,7 +2954,9 @@ yetişemeyebilir (dönem A'nın sonu 2023–24 boğasıdır).
 ### 12. Koşu kuralları
 
 - **Parametre araması YOK.** Tek tanım, tek koşu. EMA periyotları (50/200), ısınma (600),
-  tavan (6.0), kota (5), derinlik (3000), tohum ve küme tanımları bu commit'te sabittir.
+  tavan (6.0), kota (5), görüş penceresi (`dc.lookback_bars` 3000 — TADİLAT-1), tohum ve
+  küme tanımları bu commit'te sabittir. Backtest derinliği (`--history-bars 12000`) bir
+  §5b 1. sınıf ayarıdır ve modelin gördüğünü değiştirmez.
 - **Kapıdan kalırsa ayar aranmaz; ChopZone ekleyerek kurtarılmaz.** Düşen tez sicilde
   kalır (§6c).
 - **Dönem B'ye koşu öncesi DOKUNULMAZ.**
