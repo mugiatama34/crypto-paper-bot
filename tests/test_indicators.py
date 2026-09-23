@@ -19,6 +19,7 @@ from core.indicators import (
     bollinger,
     donchian,
     ema,
+    ema_series,
     fib_levels,
     rsi,
     sma,
@@ -92,6 +93,22 @@ def test_ema_recursion_matches_the_written_definition() -> None:
 
 def test_ema_returns_none_below_its_period() -> None:
     assert ema(_series([1.0] * 199), 200) is None
+
+
+def test_ema_series_is_the_bar_by_bar_form_of_the_single_definition() -> None:
+    """`ema_series` ikinci bir EMA tanımı DEĞİLDİR: her barda `ema(series[:t+1])`e eşit."""
+    import numpy as np
+
+    rng = np.random.default_rng(11)
+    series = _series(list(100.0 + np.cumsum(rng.normal(0.0, 1.0, size=700))))
+    bars = ema_series(series, 200)
+    assert bars.iloc[:199].isna().all()
+    for position in (199, 200, 350, 699):
+        assert bars.iloc[position] == pytest.approx(ema(series.iloc[: position + 1], 200), rel=1e-12)
+
+
+def test_ema_series_below_its_period_is_all_nan() -> None:
+    assert ema_series(_series([1.0] * 5), 10).isna().all()
 
 
 # --------------------------------------------------------------------------- #

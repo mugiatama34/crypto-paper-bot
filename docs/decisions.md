@@ -4481,3 +4481,74 @@ mi olduğunu söyler — hiçbiri bir eşiğe bağlanmaz, bağlansaydı sonucu g
   arayüz tarafında kod değişikliği gerekmedi.
 - **Ölü kollar silinmedi ve onarılmadı** (karar 48'in sözü): V1/V2 tam olarak onarımın nerede
   yapılacağını ölçmek içindir.
+
+---
+
+## 55. `dc_short` ön-kaydı: yeni `dc` katmanı ve KÜME bootstrap — i.i.d. aralık bu modelde bağlayıcı olamaz
+
+**Numaralandırma notu.** Bu karar ön-kayıt commit'lerinde **54**, ön-kayıt **§6i**, kontrol **model 23** olarak yazıldı; `main`'deki karar 54 / §6i / model 23 (`scalp_coinflip`) ile çakıştığı için birleştirmede 55 / §6j / model 24 oldu. İçerik değişmedi.
+
+**Ne.** Model 22 (`dc_short`, ölüm kesişimi + EMA50'ye geri çekilme short) ve kontrolü
+model 24 (`dc_coinflip`) için ön-kayıt (docs/backtest.md > 6j). Uygulamadan AYRI ve ÖNCE
+commit edildi; koşudan önce görülen tek veri ölçülebilirlik sayımıdır (commit `f5df1bb`,
+koşu `#35718873885`: dönem A birincil kurulum 1090 ≥ 150).
+
+**Bu projede ilk kez bir kapı i.i.d. olmayan bir aralıkla okunuyor.** Şimdiye kadarki her CI
+kapısı (`core/metrics.py::bootstrap_mean_ci`, `bootstrap_diff_ci`) pozisyonları bağımsız
+sayıyordu. Bu modelde o varsayım açıkça yanlış: 1090 kurulum 121 rejimde kümelendi ve 2022
+ayı piyasası bütün evreni aynı haftalarda aynı yöne itti. i.i.d. bootstrap bu bağımlılığı
+yok sayar ve aralığı sahte biçimde daraltır — bir CI kapısını gevşetmenin görünmez yolu.
+Bu yüzden iki küme tanımı (rejim, takvim ayı) ve **bağlayıcı olan: iki alt sınırın
+MİNİMUMU.**
+
+**Neden `core/metrics.py` değişmedi.** Canlı tablonun kapıları i.i.d. aralıkla okunmaya
+devam ediyor; küme bootstrap yalnızca bu harness'ta (`scripts/backtest_dc.py`). Canlı yolu
+değiştirmek, bugün koşan her modelin rozetini o commit'ten itibaren başka bir kuralla
+üretmek olurdu — karar 25'teki `fee_rate`in defteri tarihli olarak bölmesinin çıta
+tarafındaki hâli. Genelleştirme ayrı bir karardır ve bu kaydı beklemez.
+
+**Fark aralığı EŞLEŞTİRİLMİŞ — `bootstrap_diff_ci`'dan bilinçli ayrılış.** Oradaki gerekçe
+("model ile kontrol aynı kurulumlarda işlem açmaz") burada tersine döner: kontrol aynı
+kurulum barlarında yazı-tura ile yön seçer, yani kümeler ORTAKTIR ve eşleştirmemek var olan
+bir kovaryansı atmak olurdu.
+
+**Kural yazılırken bir kez düzeltildi — sayı görülmeden.** İlk taslak "iki aralıktan GENİŞ
+olanı bağlayıcı" diyordu; niyet muhafazakârlıktı, ama kaymış geniş bir aralığın alt sınırı
+dar olanınkinden yüksek çıkabilir ve o ifade kuralı gevşetebilirdi. Minimum alt sınır
+kuralı, niyeti ifadeden bağımsız kılar.
+
+**Yan kararlar.**
+
+- **`max_short_positions` ilk kez katman başına ayrışıyor (`dc`: 5).** Short-only model kök
+  kotayla 3, karma yönlü kontrolü 5 pozisyon taşırdı; ölçülen eksenle (yön) ilgisi olmayan
+  bir kapasite asimetrisi E kapısının farkına sızardı. Maliyet ve risk sabitleri
+  (`risk_per_trade`, `fee_rate`, `slippage_*`, `leverage_cap`, `initial_capital`,
+  `maintenance_margin`) kökte kalır; kural 6'nın sınırı orasıdır.
+  ⚠ **TADİLAT-2 (§6j, koşudan önce):** plan ve ilk ön-kayıt metni bu override'ın "yapısal
+  olarak izinli" olduğunu söylüyordu — `max_stop_atr_multiple`dan yapılmış yanlış bir
+  genelleme. Kota sabitleri katmanlar arası paylaşılır ve depo bunu bir testle korur
+  (`tests/test_layers.py`). Karar öncülün yanlış olduğu bilinerek yeniden verildi: 5 kalır,
+  değişmez DAR ve SAYILI bir istisnayla daraltılır — yalnızca kota anahtarları, yalnızca bu
+  katman, bayat kalamaz. **Ders:** bir anahtarın katman bloğunda ezilebilir olması, onun
+  ezilmesinin serbest olduğu anlamına gelmez; paylaşılan sabitlerin listesi testtedir.
+- **Görüş penceresi bu modelde bir serbest parametre olmaktan çıkarıldı:** 3000 bar, canlıda
+  ve backtest'te aynı, çünkü hedef kesişim barına bağlıdır ve pencerenin dışında kalan
+  kesişim sinyali yok eder. `cross_not_visible` payı raporlanır; %5'i aşarsa bu bir
+  bulgudur ama koşuda pencere değiştirilmez (§7.3).
+  ⚠ **TADİLAT-1 (§6j, koşudan önce):** ilk metin 3000'i `data.history_bars`a bağlıyordu.
+  O ayar backtest'te verinin başlangıcını, canlıda modelin çerçevesini belirliyor ve motor
+  backtest'te her bara başlangıçtan o bara kadar HER ŞEYİ veriyor (`core/engine.py::
+  _snapshot`) — yani "aynı sayı" iki ortamda iki farklı pencere demekti. 3000 artık bir
+  model kuralıdır (`dc.lookback_bars`); backtest derinliği (12000) §5b'nin 1. sınıfına
+  döndü. Kararın özü değişmedi, mekanik olarak doğru yere konuldu. **Ders:** bu repoda
+  `data.history_bars` canlıda "modelin gördüğü", backtest'te "verinin başladığı yer"dir;
+  pencereye DUYARLI bir model görüşünü kendisi sınırlamalıdır.
+- **Ölçülebilirlik sayımı ön-kaydın ön koşulu oldu** (`scripts/measure_death_cross.py`):
+  getiri görmeden olay sayısını ve stop geometrisini ölçmek, 6.0 tavanının SONUÇTAN değil
+  GEOMETRİDEN seçilmesini mümkün kıldı. Kapı bir üst sınıra uygulandı; gerçekleşen sayı
+  koşudan sonra bir huni olarak raporlanır.
+- **Hedef aralığı kurulum barını HARİÇ tutar (`[kesişim, t−1]`)** — commit'ten önce, sayı
+  görülmeden. Dâhil okuması "hedef zaten geçilmiş" kuralını fiilen boşa düşürürdü. Bedeli:
+  kurulum kesişim barındaysa hedef tanımsızdır (`target_undefined`, raporlanır) ve erken
+  rejim kurulumlarında R:R 1'in altına düşebilir — filtre eklenmez, `rr < 1.0` payı koşudan
+  sonra raporlanır.

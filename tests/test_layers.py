@@ -26,7 +26,7 @@ SHARED_KEYS = (
 
 
 def test_repository_defines_its_layers() -> None:
-    assert layer_names(load_config()) == ["base", "ema", "scalp", "xsec"]
+    assert layer_names(load_config()) == ["base", "dc", "ema", "scalp", "xsec"]
 
 
 def test_base_layer_matches_the_root_config() -> None:
@@ -72,8 +72,41 @@ def test_cost_and_risk_constants_are_identical_in_every_layer() -> None:
 
     for name in layer_names(config):
         layer = resolve_layer(config, name).config
+        exempt = QUOTA_EXEMPTIONS.get(name, frozenset())
         for key in SHARED_KEYS:
+            if key in exempt:
+                continue
             assert layer[key] == root[key], f"{name}.{key}"
+
+
+# Katman başına KOTA istisnaları — SAYILIDIR, anahtar paylaşılan listeden çıkarılmaz.
+# `dc`: short-only model ile karma yönlü kontrolünün taşıma kapasitesini eşitlemek için
+# `max_short_positions` = `max_positions` (docs/backtest.md > 6j > TADİLAT-2, karar 55).
+# Kapasite asimetrisi, ölçülen eksenin (yön) farkına ölçülmeyen bir değişken sokardı.
+QUOTA_EXEMPTIONS: dict[str, frozenset[str]] = {"dc": frozenset({"max_short_positions"})}
+_QUOTA_KEYS = frozenset({"max_positions", "max_short_positions"})
+
+
+def test_quota_exemptions_never_reach_cost_or_risk_rate_constants() -> None:
+    """İstisna yalnızca KOTA anahtarlarına açıktır; maliyet/risk-oranı sabitleri ASLA.
+
+    `fee_rate` ya da `risk_per_trade` bir katmanda ayrışsaydı "aynı kurallar" iddiası o
+    katmanda sessizce çökerdi — tam da bu testin var olma sebebi.
+    """
+    for name, keys in QUOTA_EXEMPTIONS.items():
+        assert keys <= _QUOTA_KEYS, f"{name}: kota dışı istisna {sorted(keys - _QUOTA_KEYS)}"
+
+
+def test_quota_exemptions_are_not_stale() -> None:
+    """Listelenen istisna gerçekten KULLANILIYOR olmalı: bayat bir istisna, bir gün sessizce
+    kullanılabilecek bir deliktir. Ayrıca istisnalı kota toplam kotayı AŞAMAZ."""
+    config = load_config()
+    root = resolve_layer(config, "base").config
+    for name, keys in QUOTA_EXEMPTIONS.items():
+        layer = resolve_layer(config, name).config
+        for key in keys:
+            assert layer[key] != root[key], f"{name}.{key} kökle aynı — istisna bayat"
+        assert layer["max_short_positions"] <= layer["max_positions"]
 
 
 def test_layers_never_share_a_ledger() -> None:

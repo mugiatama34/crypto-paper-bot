@@ -493,6 +493,30 @@ istisnasız her sinyali elenirdi. `ema`nın tavanını yükseltmek reddedildi �
 kapanır); dolum Pazartesi 00:00 açılışından (kural 13). Çıkışın iki yolu var — rebalance'ta
 top-3 dışına düşmek (`exit_rule=rebalance`) ve stop.
 
+### Kadro — `dc` (tanımlı, tetikleyicisi YOK)
+
+4H, **sabit 13 sembol** (`ema` katmanının evreninin aynısı), `config.yaml > layers.dc`.
+`ema`/`xsec` ile aynı statü: **cron'u yoktur ve `run-dc.yml` eklenmemiştir**. Ön-kayıt
+`docs/backtest.md > 6i`de ve koddan ÖNCE, ayrı bir commit olarak işlendi; ondan önce
+getiri görmeden bir **ölçülebilirlik sayımı** yapıldı (`scripts/measure_death_cross.py`:
+dönem A'da 1090 birincil kurulum ≥ 150 kapısı).
+
+Tez: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilip reddedilen bar, short.
+Stop kurulum barındaki EMA200, hedef kesişimden kurulumun bir önceki barına kadarki en
+düşük low. **Neden ayrı katman:** stop EMA200'de kaldığında kurulumların %48'i `ema`nın
+3.0×ATR tavanını aşıyordu; bu katmanın tavanı **6.0** (sayımın geometrisinden seçildi) ve
+short kotası **5** (kontrolle kapasite asimetrisi olmasın diye — karar 54).
+
+Bu katmanın bağlayıcı güven aralıkları **küme bootstrap**'ından gelir (rejim ve takvim ayı;
+bağlayıcı olan iki alt sınırın minimumu): kurulumlar rejimlerde ve semboller arası aynı
+haftalarda kümelenir, i.i.d. aralık bu yüzden sahte biçimde dar olurdu.
+
+| # | Strateji | Yön | Tez |
+|---|---|---|---|
+| — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
+| 22 | `dc_short` | **yalnızca short** | ölüm kesişimi rejiminde EMA50 reddi; stop EMA200, hedef önceki dip, çıkış yalnızca stop/hedef |
+| 24 | `dc_coinflip` | long + short | **kontrol grubu**: aynı kurulum, yön yazı-tura, mesafeler kapanış etrafında aynalanmış |
+
 ### Katalog — kayıtlı ama listede değil
 
 Emekli bir modelin **kodu ve defteri DURUR** (kural 1: defter append-only); listeye geri
