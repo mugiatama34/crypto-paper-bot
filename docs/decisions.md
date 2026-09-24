@@ -4597,6 +4597,49 @@ alt sınırı sıfırın altında. ~5 puanın üstünde bir kenar dışlandı; d
 
 ## 57. `xsec_mom` koşuldu: A'da ayırt edilemedi, B'de büyük etki DIŞLANDI — BLOKE
 
+> ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24).** Bu kararın SAYILARI ön-kayıttaki pencereden
+> gelmiyordu (karar 58: A 5465 barın 3000'i, B 2025-05-09'dan başladı). Ön-kayıttaki pencerede
+> yeniden koşu `backtest-xsec` #35981642832 (aynı config, aynı tohum; B sonu kayıttan,
+> `rerun-59-backtest-xsec.run`) yerlerine geçer:
+>
+> | | Dönem A (2022-01-01 → 2024-06-29T20:00) | Dönem B (2024-09-08 → 2026-09-21T04:00) |
+> |---|---|---|
+> | Pozisyon | 183 (eski 95) | 168 (eski 110) |
+> | Ortalama R | **+0.118** (eski +0.484) | **+0.323** (eski +0.003) |
+> | Kontrol (`xsec_random`) | +0.039 (n=314) | +0.160 (n=264) |
+> | Fark, %95 CI | **+0.079, [−0.257, +0.518]** | **+0.163, [−0.316, +0.812]** |
+> | Hesap getirisi ↔ çıpa | +%12.4 ↔ +%9.97 (C-3 GEÇER) | +%57.1 ↔ +%31.5 (C-3 GEÇER) |
+> | Max drawdown (K-3 tavanı %25) | **−%33.32** | **−%25.92** |
+> | *kontrolün drawdown'u* | *−%24.07* | *−%23.25* |
+>
+> **Karar DEĞİŞMEDİ — BLOKE; gerekçesi DEĞİŞTİ.** K-3 artık İKİ dönemde de aşılıyor; E iki
+> dönemde de kalıyor (A marjdan ve CI'dan: fark 0.079 < 0.15; B yalnızca CI'dan: fark 0.163 ≥
+> 0.15 ama alt sınır −0.316). P2 tutuyor (A'da model > kontrol); P1 (rebalance payı ≥ %70)
+> tutmuyor (0.536).
+>
+> **Başlıktaki ve aşağıdaki "B'de büyük etki DIŞLANDI" cümlesi ARTIK GEÇERSİZDİR ve sessizce
+> değiştirilmedi.** O okuma kullanıcının çıkarımıydı (bu kararın kaydına kullanıcının önerisiyle
+> girdi) ve yanlış veriye — kesik B penceresine — dayanıyordu: kesik B'de farkın CI üst sınırı
+> +0.197R idi; doğru B'de +0.812R'dir, yani ≈0.42R'lik bir etki DIŞLANMIYOR. Doğru okuma:
+> **iki dönemde de AYIRT EDİLEMEDİ.** Tez OOS'ta çürümedi; tez TEST EDİLEMEDİ — gözlenen etki
+> (~0.08–0.16R) tasarımın görebileceğinin (MDE ≈0.4R; CI yarı genişliği A 0.39R, B 0.56R) çok
+> altında. Aşağıdaki metin ve tablo kayıt olarak durur.
+>
+> **Dar bir iddia, bilinçli olarak dar:** `xsec_mom`, sonuçlanmış tezler içinde ortalama R'si
+> İKİ dönemde de > 0 VE kontrole karşı farkı İKİ dönemde de pozitif olan TEK modeldir. "Aynı
+> pozitif işareti iki dönemde gösteren tek model" demek YANLIŞ olurdu: `dc_short`un kontrole
+> farkı da iki dönemde pozitif (A +0.045, B +0.112), ama A ortalama R'si negatif (−0.049);
+> `ema_trend`in `random_ctrl`e farkı iki dönemde +1.0R ve CI sıfırı dışlıyor, ama ortalama R'si
+> negatif ve kontrolün −1.06R'si bir çekiliş değil patolojidir. İşaretin tutarlılığı bir KANIT
+> değildir — iki aralık da sıfırı rahatça içeriyor.
+>
+> **K-3 yine YAPISAL okunur:** kontrolün drawdown'u da iki dönemde %23-24; çöküş seçimden değil
+> "3 pozisyon, yalnız long, haftalık tutuş" yapısından geliyor.
+>
+> **Açık iş (şimdi değil):** kesitsel momentum daha büyük bir örneklemle — geniş evren, farklı
+> tasarım, YENİ ön-kayıt — yeniden incelenmeye değer. Bu kaydın hiçbir sayısı o ön-kaydın eşiğini
+> seçmekte kullanılamaz; bu koşu o tasarım için artık dönem A değil, görülmüş veridir.
+
 **Karar:** kesitsel momentum tezi (21 gün geriye bakış, top-3, haftalık rebalance,
 long-only) ön-kayıtlı tek koşusunu yaptı ve **kapılardan geçemedi.** Tez bu hâliyle
 KAPANIR; hiçbir parametre oynatılmaz.
@@ -4727,6 +4770,18 @@ tek yolu yeni bir ön-kayıttır (karar 49'un `ema_trend` çıkış ekseninde b�
 aynısı). `xsec` katmanının tetikleyicisi yoktur ve bu koşudan sonra da yoktur.
 
 ## 58. Backtest pencere denetimi: önbellek `end`i aşıyordu, xsec'in başlangıcı hiç gelmedi — ileriye bakış YOK
+
+> ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24).** İki iddia yeniden koşuda değişti; metin kayıt olarak
+> durur:
+> - **"dc_short: Dönem A'da işlemler etkilenmedi" YANLIŞTI.** Taşmanın kendisi A işlemlerini
+>   değiştirmedi, ama aynı kirli önbellek A'nın BAŞINI da belirliyordu: önbellek 2021-03-27'de
+>   başlıyordu ve modelin 3000 barlık görüş penceresi 2022 başında yalnızca ~1680 bar
+>   görüyordu — EMA200 başka bir tohumdan başladı. Yeniden koşu (#35981639682): pozisyon 335 →
+>   336, ort. R −0.035 → −0.049, kontrol 402 → 407. Karar değişmedi (BLOKE, aynı 10 kapı);
+>   ayrıntı karar 59 > SIRA 2.
+> - **"xsec_mom: DEĞERLENDİRİLEMEDİ" artık değerlendirildi:** ön-kayıttaki pencerede BLOKE —
+>   K-3 iki dönemde aşıldı, E iki dönemde AYIRT EDİLEMEDİ (karar 57'nin damgası; karar 59 >
+>   SIRA 3).
 
 **Ne.** `backtest-dc` #35839008498'in sonucunu okurken dönem A'nın `2024-12-31` yerine
 `2026-09-18`'de bittiği görüldü. Denetim üç soruyu AYRI cevapladı: (1) kayıttaki çıpa
@@ -5002,3 +5057,80 @@ yeniden üretilebilirlik iddiası): kapı, sonucun değil verinin zamanla deği�
 ürününe (ya da commit'lenen yüke) SABİTLENSİN, ki yeniden koşu aynı girdiyle yapılabilsin.
 Mum serileri için aynı soru ayrıca sorulmalı: OKX geçmiş mumlarını nadiren düzeltir, ama
 "nadiren" bir ölçüm değildir.
+
+### SIRA 2 SONUCU — `backtest-dc` #35981639682 *(2026-09-24)*
+
+Koşu B sonu `2026-09-23T08:00Z` (kayıt `rerun-59-backtest-dc.run`). Okuma sırası kullanıcının
+belirlediği sıradır.
+
+1. **Pencere:** A 2022-01-01 → 2024-12-30T20:00 (6569 bar; sinyal kesimi 06-30); embargo
+   A'dan ÖLÇÜLDÜ, **728 bar — değişmedi**; B 2024-10-29T08:00 → 2026-09-23T04:00 (başlangıç
+   değişmedi). Kapı (`assert_window_covered`) geçti.
+2. **Fonlama kapsamı:** A 0 / 42705 damga (kayıt yok); B 3622 / 27066, kayıt 2026-06-22'de
+   başlıyor.
+3. **Kapılar:** her bağlayıcı kapının ikili sonucu eskisiyle AYNI; verdikt **BLOKE, aynı 10
+   kapıdan** (A: C-1, küme CI, E, C-3, K-3; B: küme CI, E, C-3, K-3, K-1). **Karar değişmedi.**
+
+| | eski (#35839008498) | yeni |
+|---|---|---|
+| A pozisyon / ort. R | 335 / −0.0350 | 336 / **−0.0486** |
+| A kontrol n / ort. R | 402 / −0.0856 | 407 / −0.0937 |
+| A hesap getirisi ↔ çıpa | −%17.04 ↔ +%18.87 (kirli) | −%18.86 ↔ **+%43.39** |
+| A max drawdown | −%53.77 | −%54.78 |
+| B pozisyon / ort. R / getiri | 246 / +0.0516 / +%9.06 | 246 / +0.0516 / +%9.05 (fonlama, ~1e-4) |
+
+Kontrole fark (eşleştirilmiş küme CI): A +0.045 (rejim [−0.178, +0.245], ay [−0.226,
++0.302]), B +0.112 (rejim [−0.111, +0.317], ay [−0.142, +0.352]); MDE A 0.370, B 0.340.
+
+**Mekanizma (ölçüldü):** eski koşunun önbelleği 2021-03-27'de başlıyordu; modelin 3000 barlık
+görüş penceresi (`dc.lookback_bars`) 2022 başında ~1680 bar görüyordu, yani EMA200 başka bir
+noktadan tohumlandı. Fark stop'ta ~5e-8 büyüklüğündedir ve tek bir dolumu nakit sınırında
+(`zero_size`) çevirdi; o andan sonra portföy yolu ayrıştı. Kanıt: tarama ve sinyaller BİREBİR
+(1760 kurulum, 1506 sinyal), yalnızca retler kaydı (`zero_size` 97 → 103, `duplicate_position`
+878 → 873); 2023 yılı birebir; tek-sembollü koşular yalnızca 1e-8 düzeyinde farklı.
+
+### ⚠ ÖN-KAYIT EKSİĞİ — dc'nin mekanizması yukarıdaki listede YOKTU
+
+Bu kararın sıra tablosu dc için beklenen mekanizmayı "taşma → yalnızca çıpa" olarak yazmıştı.
+Gözlenen ikinci mekanizma — kirli önbelleğin A'nın BAŞINDAKİ görüş penceresini kısaltması, EMA200
+tohumunu kaydırması — önceden YAZILMAMIŞTI. Sonucu değiştirmedi (verdikt aynı), ama "karar 58
+dc A işlemlerini etkilemedi" iddiası bu eksikten doğdu: denetim pencerenin SONUNA baktı,
+BAŞINA bakmadı. Eksik silinmez, burada kayıtlıdır.
+
+### SIRA 3 SONUCU — `backtest-xsec` #35981642832 *(2026-09-24)*
+
+Koşu B sonu `2026-09-21T08:00Z` (kayıt `rerun-59-backtest-xsec.run`), `--history-bars 12000`.
+
+1. **Pencere:** A 2022-01-01 → 2024-06-29T20:00 (**5465 bar**, ön-kayıttaki pencere); embargo
+   A'dan ölçüldü, 420 bar; B 2024-09-08 → 2026-09-21T04:00.
+2. **Fonlama kapsamı:** A 0; B 3542 / 28990.
+3. **Kapılar ve karar:** sayılar karar 57'nin damgasındadır. **BLOKE — K-3 iki dönemde**
+   (A −%33.32, B −%25.92); E iki dönemde kalıyor (A marj + CI, B yalnızca CI); C-3 iki dönemde
+   geçiyor. Eski kayıtla kıyasla değişen kapılar: **C-3(A)** kaldı → geçti (çıpa kesik A'da
+   +%123, doğru A'da +%9.97), **K-3(A)** geçti → kaldı (kesik A'da −%16.06). K-3(B) aynı
+   değer (−%25.917): drawdown iki pencerenin ORTAK kuyruğunda ve boyut özsermayeyle orantılı.
+   Okuma: iki dönemde de ayırt edilemedi, tez test edilemedi (karar 57 > damga).
+
+### GENEL DERS — nakit sınırındaki portföy koşuları küçük sayısal farkları BÜYÜTÜR
+
+dc'de 5e-8'lik bir stop farkı, tek bir dolumu `zero_size` sınırında çevirerek A'nın ortalama
+R'sini 0.014R kaydırdı; aynı fark tek-sembollü koşularda 1e-8 düzeyinde kaldı. Portföy koşusu
+nakit/kota sınırında DETERMİNİSTİK ama KAOTİKTİR: yol bir kez ayrışınca her sonraki dolum başka
+bir özsermayeyle boyutlanır. Bu, portföy düzeyindeki determinizm kapılarının (§1, karar 59'un
+kanaryası, `diagnose_ema_exits.py`) neden kırılgan olduğunu da açıklar — ve fonlama kaymasıyla
+(YENİ BULGU) aynı yönde çalışır. Sonuç: **bir yeniden üretim testi tek-sembollü koşularda
+birebirlik, portföy koşularında KAPI düzeyinde tutarlılık** beklemelidir; ikisini aynı ölçütle
+sınamak ya sahte alarm ya da gevşek bir kapı üretir. (Bir ilke olarak kaydedildi; hiçbir mevcut
+kapı değiştirilmedi.)
+
+### SIRA 4-6 SONUCU — üçü de BİREBİR *(2026-09-24, `d898292`)*
+
+| # | Koşu | Beklenen | Gözlenen | Karar |
+|---|---|---|---|---|
+| 4 | `diagnose-ema-exits` #35983894505 | determinizm kapısı + yol istatistiği birebir | kapı GEÇTİ (369 pozisyon, 130 tp / 239 stop, ort. R −0.001489, azami tutuş 129 — #35391881083 ile birebir); M2 0.1533 / M1 0.552 / M4 0.6667, **dal yok, tur kapanır** | değişmedi (karar 49) |
+| 5 | `measure-timesfm` #35983897349 (evaluate) | dönem A birebir (#35867807908) | TimesFM %50.77; Δ hep yukarı +0.79 pp [−2.9, +4.5], momentum +0.63 pp [−3.4, +4.6], yazı-tura +1.90 pp [−0.8, +4.6]; B ve C koşulmadı | değişmedi — **DÜŞTÜ** (§6k) |
+| 6 | `measure-death-cross` #35983899935 | sayım birebir | 139 kesişim, 1773 ham, **1090 birincil**, 121 rejim-ilk; stop geometrisi medyanı 2.88×ATR, %48'i > 3 | değişmedi (`dc_short` ön-kaydının dayanağı) |
+
+Dördünün (ema A + bu üçü) birebir çıkması onarımın kendisinin sonuç DEĞİŞTİRMEDİĞİNİ gösterir:
+değişen her sayı (xsec'in tamamı, dc A, çıpalar) kirli bir önbelleğin ölçtüğü pencereden geldi,
+temiz pencereyi ölçen koşular aynı kaldı. Yeniden koşu turu burada KAPANIR.
