@@ -3754,6 +3754,50 @@ bu yüzden etkin gözlem varsayılandan büyük çıktı ve gerçek MDE tablodak
 
 **Sonraki adım (ön-kayıt §6k > 2):** hemstir'in sonuç dosyaları artık — ve ancak şimdi —
 bağımsız çapraz kontrol olarak açılabilir.
+
+### 18. ÇAPRAZ KONTROL — hemstir'in kendi ölçümü *(2026-09-24; §6k > 17 `8350a89` ile kayda geçtikten SONRA açıldı)*
+
+Okunan: `docs/research_dev.json`, `docs/research_locked.json`, `docs/diagnostics.json`,
+README'nin "Metodoloji" ve "Kilitli Test Sonucu" bölümleri (hemstir `bd9247e`).
+**Yazarın vardığı sonuç bizimkiyle aynı:** *"test edilen hiçbir varyant kanıtlanmış bir avantaj
+göstermedi"* — kilitli testte hiçbir varyant hiçbir kıyas kuralını (her zaman AL / momentum /
+rastgele) blok-bootstrap aralığıyla geçemedi.
+
+**Aynı modelin isabeti, iki bağımsız dönemde aynı yere çıkıyor.** hemstir'in A/B/C
+varyantları bizim ölçtüğümüz modelin ta kendisidir (bağlam 300, ufuk 48s, aynı tahmin, 48.
+saat kapanışına göre yön — `eval_lib.direction_correct`, `future[-1].close`):
+
+| Kaynak | Dönem | Coin | TimesFM | hep AL | momentum | rastgele |
+|---|---|---|---|---|---|---|
+| **Biz, §6k > 17** | 2022-01 → 2024-06 | 11 | **%50.8** | %50.0 | %50.1 | %48.9 |
+| hemstir gelişme (A/B/C) | 2025-09-22 → 2026-06-05 | 5 | **%50.65** | %43.9 | %48.4 | %49.3–50.2 |
+| hemstir kilitli, F (bağlam 1024) | 2026-06-07 → 09-22 | 5 | %53.1 | %51.4 | %48.5 | %49.2 |
+| hemstir kilitli, D (P ≥ %60 filtresi) | aynı | 5 | %57.2 (n=1080) | %63.9 (n=501) | %54.9 (n=337) | %56.6 (n=550) |
+
+hemstir'in gelişme dönemi büyük ölçüde checkpoint yayınından (2025-10-02) SONRADIR — yani
+bizim koşmadığımız Katman C'nin penceresiyle örtüşür ve orada da model ~%50.7'dedir. Bu
+**ön-kayıtlı bir C ölçümünün yerine GEÇMEZ** (5 coin, üst üste binen pencereler, küme CI yok),
+ama sızıntı sorusuna resmi olmayan bir işaret verir: görmediği veride de fark yok.
+
+**README'deki "~%53-57" neden bizimkinden iyi görünüyor — dört kaynak:**
+
+1. **Seçim.** %57.2 D varyantından gelir: yalnızca modelin P(yön) ≥ %60 dediği sinyaller
+   raporlanır, üstelik kıyas kuralları FARKLI alt kümelerde (n = 501 / 337 / 550) ölçülmüştür
+   — eşleştirilmiş değildir. Aynı tabloda "hep AL" o dönemde %63.9 ile modelin ÜSTÜNDEDİR.
+2. **Kısa ve üst üste binen pencereler.** Kesim noktası 6 saatte bir, ufuk 48 saat: her
+   gözlem 8 komşusuyla örtüşür. Kilitli test ~3.5 ay; nominal n (1080, 1260) bağımsız gözlem
+   değildir — yazarın kendi `portfolio_bootstrap.effective_n` değeri **5**'tir. Teşhis
+   raporundaki BTC %57.2 (hep AL %54.8, n = 292) de ~75 günlük örtüşen pencerelerden gelir.
+3. **Rejim.** Gelişme döneminde "hep AL" %43.9'da kalır (düşen piyasa); model onu +6.7 pp
+   geçer ama momentuma karşı yalnızca +2.2, rastgeleye karşı ~+1 pp. Ön-kaydın "%50'yi geçmek
+   yetmez, üç kurala AYRI AYRI karşı" kuralının koruduğu yanılgının ters yönlü örneği budur.
+4. **Farklı model/varyant.** F bağlamı 1024 saattir; D bir filtredir — ikisi de bizim ölçtüğümüz
+   düz modelin aynısı değildir. (Canlı akıştaki kapanmamış bar farkı, S1, bu sayıları
+   açıklamak için GEREKLİ değildir; yukarıdaki üçü tek başına yeter.)
+
+**Sonuç:** iki bağımsız ölçüm (farklı dönem, farklı evren, farklı yöntem) aynı yere çıkıyor —
+düz TimesFM'in 48 saatlik yön isabeti ~%50.7'dir ve basit kurallardan ayırt edilemez. Daha iyi
+görünen sayılar seçim, örtüşme ve rejimden gelir, modelden değil.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
