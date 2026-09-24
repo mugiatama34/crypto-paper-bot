@@ -4458,6 +4458,27 @@ yakmamak için workflow iki aşamalıdır (`.github/workflows/measure-regime.yml
 BTC serisinin 2020-11-01'e ulaşmaması bir kapı DEĞİLDİR (4: tanımsız pozisyon sayılır ve
 raporlanır); preflight onu yalnızca ÖNCEDEN görünür kılar.
 
+### SONUÇ ÖNCESİ BEKLENTİ *(2026-09-24, `measure` tetiklenmeden ÖNCE; hiçbir rejim kırılımı görülmedi)*
+
+**Kullanıcının onayı ve beklentisi** (TADİLAT-2'yi onayladıktan sonra, ölçüm başlatılmadan):
+TADİLAT-2'nin q düzeltmesi ve üç dar okuma onaylandı; en önemlisi "model X rejime göre
+farklı çalışıyor" cümlesinin yalnızca A VE B birlikte MODELDEN iken yazılabilmesidir —
+tek dönemde görülen bir etiket, sonradan en çok alıntılanacak cümleye dönüşebilirdi.
+
+| Birim | Beklenen etiket | Gerekçe (kullanıcının) |
+|---|---|---|
+| H1a `ema_trend` | en fazla **AYIRT EDİLEMEDİ** | tasarım gereği (TADİLAT-1 > 1) — bu bir tahmin değil, kuralın kendisi |
+| H2 `dc_short` | **PİYASADAN** | dönem A'daki pozitif R'nin kaynağı ayı piyasasında short tutmanın kendisidir; kontrolün de aynı rejim farkını taşıması beklenir |
+| H1b `xsec_mom` | belirsiz; en olası **AYIRT EDİLEMEDİ** | iki dönemde de pozitif işaret ilginç ama güç zayıf |
+
+**Önceden yazılan okuma:** üç birimin hiçbiri MODELDEN çıkmazsa sonuç, *rejim mekanizması
+fikrinin bu verilerle DESTEKLENMEDİĞİDİR* — tezin kendisinin reddi DEĞİL, **mevcut
+modellerin bu mekanizmaya aday olmadığı**. Tez ancak onu sınamak için tasarlanmış yeni bir
+modelle, kendi ön-kaydıyla ve taze bir OOS penceresiyle yeniden açılabilir (§7.1).
+
+Bu bölüm bir TAHMİNDİR, kapı değildir: sonucun okunması 6 ve 8'in mekanik kurallarından gelir;
+beklentinin tutup tutmadığı ayrıca ve AYNI satırda yazılır.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
