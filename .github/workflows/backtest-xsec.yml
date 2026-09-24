@@ -35,6 +35,13 @@ on:
         description: "Funding geçmişi derinliği (periyot) — aynı sınıf"
         required: false
         default: "2000"
+      # Yalnızca B'nin SONU açılır — A sınırları ve kesim KAPALI kalır (ema/dc ile aynı
+      # desen). Gerekçe karar 59: yeniden koşu orijinal koşunun B sonunda bitmeli, yoksa
+      # fark onarımın değil eklenen verinin ölçüsü olurdu. Boş = koşu anı (değişmedi).
+      b_end:
+        description: "Dönem B sonu (ISO); boş = koşu anı"
+        required: false
+        default: ""
 
 concurrency:
   group: backtest-xsec
@@ -66,11 +73,11 @@ jobs:
         env:
           HISTORY_BARS: ${{ inputs.history_bars }}
           FUNDING_PERIODS: ${{ inputs.funding_periods }}
+          B_END: ${{ inputs.b_end }}
         run: |
-          python scripts/backtest_xsec.py \
-            --out-dir backtests/xsec \
-            --history-bars "$HISTORY_BARS" \
-            --funding-periods "$FUNDING_PERIODS"
+          ARGS=(--out-dir backtests/xsec --history-bars "$HISTORY_BARS" --funding-periods "$FUNDING_PERIODS")
+          if [ -n "$B_END" ]; then ARGS+=(--b-end "$B_END"); fi
+          python scripts/backtest_xsec.py "${ARGS[@]}"
 
       - name: Upload results
         if: always()

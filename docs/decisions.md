@@ -4906,6 +4906,11 @@ değişmedi; karar yeni sayılar görülmeden bu metinle verildi. Bu yüzden:
    üretmeden düştüyse tekrarlanır ve bu kayda geçer.
 6. **Değişen TEK girdi:** xsec `--history-bars` 3000 → 12000 (derinlik sınıfı; eski değer
    pencereyi karşılamadığı için kapı onu reddeder). Başka hiçbir girdi değişmez.
+7. **Dönem B'nin SONU orijinal koşununkidir, bugün değil** — yoksa fark onarımın değil
+   eklenen iki haftalık verinin ölçüsü olurdu. `--b-end` orijinal koşunun `as_of`unu
+   üretecek damgayla verilir: ema `2026-09-18T12:00Z` (orijinal B sonu 08:00 barı), dc
+   `2026-09-23T08:00Z` (04:00 barı), xsec `2026-09-21T08:00Z` (koşunun `now.floor("h")`i).
+   Bu bir girdi DEĞİŞİKLİĞİ değil, orijinal girdinin ("koşu anı") sabitlenmesidir.
 
 **Sıra (ön-kayıtlı):**
 
