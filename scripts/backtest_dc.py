@@ -572,6 +572,7 @@ def period_payload(
         "by_symbol": symbol_breakdown(result, MODEL),
         "by_year": year_breakdown(result, MODEL),
         "coverage": dict(result.coverage),
+        "funding_coverage": dict(result.funding_coverage),
         "statistics": statistics_block(
             model_positions, control_positions, period=period,
             alpha=alpha, iterations=iterations, seed=seed,

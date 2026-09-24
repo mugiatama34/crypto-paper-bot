@@ -448,3 +448,28 @@ def test_restore_keys_only_reach_their_own_workflow() -> None:
                 assert not theirs.startswith(prefix) and not prefix.startswith(theirs), (
                     f"{name} restore-key {prefix!r}, {other} anahtarını ({theirs!r}) yakalayabilir"
                 )
+
+
+# --------------------------------------------------------------------------- #
+# 9. Fonlama kapsamı raporu (karar 59 > sıra 1 şartı)
+# --------------------------------------------------------------------------- #
+def test_funding_coverage_counts_grid_stamps_with_a_record() -> None:
+    """`rate_at`in birebir eşleme kuralıyla: kaydı olmayan damga fonlama ÜRETMEZ."""
+    from scripts.backtest import funding_coverage
+
+    start = pd.Timestamp("2026-06-15", tz="UTC")
+    end = pd.Timestamp("2026-06-20", tz="UTC")
+    index = pd.date_range(start, end, freq="4h", tz="UTC", name="ts")
+    frame = pd.DataFrame({"close": 1.0}, index=index)
+    records = pd.date_range(pd.Timestamp("2026-06-17 16:00", tz="UTC"), end, freq="8h")
+    funding = {SYMBOL: pd.Series(0.0001, index=records)}
+    market = MarketData(ohlcv={SYMBOL: frame}, btc=frame, funding=funding, as_of=index[-1])
+
+    report = funding_coverage(market, start=start, end=end, interval_hours=8, enabled=True)
+
+    assert report["stamps_per_symbol"] == 15  # [06-15 00:00, 06-20 00:00) 8 saatte bir
+    assert report["with_record_total"] == 7   # 06-17 16:00 → 06-19 16:00
+    assert report["first_record_earliest"] == "2026-06-17T16:00:00+00:00"
+    assert funding_coverage(market, start=start, end=end, interval_hours=8, enabled=False) == {
+        "enabled": False
+    }

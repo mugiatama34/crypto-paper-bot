@@ -304,6 +304,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "acceptance_model": _flag(period_a, MODEL),
                 "exit_mix": exit_mix(period_a, MODEL),
                 "holding": dict(period_a.holding.get(MODEL) or {}),
+                "window": {"start": str(period_a.start), "end": str(period_a.end)},
+                "buy_hold": dict(period_a.buy_hold),
+                "coverage": dict(period_a.coverage),
+                "funding_coverage": dict(period_a.funding_coverage),
             },
             "B": {
                 "start": str(a_cutoff), "end": str(b_end),
@@ -312,6 +316,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "acceptance_model": _flag(period_b, MODEL),
                 "exit_mix": exit_mix(period_b, MODEL),
                 "holding": dict(period_b.holding.get(MODEL) or {}),
+                "window": {"start": str(period_b.start), "end": str(period_b.end)},
+                "buy_hold": dict(period_b.buy_hold),
+                "coverage": dict(period_b.coverage),
+                "funding_coverage": dict(period_b.funding_coverage),
             },
         },
     }
@@ -322,7 +330,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     results.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     logger.info("sonuç yazıldı: %s", results)
 
-    print(json.dumps(payload["gates"], indent=2, ensure_ascii=False, default=str))
+    # Tam yük log'a da basılır (`backtest-ema.yml`/`backtest-dc.yml`in aynı gerekçesi):
+    # iş salt okunurdur ve artifact deposu her ağ politikasından indirilemiyor — karar
+    # 59'un yeniden koşusu sayılarını kayda ancak log'dan geçirebilir. Yük pozisyon
+    # satırı taşımaz, boyu küçüktür.
+    print("=== RESULTS.JSON BEGIN ===")
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+    print("=== RESULTS.JSON END ===")
     return 0
 
 

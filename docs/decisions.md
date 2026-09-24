@@ -4963,3 +4963,42 @@ birebir olması (fonlaması zaten hiç yoktu) aynı okumayı destekler; 58'in "a
 koşulan dc B kuruşuna kadar tuttu, günler sonra koşulanlar kaydı) aynı yönde. Bu bir onarım
 farkı değil, dışsal VERİ ERİŞİLEBİLİRLİĞİ farkı olarak okunuyor — ama ön-kayıt bu istisnayı
 yazmamıştı ve ekleme kararı kullanıcınındır.
+
+### İSTİSNA GENİŞLETMESİ — fonlama penceresi kayması *(2026-09-24, kullanıcı kararı; sıra 2-3 başlamadan)*
+
+Sıra 1 kanarya olarak görevini yaptı: onarımın dokunduğu yol (pencere kesimi, derinlik) A'da
+birebir çıktı. B'deki fark için kullanıcı seçenek 1'i onayladı ve sıra 2'deki "karşılaştırma
+testi" seçeneğini reddetti — gerekçesi kayda geçer: fonlama penceresi 8 saatte bir kayar, birkaç
+saat sonraki bir tekrar bile başka bir fonlama dilimiyle koşar; iki koşunun aynı ya da farklı
+çıkması kesin bir şey söylemezdi.
+
+**Kural (bundan sonraki her yeniden koşu için):**
+1. **Dönem A birebir olmalıdır** (değişmedi) — fonlama kaydı olmayan pencere onarımın temiz
+   ölçüsüdür.
+2. **B'de fark YALNIZCA fonlama kaydı olan dönemde kabul edilir.** Her koşu fonlama KAPSAMINI
+   raporlar (`scripts/backtest.py::funding_coverage`, yükte `funding_coverage`): pencere
+   içindeki fonlama damgaları, bunların kaçının kaydı olduğu ve kaydın başladığı an (en erken /
+   en geç sembol). Kaymanın büyüklüğü böylece her koşuda görünür; kayıt uyarı satırlarından
+   değil veriden sayılır (uyarılar pozisyon başınadır ve log kuyruğu onları keser).
+3. **Karar yeniden koşunun sayılarıyla değerlendirilir.**
+
+**Kanaryanın kapsamı yalnızca ema_trend'di.** dc ve xsec için "birebir" beklentisi hiç yoktu:
+eski sonuçları kirliydi ve düzeltilmiş sayılar yerlerine geçer (kural 1).
+
+Bu karar için değişen harness çıktısı (sonucu DEĞİŞTİRMEZ): `funding_coverage` alanı; ve
+`backtest_xsec.py` artık tam yükü log'a basar (ema/dc'nin deseni) — artifact deposu bu ortamdan
+indirilemediği için düzeltilmiş sayılar ancak log'dan kayda geçebilir.
+
+### YENİ BULGU — fonlama içeren backtest'ler günler sonra YENİDEN ÜRETİLEMEZ *(açık iş)*
+
+Girdi verisi altımızdan kayıyor: OKX fonlama uç noktası ~3 aylık kayan bir pencere tutar
+(karar 50), yani aynı commit, aynı config ve aynı tohumla koşulan aynı pencere, fonlama kaydı
+olan dilimde başka bir sonuç verir. Bu, projenin determinizm kapılarının HEPSİNİ zamanla
+kırılgan yapar (`diagnose_ema_exits.py`nin determinizm kapısı; bu kararın kanaryası; §1'in
+yeniden üretilebilirlik iddiası): kapı, sonucun değil verinin zamanla değiştiği bir durumu
+"onarım bozuk" diye okuyabilir.
+
+**Açık iş (şimdi değil, ayrı iş — unutulmasın):** her koşunun KULLANDIĞI fonlama serisi koşu
+ürününe (ya da commit'lenen yüke) SABİTLENSİN, ki yeniden koşu aynı girdiyle yapılabilsin.
+Mum serileri için aynı soru ayrıca sorulmalı: OKX geçmiş mumlarını nadiren düzeltir, ama
+"nadiren" bir ölçüm değildir.

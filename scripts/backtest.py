@@ -70,6 +70,7 @@ import pandas as pd  # noqa: E402
 from core.config import get_setting, load_config  # noqa: E402
 from core.data import bar_duration, load_market_data  # noqa: E402
 from core.engine import Engine, RoundReport  # noqa: E402
+from core.funding import funding_times  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 from core.metrics import (  # noqa: E402
@@ -156,6 +157,11 @@ class BacktestResult:
     # vardı. Kapsam yazılmazsa, iki yıllık veriye dayanan bir kâr faktörü ile iki
     # aylık veriye dayanan biri tabloda aynı görünür.
     coverage: Mapping[str, Any] = field(default_factory=dict)
+    # Fonlama KAPSAMI (karar 59 > sıra 1 şartı): OKX fonlama geçmişini ~3 aylık KAYAN bir
+    # pencerede tutar (karar 50), yani aynı pencere günler sonra koşulduğunda başka bir
+    # fonlama dilimiyle çalışır. Kaymanın büyüklüğü her koşuda görünsün diye: pencere
+    # içindeki fonlama damgaları, bunların kaçının KAYDI olduğu ve kaydın başladığı an.
+    funding_coverage: Mapping[str, Any] = field(default_factory=dict)
     # Koşunun canlıdan sapan varsayımları; raporun başına basılır ki bir sayı, hangi
     # dünyada ölçüldüğü bilinmeden okunmasın.
     deviations: Mapping[str, Any] = field(default_factory=dict)
@@ -498,9 +504,59 @@ def run_backtest(
         holding=holding,
         buy_hold=buy_hold,
         coverage=coverage,
+        funding_coverage=funding_coverage(
+            market,
+            start=start,
+            end=market.as_of,
+            interval_hours=int(get_setting(config, "funding.interval_hours")),
+            enabled=bool(get_setting(config, "funding.enabled")),
+        ),
         deviations=deviations,
         acceptance=tuple(flags),
     )
+
+
+def funding_coverage(
+    market: MarketData,
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    interval_hours: int,
+    enabled: bool,
+) -> dict[str, Any]:
+    """Pencerenin (start, end] fonlama damgalarından kaçının KAYDI var, kayıt nerede başlıyor.
+
+    `core/funding.py::rate_at` damgayı birebir arar; kaydı olmayan damgada fonlama HİÇ
+    işlenmez ("funding atlandı"). Buradaki sayım o kuralın aynısıdır: ızgara
+    (`funding_times`) ile serinin indeksinin kesişimi. Hesap yalnızca SAYAR, hiçbir
+    sonucu değiştirmez; uyarı satırlarını saymak yerine veriden sayar, çünkü uyarılar
+    pozisyon başınadır ve log kuyruğu onları keser.
+    """
+    if not enabled:
+        return {"enabled": False}
+    grid = funding_times(start=start, end=end, interval_hours=interval_hours)
+    per_symbol: dict[str, Any] = {}
+    for symbol in sorted(market.ohlcv):
+        series = market.funding.get(symbol)
+        index = series.index if series is not None else pd.DatetimeIndex([], tz="UTC")
+        present = sum(1 for stamp in grid if stamp in index)
+        per_symbol[symbol] = {
+            "first_record": index.min().isoformat() if len(index) else None,
+            "stamps": len(grid),
+            "with_record": present,
+        }
+    firsts = [row["first_record"] for row in per_symbol.values() if row["first_record"]]
+    return {
+        "enabled": True,
+        "window": {"start": start.isoformat(), "end": end.isoformat()},
+        "interval_hours": interval_hours,
+        "stamps_per_symbol": len(grid),
+        "stamps_total": len(grid) * len(per_symbol),
+        "with_record_total": sum(row["with_record"] for row in per_symbol.values()),
+        "first_record_earliest": min(firsts) if firsts else None,
+        "first_record_latest": max(firsts) if firsts else None,
+        "symbols": per_symbol,
+    }
 
 
 def _silence_signals_after(strategy: Strategy, cutoff: pd.Timestamp) -> None:
@@ -1010,6 +1066,7 @@ def results_payload(result: BacktestResult) -> dict[str, Any]:
         "window": {"start": result.start.isoformat(), "end": result.end.isoformat()},
         "min_trades": result.min_trades,
         "deviations": dict(result.deviations),
+        "funding_coverage": dict(result.funding_coverage),
         "build_failures": dict(result.build_failures),
         "validity": {
             model.model: {
