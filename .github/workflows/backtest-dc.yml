@@ -61,6 +61,10 @@ jobs:
 
       # Mum önbelleği koşular arasında TAŞINIR (docs/backtest.md > 5f); ölçümü
       # değiştiremez — yalnızca EKSİK barlar çekilir, eksik bar B-2'de görünür.
+      # ⚠ Bu iddia 2026-09-23'e kadar YANLIŞTI (docs/decisions.md > 58): bayat değil, pencerenin
+      # `end`inden YENİ bir önbellek `now`da kesilmiyordu ve pencere sessizce önbelleğin ucuna
+      # taşıyordu. `core/data.py::_closed_by` ile düzeltildi; `scripts/backtest.py` artık
+      # `as_of > end`de koşuyu düşürür. Metin silinmedi: bir zaman bu varsayımla koşuldu.
       - name: Restore market data cache
         uses: actions/cache@v4
         with:

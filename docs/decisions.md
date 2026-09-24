@@ -4725,3 +4725,92 @@ yapmaz — bilgisiz bir çekiliş de yeniden çekilebilir.
 katman tavanı ve tohum — hiçbiri sonuca bakılarak değiştirilmez. Ekseni yeniden açmanın
 tek yolu yeni bir ön-kayıttır (karar 49'un `ema_trend` çıkış ekseninde bıraktığı kuralın
 aynısı). `xsec` katmanının tetikleyicisi yoktur ve bu koşudan sonra da yoktur.
+
+## 58. Backtest pencere denetimi: önbellek `end`i aşıyordu, xsec'in başlangıcı hiç gelmedi — ileriye bakış YOK
+
+**Ne.** `backtest-dc` #35839008498'in sonucunu okurken dönem A'nın `2024-12-31` yerine
+`2026-09-18`'de bittiği görüldü. Denetim üç soruyu AYRI cevapladı: (1) kayıttaki çıpa
+getirileri doğru mu, (2) bir kararı değiştiriyor mu, (3) modeller geleceği gördü mü.
+Ayrıntı ve tablo docs/backtest.md > §5f (⚠), §6c (satır 4 ve 6), §6e (⚠), §6g (⚠ KOŞU
+KAYDI), §6j > SONUÇ.
+
+**İki ayrı arıza, tek belirti ("ölçülen pencere ön-kayıttaki değil"):**
+
+1. **Taşma (`core/data.py`).** `fetch_ohlcv` birleşik önbelleği `now`da kesmeden
+   `tail(history_bars)` ile döndürüyor, `_anchor_as_of` da `as_of`'u serinin son barına
+   koyuyordu. Geçmiş bir pencereyi koşan backtest, daha YENİ bir koşunun bıraktığı önbelleği
+   geri yüklediğinde `as_of` önbelleğin ucuna düştü. Derinlik de yanlış uçtan sayıldı.
+   Düzeltme ayrı commit'te (`3a28289`): `_closed_by` (indirmedeki "`now`da kapanmış mı"
+   kuralının diskteki çerçeveye uygulanan tek kopyası), `_anchor_as_of`'ta ve
+   `run_backtest`te iki ayrı savunma kapısı. Testler düzeltme olmadan kırmızı (7/7).
+   Hata testlerden şu yüzden kaçtı: uçtan uca testlerin `load_market_data` stub'ı
+   `now`da KENDİSİ kesiyordu — yeni test gerçek önbellek yolunu koşar.
+2. **Kesik başlangıç (`scripts/backtest_xsec.py`).** Önbelleksiz workflow + `--history-bars`
+   varsayılanı 3000: dönem A'nın 5465 barından yalnızca son 3000'i indirildi. Motor eksik
+   barları saydı (`missing_bars` 2465) ama bu harness B-2 kapısını UYGULAMIYOR, koşu yeşil
+   döndü. `backtest.py` CLI'si aynı koşullarda kırmızı döner. **Bu arıza DÜZELTİLMEDİ** —
+   ön-kayıtlı bir harness'a kapı eklemek ayrı bir karardır; öneri: B-2'yi `backtest_ema`,
+   `backtest_xsec` ve (zaten uygulayan) `backtest_dc`'de aynı kapı yapmak.
+
+**Hangi koşular etkilendi (hepsi logdan/yükten doğrulandı, varsayılmadı):**
+
+| Koşu | Durum | Kanıt |
+|---|---|---|
+| `backtest-ema` #35391881083 (§6d, karar 49'un dayanağı) | **TEMİZ** | yük: A `coverage.last_bar` 2024-12-30T20:00, 6569 bar, `missing_bars` 0; B koşu anında biter |
+| `diagnose-ema-exits` #35435506689 (§6e) | **TAŞTI** (A → 2026-09-18T12:00) — sayılar DEĞİŞMEZ | okunan en geç bar ≈ 2024-07-29; determinizm kapısı birebir |
+| `backtest-xsec` #35578057311 (§6g) | **KESİK** — A 2023-02-16'dan, B 2025-05-09'dan | yeniden üretim: çıpa A +122.97% ve B −4.77% birebir (`missing_bars` A 2465) |
+| `backtest-dc` #35839008498 (§6j) | **TAŞTI** (A → 2026-09-18T12:00) | `coverage.last_bar`; B temiz |
+| `backtest.yml`'in 15 başarılı koşusu (§6b, §6h > EK-1, kararlar 30/32/36/37) | **TEMİZ** | pencere, bar sayısı ve son bar logdan; B-2'yi uygulayan CLI, önbellek uçları istenen bitişin gerisinde |
+
+**Yan bulgular (arıza değil, kayıt):** (a) §6b / karar 36'nın penceresi "2026-07-19 →
+2026-09-04" diye yazılı; koşunun (#35099002276) 4545 barı fiilen **2026-09-04T08:15**'e kadar
+gider — bitiş günü değil saati yuvarlanmış. (b) `run_backtest`in "pencere kısaldı" uyarısı
+her TEMİZ koşuda da basılıyor (bar indeksi açılış zamanıdır, `as_of` her zaman `end`den bir
+bar geridedir): gerçek bir kısalmayı ayırt edemediği için bir sinyal değil, gürültü.
+
+**Soru 1 — çıpalar (yalnızca `buyhold` koşuları, düzeltilmiş kodla, bu dalda):**
+
+| Kayıt | Kayıtlı | Doğru pencerede | Koşu |
+|---|---|---|---|
+| ema A (2022-01-01 → 2024-12-30T20:00) | +43.43% | **+43.39%** (6569 bar) | `backtest` #35845080149 |
+| ema B (2024-07-21T12:00 → 2026-09-18T08:00) | −7.29% | **−7.32%** (4733 bar) | `backtest` #35845840867 |
+| dc A (aynı pencere) | **+18.87% ✗** | **+43.39%** | `backtest` #35845311846 |
+| dc B (2024-10-29T12:00 → 2026-09-23T04:00) | +9.96% | **+9.96%** (4163 bar) — kuruşuna kadar aynı | `backtest` #35846097214 |
+| xsec A (2022-01-01 → 2024-06-29T20:00) | **+122.97% ✗** | **+9.97%** (5465 bar) | `backtest` #35845559976 (yeniden üretim: #35845392990, 3000 bar → +122.97%) |
+| xsec B | **−4.77% ✗** | tanımsız — B'nin başı kesik A'dan ölçülen embargoya bağlı | yeniden üretim `backtest` #35845714003: −4.77% birebir, 3000 bar, veri **2025-05-09**'dan başlıyor (B'nin ~10 ayı yok) |
+
+⚠ **Açık not:** ema A'nın yeniden hesabı pencereyi birebir tuttu ama getiri kayıttan
+**0.04 puan** (3.93 USDT) düşük; ema B'de de aynı yönde **0.03 puan** (2.31 USDT). Bugünkü iki bağımsız koşu (ema ve dc katmanı, farklı
+önbellek durumu) kuruşuna kadar aynı sonucu verdi; 2026-09-18'den bu yana çekirdekte
+davranış değiştiren commit yok. Çıpa hiç kapanmadığı için defterde maliyet kalemi
+satırı yok ve fark kayıttan ayrıştırılamadı — veri kaynaklı (mum/funding) olması
+muhtemel, KANITLANMADI. Destekleyen tek gözlem: kayıtla AYNI GÜN koşulan dc B kuruşuna kadar
+tuttu, farklar yalnızca günler önce koşulmuş kayıtlarda çıktı. Hiçbir kapıyı değiştirmez (ema C-3 marjı ~52 puan).
+
+**Soru 2 — kararlar:**
+
+- **ema_trend (§6d): değişmez.** Pencere temizdi; çıpa zaten doğruydu. BLOKE C-1'den.
+- **Yol teşhisi (§6e, karar 49): değişmez.** Taşan barlar hiçbir ölçüye girmedi.
+- **dc_short (§6j): değişmez — ve bu dönem A'ya BAĞLI DEĞİL.** Temiz dönem B tek başına
+  dört bağlayıcı kapıdan kalıyor (küme CI, E, K-3, K-1). Dönem A'da işlemler etkilenmedi;
+  C-3(A) düzeltilmiş çıpayla da düşüyor (−17.0% ↔ +43.39%).
+- **xsec_mom (§6g): DOĞRULANAMADI.** Model de kesik pencerede ölçüldü; "E iki dönemde
+  kaldı" ve "K-3 B'de aşıldı" kısaltılmış pencerelerin sayılarıdır. Kayıt DEĞERLENDİRİLEMEDİ
+  olarak düzeltildi; ön-kayıttaki pencerede koşup koşmamak kullanıcının kararı.
+
+**Soru 3 — ileriye bakış: YOK, ve bu artık bir test.** Pencere taşması ile modelin geleceği
+görmesi ayrı şeylerdir: taşan koşularda motor yine her barı kendi anına kadar kesti.
+`tests/test_lookahead.py` bunu iki ölçüyle sabitler: (a) **yoklama** — `dc_short`,
+`dc_coinflip`, `ema_trend`, `xsec_mom`, `xsec_random`, `buyhold`in her çağrısında modelin
+eline verilen mum/BTC/funding serilerinin son damgası o çağrının `as_of`'unu aşmaz,
+anlık görüntü 300 bar ilerisini taşırken bile; (b) **önek değişmezliği** — veri T'de biten
+ve T+300'e uzanan iki koşu T'ye kadar birebir aynı sinyali, aynı kapanmış işlemi ve aynı
+özsermaye satırını üretir. Mutasyon denetimi: motorun `_snapshot` kesimi kaldırıldığında
+(a) üç katmanda da kırmızı döner. (b) o mutasyonda yeşil kalır, çünkü savunma İKİ
+katmanlıdır: modellerin üçü de (`dc/signal.py`, `ema_trend.py`, `xsec/ranking.py`) ayrıca
+`bars_until(frame, as_of)` ile keser.
+
+**Ne öğrenildi.** "Önbellek ölçümü değiştiremez" iddiası dört yerde yazılıydı ve yalnızca
+bir yönü (bayat önbellek → eksik bar) düşünülmüştü; ters yön (yeni önbellek → fazla bar)
+hiçbir kapıya takılmıyordu. Bir kapının var olması yetmez: xsec'te sayaç doğru saydı,
+kimse okumadı. İddialar silinmedi, ⚠ ile düzeltildi.

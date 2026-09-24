@@ -220,6 +220,133 @@ def test_second_run_only_fetches_missing_bars(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Geçmiş bir `now` + sonrasını taşıyan (ısınmış) önbellek — backtest'in durumu
+# --------------------------------------------------------------------------- #
+# Ölçülmüş arıza (docs/decisions.md > 58): backtest workflow'ları önbelleği koşular arasında
+# taşır, yani dönem A'yı koşan bir çağrının `now`'ı (2024-12-31) önbelleğin son barından
+# (2026-09) GERİDE olabilir. `fetch_ohlcv` birleşik önbelleği `now`da kesmeden döndürüyordu
+# ve `_anchor_as_of` `as_of`'u önbelleğin son barına koyuyordu: pencere sessizce 2026'ya
+# taştı. Stub'lar (ör. tests/test_backtest_dc.py) `now`da KENDİLERİ kestiği için hiçbir test
+# bunu görmedi; bu testler gerçek önbellek yolunu koşar.
+LATER = NOW + pd.Timedelta("40h")  # önbelleği dolduran "bugün": NOW'dan 10 bar sonra
+
+
+def _warm_cache(tmp_path: Path, config: dict[str, Any], symbols: list[str]) -> None:
+    """Önbelleği LATER'a kadar doldurur (sonraki bir koşunun bıraktığı durum)."""
+    later_end_ms = int(LATER.timestamp() * 1000) - BAR_MS
+    eight_hours = 8 * 60 * 60 * 1000
+
+    def funding(params: dict[str, str]) -> list[dict[str, str]]:
+        cursor = int(params["after"]) if "after" in params else later_end_ms + eight_hours
+        return [
+            {"fundingTime": str(cursor - step * eight_hours), "fundingRate": "0.0001"}
+            for step in (1, 2)  # funding_limit kadar: sayfalama sürsün
+        ]
+
+    session = StubSession(
+        {
+            "/market/candles": _candles(30, end_ms=later_end_ms),
+            "/market/history-candles": [],
+            "/public/funding-rate-history": funding,
+        }
+    )
+    warm = {**config, "data": {**config["data"], "history_bars": 30, "funding_history_periods": 12}}
+    for symbol in symbols:
+        fetch_ohlcv(warm, symbol, client=_client(session, warm), now=LATER)
+        fetch_funding(warm, symbol, client=_client(session, warm), now=LATER)
+
+
+def _silent_session() -> StubSession:
+    """Geçmiş bir `now` için borsa yeni bir şey vermez: güncel sayfa yalnızca `now`dan
+    sonraki barları taşır ve onlar `_parse_candle`da zaten düşer."""
+    later_end_ms = int(LATER.timestamp() * 1000) - BAR_MS
+    return StubSession(
+        {
+            "/market/candles": _candles(3, end_ms=later_end_ms),
+            "/market/history-candles": [],
+            "/public/funding-rate-history": [],
+        }
+    )
+
+
+def test_warm_cache_never_returns_bars_closing_after_now(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    _warm_cache(tmp_path, config, ["BTC-USDT-SWAP"])
+
+    frame = fetch_ohlcv(config, "BTC-USDT-SWAP", client=_client(_silent_session(), config), now=NOW)
+
+    last_closed = NOW - pd.Timedelta("4h")  # 08:00 barı 12:00'de kapanır
+    assert frame.index[-1] == last_closed
+    assert (frame.index + pd.Timedelta("4h") <= NOW).all()
+    # Derinlik `now`dan sayılır, önbelleğin ucundan değil: 10 bar `now`un gerisinde biter.
+    assert len(frame) == config["data"]["history_bars"]
+    # Önbellek KESİLMEZ: sonraki barlar diskte kalır, yalnızca bu çağrıya gösterilmez.
+    cached = pd.read_parquet(tmp_path / "cache" / "BTC-USDT-SWAP_4H.parquet")
+    assert pd.Timestamp(cached.index.max()) > NOW
+
+
+def test_warm_cache_funding_is_cut_at_now_before_the_depth_is_counted(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    _warm_cache(tmp_path, config, ["BTC-USDT-SWAP"])
+
+    series = fetch_funding(config, "BTC-USDT-SWAP", client=_client(_silent_session(), config), now=NOW)
+
+    assert series.index.max() <= NOW
+    # Önce kes, SONRA derinliği say: tersi, `now`dan önceki kayıtları sonrakilerle
+    # doldurulmuş bir kuyruğa kurban ederdi.
+    assert len(series) == config["data"]["funding_history_periods"]
+
+
+def test_market_snapshot_with_a_warm_cache_anchors_at_now_not_at_the_cache_end(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
+    _warm_cache(tmp_path, config, symbols)
+
+    market = load_market_data(
+        config, symbols=symbols, client=_client(_silent_session(), config), now=NOW
+    )
+
+    assert market.as_of == NOW - pd.Timedelta("4h")
+    for frame in [*market.ohlcv.values(), market.btc]:
+        assert frame.index[-1] == market.as_of
+    assert all(series.index.max() <= market.as_of for series in market.funding.values())
+
+
+def test_cached_snapshot_with_later_bars_anchors_at_now(tmp_path: Path) -> None:
+    """Salt okunur ikiz (`load_cached_market_data`) aynı kuralı TEK kopyadan alır."""
+    from core.data import load_cached_market_data
+
+    config = _config(tmp_path)
+    symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
+    _warm_cache(tmp_path, config, symbols)
+
+    market = load_cached_market_data(config, symbols=symbols, now=NOW)
+
+    assert market.as_of == NOW - pd.Timedelta("4h")
+    assert all(len(frame) == config["data"]["history_bars"] for frame in market.ohlcv.values())
+    assert all(series.index.max() <= market.as_of for series in market.funding.values())
+
+
+def test_anchor_refuses_a_bar_that_has_not_closed_by_now() -> None:
+    """İkinci savunma: çıpanın son barı `now`da kapanmamışsa anlık görüntü ÜRETİLMEZ.
+
+    Kesim yukarıda yapılıyor; bu kapı kesimin bir gün (yeni bir veri yolu, yeni bir
+    önbellek okuyucusu) atlanması hâlinde pencerenin sessizce taşması yerine turu düşürür.
+    """
+    from core.data import _anchor_as_of
+
+    index = pd.date_range(NOW - pd.Timedelta("8h"), periods=4, freq="4h", tz="UTC", name="ts")
+    frame = pd.DataFrame({"close": [1.0] * 4}, index=index)
+    with pytest.raises(OKXError, match="kapanmamış"):
+        _anchor_as_of(
+            frame, symbol="BTC-USDT-SWAP", now=NOW, duration=pd.Timedelta("4h"),
+            max_staleness_bars=2,
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Rate limit / retry
 # --------------------------------------------------------------------------- #
 def test_rate_limited_request_is_retried(tmp_path: Path) -> None:
