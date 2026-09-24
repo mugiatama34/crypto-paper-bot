@@ -394,6 +394,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 5 | `wave_scalp`: Elliott Wave Dalga-3 (15m, zigzag + retrace 0.236–0.886) bir edge taşır (dış sistemden) | §6h, bu commit | A: 2025-03-01 → 2025-12-31, B: A+embargo → 2026-08-31 (**Aşama 2'de**) | P1: dönem A net ort. R ≤ 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
+| 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -417,6 +418,9 @@ görselidir, ev içi arama uzayından seçilmedi. **Dış kökenli payda bugün 
 **Sicildeki 7. satır (TimesFM yön isabeti) da dış kökenli paydaya girer** — kaynak
 `klonnist/hemstir`dir. **Dış kökenli payda bugün 4'tür** (`ema_trend`, `wave_scalp`,
 `dc_short`, `timesfm_direction`); ev içi BH paydası değişmez (§6k > 11).
+
+**Sicildeki 8. satır (rejim koşullu performans) ev içi BH paydasına GİRER** — dış kökenli
+değildir. Satırın kendi ailesi (m = 3) §6l > 6'da düzeltilir; sicile tek satır olarak girer.
 
 **Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
 hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
@@ -4115,6 +4119,450 @@ ama sızıntı sorusuna resmi olmayan bir işaret verir: görmediği veride de f
 **Sonuç:** iki bağımsız ölçüm (farklı dönem, farklı evren, farklı yöntem) aynı yere çıkıyor —
 düz TimesFM'in 48 saatlik yön isabeti ~%50.7'dir ve basit kurallardan ayırt edilemez. Daha iyi
 görünen sayılar seçim, örtüşme ve rejimden gelir, modelden değil.
+---
+
+## 6l. ÖN-KAYIT — REJİM KOŞULLU PERFORMANS: mevcut modeller önceden gözlemlenebilir bir piyasa rejimine göre farklı mı çalışıyor? *(2026-09-24)*
+
+**Bu belge veri görülmeden yazıldı ve AYRI bir commit olarak işlendi** — ölçüm betiği,
+workflow ve testler SONRAKİ commit'lerdedir. §7'nin tamamı bu bölüme uygulanır.
+
+### 1. Köken, statü, kapsam
+
+**Statü: YENİ MODEL YOK, salt okunur bir ölçüm.** Hiçbir model `REGISTRY`e, hiçbir katmanın
+`models` listesine, hiçbir deftere girmez; `config.yaml`, `strategies/`, `core/` ve defterler
+DEĞİŞMEZ. Cevaplanan soru tek: *mevcut modellerden herhangi biri, işleme GİRİŞ anında
+gözlemlenebilen bir BTC rejimine göre belirgin farklı bir ortalama R üretiyor mu?* Geçse
+bile bir rejim FİLTRESİ bu ön-kaydın sonucu DEĞİLDİR: filtre bir modelin ölçtüğü ekseni
+değiştirir ve yeni bir model olarak, kendi ön-kaydıyla gelir (seans ve kayıp serisi
+kırılımlarının aynı kuralı — karar 27, 28).
+
+**Köken ev içidir** (§6c'nin "kuyrukta: rejim filtresi" önerisinin ÖLÇÜM hâli; filtre
+değil). Sicile girer — bkz. 12.
+
+### 2. Körlük beyanı (sonuç görülmeden yazıldı)
+
+- Modellerin genel dönem A/B sonuçları GÖRÜLDÜ (karar 57, 59; §6d, §6g, §6j > SONUÇ).
+  **Rejime göre kırılımları GÖRÜLMEDİ** — hiçbir kaynakta, hiçbir modelde.
+- Hipotezler (H1–H3) bu sonuçlardan ÖNCE kullanıcı tarafından taslak olarak yazıldı ve
+  **değiştirilmeden** kayda girer.
+- Ön-kaydı yazan taraf BTC'nin günlük serisini, 200 günlük SMA'sını ya da oynaklığını bu
+  ön-kayıt için HİÇ hesaplamadı; defterlerden yalnızca satır SAYILARI ve tarih ARALIKLARI
+  okundu (envanter, 3). Genel bilgi olarak bilinen şey şudur ve gizlenmez: 2022 bir ayı
+  yılıydı, 2023–2024 büyük ölçüde boğa. Bu, hücre doluluklarının DENGESİZ olacağını
+  önceden söyler (5 > Güç); hipotezlerin yönünü değiştirmedi.
+
+### 3. Envanter (ADIM 1 — salt okuma, 2026-09-24)
+
+**Veri kuralı:** yalnızca karar 59'un DÜZELTİLMİŞ koşularının işlem satırları. Eski
+koşuların (#35391881083, #35839008498, #35578057311) satırları KULLANILMAZ. Karar 59'un
+listesinde olmayan her koşu (taban katman `backtest.yml` koşuları, scalp/wave/F0
+koşuları dâhil) bu kuralla dışarıdadır.
+
+| Kaynak | Koşu | Satırlar nerede | Tek-sembollü? | Dönem A pozisyon | Dönem B pozisyon | Pencere |
+|---|---|---|---|---|---|---|
+| `ema_trend` | `backtest-ema` #35975935993 | artifact `backtest-ema` (10799037756; `backtests/ema/{A,B}-portfolio`, `{A,B}-<sembol>` defterleri), **süresi 2026-10-08'de doluyor** | **EVET** (13 sembol × {`ema_trend`, `trend`}) + portföy | tek: 447, portföy: 369 | tek: ~531, portföy: ~389 ¹ | A 2022-01-01 → 2024-12-30T20 (sinyal kesimi 06-30), B 2024-07-21 → 2026-09-18 |
+| `random_ctrl` (ema) | aynı | aynı, **yalnızca portföy** | hayır | 51 | 103 | aynı — ⚠ BOZUK (karar 60), bu ölçümde KULLANILMAZ |
+| `dc_short` | `backtest-dc` #35981639682 | artifact `backtest-dc` (10801320478; `backtests/dc/...`), **süresi 2026-10-08'de doluyor** | **EVET** (13 sembol, yalnızca `dc_short`) + portföy | portföy: 336; tek: artifact'te ² | portföy: 246; tek: artifact'te ² | A 2022-01-01 → 2024-12-30T20 (kesim 06-30), B 2024-10-29T08 → 2026-09-23T04 |
+| `dc_coinflip` | aynı | aynı, **yalnızca portföy** | hayır | 407 | artifact'te ² | aynı |
+| `xsec_mom` | `backtest-xsec` #35981642832 | **İŞLEM SATIRI YOK** — artifact (10800473529) yalnızca `results.json` (2.9 KB); defter yüklenmedi | hayır (yapısal, §6g) | 183 | 168 | A 2022-01-01 → 2024-06-29T20, B 2024-09-08 → 2026-09-21T04 |
+| `xsec_random` | aynı | aynı — satır yok | hayır | 314 | 264 | aynı |
+| taban katman backtest'leri | — | karar 59'un listesinde YOK → veri kuralı dışı | — | — | — | — |
+| canlı `meanrev` (base) | `ledgers/meanrev` | repo | — | 15 pozisyon, **2026-09-11 → 09-22** | — | A/B YOK |
+| canlı `rsi2_reversal` kolu (scalp) | `ledgers_scalp/*` | repo | — | `scalp_fixed` 79, `scalp_patient` 19, `scalp_coinflip` 4 (+ emekli `scalp_bandit` 29, `scalp_managed` 25); hepsi **2026-09-13 → 09-24** | — | A/B YOK |
+
+¹ Sayılar orijinal koşunun kaydındandır (`docs/data/backtest_ema_trend.json`); yeniden
+koşuda A BİREBİR aynıdır (karar 59, sıra 1), B fonlama kayması yüzünden birkaç dolum
+oynayabilir. Kesin sayı artifact'ten okunup rapora yazılır.
+² Repo kayıtlarında yok; ölçüm koşusunda artifact'ten sayılır ve rapora yazılır.
+
+**Envanterin üç sonucu (hepsi YAPISAL, veri görülmeden):**
+
+1. **Bu ortam artifact'leri İNDİREMEZ** (blob host'u egress'te kapalı — karar 59'un
+   aynı gözlemi). Ölçüm GitHub Actions içinde koşmalıdır ve ema/dc artifact'lerini
+   **2026-10-08'den önce** okumalıdır. Süre dolarsa ema/dc satırları yeniden üretilmek
+   ZORUNDA kalır ve dönem B'nin fonlaması o günün penceresiyle değişir (karar 59 > YENİ
+   BULGU) — o durumda bu ön-kayıt bir TADİLAT'la güncellenir, sessizce devam edilmez.
+2. **xsec'in işlem satırı hiçbir yerde yok** → ölçüm koşusunun İÇİNDE, aynı config/tohum
+   ve kayıttaki B sonuyla (`rerun-59-backtest-xsec.run`) BİR KEZ yeniden üretilir. Bu
+   karar 59'un düzeltilmiş koşusunun kendisi değil ikizidir; bu yüzden bir **determinizm
+   kapısı** taşır (bkz. 7).
+3. **H3 bugün DEĞERLENDİRİLEMEZ.** Dönüş modellerinin (`meanrev`, `rsi2_reversal`) karar
+   59 kapsamında hiçbir backtest satırı yoktur; canlı defterleri iki haftalıktır — tek
+   takvim ayı, A/B ayrımı yok. Aşağıdaki mekanik kural (6 > asgari küme) bunu zaten
+   düşürür; H3 tanımıyla kayıtta kalır ki veri biriktiğinde AYNI tanım koşulsun.
+
+### 4. Rejim tanımı — SABİT, 2 × 2 = 4 hücre
+
+**Veri:** `BTC-USDT-SWAP`, OKX (projenin tek veri kapısı `core/data.py` üzerinden), 4H
+mumlar. **Günlük kapanış = UTC gününün son 4H barının (20:00 açılışlı) kapanışıdır**, yani
+günün 24:00 UTC fiyatı. Günlük seri bu kurala göre 4H'den türetilir; OKX'in `1D` barı
+KULLANILMAZ (varsayılan hizası UTC+8'dir ve günü farklı keser).
+
+| Eksen | Tanım | Etiket |
+|---|---|---|
+| **Yön** | günlük kapanış `C_d` ile son 200 günlük kapanışın (d dâhil) basit ortalaması `SMA200_d` | `C_d > SMA200_d` → **yukarı**; `≤` → **aşağı** |
+| **Oynaklık** | `σ_d` = son 30 günlük log getirinin (`ln C_d/C_{d−1}`, d dâhil) örneklem sapması (ddof=1); `M_d` = son 365 `σ` değerinin (d dâhil) medyanı | `σ_d > M_d` → **yüksek**; `≤` → **düşük** |
+
+**Parametreler (200, 30, 365) sabittir ve sonradan DEĞİŞMEZ.** Yıllıklaştırma yapılmaz
+(medyan karşılaştırmasında anlamsızdır). Eşitlik "aşağı"/"düşük" tarafına düşer.
+
+**Atama — yalnızca geçmiş veri.** Bir pozisyon, defterdeki `opened_at` (dolum anı, kural
+13: sinyal barından sonraki barın açılışı) itibarıyla **KAPANMIŞ SON UTC gününün**
+rejimine atanır: `d* = max{d : d'nin kapanış anı (d+1 00:00 UTC) ≤ opened_at}`. 00:00
+barında dolan pozisyon bir önceki günün kapanışını görür — o kapanış tam o anda kesinleşmiştir.
+
+**Tanımsız rejim:** `d*` için 200 kapanış ya da 365 `σ` değeri yoksa pozisyon
+**"tanımsız"** olarak sayılır, hiçbir hücreye girmez ve sayısı birim × dönem başına
+raporlanır. Veri çekimi dönem A'nın en az 395 gün öncesinden başlar (≈ 2020-11-01); bu
+yüzden tanımsız sayının sıfır olması beklenir — sıfır değilse sebebi yazılır.
+
+**Seri koşu ürününe SABİTLENİR:** kullanılan günlük BTC serisi ve her günün etiketi
+sonuç yüküne yazılır (karar 59 > YENİ BULGU'nun açık işinin bu ölçümdeki karşılığı).
+
+### 5. Hipotezler — yönler önceden, birim başına TEK karşıtlık
+
+Karşıtlık = **lehte − aleyhte** marjinalin ortalama R'si. Marjinal = öteki eksen üzerinden
+BİRLEŞTİRİLMİŞ pozisyonlar; ortalama POZİSYON ağırlıklıdır (hücre ortalamalarının
+ortalaması DEĞİL). R = `core/metrics.py::merge_fills` + `r_multiple` (ikinci bir R tanımı
+yok); yalnızca KAPANMIŞ pozisyonlar.
+
+| # | Birim (model) | Veri kaynağı — BİRİNCİL | Lehte | Aleyhte | Beklenen işaret | Kontrol |
+|---|---|---|---|---|---|---|
+| H1a | `ema_trend` | tek-sembollü (13 defter, birleştirilmiş) | yön **yukarı** (iki oynaklık hücresi) | yön aşağı | > 0 | **DEĞERLENDİRİLEMEZ** — `random_ctrl` bozuk (karar 60); kontrol karşıtlığı hesaplanmaz |
+| H1b | `xsec_mom` | portföy (yapısal: tek-sembollü koşu yok) | yön **yukarı** | yön aşağı | > 0 | `xsec_random`, portföy |
+| H2 | `dc_short` | tek-sembollü (13 defter, birleştirilmiş) | yön **aşağı** | yön yukarı | > 0 | `dc_coinflip`, portföy |
+| H3a | `meanrev` | canlı `ledgers/meanrev` | oynaklık **düşük** (iki yön hücresi) | oynaklık yüksek | > 0 | `random_ctrl` — bozuk (karar 60) |
+| H3b | `rsi2_reversal` kolu (`scalp_fixed`) | canlı `ledgers_scalp/scalp_fixed`, `arm=rsi2_reversal` | oynaklık **düşük** | oynaklık yüksek | > 0 | `scalp_coinflip`, aynı kol |
+
+**İkincil (bağlayıcı DEĞİL):** `ema_trend` ve `dc_short` için aynı karşıtlık PORTFÖY
+defterinden de raporlanır. İki gerekçe: (a) dc'nin kontrolü yalnızca portföyde koştu,
+yani model ↔ kontrol kıyası ancak portföy ↔ portföy olarak aynı birimle yapılabilir
+(bkz. 8); (b) karar 59 > GENEL DERS — portföy yolu nakit sınırında kaotiktir, iki kaynak
+ayrışırsa bu bir bulgudur ve yazılır. Karar birincil kaynaktan verilir.
+
+**Kapsam dışı (hipotezi yok, raporlanmaz):** `trend` (ema tek-sembollü koşularında da var),
+`vwap_*`, `scalp_patient`, 4-hücrelik tablonun H'lere girmeyen karşıtlıkları. 4 hücre
+tablosu (6 > rapor) TANIMLAYICIDIR; ondan sonradan bir karşıtlık seçmek §7.2'nin
+yasakladığı post-hoc filtredir.
+
+### 6. İstatistik
+
+**Küme = `opened_at`in takvim ayı (UTC)**, semboller arası ORTAK (`scripts/backtest_dc.py::
+cluster_key(…, "month")` ile aynı tanım). Tek tanım; §6j'nin `regime` tanımı burada yoktur.
+
+**Karşıtlığın aralığı — ay-EŞLEŞTİRİLMİŞ küme bootstrap'ı.** Lehte ve aleyhte marjinaller
+aynı ayları paylaşır (bir ay içinde rejim değişebilir); her iterasyonda ay etiketleri BİR
+KEZ iki grubun aylarının birleşiminden yerine koyarak çekilir ve `ort(lehte) − ort(aleyhte)`
+hesaplanır — `scripts/backtest_dc.py::cluster_diff_ci`in birebir aynısı (lehte = "model",
+aleyhte = "kontrol" argümanı). Bir tarafı boş kalan çekiliş atılır ve SAYILIR.
+`acceptance.bootstrap_samples` (2000) tekrar, yüzdelik aralık, α = 0.05. Tohum
+`f"{random_seed}:regime:{birim}:{kaynak}:{dönem}"`.
+
+**Lehte marjinalin aralığı:** `cluster_mean_ci` (aynı ay kümeleri, aynı α ve tekrar).
+
+**p değerleri** (BH için) aynı çekilişlerden: iki yönlü yüzdelik bootstrap p'si,
+`p = min(1, 2 · min(#(Δ* ≤ 0)+1, #(Δ* ≥ 0)+1) / (B+1))`. Bu, %(1−α') aralığının sıfırı
+dışlamasıyla eşdeğerdir; yani BH kararı "düzeltilmiş düzeyde CI alt sınırı > 0" demektir.
+
+**Geçme — İKİ koşul birlikte (dönem başına, birim başına):**
+
+- **(a)** karşıtlık > 0 (ön-kayıtlı yön) **ve** BH-düzeltilmiş olarak anlamlı: `m` birimin
+  karşıtlık p'leri sıralanır, `p₍ᵢ₎ ≤ (i/m) · q`, **q = 0.05**;
+- **(b)** lehte marjinalin ortalama R'sinin %95 küme aralığının **alt sınırı > 0**.
+
+(b) düzeltilmez: bir birim içinde iki koşulun BİRLİKTE istenmesi (kesişim–birleşim testi)
+ek düzeltme gerektirmez; aile düzeyindeki düzeltme (a)'da.
+
+⚠ **q neden 0.05 ve §6c'nin 0.10'u değil.** §6c'nin q'su sicil GENELİNDEKİ birincil
+tahminler içindir. Burada aile üç birimdir ve kullanıcının koşulu "%95 aralığın alt sınırı
+> 0"dır: q = 0.10 ile m = 3'te en sıkı BH eşiği iki yönlü 0.033'tür, yani %95 aralık şartı
+BH'yi her durumda GEÇİRİRDİ ve düzeltme süs olurdu. q = 0.05 düzeltmeyi gerçekten
+bağlayıcı yapar (eşikler 0.0167 / 0.033 / 0.05). Sonuç görülmeden seçildi ve DEĞİŞMEZ.
+
+**Aile (m).** Dönem A'nın ailesi **m = 3: H1a, H1b, H2.** H3 birimleri aileye girmez:
+dönem A/B'leri YOKTUR (3 > sonuç 3); bu, sayı görülmeden verilmiş yapısal bir karardır, m'yi
+sonuca göre ayarlamak değil. H3 ileride koşulursa kendi ailesini ve kendi dönem tanımını
+bir TADİLAT'la alır.
+
+**Asgari örneklem (mekanik, yalnızca DÜŞÜRÜR).** Karşıtlığın İKİ marjinalinin her biri
+en az **10 ay kümesi** (`MIN_CLUSTERS`) VE en az **30 pozisyon** (`acceptance.min_trades`)
+taşımıyorsa birim o dönemde **DEĞERLENDİRİLEMEZ = GEÇMEDİ**; p'si BH sırasına 1 olarak
+girer (m küçültülmez — paydanın veriye göre daralması, geçmeyi kolaylaştırırdı).
+Bootstrap çekilişlerinin atılması 4 × tekrar tavanına ulaşırsa aynısı.
+
+**A'da ölç, B'de doğrula.**
+- Dönem A: yukarıdaki kural, m = 3.
+- Dönem B: **yalnızca A'da GEÇEN birimler** doğrulanır; B'nin ailesi `m_B` = A'da geçen
+  birim sayısıdır, kurallar (a)+(b) aynıdır, karşıtlık AYNIDIR (aynı tanım, aynı kaynak,
+  yeni bir yön ya da hücre seçimi YOK).
+- **DOĞRULANDI** = A'da geçti ∧ B'de geçti. A'da geçip B'de geçmeyen: **DOĞRULANMADI.**
+- A'da geçmeyen birimlerin B sayıları da yük içinde RAPORLANIR ama **"bilgi — doğrulama
+  değil"** etiketiyle: B'de "iyi görünen" bir birim A'da düşmüşse hipotezi kurtaramaz.
+
+**Güç — MDE her hücre, her marjinal ve her karşıtlık için yazılır.** Formül §6j > 9'un
+aynısıdır (`scripts/backtest_dc.py::precision` / `precision_diff`, ay kümeleri):
+`MDE = (z₀.₉₇₅ + z₀.₈₀) · SE_küme = 2.802 · SE_küme`; karşıtlıkta küme etkisi
+`d_g = Σ_{lehte}(r−r̄_L)/n_L − Σ_{aleyhte}(r−r̄_A)/n_A`. Bir KESİNLİK beyanıdır, post-hoc güç
+değildir. **Koşu öncesi projeksiyon (tahmin):** R'nin sd'si ~1–2 (dc'de ölçülen 1.8–1.9),
+marjinal başına n ~50–300, ay kümesi dönem başına ~25–35 → karşıtlık MDE'si kabaca
+**0.3–0.8R**. Hücreler dengesiz dolacak (2 > körlük: 2022 ağırlıklı ayı, 2023–24 boğa) ve
+küçük marjinalin ay sayısı 10'un altında kalabilir. **"Ayırt edilemedi" beklenen
+sonuçlardan biridir** ve tezin reddi olarak okunmaz.
+
+**Rapor (hepsi, birim × kaynak × dönem):** dört hücre ve iki marjinal için n, ay sayısı,
+ort. R, %95 küme aralığı, MDE; karşıtlık, aralığı, p, BH eşiği, atılan çekiliş; tanımsız
+rejim sayısı; kontrol satırları (8); gerçekleşen sd/DEFF'in projeksiyonla yan yana hâli.
+
+### 7. Kaynak başına koşu kuralları
+
+- **ema, dc:** satırlar karar 59 koşularının artifact'lerinden OKUNUR; yeniden
+  üretilmez (B'nin fonlaması koşu anına bağlıdır — tek sefer kuralı). Okunan defterin
+  özet sayıları (pozisyon, ort. R) karar 59'un kaydıyla karşılaştırılır ve raporlanır;
+  artifact'in yanlış koşuya ait olmaması için koşu kimliği ve artifact kimliği yüke yazılır.
+- **xsec:** satırlar ölçüm koşusunun İÇİNDE `scripts/backtest_xsec.py`nin yoluyla
+  (aynı config, aynı tohum, `--history-bars 12000`, B sonu `rerun-59-backtest-xsec.run`)
+  BİR KEZ üretilir. **Determinizm kapısı:** dönem A'nın `xsec_mom` (183 pozisyon, ort. R
+  +0.118) ve `xsec_random` (314, +0.039) sayıları #35981642832 ile yayımlanan hassasiyette
+  AYNI olmalıdır — A'da fonlama kaydı yoktur (karar 59, sıra 3), yani fark ancak bir alet
+  hatasıdır ve o zaman xsec birimi (H1b) **ölçülmez**, sebep yazılır. B'de fark yalnızca
+  fonlama kaydı olan dönemde kabul edilir (karar 59 > İSTİSNA GENİŞLETMESİ) ve iki koşunun
+  B sayıları yan yana yazılır.
+- **Tek sefer.** Analiz bir kez koşulur. Altyapı yüzünden HİÇBİR sayı üretmeden düşen koşu
+  §7.6 gereği tekrarlanır ve bu kayda geçer; herhangi bir sayı üretmiş koşu tekrarlanmaz.
+- **Salt okunur:** betik deftere/config'e/`data/cache/`e yazmaz (koşuya özel geçici
+  önbellek); `permissions: contents: read` + artifact okuma yetkisi; cron YOK.
+
+### 8. Kontroller — aynı karşıtlık, aynı kurallar
+
+"Fark kontrolde de varsa etki piyasadan gelir, modelden değil." Kontrol, modelle AYNI
+karşıtlıkla (aynı lehte/aleyhte tanımı, aynı ay kümeleri) ölçülür; ek olarak **fark-içinde-fark**
+(DiD) raporlanır: `Δ_model − Δ_kontrol`, ay-eşleştirilmiş küme bootstrap'ı (her iterasyonda
+ay etiketleri dört grubun birleşiminden bir kez çekilir; herhangi bir grubu boş kalan
+çekiliş atılır ve sayılır).
+
+**Kaynak eşlemesi:** DiD her zaman AYNI birimden iki defterle kurulur — `xsec_mom` ↔
+`xsec_random` portföy ↔ portföy; `dc_short` ↔ `dc_coinflip` **portföy ↔ portföy**
+(kontrolün tek-sembollü koşusu yoktur; tek-sembollü model ile portföy kontrolünü
+karşılaştırmak iki farklı dolum rejimini aynı farka koymak olurdu).
+
+**Etiket (A'da ve B'de, geçen birimler için; mekanik):**
+
+| Koşul | Etiket |
+|---|---|
+| DiD %95 aralığının alt sınırı > 0 | **MODELDEN** |
+| DiD aralığı 0'ı içeriyor ∧ kontrolün karşıtlığının %95 aralık alt sınırı > 0 | **PİYASADAN** |
+| diğer her durum | **KAYNAĞI AYIRT EDİLEMEDİ** |
+| `ema_trend` (H1a) | **DEĞERLENDİRİLEMEZ — kontrol bozuk (karar 60)** |
+
+Etiket (a)+(b) kararını DEĞİŞTİRMEZ (DiD aileye girmez, düzeltilmez); ama sonuç cümlesini
+belirler: **"model X rejime göre farklı çalışıyor" ancak DOĞRULANDI ∧ MODELDEN iken
+yazılabilir.** DOĞRULANDI ∧ PİYASADAN "rejim bu modelin R'sini, kontrolün R'sini
+etkilediği kadar etkiliyor" demektir. `ema_trend` için en fazla "DOĞRULANDI, kaynağı
+kontrol onarılana kadar değerlendirilemez" yazılabilir.
+
+### 9. Kabul edilen sapmalar ve sınırlar
+
+1. **Portföy ↔ tek-sembollü asimetrisi (dc):** H2'nin kararı tek-sembollü defterden, DiD'i
+   portföyden gelir. İkincil portföy karşıtlığı raporlandığı için ayrışma görünür kalır.
+2. **Rejim BTC'nin rejimidir**, işlem yapılan sembolün değil — çıpa seçimi projenin zaten
+   seçilmiş referansıdır (`market_r` ile aynı gerekçe); sembol bazlı bir rejim serbest
+   parametre açardı.
+3. **Hücre dengesizliği tasarımın parçasıdır** ve MDE ile raporlanır; güç için tanım
+   OYNATILMAZ (§6g, §6j'nin aynı gerekçesi).
+4. **Ay kümesi azken** küme bootstrap aralığı hafifçe daraltma eğilimindedir (§6j > 8'in
+   aynı sınırı); `MIN_CLUSTERS` ve (b) şartı buna karşı kısmi sigortadır.
+
+### 10. Sonucu gördükten sonra (ek; §7'ye ek olarak)
+
+- Parametreler (200/30/365), eşitlik kuralı, atama kuralı, küme tanımı, q, m, kaynak
+  eşlemesi ve hipotez yönleri DEĞİŞMEZ.
+- Dört hücre tablosundan yeni bir karşıtlık, yeni bir birim ya da "en iyi hücre" SEÇİLMEZ.
+- Bir birim geçerse bile bir rejim filtresi, bir modele EKLENMEZ — yeni bir model,
+  yeni bir ön-kayıt, taze bir OOS penceresi (§7.1).
+
+### 11. Bu ön-kayıt neyi SEÇMİYOR
+
+Bir modeli, bir filtreyi, bir parametreyi. Geçen bir birim yalnızca "bu modelin R'si bu
+rejim ekseninde ayrışıyor" bilgisidir; neyin yapılacağı ayrı bir karardır.
+
+### 12. Sicil
+
+§6c'de **8. satır.** Hipotez **ev içidir** (dış bir sistemden gelmedi) → **ev içi BH
+paydasına GİRER.** Satırın kendi içindeki çoklu karşılaştırma (m = 3) bu bölümün 6.
+maddesinde düzeltilir; sicile tek satır olarak girer.
+
+### TADİLAT-1 — kullanıcı onayı + iki etiket kuralı *(2026-09-24, ölçüm kodu yazılmadan, HİÇBİR veri görülmeden)*
+
+**Onaylanan iki seçim (değişiklik YOK, kayıt):** aile içi BH **q = 0.05** (§6c'nin 0.10'undan
+AİLEYE ÖZGÜ bir sapma; gerekçe 6) ve **m = 3** (H3 aileden çıktı — verisi olmayan bir
+hipotez paydada durursa ötekilerin eşiğini boşuna sertleştirir; tanımı kayıtta kalır).
+
+**Eklenen iki kural — 8'in etiket tablosunun ÖNÜNE geçer:**
+
+1. **H1a (`ema_trend`) hiçbir koşulda "MODELDEN" etiketini alamaz.** Kontrolü bozuk
+   olduğu için (karar 60) DiD yoktur; trend takipli bir long modelin BTC SMA200'ün
+   üstünde daha iyi çalışması büyük ihtimalle piyasanın kendisidir, modelin özelliği
+   değil. **H1a (a) ve (b)'yi geçse — hatta B'de doğrulansa — bile etiket en fazla
+   "KAYNAĞI AYIRT EDİLEMEDİ"dir ve bir veto/rejim kararına GİRDİ OLMAZ.** Kontrolsüz bir
+   karşıtlık bir mekanizmanın kanıtı sayılmaz. (8'deki "DEĞERLENDİRİLEMEZ — kontrol bozuk"
+   satırı bu kuralın kontrol tarafıdır; birimin nihai etiketi AYIRT EDİLEMEDİ olarak yazılır.)
+2. **dc'de (H2) öncelik — muhafazakâr taraf kazanır.** Bağlayıcı karşıtlık tek-sembollü
+   defterden, DiD ise portföy ↔ portföy kurulur (`dc_coinflip`in tek-sembollü koşusu
+   yoktur) ve karar 59 > GENEL DERS portföy yollarının nakit sınırında kırılgan olduğunu
+   söyler — iki ölçü farklı şey görebilir. Kural: **tek-sembollü karşıtlık geçer ama
+   portföy DiD'i "PİYASADAN" derse sonuç "PİYASADAN"dır.** "MODELDEN" yalnızca portföy
+   DiD'inin alt sınırı > 0 iken yazılır (8'in kuralı, değişmedi).
+
+**Beklenti (bir tahmin, kapı değil):** üç birimden en temiz okunacak olan **H1b
+(`xsec_mom`)**dir — kontrolü sağlamdır ve aynı koşu tipindendir (portföy ↔ portföy, aynı
+dönem, aynı rebalance günleri). H1a yapısı gereği en fazla "ayırt edilemedi", H2'nin
+okuması iki kaynağa bölünmüştür.
+
+**Zaman kısıtı kayda geçer:** ema ve dc artifact'leri 2026-10-08'de silinir. Ölçüm
+koşusu yine §6l > 7'nin kurallarıyla (tek sefer, xsec A determinizm kapısı) yapılır; bir
+aksilik çıkarsa yeniden koşu için zaman kalsın diye koşu bu tarihten belirgin önce hedeflenir.
+
+### TADİLAT-2 — q gerekçesinin DÜZELTMESİ + uygulamanın dar okumaları *(2026-09-24, ölçüm betiği yazılırken, HİÇBİR veri görülmeden)*
+
+**1. q = 0.05 gerekçesi YANLIŞ YAZILMIŞTI; karar değişmiyor.** Bölüm 6 "q = 0.10 ile m = 3'te
+%95 aralık şartı BH'yi her durumda geçirirdi" diyor. Bu yalnızca TEK YÖNLÜ p için doğrudur
+(%95 iki yönlü aralığın alt sınırı > 0 ⇔ tek yönlü p < 0.025 < 0.033). Ön-kayıt ise İKİ
+YÖNLÜ p tanımlıyor ve o p ile q = 0.10'un eşikleri 0.033 / 0.067 / 0.10'dur: 2. ve 3. sıra
+hiç bağlamaz, **1. sıra (0.033, 0.05) bandında BAĞLARDI.** Yani q = 0.10 tamamen süs değildi,
+yalnızca büyük ölçüde etkisizdi. Hata betiğin testi yazılırken ortaya çıktı
+(`tests/test_measure_regime.py::test_where_q_binds_on_two_sided_p`) ve burada düzeltilir; silinmez.
+**Karar q = 0.05 olarak KALIR** — üç sırada da bağlar (0.0167 / 0.033 / 0.05), 0.10'dan
+kesin olarak daha sıkıdır ve hiçbir veri görülmeden seçildi. İki yönlü p de KALIR: yön şartı
+(a)'da ayrıca istendiği için iki yönlü p tek yönlüden muhafazakârdır.
+
+**2. Uygulamanın ön-kayıttan DAR okuduğu noktalar (hepsi daha muhafazakâr):**
+- **Artifact kaydı bir KAPIDIR** (§6l > 7 "karşılaştırılır ve raporlanır" diyordu): okunan
+  defter karar 59'un kayıtlı sayılarını (ema A portföy 369 / −0.001489; dc A 336 / −0.0486,
+  kontrol 407 / −0.0937; dc B 246 / +0.0516, kayıttaki hassasiyette) üretmezse rapor
+  YAZILMAZ, çıkış 3. Yanlış koşunun defteriyle "ölçülmüş" bir sonuç, hiç sonuç olmamasından kötüdür.
+- **DiD'in değerlendirilebilmesi** model ve kontrol karşıtlıklarının ikisinin de asgari
+  örneklemi (≥ 10 ay, ≥ 30 pozisyon/marjinal) sağlamasını ve ≥ 10 ortak ay kümesini ister.
+- **"Model X rejime göre farklı çalışıyor" cümlesi** DOĞRULANDI ∧ **A'nın VE B'nin**
+  etiketi MODELDEN iken yazılır (8 dönemi söylemiyordu; iki dönemin etiketi ayrı raporlanır).
+- **Tohum:** karşıtlık `f"{random_seed}:regime:{birim}:{kaynak}:{dönem}"`; aynı kökten
+  türeyen yan akışlar `:lehte`, `:aleyhte`, `:cell:<hücre>`, `:kontrol:<model>`, `:did` ekini alır.
+- **Ölçülemeyen birim** (xsec determinizm kapısı düşerse) aileye p = 1 ile girer, m = 3 kalır.
+
+**3. İKİ AŞAMA (altyapı güvencesi, ölçümün kuralı değil).** Bu ortam ne artifact indirebilir
+ne OKX'e ulaşabilir; ilk sınama Actions'ta olur. Tek seferlik ölçümü bir altyapı aksiliğine
+yakmamak için workflow iki aşamalıdır (`.github/workflows/measure-regime.yml`):
+- `preflight` — artifact'lerin dosya VARLIĞI ve BTC serisinin KAPSAMI (ilk/son bar, eksik gün,
+  ilk tanımlı gün). **Hiçbir R, pozisyon sayısı ya da işlem-rejim ataması üretmez** (test:
+  `test_preflight_reads_no_ledger_content`); tekrarlanabilir.
+- `measure` — §6l > 7'nin tek seferlik koşusu.
+BTC serisinin 2020-11-01'e ulaşmaması bir kapı DEĞİLDİR (4: tanımsız pozisyon sayılır ve
+raporlanır); preflight onu yalnızca ÖNCEDEN görünür kılar.
+
+### SONUÇ ÖNCESİ BEKLENTİ *(2026-09-24, `measure` tetiklenmeden ÖNCE; hiçbir rejim kırılımı görülmedi)*
+
+**Kullanıcının onayı ve beklentisi** (TADİLAT-2'yi onayladıktan sonra, ölçüm başlatılmadan):
+TADİLAT-2'nin q düzeltmesi ve üç dar okuma onaylandı; en önemlisi "model X rejime göre
+farklı çalışıyor" cümlesinin yalnızca A VE B birlikte MODELDEN iken yazılabilmesidir —
+tek dönemde görülen bir etiket, sonradan en çok alıntılanacak cümleye dönüşebilirdi.
+
+| Birim | Beklenen etiket | Gerekçe (kullanıcının) |
+|---|---|---|
+| H1a `ema_trend` | en fazla **AYIRT EDİLEMEDİ** | tasarım gereği (TADİLAT-1 > 1) — bu bir tahmin değil, kuralın kendisi |
+| H2 `dc_short` | **PİYASADAN** | dönem A'daki pozitif R'nin kaynağı ayı piyasasında short tutmanın kendisidir; kontrolün de aynı rejim farkını taşıması beklenir |
+| H1b `xsec_mom` | belirsiz; en olası **AYIRT EDİLEMEDİ** | iki dönemde de pozitif işaret ilginç ama güç zayıf |
+
+**Önceden yazılan okuma:** üç birimin hiçbiri MODELDEN çıkmazsa sonuç, *rejim mekanizması
+fikrinin bu verilerle DESTEKLENMEDİĞİDİR* — tezin kendisinin reddi DEĞİL, **mevcut
+modellerin bu mekanizmaya aday olmadığı**. Tez ancak onu sınamak için tasarlanmış yeni bir
+modelle, kendi ön-kaydıyla ve taze bir OOS penceresiyle yeniden açılabilir (§7.1).
+
+Bu bölüm bir TAHMİNDİR, kapı değildir: sonucun okunması 6 ve 8'in mekanik kurallarından gelir;
+beklentinin tutup tutmadığı ayrıca ve AYNI satırda yazılır.
+
+### SONUÇ — koşuldu: üç birim de dönem A'da GEÇMEDİ, hiçbiri MODELDEN değil *(2026-09-24, koşu `measure-regime` #35995280008)*
+
+Koşu `dd53823` üzerinde, tek sefer. Tam yük ve sabitlenen günlük BTC serisi depoda:
+`docs/data/regime_results.json`, `docs/data/regime_days.csv` (artifact `measure-regime`, 90 gün).
+**Bu bölüm sonucu KAYDEDER, kuralları değiştirmez** — hiçbir eşik, birim, karşıtlık ya da etiket
+kuralı koşudan sonra dokunulmadı; koşu TEKRARLANMADI.
+
+**Kapılar:** artifact kaydı GEÇTİ (ema A 369 / −0.001489; dc A 336 / −0.0486, kontrol 407 /
+−0.0937; dc B 246 / +0.0516 — hepsi karar 59'la aynı). xsec determinizm kapısı GEÇTİ: dönem A
+orijinal `results.json` ile alan bazında birebir (183 / +0.118210533, kontrol 314 / +0.039055412);
+B yalnızca fonlama düzeyinde farklı (+0.32319 ↔ +0.32319, fark 5e-6 — karar 59 > İSTİSNA
+GENİŞLETMESİ). BTC serisi 2020-10-30 → 2026-09-22, eksik gün 0, ilk tanımlı gün 2021-11-28;
+**tanımsız rejimli pozisyon 0** (üç birimin iki döneminde de).
+
+**Dönem A — aile m = 3, BH q = 0.05:**
+
+| Birim | Kaynak | Lehte (n / ay / ort. R) | Aleyhte (n / ay / ort. R) | Karşıtlık [%95 küme CI] | p | MDE | Lehte CI alt > 0? | Hüküm |
+|---|---|---|---|---|---|---|---|---|
+| H1a `ema_trend` | tek-sembollü | yukarı 258 / 16 / −0.109 | aşağı 189 / 16 / +0.024 | **−0.133** [−0.473, +0.233] | 0.486 | 0.50 | hayır (−0.332) | **GEÇMEDİ** |
+| H1b `xsec_mom` | portföy | yukarı 87 / 17 / +0.093 | aşağı 96 / 16 / +0.141 | **−0.048** [−0.915, +0.711] | 0.916 | 1.09 | hayır (−0.321) | **GEÇMEDİ** |
+| H2 `dc_short` | tek-sembollü | aşağı 190 / 16 / +0.114 | yukarı 228 / 15 / −0.097 | **+0.211** [−0.326, +0.757] | 0.457 | 0.72 | hayır (−0.188) | **GEÇMEDİ** |
+
+Üç birimde de asgari örneklem SAĞLANDI (her marjinal ≥ 15 ay, ≥ 87 pozisyon), atılan çekiliş 0;
+yani "değerlendirilemez" değil, **ölçüldü ve geçmedi.** Hiçbir p BH eşiğine (0.0167) yaklaşmadı.
+H1'in iki biriminde de karşıtlığın İŞARETİ öngörülenin TERSİ çıktı (yukarı rejimde daha kötü).
+**A'da geçen birim olmadığı için B'de doğrulanacak birim yoktur** (m_B = 0); B sayıları "bilgi"dir.
+
+**İkincil ve kontrol satırları (bağlayıcı DEĞİL, A):**
+
+| | Karşıtlık [%95 CI] | Not |
+|---|---|---|
+| `ema_trend` portföy | −0.039 [−0.390, +0.327] | birincille aynı yön |
+| `dc_short` portföy | **+0.491** [−0.010, +0.938], p 0.055 | ikincil; birincilden büyük (karar 59 > GENEL DERS: portföy yolu nakit sınırında büyütür) |
+| `xsec_random` (kontrol) | −0.008 [−0.500, +0.480] | DiD −0.040 [−0.790, +0.567] |
+| `dc_coinflip` (kontrol, portföy) | +0.148 [−0.223, +0.477] | DiD (portföy ↔ portföy) +0.343 [−0.159, +0.864] |
+
+**Etiketler (A ve B):** üçünde de **KAYNAĞI AYIRT EDİLEMEDİ.** H1a kuralı gereği (TADİLAT-1 > 1;
+veto girdisi DEĞİL); H1b ve H2'de DiD aralıkları sıfırı içeriyor ve kontrol karşıtlığı A'da
+anlamlı değil.
+
+**Dönem B — "bilgi, doğrulama değil" (A'da geçmedi):**
+
+| Birim | Karşıtlık [%95 CI] | Kontrol karşıtlığı | DiD |
+|---|---|---|---|
+| H1a | −0.050 [−0.523, +0.436] | — (bozuk) | — |
+| H1b | −0.230 [−1.334, +0.501] | −0.327 [−0.973, +0.191] | +0.096 [−1.002, +0.988] |
+| H2 (tek-sembollü) | **−0.592** [−1.106, −0.002] | **−0.290** [−0.634, −0.030] | −0.074 [−0.531, +0.453] |
+
+⚠ B'deki H2 satırı ön-kayıtlı yönün TERSİDİR ve bir doğrulama değildir: `dc_short` B'de
+"aşağı" rejimde DAHA KÖTÜ; kontrol de aynı yönde ve DiD sıfır civarında. Okuma (bir TESPİT, karar
+değil): A'da işaret öngörülen yönde ama anlamsız, B'de ters yönde ve kontrolle birlikte —
+yani iki dönemde de rejim farkı modelle kontrolü birlikte hareket ettiriyor; **modele özgü bir
+rejim etkisine dair kanıt YOK.** Etkinin yönü dönemden döneme değişiyor, dolayısıyla "piyasadan"
+bile istikrarlı bir etiket değil.
+
+**Beklenti ↔ sonuç (aynı satırda):**
+
+| Birim | Beklenti | Sonuç | Tuttu mu |
+|---|---|---|---|
+| H1a | en fazla AYIRT EDİLEMEDİ | GEÇMEDİ, AYIRT EDİLEMEDİ | ✅ (kural gereği) |
+| H1b | belirsiz; en olası AYIRT EDİLEMEDİ | GEÇMEDİ, AYIRT EDİLEMEDİ (karşıtlık ≈ 0, MDE 1.09R) | ✅ |
+| H2 | PİYASADAN | GEÇMEDİ, AYIRT EDİLEMEDİ | ❌ literal olarak — "piyasadan" etiketi kontrol karşıtlığının anlamlılığını ister ve A'da o yoktu. Yön olarak beklentiyle uyumlu (A: model +0.21, kontrol +0.15, DiD'in noktası +0.34, hepsi anlamsız; B'de ikisi birlikte ters yönde) |
+
+**Önceden yazılmış okuma uygulanır:** üç birimin hiçbiri MODELDEN çıkmadı → *rejim mekanizması
+fikri bu verilerle DESTEKLENMEDİ*; bu tezin reddi DEĞİL, **mevcut modellerin bu mekanizmaya aday
+olmadığıdır.** Tez ancak onu sınamak için tasarlanmış yeni bir modelle, kendi ön-kaydıyla ve
+taze bir OOS penceresiyle yeniden açılabilir (§7.1).
+
+**Güç, dürüstçe:** gerçekleşen karşıtlık MDE'leri 0.50R (ema), 1.09R (xsec), 0.72R (dc) — xsec
+projeksiyonun (0.3–0.8R) üstünde kaldı. Bu tasarım yalnızca BÜYÜK rejim etkilerini
+görebilirdi; "geçmedi" küçük bir etkinin yokluğu değil, büyük bir etkinin yokluğudur.
+
+**H3:** DEĞERLENDİRİLEMEZ (mekanik): canlı defterler tek takvim ayı (`meanrev` 15 pozisyon,
+`rsi2_reversal` 79 — 4'ü tanımsız rejim, çünkü seri 2026-09-22'de bitiyor ve sonraki günler
+etiketlenmedi). Çıktıda görünen p = 0.001 tek kümeden kurulmuş bir bootstrap'ın yan ürünüdür ve
+anlamsızdır (`evaluable: false`).
+
+⚠ **Önceden kaydedilmemiş bir desen — seçilemez.** Dört hücre tablosunda `dc_short` A'nın iki
+yön hücresinde de yüksek oynaklık düşük oynaklıktan belirgin kötü (yukarı: −0.68 ↔ +0.49;
+aşağı: −0.49 ↔ +0.34). Bu karşıtlık ön-kayıtta YOKTUR, B zaten görülmüştür ve bu ölçümden bir
+karşıtlık seçmek §6l > 10 ve §7.2'nin yasakladığı şeydir. Burada yalnızca GÖRÜLDÜĞÜ kayda
+geçer — sonradan "keşfedilmiş" gibi sunulmasın diye. Sınanması yeni bir ön-kayıt ve dönem B'den
+sonraki taze bir pencere ister.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR

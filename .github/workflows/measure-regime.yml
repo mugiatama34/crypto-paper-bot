@@ -1,0 +1,168 @@
+# Rejim koşullu performans ölçümünün tetikleyicisi (docs/backtest.md > 6l, TADİLAT-1;
+# `scripts/measure_regime.py`). Salt okunur; YENİ MODEL DEĞİL.
+#
+# İKİ AŞAMA, İKİ TETİKLEYİCİ DOSYA (`measure-timesfm.yml`in deseni). `workflow_dispatch`
+# yalnızca dosya VARSAYILAN dalda olduğunda çalışır; ön-kayıt bir çalışma dalında. Bu yüzden
+# dar bir push tetikleyicisi, yalnızca `claude/**` dallarında:
+#   - `.github/triggers/regime-preflight*.run` → `--stage preflight`: artifact'lerin
+#     erişilebilirliği + BTC serisinin KAPSAMI. HİÇBİR R, pozisyon sayısı ya da rejim ataması
+#     üretmez; tekrarlanabilir. Tek seferlik ölçümü bir altyapı aksiliğine yakmamak için var.
+#   - `.github/triggers/regime-measure*.run`   → `--stage measure`: TEK SEFER (§6l > 7).
+#     Yeni bir dosya yalnızca önceki tetikleme HİÇBİR SAYI ÜRETMEDEN düştüyse eklenir ve
+#     gerekçesi dosyanın içinde yazılır (§7.6).
+# Dosyanın EKLENDİĞİ commit koşunun kendisidir ve dosya bir daha DEĞİŞTİRİLMEZ. Kod ya da
+# belge push'ları koşuyu tetikleyemez.
+#
+# VERİ KURALI (§6l > 3): yalnızca karar 59'un düzeltilmiş koşuları. ema/dc satırları o
+# koşuların ARTIFACT'lerinden okunur (koşu kimlikleri aşağıda SABİTTİR, girdi değildir);
+# artifact'ler 2026-10-08'de silinir. xsec'in defteri hiç yüklenmemişti → bu işte BİR KEZ
+# yeniden üretilir (`backtest_xsec.py`, kayıttaki B sonu) ve betik dönem A'yı orijinal
+# `results.json` ile alan bazında karşılaştırır (determinizm kapısı).
+#
+# `permissions`: `contents: read` (bu iş YAZAMAZ) + `actions: read` (başka bir koşunun
+# artifact'ini okumak için). `cron` YOKTUR (docs/backtest.md > 7).
+name: measure-regime
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "preflight | measure"
+        required: true
+        default: "preflight"
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - ".github/triggers/regime-*.run"
+
+concurrency:
+  group: measure-regime
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  EMA_RUN_ID: "35975935993"    # karar 59 > sıra 1
+  DC_RUN_ID: "35981639682"     # karar 59 > sıra 2
+  XSEC_RUN_ID: "35981642832"   # karar 59 > sıra 3
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    # measure: xsec'in iki dönemi soğuk önbellekle (~12.000 bar × 13 sembol) + BTC 4H.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Aşama, bu push'ta EKLENEN tetikleyici dosyanın adından okunur. Liste git'ten
+      # çıkarılır (`head_commit.added` boş gelir — measure-timesfm'in dersi). Aynı push'ta
+      # iki aşama eklenirse koşu YOK.
+      - name: Resolve stage
+        id: stage
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCH_STAGE: ${{ inputs.stage }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            STAGE="$DISPATCH_STAGE"
+          else
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              ADDED=$(git diff-tree --no-commit-id --name-only --diff-filter=A -r "$GITHUB_SHA" -- .github/triggers/)
+            else
+              ADDED=$(git diff --name-only --diff-filter=A "$BEFORE" "$GITHUB_SHA" -- .github/triggers/)
+            fi
+            echo "eklenen tetikleyiciler: ${ADDED:-(yok)}"
+            HAS_PRE=$(echo "$ADDED" | grep -c "regime-preflight" || true)
+            HAS_MEASURE=$(echo "$ADDED" | grep -c "regime-measure" || true)
+            if [ "$HAS_PRE" -gt 0 ] && [ "$HAS_MEASURE" -gt 0 ]; then
+              echo "::error::aynı push'ta iki aşama eklendi — koşu yok"; exit 1
+            elif [ "$HAS_PRE" -gt 0 ]; then STAGE=preflight
+            elif [ "$HAS_MEASURE" -gt 0 ]; then STAGE=measure
+            else
+              echo "::error::bu push'ta tetikleyici dosya EKLENMEDİ (değiştirilmiş olabilir) — koşu yok"
+              exit 1
+            fi
+          fi
+          case "$STAGE" in preflight|measure) ;; *) echo "::error::geçersiz aşama: $STAGE"; exit 1;; esac
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+          echo "aşama: $STAGE"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download backtest-ema artifact (karar 59 > sıra 1)
+        uses: actions/download-artifact@v4
+        with:
+          name: backtest-ema
+          run-id: ${{ env.EMA_RUN_ID }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: artifacts/ema
+
+      - name: Download backtest-dc artifact (karar 59 > sıra 2)
+        uses: actions/download-artifact@v4
+        with:
+          name: backtest-dc
+          run-id: ${{ env.DC_RUN_ID }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: artifacts/dc
+
+      - name: Download original xsec results (karar 59 > sıra 3)
+        uses: actions/download-artifact@v4
+        with:
+          name: xsec-results
+          run-id: ${{ env.XSEC_RUN_ID }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: artifacts/xsec-original
+
+      - name: List artifacts (yalnızca yapı)
+        run: find artifacts -maxdepth 3 -type d | sort | head -100
+
+      # Yalnızca `measure` aşamasında: xsec'in defteri BİR KEZ, karar 59'un koşusunun
+      # girdileriyle yeniden üretilir (derinlik 12000, fonlama 2000, B sonu kayıttan).
+      - name: Regenerate xsec ledgers (measure only)
+        if: steps.stage.outputs.stage == 'measure'
+        run: |
+          set -o pipefail
+          B_END="$(python scripts/rerun_record.py --workflow backtest-xsec.yml .github/triggers/rerun-59-backtest-xsec.run)"
+          echo "xsec B sonu (kayıttan): $B_END"
+          python scripts/backtest_xsec.py --out-dir backtests/xsec \
+            --history-bars 12000 --funding-periods 2000 --b-end "$B_END"
+
+      - name: Run
+        env:
+          STAGE: ${{ steps.stage.outputs.stage }}
+        run: |
+          set -o pipefail
+          python scripts/measure_regime.py --stage "$STAGE" \
+            --ema-dir artifacts/ema --dc-dir artifacts/dc \
+            --xsec-dir backtests/xsec --xsec-original artifacts/xsec-original/results.json \
+            --ema-run "#$EMA_RUN_ID" --dc-run "#$DC_RUN_ID" --xsec-run "#$XSEC_RUN_ID" \
+            --out-dir backtests/regime
+
+      - name: Upload results
+        if: always() && steps.stage.outputs.stage == 'measure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: measure-regime
+          path: |
+            backtests/regime
+            backtests/xsec/results.json
+          if-no-files-found: warn
+          retention-days: 90
