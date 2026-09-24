@@ -22,8 +22,11 @@ name: backtest-dc
 on:
   workflow_dispatch:
     inputs:
-      b_end:
-        description: "Dönem B sonu (ISO); boş = koşu anı"
+      # B'nin SONU serbest bir girdi DEĞİLDİR (karar 59): yalnızca bir yeniden koşu KAYDINDAN
+      # okunur — commit'lenmiş `.github/triggers/rerun-*.run`, orijinal koşuya ve değerin
+      # kayıttaki yerine atıfla (`scripts/rerun_record.py`). Boş = yeni koşu, B sonu koşu anı.
+      rerun_record:
+        description: "Yeniden koşu kaydı (.github/triggers/rerun-*.run); boş = yeni koşu"
         required: false
         default: ""
   push:
@@ -78,9 +81,15 @@ jobs:
           restore-keys: |
             market-data-v2--backtest-dc--
 
-      - name: Run pre-registered backtest (A → embargo → B)
+      - name: Resolve rerun record (B sonu)
         env:
-          B_END: ${{ inputs.b_end }}
+          RECORD: ${{ inputs.rerun_record }}
+        run: |
+          B_END="$(python scripts/rerun_record.py --workflow backtest-dc.yml "$RECORD")"
+          echo "B sonu: ${B_END:-koşu anı}"
+          echo "B_END=$B_END" >> "$GITHUB_ENV"
+
+      - name: Run pre-registered backtest (A → embargo → B)
         run: |
           set -o pipefail
           ARGS=(--out-dir backtests/dc)

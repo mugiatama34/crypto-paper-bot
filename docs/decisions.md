@@ -4911,6 +4911,13 @@ değişmedi; karar yeni sayılar görülmeden bu metinle verildi. Bu yüzden:
    üretecek damgayla verilir: ema `2026-09-18T12:00Z` (orijinal B sonu 08:00 barı), dc
    `2026-09-23T08:00Z` (04:00 barı), xsec `2026-09-21T08:00Z` (koşunun `now.floor("h")`i).
    Bu bir girdi DEĞİŞİKLİĞİ değil, orijinal girdinin ("koşu anı") sabitlenmesidir.
+   **Sınırlama (kullanıcı şartı, 2026-09-24):** bu değer serbest SEÇİLMEZ. Hiçbir backtest
+   workflow'u B sonunu serbest girdi olarak almaz (ema ve dc'nin eski `b_end` girdileri de
+   kaldırıldı); B sonu yalnızca commit'lenmiş bir yeniden koşu kaydından okunur
+   (`.github/triggers/rerun-59-<workflow>.run`: orijinal koşu, değerin kayıttaki yeri,
+   değer — `scripts/rerun_record.py` doğrular). Yeni koşularda B sonu koşu anı kalır.
+   ⚠ Sıra 1'in (ema) koşusu #35975935993 bu sınırlamadan ÖNCE, aynı değerle serbest
+   girdiden başlatıldı; kaydı geriye dönük yazıldı ve bunu kendisi söyler.
 
 **Sıra (ön-kayıtlı):**
 

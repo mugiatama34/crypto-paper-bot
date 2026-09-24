@@ -25,8 +25,11 @@ on:
         description: "Funding geçmişi derinliği (8 saatlik periyot; 6000 ≈ 5.5 yıl)"
         required: false
         default: "6000"
-      b_end:
-        description: "Dönem B sonu (ISO); boş = koşu anı"
+      # B'nin SONU serbest bir girdi DEĞİLDİR (karar 59): yalnızca bir yeniden koşu KAYDINDAN
+      # okunur — commit'lenmiş `.github/triggers/rerun-*.run`, orijinal koşuya ve değerin
+      # kayıttaki yerine atıfla (`scripts/rerun_record.py`). Boş = yeni koşu, B sonu koşu anı.
+      rerun_record:
+        description: "Yeniden koşu kaydı (.github/triggers/rerun-*.run); boş = yeni koşu"
         required: false
         default: ""
       symbols:
@@ -88,12 +91,20 @@ jobs:
           restore-keys: |
             market-data-v2--backtest-ema--
 
+      - name: Resolve rerun record (B sonu)
+        env:
+          RECORD: ${{ inputs.rerun_record }}
+        run: |
+          B_END="$(python scripts/rerun_record.py --workflow backtest-ema.yml "$RECORD")"
+          echo "B sonu: ${B_END:-koşu anı}"
+          echo "B_END=$B_END" >> "$GITHUB_ENV"
+
       - name: Run pre-registered backtest
         run: |
           python scripts/backtest_ema.py \
             --history-bars "${{ inputs.history_bars }}" \
             --funding-periods "${{ inputs.funding_periods }}" \
-            ${{ inputs.b_end != '' && format('--b-end "{0}"', inputs.b_end) || '' }} \
+            ${B_END:+--b-end "$B_END"} \
             ${{ inputs.symbols != '' && format('--symbols "{0}"', inputs.symbols) || '' }} \
             ${{ inputs.skip_singles == 'true' && '--skip-singles' || '' }} \
             --out "backtests/ema" \

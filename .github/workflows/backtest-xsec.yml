@@ -35,11 +35,11 @@ on:
         description: "Funding geçmişi derinliği (periyot) — aynı sınıf"
         required: false
         default: "2000"
-      # Yalnızca B'nin SONU açılır — A sınırları ve kesim KAPALI kalır (ema/dc ile aynı
-      # desen). Gerekçe karar 59: yeniden koşu orijinal koşunun B sonunda bitmeli, yoksa
-      # fark onarımın değil eklenen verinin ölçüsü olurdu. Boş = koşu anı (değişmedi).
-      b_end:
-        description: "Dönem B sonu (ISO); boş = koşu anı"
+      # B'nin SONU serbest bir girdi DEĞİLDİR (karar 59): yalnızca bir yeniden koşu KAYDINDAN
+      # okunur — commit'lenmiş `.github/triggers/rerun-*.run`, orijinal koşuya ve değerin
+      # kayıttaki yerine atıfla (`scripts/rerun_record.py`). Boş = yeni koşu, B sonu koşu anı.
+      rerun_record:
+        description: "Yeniden koşu kaydı (.github/triggers/rerun-*.run); boş = yeni koşu"
         required: false
         default: ""
 
@@ -69,11 +69,18 @@ jobs:
 
       # Ön-kayıtlı sıra betiğin İÇİNDEDİR: A koşulur, embargo A'dan ÖLÇÜLÜR, sonra B.
       # Derinlik ayarları ortam değişkeninden okunur (kabuk enjeksiyonu kapısı).
+      - name: Resolve rerun record (B sonu)
+        env:
+          RECORD: ${{ inputs.rerun_record }}
+        run: |
+          B_END="$(python scripts/rerun_record.py --workflow backtest-xsec.yml "$RECORD")"
+          echo "B sonu: ${B_END:-koşu anı}"
+          echo "B_END=$B_END" >> "$GITHUB_ENV"
+
       - name: Run pre-registered xsec backtest (A → embargo → B)
         env:
           HISTORY_BARS: ${{ inputs.history_bars }}
           FUNDING_PERIODS: ${{ inputs.funding_periods }}
-          B_END: ${{ inputs.b_end }}
         run: |
           ARGS=(--out-dir backtests/xsec --history-bars "$HISTORY_BARS" --funding-periods "$FUNDING_PERIODS")
           if [ -n "$B_END" ]; then ARGS+=(--b-end "$B_END"); fi
