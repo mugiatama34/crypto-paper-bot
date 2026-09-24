@@ -50,7 +50,7 @@ from core.layers import resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 from core.metrics import breakdown, merge_fills, r_multiple  # noqa: E402
 from core.tags import find_tag  # noqa: E402
-from scripts.backtest import BacktestResult, check_validity, run_backtest  # noqa: E402
+from scripts.backtest import WindowCoverageError, exit_code_of, BacktestResult, check_validity, run_backtest  # noqa: E402
 from scripts.backtest_ema import (  # noqa: E402
     PERIOD_A_CUTOFF,
     PERIOD_A_START,
@@ -572,6 +572,7 @@ def period_payload(
         "by_symbol": symbol_breakdown(result, MODEL),
         "by_year": year_breakdown(result, MODEL),
         "coverage": dict(result.coverage),
+        "funding_coverage": dict(result.funding_coverage),
         "statistics": statistics_block(
             model_positions, control_positions, period=period,
             alpha=alpha, iterations=iterations, seed=seed,
@@ -733,6 +734,8 @@ def run_singles(
                 layer_name=LAYER, out_dir=out_root / f"{name}-{symbol}",
                 models=[MODEL], symbols=[symbol], **kwargs,
             )
+        except WindowCoverageError:
+            raise  # kısmi pencere bir sembolün arızası değil, koşunun ölçülemediğidir
         except Exception as exc:  # noqa: BLE001
             logger.error("[%s] %s koşulamadı: %s", name, symbol, exc)
             rows[symbol] = {"failed": str(exc)}
@@ -835,4 +838,4 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(exit_code_of(main))

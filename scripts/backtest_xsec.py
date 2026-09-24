@@ -40,7 +40,7 @@ import pandas as pd  # noqa: E402
 
 from core.config import load_config  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
-from scripts.backtest import BacktestResult, run_backtest  # noqa: E402
+from scripts.backtest import exit_code_of, BacktestResult, run_backtest  # noqa: E402
 from scripts.backtest_ema import (  # noqa: E402
     PERIOD_A_CUTOFF,
     PERIOD_A_START,
@@ -304,6 +304,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "acceptance_model": _flag(period_a, MODEL),
                 "exit_mix": exit_mix(period_a, MODEL),
                 "holding": dict(period_a.holding.get(MODEL) or {}),
+                "window": {"start": str(period_a.start), "end": str(period_a.end)},
+                "buy_hold": dict(period_a.buy_hold),
+                "coverage": dict(period_a.coverage),
+                "funding_coverage": dict(period_a.funding_coverage),
             },
             "B": {
                 "start": str(a_cutoff), "end": str(b_end),
@@ -312,6 +316,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "acceptance_model": _flag(period_b, MODEL),
                 "exit_mix": exit_mix(period_b, MODEL),
                 "holding": dict(period_b.holding.get(MODEL) or {}),
+                "window": {"start": str(period_b.start), "end": str(period_b.end)},
+                "buy_hold": dict(period_b.buy_hold),
+                "coverage": dict(period_b.coverage),
+                "funding_coverage": dict(period_b.funding_coverage),
             },
         },
     }
@@ -322,7 +330,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     results.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     logger.info("sonuç yazıldı: %s", results)
 
-    print(json.dumps(payload["gates"], indent=2, ensure_ascii=False, default=str))
+    # Tam yük log'a da basılır (`backtest-ema.yml`/`backtest-dc.yml`in aynı gerekçesi):
+    # iş salt okunurdur ve artifact deposu her ağ politikasından indirilemiyor — karar
+    # 59'un yeniden koşusu sayılarını kayda ancak log'dan geçirebilir. Yük pozisyon
+    # satırı taşımaz, boyu küçüktür.
+    print("=== RESULTS.JSON BEGIN ===")
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+    print("=== RESULTS.JSON END ===")
     return 0
 
 
@@ -330,7 +344,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out-dir", default="backtests/xsec")
     parser.add_argument("--config", default=None)
-    parser.add_argument("--history-bars", type=int, default=3000)
+    # 3000 dönem A'yı karşılamıyordu (#35578057311, docs/decisions.md > 59); 12000
+    # ema/dc'nin derinliği. Yetmeyen derinliği artık pencere kapısı reddeder.
+    parser.add_argument("--history-bars", type=int, default=12000)
     parser.add_argument("--funding-periods", type=int, default=2000)
     # Pencereler ön-kayıtlıdır ve backtest_ema'den İTHAL EDİLİR; bayraklar yalnızca
     # tekrarlanabilirlik için açıktır, dönem B'ye bakmayı kolaylaştırmak için değil.
@@ -342,4 +358,4 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(exit_code_of(main))

@@ -51,7 +51,7 @@ from core.ledger import Ledger  # noqa: E402
 # farklı p90'ını üretebilirdi — `scripts/diagnose_ema_exits.py` ile aynı gerekçe.
 from core.metrics import _median, _percentile, breakdown, merge_fills  # noqa: E402
 from core.tags import find_tag  # noqa: E402
-from scripts.backtest import BacktestResult, run_backtest  # noqa: E402
+from scripts.backtest import exit_code_of, BacktestResult, run_backtest  # noqa: E402
 from strategies.wave_coinflip import FLIPPED, SAME, WaveCoinflip  # noqa: E402
 
 logger = logging.getLogger("backtest_wave")
@@ -932,4 +932,4 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(exit_code_of(main))

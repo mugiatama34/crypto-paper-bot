@@ -119,16 +119,26 @@ jobs:
       # kapanmamış barı zaten atar (kural 12). Bayat bir önbellek eksik bar üretir, yanlış
       # bar değil — ve eksik bar `missing_bars`/`unchecked_position_bars` ile B-2 kapısında
       # görünür (docs/backtest.md > 3), sessizce geçmez.
+      # ⚠ Bu iddia 2026-09-23'e kadar YANLIŞTI (docs/decisions.md > 58): bayat değil, pencerenin
+      # `end`inden YENİ bir önbellek `now`da kesilmiyordu ve pencere sessizce önbelleğin ucuna
+      # taşıyordu. `core/data.py::_closed_by` ile düzeltildi; `scripts/backtest.py` artık
+      # `as_of > end`de koşuyu düşürür. Metin silinmedi: bir zaman bu varsayımla koşuldu.
       #
       # Anahtar her koşuda tazelenir, restore-keys ile en son önbellek geri yüklenir:
       # "yükle, eksiği tamamla, yeniden kaydet" — rolling cache.
+      # Önbellek ANAHTARI yalnızca bu workflow'un ad alanını geri yükler (docs/decisions.md
+      # > 59): eski `market-data-ema-` öneki `market-data-ema-diag-…`i de yakalıyordu ve
+      # dc koşusu başka bir workflow'un 2026'ya uzanan önbelleğiyle dönem A'yı taşırdı.
+      # `--` sonlandırıcısı bir önekin başka bir anahtarın öneki olmasını imkânsız kılar,
+      # `v2` o kirli önbellekleri bir daha geri yüklemez. İkinci katman `core/data.py`dir:
+      # seri önbellekten bağımsız olarak `now`a kesilir ve eksik derinlik tamamlanır.
       - name: Restore market data cache
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: market-data-${{ inputs.layer }}-${{ github.run_id }}
+          key: market-data-v2--backtest--${{ inputs.layer }}--${{ github.run_id }}
           restore-keys: |
-            market-data-${{ inputs.layer }}-
+            market-data-v2--backtest--${{ inputs.layer }}--
 
       - name: Run backtest
         env:

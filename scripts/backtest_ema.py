@@ -47,7 +47,7 @@ import pandas as pd  # noqa: E402
 from core.config import get_setting, load_config  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
 from core.metrics import format_report  # noqa: E402
-from scripts.backtest import BacktestResult, format_fill_ambiguity, run_backtest, results_payload  # noqa: E402
+from scripts.backtest import WindowCoverageError, exit_code_of, BacktestResult, format_fill_ambiguity, run_backtest, results_payload  # noqa: E402
 from main import jsonable  # noqa: E402
 
 logger = logging.getLogger("backtest-ema")
@@ -127,6 +127,8 @@ def run_period(
                     symbols=[symbol],
                     **shared,
                 )
+            except WindowCoverageError:
+                raise  # kısmi pencere bir sembolün arızası değil, koşunun ölçülemediğidir
             except Exception as exc:  # noqa: BLE001
                 # Bir sembolün düşmesi (ör. o pencerede hiç barı yok) diğerlerini
                 # düşürmez; ama SESSİZ de geçmez — yük onu `failed` olarak taşır.
@@ -642,4 +644,4 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(exit_code_of(main))

@@ -27,11 +27,21 @@ on:
       history_bars:
         description: "Geriye bakış derinliği (bar) — sonucu DEĞİŞTİRMEMESİ beklenen ayar"
         required: false
-        default: "3000"
+        # 3000 dönem A'yı (2022-01 → 2024-06, ~5400 bar + ısınma) karşılamıyordu ve koşu
+        # ~2023-02'den başladı (#35578057311; docs/decisions.md > 59). Pencere kapısı artık
+        # yetmeyen derinliği reddeder; 12000 `backtest-ema`/`backtest-dc`nin derinliğidir.
+        default: "12000"
       funding_periods:
         description: "Funding geçmişi derinliği (periyot) — aynı sınıf"
         required: false
         default: "2000"
+      # B'nin SONU serbest bir girdi DEĞİLDİR (karar 59): yalnızca bir yeniden koşu KAYDINDAN
+      # okunur — commit'lenmiş `.github/triggers/rerun-*.run`, orijinal koşuya ve değerin
+      # kayıttaki yerine atıfla (`scripts/rerun_record.py`). Boş = yeni koşu, B sonu koşu anı.
+      rerun_record:
+        description: "Yeniden koşu kaydı (.github/triggers/rerun-*.run); boş = yeni koşu"
+        required: false
+        default: ""
 
 concurrency:
   group: backtest-xsec
@@ -59,15 +69,22 @@ jobs:
 
       # Ön-kayıtlı sıra betiğin İÇİNDEDİR: A koşulur, embargo A'dan ÖLÇÜLÜR, sonra B.
       # Derinlik ayarları ortam değişkeninden okunur (kabuk enjeksiyonu kapısı).
+      - name: Resolve rerun record (B sonu)
+        env:
+          RECORD: ${{ inputs.rerun_record }}
+        run: |
+          B_END="$(python scripts/rerun_record.py --workflow backtest-xsec.yml "$RECORD")"
+          echo "B sonu: ${B_END:-koşu anı}"
+          echo "B_END=$B_END" >> "$GITHUB_ENV"
+
       - name: Run pre-registered xsec backtest (A → embargo → B)
         env:
           HISTORY_BARS: ${{ inputs.history_bars }}
           FUNDING_PERIODS: ${{ inputs.funding_periods }}
         run: |
-          python scripts/backtest_xsec.py \
-            --out-dir backtests/xsec \
-            --history-bars "$HISTORY_BARS" \
-            --funding-periods "$FUNDING_PERIODS"
+          ARGS=(--out-dir backtests/xsec --history-bars "$HISTORY_BARS" --funding-periods "$FUNDING_PERIODS")
+          if [ -n "$B_END" ]; then ARGS+=(--b-end "$B_END"); fi
+          python scripts/backtest_xsec.py "${ARGS[@]}"
 
       - name: Upload results
         if: always()

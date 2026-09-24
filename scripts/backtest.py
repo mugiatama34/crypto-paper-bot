@@ -70,6 +70,7 @@ import pandas as pd  # noqa: E402
 from core.config import get_setting, load_config  # noqa: E402
 from core.data import bar_duration, load_market_data  # noqa: E402
 from core.engine import Engine, RoundReport  # noqa: E402
+from core.funding import funding_times  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 from core.metrics import (  # noqa: E402
@@ -84,6 +85,19 @@ from strategies.base import MarketData, Signal, Strategy  # noqa: E402
 logger = logging.getLogger("backtest")
 
 BACKTEST_ROOT = Path("backtests")
+
+# Veri kapısının çıkış kodu (karar 51): koşu "ölçemedim" der, "ölçtüm ve düştü" demez.
+EXIT_DATA_GATE = 3
+
+
+class WindowCoverageError(RuntimeError):
+    """İstenen pencere (ısınmasıyla birlikte) anlık görüntüde YOK: koşu sonuç üretmez.
+
+    Karar 51'in "boş rapor yeşil dönmez" kuralının pencere karşılığı (docs/decisions.md
+    > 59): `backtest-xsec` #35578057311 dönem A'yı 2022-01'den istedi, derinlik ise
+    ~2023-02'ye kadar yetti — kısalma yalnızca bir sayaçta (`missing_bars`) durdu ve
+    kapılar ölçülmemiş bir pencereye karar verdi. Kısmi pencere bir sonuç değildir.
+    """
 MANIFEST_FILENAME = "manifest.json"
 
 # Config parmak izine giren anahtarlar: koşunun hangi kurallarla yapıldığını sonradan
@@ -143,6 +157,11 @@ class BacktestResult:
     # vardı. Kapsam yazılmazsa, iki yıllık veriye dayanan bir kâr faktörü ile iki
     # aylık veriye dayanan biri tabloda aynı görünür.
     coverage: Mapping[str, Any] = field(default_factory=dict)
+    # Fonlama KAPSAMI (karar 59 > sıra 1 şartı): OKX fonlama geçmişini ~3 aylık KAYAN bir
+    # pencerede tutar (karar 50), yani aynı pencere günler sonra koşulduğunda başka bir
+    # fonlama dilimiyle çalışır. Kaymanın büyüklüğü her koşuda görünsün diye: pencere
+    # içindeki fonlama damgaları, bunların kaçının KAYDI olduğu ve kaydın başladığı an.
+    funding_coverage: Mapping[str, Any] = field(default_factory=dict)
     # Koşunun canlıdan sapan varsayımları; raporun başına basılır ki bir sayı, hangi
     # dünyada ölçüldüğü bilinmeden okunmasın.
     deviations: Mapping[str, Any] = field(default_factory=dict)
@@ -365,7 +384,10 @@ def run_backtest(
         _seed_start_bar(ledger, strategy.name, start=start)
 
     # Anlık görüntü `end`e kadar kesilir: `now` verildiğinde core/data.py hem çıpayı hem
-    # tüm serileri oraya kadar budar, yani model geleceği GÖREMEZ (kural 12). Backtest'in
+    # tüm serileri — önbellekte daha taze bar olsa bile — oraya kadar budar, yani model
+    # geleceği GÖREMEZ (kural 12). Bu söz bir zamanlar yalnızca borsadan inen barlar için
+    # doğruydu ve önbellek pencereyi 2026'ya taşırıyordu (docs/decisions.md > 59); budama
+    # artık kaynaktan bağımsızdır ve `assert_window_covered` iki ucu da sınar. Backtest'in
     # look-ahead güvencesi burada başlar ve motorun bar bazlı dilimlemesiyle sürer.
     # `now` GELECEKTE olamaz. `load_market_data` bunu "şimdi" sayar ve çıpanın tazeliğini
     # ona göre ölçer (`data.max_staleness_bars`); gelecek bir `end` ile BTC'nin son kapanmış
@@ -376,6 +398,14 @@ def run_backtest(
     if end > now:
         logger.warning("istenen bitiş (%s) gelecekte; anlık görüntü şimdiye (%s) kadar kurulur", end, now)
     market = load_market_data(config, symbols=universe, now=min(end, now))
+    if market.as_of > end:
+        # İstenen pencerenin DIŞINDA bir bar işlenecekti: sonuç ön-kayıttaki pencereyi
+        # ölçmez. Kısalmanın aksine (aşağıdaki uyarı) bu bir sapma değil, bir arızadır.
+        # Karar 59: veri kapısı sınıfına alındı (çıkış kodu 3, tek sembollü döngüler yutmaz).
+        raise WindowCoverageError(
+            f"anlık görüntü istenen bitişi AŞIYOR: as_of={market.as_of} > end={end} "
+            "(docs/decisions.md > 58)"
+        )
     logger.info(
         "katman=%s pencere=(%s, %s] as_of=%s sembol=%d model=%d",
         layer.name, start, end, market.as_of, len(market.ohlcv), len(strategies),
@@ -385,6 +415,13 @@ def run_backtest(
             "anlık görüntünün son barı (%s) istenen bitişten (%s) geride: pencere kısaldı",
             market.as_of, end,
         )
+    assert_window_covered(
+        market,
+        start=start,
+        end=end,
+        warmup_bars=history_bars_was,
+        duration=bar_duration(str(get_setting(config, "timeframe"))),
+    )
 
     report = Engine(
         strategies, config=config, ledger=ledger, portfolio=Portfolio(config)
@@ -467,9 +504,59 @@ def run_backtest(
         holding=holding,
         buy_hold=buy_hold,
         coverage=coverage,
+        funding_coverage=funding_coverage(
+            market,
+            start=start,
+            end=market.as_of,
+            interval_hours=int(get_setting(config, "funding.interval_hours")),
+            enabled=bool(get_setting(config, "funding.enabled")),
+        ),
         deviations=deviations,
         acceptance=tuple(flags),
     )
+
+
+def funding_coverage(
+    market: MarketData,
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    interval_hours: int,
+    enabled: bool,
+) -> dict[str, Any]:
+    """Pencerenin (start, end] fonlama damgalarından kaçının KAYDI var, kayıt nerede başlıyor.
+
+    `core/funding.py::rate_at` damgayı birebir arar; kaydı olmayan damgada fonlama HİÇ
+    işlenmez ("funding atlandı"). Buradaki sayım o kuralın aynısıdır: ızgara
+    (`funding_times`) ile serinin indeksinin kesişimi. Hesap yalnızca SAYAR, hiçbir
+    sonucu değiştirmez; uyarı satırlarını saymak yerine veriden sayar, çünkü uyarılar
+    pozisyon başınadır ve log kuyruğu onları keser.
+    """
+    if not enabled:
+        return {"enabled": False}
+    grid = funding_times(start=start, end=end, interval_hours=interval_hours)
+    per_symbol: dict[str, Any] = {}
+    for symbol in sorted(market.ohlcv):
+        series = market.funding.get(symbol)
+        index = series.index if series is not None else pd.DatetimeIndex([], tz="UTC")
+        present = sum(1 for stamp in grid if stamp in index)
+        per_symbol[symbol] = {
+            "first_record": index.min().isoformat() if len(index) else None,
+            "stamps": len(grid),
+            "with_record": present,
+        }
+    firsts = [row["first_record"] for row in per_symbol.values() if row["first_record"]]
+    return {
+        "enabled": True,
+        "window": {"start": start.isoformat(), "end": end.isoformat()},
+        "interval_hours": interval_hours,
+        "stamps_per_symbol": len(grid),
+        "stamps_total": len(grid) * len(per_symbol),
+        "with_record_total": sum(row["with_record"] for row in per_symbol.values()),
+        "first_record_earliest": min(firsts) if firsts else None,
+        "first_record_latest": max(firsts) if firsts else None,
+        "symbols": per_symbol,
+    }
 
 
 def _silence_signals_after(strategy: Strategy, cutoff: pd.Timestamp) -> None:
@@ -494,6 +581,68 @@ def _silence_signals_after(strategy: Strategy, cutoff: pd.Timestamp) -> None:
         return original(market, peer_signals)
 
     strategy.generate_signals = gated  # type: ignore[method-assign]
+
+
+def exit_code_of(main: Any, argv: Sequence[str] | None = None) -> int:
+    """Ön-kayıtlı koşu betiklerinin ortak CLI sınırı: pencere kapısı → çıkış kodu 3.
+
+    Kapı `run_backtest`in DERİNİNDE düşer ve bir betik onu kendi hata yoluna (ör. tek
+    sembollü koşunun `failed` satırı) çevirmemelidir: kısmi bir pencere bir sembolün
+    arızası değil, koşunun tamamının ölçülemediğidir.
+    """
+    try:
+        return int(main(argv))
+    except WindowCoverageError as exc:
+        logger.error("VERİ KAPISI: %s", exc)
+        return EXIT_DATA_GATE
+
+
+def assert_window_covered(
+    market: MarketData,
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    warmup_bars: int,
+    duration: pd.Timedelta,
+) -> None:
+    """Pencere + ısınma anlık görüntüde yoksa `WindowCoverageError`.
+
+    **Isınma = katmanın CANLI `data.history_bars`ı.** Pencerenin ilk barında model,
+    canlı bir turda göreceği geçmişi görmelidir; daha azı, ilk barların sinyalini
+    canlıda hiç oluşmayacak bir kısıtla üretmek olurdu. Model başına bir ısınma sayısı
+    (EMA55, lookback 126, EMA200 600) kural olarak YAZILMAZ: ikinci bir liste, bir model
+    eklendiğinde sessizce eskirdi — katmanın derinliği zaten o modellerin ihtiyacına
+    göre seçilmiştir.
+
+    **Ölçüt çıpadır (BTC), her sembol değil:** geç listelenen bir sembol kendi
+    başlangıcından girer ve bu kabul edilmiş, loglanan bir durumdur (`core/data.py`,
+    kural 12). Kapının yakaladığı şey tüm anlık görüntünün sığ kalmasıdır.
+
+    **Son uç:** `as_of` pencerenin içinde olmalıdır. `as_of > end` bugün `core/data.py`
+    tarafından imkânsızdır (seriler `now`a kesilir) ve `run_backtest` onu ayrıca, anlık
+    görüntü kurulur kurulmaz reddeder (karar 58); burada da sınanır, çünkü bu fonksiyon
+    pencerenin TAM sözleşmesidir. `as_of < end` ise bir bar kadar olağandır (B'nin sonu
+    "şimdi"dir) ve uyarı olarak kalır.
+    """
+    btc = market.btc
+    if btc.empty:
+        raise WindowCoverageError("çıpa (BTC) serisi boş: pencere ölçülemez")
+    first = btc.index[0]
+    needed = start - warmup_bars * duration
+    if first > needed:
+        raise WindowCoverageError(
+            f"pencere ölçülmedi: çıpanın ilk barı {first}, gereken ≤ {needed} "
+            f"(start {start} − ısınma {warmup_bars} bar). Derinlik (`--history-bars`) "
+            "pencereyi karşılamıyor; kısmi bir pencere sonuç üretmez."
+        )
+    if market.as_of <= start:
+        raise WindowCoverageError(
+            f"pencere boş: anlık görüntünün son barı {market.as_of} ≤ start {start}"
+        )
+    if market.as_of > end:
+        raise WindowCoverageError(
+            f"pencere TAŞTI: anlık görüntü istenen bitişi AŞIYOR: as_of={market.as_of} > end={end}"
+        )
 
 
 def _seed_start_bar(ledger: Ledger, model: str, *, start: pd.Timestamp) -> None:
@@ -917,6 +1066,7 @@ def results_payload(result: BacktestResult) -> dict[str, Any]:
         "window": {"start": result.start.isoformat(), "end": result.end.isoformat()},
         "min_trades": result.min_trades,
         "deviations": dict(result.deviations),
+        "funding_coverage": dict(result.funding_coverage),
         "build_failures": dict(result.build_failures),
         "validity": {
             model.model: {
@@ -1001,6 +1151,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             signal_cutoff=cutoff,
             control_model=args.control_model,
         )
+    except WindowCoverageError as exc:
+        logger.error("VERİ KAPISI: %s", exc)
+        return EXIT_DATA_GATE
     except Exception as exc:  # noqa: BLE001 — CLI sınırı; gerekçe kullanıcıya gider
         logger.error("backtest koşulamadı: %s", exc)
         return 1
