@@ -4630,7 +4630,7 @@ alt sınırı sıfırın altında. ~5 puanın üstünde bir kenar dışlandı; d
 > pozitif işareti iki dönemde gösteren tek model" demek YANLIŞ olurdu: `dc_short`un kontrole
 > farkı da iki dönemde pozitif (A +0.045, B +0.112), ama A ortalama R'si negatif (−0.049);
 > `ema_trend`in `random_ctrl`e farkı iki dönemde +1.0R ve CI sıfırı dışlıyor, ama ortalama R'si
-> negatif ve kontrolün −1.06R'si bir çekiliş değil patolojidir. İşaretin tutarlılığı bir KANIT
+> negatif ve kontrolün −1.06R'si bir çekiliş değil bir SANSÜRDÜR (karar 60: `random_ctrl` yalnızca stop'la kapanabiliyor). İşaretin tutarlılığı bir KANIT
 > değildir — iki aralık da sıfırı rahatça içeriyor.
 >
 > **K-3 yine YAPISAL okunur:** kontrolün drawdown'u da iki dönemde %23-24; çöküş seçimden değil
@@ -5134,3 +5134,52 @@ kapı değiştirilmedi.)
 Dördünün (ema A + bu üçü) birebir çıkması onarımın kendisinin sonuç DEĞİŞTİRMEDİĞİNİ gösterir:
 değişen her sayı (xsec'in tamamı, dc A, çıpalar) kirli bir önbelleğin ölçtüğü pencereden geldi,
 temiz pencereyi ölçen koşular aynı kaldı. Yeniden koşu turu burada KAPANIR.
+
+## 60. `random_ctrl` kontrol olarak BOZUK: çıkışı yalnızca stop, kapanmış-işlem R'si SANSÜRLÜ — AÇIK İŞ, ÖNCELİKLİ
+
+**Ne görüldü.** Karar 59'un ema yeniden koşusunda `random_ctrl`in ortalama R'si A −1.03, B
+−1.06. Bilgisiz bir girişin beklenen R'si ≈ −(maliyet), yani −0.05 civarı olmalıydı; −1.06
+"neredeyse her işlem tam stop yedi" demektir ve bir çekilişin sonucu olamaz.
+
+**Mekanizma (ölçüldü, ön-kabul "1:2 stop/hedef" DEĞİLDİ).** `strategies/random_ctrl.py`
+yalnızca `stop_price` üretir: **hedefi yok, zaman stop'u yok, `manage_positions` yok.** Bir
+pozisyonun kapanabildiği TEK yol stop'tur. Sonuç bir hata değil bir SANSÜRDÜR: kapanmış
+işlemler tanım gereği yalnızca kaybedenlerdir, kazananlar hiç kapanmaz ve R ölçümüne girmez.
+
+| | kapanmış | stop ile | kazanma oranı | ort. R | tutuş p90 / azami |
+|---|---|---|---|---|---|
+| ema A (#35975935993) | 51 | 51 | %0 | −1.03 | 390 / 6323 bar |
+| ema B | 103 | 102 | %0 | −1.06 | 459 / 2392 bar |
+| base CANLI (`ledgers/random_ctrl`, 2026-09-24) | 8 | 8 | %0 | −1.11 | — (7 açık pozisyon, çoğu kârda; hesap getirisi **+%11.1**) |
+
+İkinci iz: kazananlar kotayı kalıcı olarak doldurur — ema A'da 5466 sinyalin 54'ü doldu,
+4097'si `max_positions` ile reddedildi. Kontrol "rastgele giriş" değil, fiilen "rastgele
+giriş, kazananı sonsuza dek tut" olarak koşuyor.
+
+**Kapsam — yalnızca ema değil.** `random_ctrl` KÖK `acceptance.control_model`dür: base
+katmanının (trend, meanrev) ve ema katmanının E kapısı ona bakar. Kontrolün ortalaması
+sansür yüzünden ≈ −1R'ye yapışık olduğu için "kontrolü 0.15R marjla geç" koşulu her
+yarışmacı için pratikte bedava, fark CI'ı da yapay biçimde dar ve sıfırdan uzak
+(ema_trend ↔ random_ctrl +1.0R, CI sıfırı dışlıyor — karar 57 > damga).
+
+**Hangi kararı değiştirir.** Bugün HİÇBİRİNİ: ema_trend C-1'den kaldı (ort. R < 0); base'de
+kontrolün kendi örneklemi 8 < 30, yani E zaten DEĞERLENDİRİLEMİYOR. Ama base kontrolü n=30'a
+ulaştığı gün ve ema katmanına eklenecek her modelde E kapısı ANLAMSIZ bir referansla
+karşılaştırma yapar. Bu yüzden öncelikli.
+
+**Açık iş (şimdi değil; ayrı bir karar ve ön-kayıtla).** Kontrolün ÇIKIŞ geometrisi
+karşılaştırdığı modellerinkine eşlenmeli ki fark yalnızca giriş bilgisini ölçsün — `scalp`
+(model 23) ve `dc` (model 24) kontrollerinin deseni: aynı stop VE aynı hedef, yön ya da
+giriş rastgele. Açık sorular kullanıcınındır: (a) kök kontrolü mü düzeltmek, katman başına
+ayrı kontrol mü açmak (ema: `ema_trend`in 1.5×ATR / 2.0R geometrisi; base: trend/meanrev
+farklı geometriler taşıyor); (b) base'in canlı defteri — kural 1 gereği `random_ctrl`
+defteri silinmez; davranış değişikliği defteri tarihli olarak böler (karar 25'in `fee_rate`
+dersi), yani büyük ihtimalle yeni bir model adıyla gelir ve eski satır emekli olur.
+Model DEĞİŞTİRİLMEDİ: `random_ctrl`in "tasarımı bozulamaz" sözü tam olarak bir karar
+olmadan dokunulmamasını ister.
+
+**Neden daha önce görülmedi.** Kontrolün kazanma oranı %0 ve medyan tutuşu sonsuza yakın
+olan bir satır tabloda her turda duruyordu; `acceptance` kontrolün ÖRNEKLEMİNİ sınıyordu
+(`control_min_trades`), ÖLÇÜLEBİLİRLİĞİNİ değil. Kapanmış-işlem R'sine dayanan her kapının
+sessiz varsayımı "model pozisyonlarını bir gün kapatır"dır; bu varsayım hiçbir yerde
+sınanmıyordu.
