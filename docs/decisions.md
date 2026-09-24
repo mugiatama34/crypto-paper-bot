@@ -4552,3 +4552,45 @@ kuralı, niyeti ifadeden bağımsız kılar.
   kurulum kesişim barındaysa hedef tanımsızdır (`target_undefined`, raporlanır) ve erken
   rejim kurulumlarında R:R 1'in altına düşebilir — filtre eklenmez, `rr < 1.0` payı koşudan
   sonra raporlanır.
+## 56. TimesFM 2.5 yön isabeti: salt okunur araştırma, git geçmişi yalnızca PARİTE, sızıntıya karşı bağlayıcı Katman C
+
+**Ne.** Harici bir tahmin modelinin (`klonnist/hemstir` — Google TimesFM 2.5, zero-shot)
+48 saatlik yön isabetinin ön-kaydı (docs/backtest.md > 6k). **Repoya model EKLENMEZ:**
+defter, `config.yaml`, `strategies/`, `core/` değişmez; iş bir ölçüm betiği ve elle
+tetiklenen bir workflow olarak gelir (sonraki commit'ler).
+
+**Git geçmişi neden tek başına değerlendirilmiyor.** Kapı sayım görülmeden sabitlendi
+(çakışmasız 48s pencere ≥ 200). hemstir'in geçmişi ~10.4 gün: 5 olgun çapa, evren
+kesişiminde 52 coin-pencere, etkin küme ≤ 5 → kapı geçilmedi. Geçmiş, bizim çıkarımımızın
+hemstir'in commit'lediği tahminleri kendi girdisinden yeniden ürettiğini gösteren PARİTE
+kapısıdır (P0 model, P1 veri) — TradingView paritesinin (§6d P1) karşılığı. Parite
+tutmazsa hiçbir sayı okunmaz.
+
+**Kıyas %50 değil, üç basit kuraldır ve AYRI AYRI.** Boğa döneminde "hep yukarı" bile
+%50'nin üstünde isabet verir; %50'yi geçmek bir kenar göstermez. Her dönem "en iyi
+kuralı" seçmek seçim yanlılığını geri getirirdi; üçünü birden geçmek daha sert ama
+kesişim-birleşim testi olduğu için düzeltme gerektirmez.
+
+**Katman C bağlayıcıdır — kararın en önemli parçası.** Sıfırdan eğitilmemiş bir temel
+modelde asıl tehdit sızıntıdır: ön-eğitim verisinde 2022–2024 kripto serileri varsa model
+o dönemi hatırlıyor olabilir. Modelin görmüş olamayacağı tek veri checkpoint yayınından
+sonrasıdır (resmi `google-research/timesfm` README'si: 2025-09-15; HF revizyon tarihi
+daha geçse o). C'nin gücü B'den düşüktür ve "ayırt edilemedi" orada engelleyebilir; bu
+bedel **kabul edildi** — görmediği veride çalıştığı gösterilemeyen bir modele güvenilemez.
+
+**Kapanmamış bar sapması kabul edildi (S1).** Canlı hemstir oluşmakta olan barı girdiye
+katar; biz kural 12 gereği yalnızca kapanmış barları kullanırız. Backtest canlı
+hemstir'den hafifçe farklı ve daha temiz bir modeli ölçer; P0 bundan etkilenmez.
+
+**Körlük.** Ön-kaydı yazan taraf hemstir'in sonuç dosyalarını görmedi; incelenen README
+sürümü sonuç içermiyordu. O dosyalar bizim sonucumuz kayda geçene kadar açılmaz — sonra
+açılırsa bağımsız çapraz kontrol, önce açılırsa kirlilik.
+
+**Güç, sonuç görülmeden yazıldı:** %55 isabetli bir model bu tasarımla hiçbir dönemde
+ayırt edilemez (§6k > 9).
+
+**SONUÇ (2026-09-23, koşu #35867807908): dönem A DÜŞTÜ, B ve C koşulmadı.** TimesFM %50.8;
+TimesFM − {hep yukarı, momentum, yazı-tura} = +0.8 / +0.6 / +1.9 pp, üç küme aralığının da
+alt sınırı sıfırın altında. ~5 puanın üstünde bir kenar dışlandı; daha küçüğü bu tasarımla
+ölçülemez. Beklentinin mekanizması ("momentumun gecikmeli kopyası") çürüdü: ayrışma payı
+0.61. Ayrıntı ve öngörü eksiği (BNB) docs/backtest.md > 6k > 17.
