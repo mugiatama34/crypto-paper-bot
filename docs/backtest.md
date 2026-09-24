@@ -380,7 +380,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 4 | `xsec_mom`: kesitsel momentum (21g geriye bakış, top-3, haftalık rebalance) long-only bir edge taşır | §6g, bu commit | A: 2022-01-01 → 2024-06-30, B: A+embargo → koşu günü | P2: A'da `xsec_mom` ort. R > `xsec_random` ort. R | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 | 5 | `wave_scalp`: Elliott Wave Dalga-3 (15m, zigzag + retrace 0.236–0.886) bir edge taşır (dış sistemden) | §6h, bu commit | A: 2025-03-01 → 2025-12-31, B: A+embargo → 2026-08-31 (**Aşama 2'de**) | P1: dönem A net ort. R ≤ 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
-| 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -3698,6 +3698,62 @@ pencereyle yapılan sonraki çağrının sonucunu belirliyor. Onarımın ilkesi 
 bu betikte uygulandı. **Desen repo genelinde aranmalıdır** (`dc`den açık kalan denetim
 işi): `fetch_ohlcv`/`load_market_data`i farklı `now` ya da `history_bars` ile aynı önbellek
 dizininde birden çok kez çağıran her yol adaydır. Üçüncüsü başka bir koşuda sessizce çıkabilir.
+
+### 17. SONUÇ — dönem A DÜŞTÜ; B ve C koşulmadı *(2026-09-23, koşu #35867807908)*
+
+Tetikleyici `timesfm-eval-2.run` (commit `da88896`, onarım `0707df6`). Checkpoint revizyonu,
+ortam ve hemstir sayımı §6k > 13 ile birebir. Karar mekaniktir (§6k > 8): A'daki dokuz
+koşuldan üçü (A'nın hepsi) sağlanmadı → hipotez düştü; B ve C'nin verisi HİÇ çekilmedi.
+
+**Parite tekrarı:** P0 713/713, P1 157 573 kapanış / 0 uyuşmazlık — geçti.
+
+**Düşen gözlemler (§6k > 14 EK'in %5 eşiği aşıldı; sebep önce):** ızgara 5016, kurulan
+4410, düşen 606 (%12.1): `listelenmemis` 595 = **ETHFI 410** (öngörülmüştü: "~410") +
+**BNB 187** + `sifir_hareket` 11 (%0.22, yedi sembole dağılmış), `eksik_bar` 0.
+⚠ **Öngörü eksiği:** BNB kalemi ÖNCEDEN yazılmadı. OKX'in BNB-USDT-SWAP verisinin 2023-03'te
+başladığı repoda zaten kayıtlıydı (§6j > 2: "BNB 2023-04-02'den itibaren sayıldı"); öngörü o
+kaydı atladı. Listeleme kaynaklı düşme çıkarıldığında pay %0.22 — alet sorunu işareti yok.
+
+**Gerçekleşen ρ ve güç (§6k > 9'a karşı):** gerçekleşen yönün çapa-içi ICC'si **0.50** —
+güç tablosunun orta varsayımıyla birebir; çapa başına ort. 9.7 coin. İsabet FARKI serileri
+yönden daha az korelasyonludur (örtük ρ: hep yukarı 0.28, momentum 0.23, yazı-tura 0.08),
+bu yüzden etkin gözlem varsayılandan büyük çıktı ve gerçek MDE tablodakinden (δ=0.5, ρ=0.5:
+6.9 pp) iyi:
+
+| Kıyas | n_eff | DEFF | gerçek MDE |
+|---|---|---|---|
+| hep yukarı | 1280 | 3.45 | 5.3 pp |
+| momentum | 1481 | 2.98 | 5.7 pp |
+| yazı-tura | 2604 | 1.69 | 3.9 pp |
+
+**İsabet (küme aralığıyla):** TimesFM **%50.8** [48.6, 53.1] · hep yukarı %50.0 [46.5, 53.5]
+· momentum %50.1 [47.4, 52.9] · yazı-tura %48.9 [47.5, 50.3]. TimesFM yukarı-tahmin payı
+%53.9, gerçekleşen yukarı payı %50.0.
+
+| TimesFM − kural | Δ | küme CI (%95) | ayrışma payı | koşul |
+|---|---|---|---|---|
+| hep yukarı | +0.8 pp | [−2.9, +4.5] | 0.46 | geçmedi |
+| momentum | +0.6 pp | [−3.4, +4.6] | 0.61 | geçmedi |
+| yazı-tura | +1.9 pp | [−0.8, +4.6] | 0.50 | geçmedi |
+
+**Okuma (üç nokta):**
+
+1. **Büyük bir etki dışlandı, küçük bir etki dışlanmadı.** Üç aralığın üst sınırı ~+4.6 pp;
+   TimesFM'in en iyi basit kuralı ~5 puan ve üstü geçtiği bir dünya bu veriyle uyumsuz. Aralığın
+   içinde kalan (≤ ~4.5 pp) bir kenar bu tasarımla ne gösterilebilir ne dışlanabilir; §6k > 9'un
+   "~%55 ayırt edilemez" öngörüsü gerçekleşen güçle de geçerlidir. Sonuç "TimesFM işe yaramaz"
+   değil, **"48 saatlik yönde ölçülebilir bir üstünlüğü yok"**tur.
+2. **Beklentinin sonucu tuttu, mekanizması ÇÜRÜDÜ** (§6k > 14). A düştü ve TimesFM
+   momentumdan ayırt edilemedi; ama ayrışma payı **0.61** — "gecikmeli kopya" okumasının tam
+   tersi. İki kural gözlemlerin çoğunda FARKLI yön söylüyor (TimesFM momentuma göre daha çok
+   ortalamaya dönüş yönünde) ve ikisi de ~%50'de kalıyor. §6k > 14 EK'in çerçevesinde bu
+   **(ii)** bulgusudur: farklı şeyler yapıyorlar, fark gürültüde; aralık dar olduğu için
+   "gizli büyük fark" da yok.
+3. **BNB öngörü eksiği** yukarıda; düşme eşiği kararı değiştirmedi, çünkü eşik bir okuma
+   sırasıydı ve alet sorunu işareti yok.
+
+**Sonraki adım (ön-kayıt §6k > 2):** hemstir'in sonuç dosyaları artık — ve ancak şimdi —
+bağımsız çapraz kontrol olarak açılabilir.
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR

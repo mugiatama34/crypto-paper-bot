@@ -4588,3 +4588,9 @@ açılırsa bağımsız çapraz kontrol, önce açılırsa kirlilik.
 
 **Güç, sonuç görülmeden yazıldı:** %55 isabetli bir model bu tasarımla hiçbir dönemde
 ayırt edilemez (§6k > 9).
+
+**SONUÇ (2026-09-23, koşu #35867807908): dönem A DÜŞTÜ, B ve C koşulmadı.** TimesFM %50.8;
+TimesFM − {hep yukarı, momentum, yazı-tura} = +0.8 / +0.6 / +1.9 pp, üç küme aralığının da
+alt sınırı sıfırın altında. ~5 puanın üstünde bir kenar dışlandı; daha küçüğü bu tasarımla
+ölçülemez. Beklentinin mekanizması ("momentumun gecikmeli kopyası") çürüdü: ayrışma payı
+0.61. Ayrıntı ve öngörü eksiği (BNB) docs/backtest.md > 6k > 17.
