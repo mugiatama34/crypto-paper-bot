@@ -4594,3 +4594,134 @@ TimesFM − {hep yukarı, momentum, yazı-tura} = +0.8 / +0.6 / +1.9 pp, üç k�
 alt sınırı sıfırın altında. ~5 puanın üstünde bir kenar dışlandı; daha küçüğü bu tasarımla
 ölçülemez. Beklentinin mekanizması ("momentumun gecikmeli kopyası") çürüdü: ayrışma payı
 0.61. Ayrıntı ve öngörü eksiği (BNB) docs/backtest.md > 6k > 17.
+
+## 57. `xsec_mom` koşuldu: A'da ayırt edilemedi, B'de büyük etki DIŞLANDI — BLOKE
+
+**Karar:** kesitsel momentum tezi (21 gün geriye bakış, top-3, haftalık rebalance,
+long-only) ön-kayıtlı tek koşusunu yaptı ve **kapılardan geçemedi.** Tez bu hâliyle
+KAPANIR; hiçbir parametre oynatılmaz.
+
+Koşu: `backtest-xsec` #35578057311, `main` @ `2fdb812`, 2026-09-21. Ön-kayıt
+docs/backtest.md > 6g (commit `b112def`, koşudan dokuz gün önce). Sonuç tablosu
+§6g > SONUÇ; sicil satırı §6c > 4.
+
+### Ne oldu
+
+| | Dönem A (IS) | Dönem B (OOS) |
+|---|---|---|
+| Pozisyon | 95 | 110 |
+| Ortalama R | +0.484 | +0.003 |
+| Kontrol (`xsec_random`) | +0.068 (n=164) | +0.170 (n=171) |
+| Fark, %95 CI | +0.416, [−0.186, +1.162] | −0.167, [−0.546, +0.197] |
+| Çıpa (`buyhold`) | +%123.0 ↔ model +%45.5 | −%4.8 ↔ model +%0.9 |
+| Max drawdown (K-3 tavanı %25) | −%16.06 | **−%25.92** |
+| *aynı pencerede KONTROLÜN drawdown'u* | *−%24.1* | *−%23.3* |
+
+Bağlayıcı kapılardan E iki dönemde de, K-3 dönem B'de düştü.
+
+### Kaydın ASIL noktası: A ile B aynı şeyi söylemiyor
+
+Kolay okuma "iki dönemde de edge bulunamadı" demek olurdu. O okuma, elde olan iki ayrı
+kanıt sınıfından birini siler:
+
+- **A'da ayırt edilemedi.** Nokta tahmini (+0.416R) bağlayıcı kapının MDE'sine (≈0.42R)
+  neredeyse eşit ve aralık sıfırı içeriyor. Ön-kayıt bu durumu ÖNCEDEN adlandırmıştı:
+  *"'ayırt edilemedi' beklenen sonuçlardan biridir ve tezin reddi olarak okunmaz."*
+- **B'de tezin ÖNGÖRDÜĞÜ BÜYÜKLÜK dışlandı.** Farkın aralığının üst sınırı +0.197R; tez
+  ise ≈0.42R'lik bir etki arıyordu. Yani B, 0.2R'den büyük bir üstünlüğü %95 güvenle
+  dışlıyor — üstelik işaret ters, kontrol önde. Küçük bir etki dışlanmadı ama bu kurulum
+  onu zaten ölçemez.
+
+Ön-kayıttaki "reddi olarak okunmaz" cümlesi A'yı kapsar, B'yi kapsamaz — ve bu cümleyi
+çiğnemek DEĞİLDİR: cümle "ayırt edilemedi" durumu için yazıldı, B o durum değil. Bir
+ön-kaydın kapsamını sonradan GENİŞLETMEK de daraltmak kadar ihlaldir; burada yapılan,
+cümlenin zaten çizdiği sınırı görmektir.
+
+### K-3 ihlali MODEL-ÖZGÜ DEĞİL, YAPISAL — bu okumayı değiştirir
+
+Kontrolün (`xsec_random`) drawdown'u aynı pencerelerde **−%24.1** ve **−%23.3**. Yani
+rastgele üç coin seçen, başka hiçbir şeyi farklı olmayan bir portföy de tavanın hemen
+altında duruyor. Drawdown'u üreten şey SEÇİM KURALI değil, yapının kendisi: long-only,
+üç pozisyonda yoğunlaşmış, %11 stop mesafeli bir kripto portföyü. Momentum onu
+%25.92'ye taşıdı; zemini %23–24'te bulan o değil.
+
+**Bu ayrım kayda ayrıca yazıldı, çünkü yokluğunda yanlış okunur:** ileride biri
+"momentum drawdown'u artırdı" diye okuyabilirdi. K-3'ün düşmesi tezin aleyhine bir kanıt
+DEĞİLDİR — bu yapının K-3 tavanına yapısal olarak yakın olduğunun kanıtıdır. Kapı yine
+de bağlayıcı ve koşu yine BLOKE: **bir kapının neden düştüğünü bilmek onu geçmiş
+saymaz.** (Aynı asimetri çıpa istisnasında da var: yalnızca DUR üretir, asla otomatik
+GEÇTİ.)
+
+Sayı bir SINIR bilgisi de taşıyor: `top_k`, yön kotası ve eşzamanlı pozisyon sayısı
+değişmeden bu katmanda K-3'ü rahatça geçen bir model beklemek gerçekçi değil. Bunu bir
+ayar önerisine çevirmek §7.1'dir; burada ölçülen olgu olarak durur.
+
+### Friksiyon tasarımı ÇALIŞTI — tez düştü, İLKE doğrulandı
+
+`cost_per_r` **0.025 – 0.028**; `ema_trend`in **0.057**'si. 5×ATR stop'un ön-kayıtlı
+gerekçesi — `friksiyon/R = 2c / stop%`, yani R başına friksiyon stop mesafesiyle ters
+orantılı (karar 35'in özdeşliği) — veride tuttu: stop genişledi, R başına friksiyon
+yarıya indi.
+
+**Projeksiyonun BÜYÜKLÜĞÜ tutmadı ve bu da kayda geçer.** Ön-kayıt "~3.3 kat düşer"
+diyordu; ölçülen ~2.0–2.3 kat. Sebep aritmetiktir: projeksiyon ATR ÇARPANLARININ oranını
+(5.0 / 1.5 = 3.33) doğrudan `stop%` oranına taşımıştı, oysa bu ancak iki model aynı
+`ATR/fiyat` değerini görürse geçerli — görmüyorlar (`ema_trend` `wilder`, `xsec` `simple`;
+üstüne farklı pencere ve sembol karışımı). Özdeşlik yanlış değil, ona verilen girdi
+yanlıştı — ve bu, bir sonraki ön-kayıt için doğrudan kullanılabilir bir derstir: `stop%`
+oranı ATR çarpanı oranından TÜRETİLEMEZ, ÖLÇÜLÜR.
+
+**İlke neden tezden ayrı kaydediliyor:** karar 35'in özdeşliği ve §6e > KAYIT'ta duran
+"açık kalan tek kaldıraç stop mesafesidir" cümlesi buna dayanıyor. Tez düştü diye ilkeyi
+de düşmüş saymak, bir sonraki ön-kaydın dayanağını sessizce silmek olurdu. Doğrulanan
+şey friksiyonun KONTROL EDİLEBİLİRLİĞİDİR, modelin kârlılığı değil — nitekim aynı oranda
+R başına sürüklenme de küçüldü ve ön-kayıt bunu önceden yazmıştı.
+
+### İkinci bulgu: stop haftalık ufuk için hâlâ DAR
+
+Ön-kayıtlı P1 (rebalance çıkışı ≥ %70) **düştü: %57.9.** Yani çıkışların %42'si
+stop/likidasyon ve "baskın çıkış rebalance olsun" tasarım niyeti tutmadı. Aynı darlık
+dönem B'de K-3 ihlalini üretiyor: pozisyonlar hedefledikleri rebalance gününe varmadan
+ölüyor, hesap %25 tavanının üstüne çıkıyor. **İki gözlem tek mekanizmayı gösteriyor ve
+burada bir KAYIT olarak durur** — bir çarpan önerisine çevirmek §7.1'in yasakladığı
+şeydir (sonucu görüp parametre aramak).
+
+### Üçüncü bulgu: model boğa piyasasının büyük kısmını kaçırdı
+
+Dönem A'da model çıpanın üçte birini getirdi (+%45.5 ↔ +%123.0). P4 yönü önceden
+yazmıştı ama BÜYÜKLÜĞÜ yazmamıştı. Long-only bir top-k modelin haftalık rebalance'la
+nakde çıktığı günler, çıpanın kesintisiz taşındığı günlerdi.
+
+### Ön-kayıtlı raporlamanın iki kalemi transkribe edilemedi
+
+Çıkış kırılımının tamamı ve tutuş süresi dağılımı `results.json`'da var ama workflow
+log'a yalnızca `gates` bloğunu basıyor ve artifact'e koşuyu yürüten oturumdan
+erişilemedi; aynı sebeple güç bölümünün söz verdiği sd karşılaştırması da yapılamadı.
+P1'in sayısı (%57.9) kapı yükünden okundu ve doğrudur. **Onarım workflow'dadır, koşuda
+değil:** tam yük log'a basılacak. Koşu yeniden koşulmaz.
+
+**Kaynak ayrımı yazılır:** kapı tablosu log'daki `gates` bloğundan; kontrolün drawdown'u
+ve `cost_per_r` ise orada yok — ikisi `results.json`'ı doğrudan açan depo sahibinden
+geldi. Aynı dosyanın aynı koşusudur, ama bir sonraki okuyucu o satırları log'da arayıp
+bulamayacağı için kanal kaydedilir.
+
+Örneklem tahmini ise okunabildi ve düştü: ön-kayıt A'da ~150–200 işlem bekliyordu,
+ölçülen 95 — yani kurulumun gerçek gücü ön-kayıtta yazılandan da düşüktür.
+
+### Neden bu koşu manipüle edilemezdi
+
+Tetiklemeden hemen önce kontrolün tohumunun ön-kayıtta SABİT olmadığı fark edildi
+(commit `b86b599`): `random_seed` serbest kalsaydı aynı model, aynı pencere ve aynı
+defterle "kontrol kötü çıkana kadar yeniden koş" mümkün olurdu — aranan şey modelin bir
+parametresi değil KARŞILAŞTIRMA ZEMİNİ olurdu ve bağlayıcı kapı tam olarak o zemine
+dayanıyor. Tohum (20240217) koşudan önce yazıldı, cümlesi ("koşu tek seferliktir, farklı
+tohumla yeniden koşulmaz") eklendi ve eşitliği `tests/test_docs_sync.py`ye mekanik kapı
+olarak kondu. **Ders:** bir kontrol grubunun BİLGİSİZ olması onu manipülasyona kapalı
+yapmaz — bilgisiz bir çekiliş de yeniden çekilebilir.
+
+### Ne YAPILMAYACAK
+
+§7 bağlayıcıdır. Stop çarpanı, `top_k`, geriye bakış penceresi, rebalance sıklığı,
+katman tavanı ve tohum — hiçbiri sonuca bakılarak değiştirilmez. Ekseni yeniden açmanın
+tek yolu yeni bir ön-kayıttır (karar 49'un `ema_trend` çıkış ekseninde bıraktığı kuralın
+aynısı). `xsec` katmanının tetikleyicisi yoktur ve bu koşudan sonra da yoktur.
