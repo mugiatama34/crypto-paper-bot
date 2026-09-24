@@ -5206,3 +5206,18 @@ veri görülmeden commit edildi. Model, config, strateji, defter DEĞİŞMEDİ.
 **Bir seçim kayda geçer:** aile içi BH q = 0.05, §6c'nin 0.10'u değil — m = 3'te q = 0.10
 ile "%95 CI alt sınırı > 0" şartı BH'yi her durumda geçirir ve düzeltme süs olurdu.
 Gerekçe §6l > 6.
+
+### SONUÇ — koşuldu, üç birim de GEÇMEDİ *(2026-09-24, `measure-regime` #35995280008)*
+
+Kapılar geçti (artifact defterleri karar 59'un sayılarını birebir üretti; xsec dönem A orijinal
+koşuyla alan bazında birebir). Dönem A'da H1a `ema_trend` −0.133R, H1b `xsec_mom` −0.048R, H2
+`dc_short` +0.211R karşıtlık; üçünün de %95 küme aralığı sıfırı içeriyor, BH p'leri 0.46–0.92.
+Hiçbir birim MODELDEN etiketi almadı; B'de doğrulanacak birim yok. B'de `dc_short`un karşıtlığı
+TERS yönde ve kontrolüyle birlikte (DiD ≈ 0) — rejim farkı modelle kontrolü birlikte hareket
+ettiriyor, modele özgü etki yok. **Okuma (ön-kayıtlı):** mevcut modeller rejim mekanizmasına aday
+değil; tezin reddi değil. MDE 0.50–1.09R: yalnızca büyük etkiler görülebilirdi. Ayrıntı ve
+beklenti ↔ sonuç: docs/backtest.md > 6l > SONUÇ; yük ve sabitlenmiş BTC serisi
+`docs/data/regime_results.json`, `docs/data/regime_days.csv`.
+
+**Karar üretmez:** hiçbir model, filtre, parametre değişmez. `dc_short` A'daki oynaklık deseni
+ön-kayıtta olmadığı için seçilmedi; yalnızca görüldüğü kayda geçti.
