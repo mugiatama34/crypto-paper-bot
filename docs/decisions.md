@@ -4814,3 +4814,112 @@ katmanlıdır: modellerin üçü de (`dc/signal.py`, `ema_trend.py`, `xsec/ranki
 bir yönü (bayat önbellek → eksik bar) düşünülmüştü; ters yön (yeni önbellek → fazla bar)
 hiçbir kapıya takılmıyordu. Bir kapının var olması yetmez: xsec'te sayaç doğru saydı,
 kimse okumadı. İddialar silinmedi, ⚠ ile düzeltildi.
+
+## 59. Önbellek + pencere sınıfı: onarım MERKEZDE, pencere kapısı GENEL, kapanmış koşular YENİDEN koşulur — sonuç ne olursa olsun eskisinin yerine geçer
+
+*(2026-09-24; bu karar yeniden koşuların HİÇBİRİ başlamadan commit edildi.)*
+
+**Ne.** Karar 58 taşmayı teşhis etti ve bir kesim onarımı getirdi (`3a28289`). Bu karar
+hata SINIFININ repo genelindeki denetimidir (bilinen iki örnek: `backtest-dc`
+#35839008498 ve `measure-timesfm` #35861965835) ve 58'in bıraktığı dört boşluğu kapatır.
+Model, kapı ve strateji DEĞİŞMEDİ — yalnızca veri katmanı, harness, workflow anahtarları,
+testler ve kayıtlar.
+
+**Denetimin bulguları (58'in teşhisine EK olanlar):**
+
+| # | Yer | Arıza | Durum |
+|---|---|---|---|
+| M3 | `core/data.py::fetch_ohlcv` | Önbellek yalnızca İLERİYE tamamlanıyordu: sığ bir önbellek daha derin bir isteği sessizce kısaltıyordu (600 barlık dosya + 3000 bar isteği → 600). 58'in kesimi bunu kapatmaz. | **ONARILDI** — geriye tamamlama |
+| M4 | `core/data.py::fetch_ohlcv` / `fetch_funding` | Dosya AYRIK parçalar taşıyabilir (TimesFM'in üç isteği aynı dizinde: P1 bugün-sığ, A 2024-derin, B bugün-derin). Bar SAYISI tuttuğu için tamamlama atlanıyor ve B'nin ortasında **576 günlük** bir delik kalıyordu (testle üretildi). Bu arıza denetimin kendi ilk onarımında da vardı ve push'tan önce diff'in düşmanca okunmasıyla bulundu | **ONARILDI** — pencere içi delik borsaya bir kez sorulur |
+| M5 | `core/data.py::fetch_funding` | Fonlama önbelleği her yazımda "şimdi"ye göre `tail(periods)` ile BUDANIYORDU — geçmiş bir `now`ın meşru kayıtlarını siliyordu | **ONARILDI** — dosya budanmaz, dönen seri kesilir |
+| M7 | `scripts/diagnose_ema_exits.py::_load_candles` | Parquet'i HAM okuyordu: çıkış sonrası yol, önbellekte ne varsa (2026-09) onu görebiliyordu. 58 bunun #35435506689'da hiçbir ölçüye girmediğini logdan doğruladı (okunan en geç bar ≈ 2024-07-29); arıza kodda duruyordu | **ONARILDI** — `core/data.py::cached_ohlcv` |
+| M8 | `scripts/measure_timesfm.py::load_closes` | Onarım betiğin İÇİNDE yaşıyordu (çağrı başına ayrı dizin + ikinci kesim) — ilke iki yerde | **MERKEZE BAĞLANDI** — yama kaldırıldı |
+| W | `.github/workflows/*` | `actions/cache` önek eşleşmesi: `market-data-ema-` öneki `market-data-ema-diag-…`i yakalıyor, dc ema'nın önbelleğini geri yüklüyordu (#35839008498'in kök nedeni) | **ONARILDI** — anahtarlar |
+| G | `scripts/backtest.py` | Kısmi pencere yalnızca bir sayaçta (`missing_bars`) duruyordu; xsec #35578057311 ölçülmemiş bir pencereye karar verdi | **GENEL KAPI** |
+
+**Onarımın ilkesi: önbellek bir veri deposudur, pencerenin tanımı DEĞİL.** Anahtar
+(sembol, zaman dilimi) kalır ama önbelleğin DURUMU hiçbir koşunun sonucunu belirleyemez:
+(4) dönen seri, kaynağı ne olursa olsun `now`dan önce kapanmış barlara kesilir; (5) istenen
+derinlik karşılanmıyorsa eksik geçmiş borsadan geriye doğru tamamlanır. "Anahtara `now` ve
+derinliği ekle" ya da "yükleme başına ayrı dizin" seçenekleri AYNI sonucu verirdi ama
+önbelleği koşu sayısıyla çoğaltırdı; kural önbelleğin içeriğine değil DÖNÜŞE bağlandığı
+için tek dosya yeterlidir. Borsanın tabanı (yeni listelenmiş sembolde daha eski bar YOK)
+önbelleğin yanında `*.floor.json` olarak saklanır — yalnızca "istek atma" kararına girer,
+hiçbir seriyi kesmez; kaybolması en kötü ihtimalle bir boşuna istektir.
+
+**Pencere kapısı (`assert_window_covered`) — karar 51'in pencere karşılığı:** ölçülmek
+istenen pencere ölçülmediyse koşu SONUÇ ÜRETMEZ, çıkış kodu **3**'tür. Üç koşul:
+çıpanın (BTC) ilk barı `start − ısınma`dan geç değil; `as_of > start`; `as_of ≤ end`.
+**Isınma = katmanın canlı `data.history_bars`ı** — ilk barda model canlı bir turda
+göreceği geçmişi görmeli; model başına bir ısınma listesi yazılmadı, çünkü bir model
+eklendiğinde sessizce eskirdi. Ölçüt çıpadır, her sembol değil: geç listelenen sembol
+kendi başlangıcından girer (kabul edilmiş, loglanan durum). Tek sembollü döngüler
+(`backtest_ema`, `backtest_dc`) kapıyı `failed` satırına ÇEVİRMEZ, yeniden fırlatır:
+kısmi pencere bir sembolün arızası değil, koşunun ölçülemediğidir.
+**Bedeli bilinçli:** `--history-bars` artık pencere + ısınmayı karşılamak ZORUNDA.
+`backtest_xsec`in varsayılanı 3000 → **12000** (ema/dc'nin derinliği); bu, sonucu
+değiştirmemesi beklenen DERİNLİK sınıfındadır (docs/backtest.md > 5g) ve manifest'e yazılır.
+
+**Workflow anahtarları — ikinci katman.** Merkezi onarım kirli bir önbelleği zararsız kılar;
+yine de anahtarlar düzeltildi: `market-data-v2--<workflow>[--<katman>]--<run_id>`, her
+workflow YALNIZCA kendi ad alanını geri yükler. `--` sonlandırıcısı bir önekin başka bir
+anahtarın öneki olmasını imkânsız kılar; `v2` eski kirli önbellekleri bir daha geri
+yüklemez. Workflow'lar arası paylaşım kaldırıldı (bedeli: her workflow'un ilk koşusu soğuk
+indirir). Kural bir testle sabit: `tests/test_data_window.py` her `data/cache` adımının
+restore önekinin başka hiçbir workflow'un anahtarını yakalayamadığını sınar.
+
+**İleriye bakış: YOK — testle.** Motor her barı kendi anına keser (`Engine._snapshot`);
+casus model taşan bir anlık görüntüde bile bar t'de t'den sonrasını görmedi
+(`tests/test_data_window.py`; 58'in `tests/test_lookahead.py`si aynı şeyi altı model için
+yoklar). Etki bu yüzden **pencere kontaminasyonudur** — dönem A'nın pozisyon yönetimi,
+çıpası, özsermayesi ve drawdown'ı dönem dışı fiyatlarla ölçüldü —, kapanmış kararların
+SİNYAL tarafı değil.
+
+**Testler.** `tests/test_data_window.py`: iki bilinen senaryo BİREBİR (dc: önbellek daha
+sonraki bir koşudan 2026-09'a dolu, A `now=2024-12-31` ile okunur; TimesFM: sığ ve taze
+önbellek, derin ve geçmişteki istek), derinlik tamamlama, borsa tabanı, fonlama, salt
+okunur ikiz, casus model, pencere kapısı (xsec senaryosu dâhil), çıkış kodu, döngülerin
+kapıyı yutmaması, workflow anahtarları, ayrık önbellek parçaları. 58'in kesim onarımı
+üzerinde (bu kararın kodu olmadan) 22 testin 14'ü kırmızı.
+
+### YENİDEN KOŞU KURALI (ön-kayıt — hiçbir yeni sayı görülmeden)
+
+**Bu yeniden koşular bir ALET düzeltmesidir.** Model, parametre, tohum, maliyet ve kapı
+değişmedi; karar yeni sayılar görülmeden bu metinle verildi. Bu yüzden:
+
+1. **Düzeltilmiş koşunun sonucu, NE OLURSA OLSUN, eskisinin yerine geçer** ve karar AYNI
+   ön-kayıtlı kapılarla yeniden değerlendirilir. Karar değişirse değişir. **xsec_mom
+   kapılardan geçerse bu meşru bir sonuçtur** — ilk ölçüm geçersizdi, ikincisi bir "sonucu
+   görüp tekrar koşma" (§7) değil, hiç yapılmamış ön-kayıtlı koşunun kendisidir.
+2. **xsec'in önceki kararı varsayılmaz.** 58 ve ADIM 1 dönem A çıpasına odaklandı
+   (+122.97% → +9.97%); ama B de kesikti (istenen 2024-07 yerine 2025-05-09'dan) ve embargo
+   kesik A'dan ölçüldü. Yani K-3'ün B ihlali ve E'nin iki dönemdeki sonucu da yanlış
+   pencereden geliyor. Düzeltilmiş koşunun kararı eskisiyle aynı çıkabilir ya da çıkmayabilir.
+3. **dc için aynısı.** Embargo kirli A tutuş süresinden türetildi (model zaman stop'u
+   taşımaz; taşan A'da pozisyonlar 2026'ya kadar yönetilebildi), yani B'nin başlangıcı da
+   değişecek. 58'in "B tek başına kalıyor, karar değişmez" okuması YENİDEN DEĞERLENDİRİLİR,
+   varsayılmaz.
+4. **Eski kayıtlar silinmez:** her birine `⚠ DÜZELTİLDİ (karar 59)` damgası + yeni sayılar +
+   kararın değişip değişmediği eklenir.
+5. **Her yeniden koşu kendi tetikleyicisiyle, TEK SEFERLİK:** bu dalın koduyla
+   `workflow_dispatch`, bir kez. Başarısız bir koşu (altyapı) yalnızca hiçbir sayı
+   üretmeden düştüyse tekrarlanır ve bu kayda geçer.
+6. **Değişen TEK girdi:** xsec `--history-bars` 3000 → 12000 (derinlik sınıfı; eski değer
+   pencereyi karşılamadığı için kapı onu reddeder). Başka hiçbir girdi değişmez.
+
+**Sıra (ön-kayıtlı):**
+
+| # | Koşu | Neden | Ön-kayıtlı beklenti (farkın mekanizması) |
+|---|---|---|---|
+| 1 | `backtest-ema` (#35391881083'ün yerine) | Pencere temizdi (58) — **onarımın doğru çalıştığının kanıtı** | Kapı bloğu BİREBİR aynı. Fark çıkarsa onarım yanlıştır ve sonraki koşular BAŞLATILMAZ; tek kabul edilebilir istisna 58'in "açık not"undaki ≤ 0.05 puanlık çıpa kayması (veri kaynaklı, kapıları değiştirmez) |
+| 2 | `backtest-dc` (#35839008498) | A taştı | A'nın kapanmış işlemleri, kapanışı 2024-12-30T20:00'dan ÖNCE olanlarla aynı; fark (a) o sınırdan SONRA kapanan pozisyonlardan (artık açık kalır, R'ye girmez), (b) çıpadan (A +18.87% → ~+43.4%), (c) özsermayeden türeyenlerden (K-3, getiri), (d) embargo → B penceresinden gelir. Bunların dışında bir fark onarımın dışındadır ve raporlanır |
+| 3 | `backtest-xsec` (#35578057311) | A ve B kesikti | Tahmin YOK — ilk kez ön-kayıttaki pencerede ölçülüyor. Tek kontrol: A çıpası 58'in doğru pencere ölçümüyle (+9.97%) uyuşmalı |
+| 4 | `diagnose-ema-exits` (#35435506689) | A taştı (sayılar değişmedi — 58) | Determinizm kapısı ve tüm yol istatistikleri BİREBİR aynı; `window.end` 2024-12-30T20:00 |
+| 5 | `measure-timesfm` parite + değerlendirme (#35867807908) | Onarım merkeze taşındı | Dönem A'nın isabet sayıları BİREBİR aynı (betik içi onarım zaten doğru çalışıyordu) |
+| 6 | `measure-death-cross` (#35718873885) | Koşuya özel geçici önbellek — etkilenmedi | Sayım BİREBİR aynı (1090 birincil) |
+
+`measure_funding` ve probe'lar `core/data` önbelleğini kullanmaz — yeniden koşulmaz.
+`backtest` #35701959605 (wave EK-1) ve `backtest.yml`in öteki başarılı koşuları 58'de
+logdan TEMİZ doğrulandı (önbellek uçları istenen bitişin gerisinde); EK-1'in taşıdığı tek
+sonuç ("OKX 15m geçmişi dönem A'nın başına ulaşıyor") bir taşmayla değişemez — yeniden
+koşulmaz.
