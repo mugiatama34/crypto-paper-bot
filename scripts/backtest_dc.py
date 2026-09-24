@@ -174,6 +174,28 @@ def _percentiles(values: Sequence[float], alpha: float) -> tuple[float, float]:
     )
 
 
+def cluster_mean_draws(groups: Mapping[str, Sequence[float]], *, iterations: int, seed: str) -> list[float]:
+    """Küme bootstrap ÇEKİLİŞLERİ (ortalama R): C kümeden C tanesi YERİNE KOYARAK.
+
+    `cluster_mean_ci` aralığı bunlardan kurar; çekilişlerin kendisi ayrıca açıktır çünkü
+    §6l'nin BH adımı aynı çekilişlerden bir p değeri ister — ikinci bir örnekleme, aynı
+    sorunun iki ayrı cevabı demekti.
+    """
+    ids = sorted(groups)
+    sums = [float(sum(groups[i])) for i in ids]
+    counts = [len(groups[i]) for i in ids]
+    rng = random.Random(seed)
+    means: list[float] = []
+    for _ in range(int(iterations)):
+        total = count = 0.0
+        for _ in ids:
+            k = rng.randrange(len(ids))
+            total += sums[k]
+            count += counts[k]
+        means.append(total / count)
+    return means
+
+
 def cluster_mean_ci(
     groups: Mapping[str, Sequence[float]],
     *,
@@ -188,42 +210,27 @@ def cluster_mean_ci(
     evaluable = len(ids) >= MIN_CLUSTERS and iterations > 0
     if not ids or iterations <= 0:
         return ClusterCI(definition=definition, low=None, high=None, clusters=len(ids), n=n, evaluable=False)
-    sums = [float(sum(groups[i])) for i in ids]
-    counts = [len(groups[i]) for i in ids]
-    rng = random.Random(seed)
-    means: list[float] = []
-    for _ in range(int(iterations)):
-        total = count = 0.0
-        for _ in ids:
-            k = rng.randrange(len(ids))
-            total += sums[k]
-            count += counts[k]
-        means.append(total / count)
+    means = cluster_mean_draws(groups, iterations=iterations, seed=seed)
     low, high = _percentiles(means, alpha)
     return ClusterCI(definition=definition, low=low, high=high, clusters=len(ids), n=n, evaluable=evaluable)
 
 
-def cluster_diff_ci(
+def cluster_diff_draws(
     model: Mapping[str, Sequence[float]],
     control: Mapping[str, Sequence[float]],
     *,
-    definition: str,
-    alpha: float,
     iterations: int,
     seed: str,
-) -> ClusterCI:
-    """`ort(model) − ort(kontrol)` — EŞLEŞTİRİLMİŞ küme bootstrap'ı (§6j > 8).
+) -> tuple[list[float], int]:
+    """EŞLEŞTİRİLMİŞ küme bootstrap ÇEKİLİŞLERİ: `(farklar, atılan çekiliş)`.
 
     Kümeler iki modelde ORTAKTIR (kontrol aynı kurulum barlarında yazı-tura atar), bu
     yüzden her iterasyonda küme etiketleri BİR KEZ, iki modelin kümelerinin BİRLEŞİMİNDEN
-    çekilir. `core/metrics.py::bootstrap_diff_ci`ın bağımsız yeniden örneklemesi burada
-    var olan bir kovaryansı atmak olurdu. Bir tarafı boş kalan çekiliş atılır ve SAYILIR.
+    çekilir. Bir tarafı boş kalan çekiliş atılır ve SAYILIR; atılanın yerine yenisi çekilir,
+    ama sonsuz döngü olmasın diye tavanlı — tavana varılırsa dönen liste `iterations`tan
+    kısadır ve çağıran onu DEĞERLENDİRİLEMEZ sayar.
     """
     ids = sorted(set(model) | set(control))
-    n = sum(len(v) for v in model.values()) + sum(len(v) for v in control.values())
-    evaluable = len(ids) >= MIN_CLUSTERS and iterations > 0
-    if not model or not control or iterations <= 0:
-        return ClusterCI(definition=definition, low=None, high=None, clusters=len(ids), n=n, evaluable=False)
     m_sum = [float(sum(model.get(i, ()))) for i in ids]
     m_cnt = [len(model.get(i, ())) for i in ids]
     c_sum = [float(sum(control.get(i, ()))) for i in ids]
@@ -232,8 +239,6 @@ def cluster_diff_ci(
     diffs: list[float] = []
     dropped = 0
     attempts = 0
-    # Atılan çekilişler yerine yenisi çekilir, ama sonsuz döngü olmasın diye tavanlı:
-    # tavana varılırsa aralık DEĞERLENDİRİLEMEZ.
     while len(diffs) < iterations and attempts < 4 * iterations:
         attempts += 1
         ms = mc = cs = cc = 0.0
@@ -247,6 +252,29 @@ def cluster_diff_ci(
             dropped += 1
             continue
         diffs.append(ms / mc - cs / cc)
+    return diffs, dropped
+
+
+def cluster_diff_ci(
+    model: Mapping[str, Sequence[float]],
+    control: Mapping[str, Sequence[float]],
+    *,
+    definition: str,
+    alpha: float,
+    iterations: int,
+    seed: str,
+) -> ClusterCI:
+    """`ort(model) − ort(kontrol)` — EŞLEŞTİRİLMİŞ küme bootstrap'ı (§6j > 8).
+
+    Çekilişler `cluster_diff_draws`tandır. `core/metrics.py::bootstrap_diff_ci`ın bağımsız
+    yeniden örneklemesi burada var olan bir kovaryansı atmak olurdu.
+    """
+    ids = sorted(set(model) | set(control))
+    n = sum(len(v) for v in model.values()) + sum(len(v) for v in control.values())
+    evaluable = len(ids) >= MIN_CLUSTERS and iterations > 0
+    if not model or not control or iterations <= 0:
+        return ClusterCI(definition=definition, low=None, high=None, clusters=len(ids), n=n, evaluable=False)
+    diffs, dropped = cluster_diff_draws(model, control, iterations=iterations, seed=seed)
     if len(diffs) < iterations:
         return ClusterCI(
             definition=definition, low=None, high=None, clusters=len(ids), n=n,

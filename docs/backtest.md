@@ -4422,6 +4422,42 @@ okuması iki kaynağa bölünmüştür.
 koşusu yine §6l > 7'nin kurallarıyla (tek sefer, xsec A determinizm kapısı) yapılır; bir
 aksilik çıkarsa yeniden koşu için zaman kalsın diye koşu bu tarihten belirgin önce hedeflenir.
 
+### TADİLAT-2 — q gerekçesinin DÜZELTMESİ + uygulamanın dar okumaları *(2026-09-24, ölçüm betiği yazılırken, HİÇBİR veri görülmeden)*
+
+**1. q = 0.05 gerekçesi YANLIŞ YAZILMIŞTI; karar değişmiyor.** Bölüm 6 "q = 0.10 ile m = 3'te
+%95 aralık şartı BH'yi her durumda geçirirdi" diyor. Bu yalnızca TEK YÖNLÜ p için doğrudur
+(%95 iki yönlü aralığın alt sınırı > 0 ⇔ tek yönlü p < 0.025 < 0.033). Ön-kayıt ise İKİ
+YÖNLÜ p tanımlıyor ve o p ile q = 0.10'un eşikleri 0.033 / 0.067 / 0.10'dur: 2. ve 3. sıra
+hiç bağlamaz, **1. sıra (0.033, 0.05) bandında BAĞLARDI.** Yani q = 0.10 tamamen süs değildi,
+yalnızca büyük ölçüde etkisizdi. Hata betiğin testi yazılırken ortaya çıktı
+(`tests/test_measure_regime.py::test_where_q_binds_on_two_sided_p`) ve burada düzeltilir; silinmez.
+**Karar q = 0.05 olarak KALIR** — üç sırada da bağlar (0.0167 / 0.033 / 0.05), 0.10'dan
+kesin olarak daha sıkıdır ve hiçbir veri görülmeden seçildi. İki yönlü p de KALIR: yön şartı
+(a)'da ayrıca istendiği için iki yönlü p tek yönlüden muhafazakârdır.
+
+**2. Uygulamanın ön-kayıttan DAR okuduğu noktalar (hepsi daha muhafazakâr):**
+- **Artifact kaydı bir KAPIDIR** (§6l > 7 "karşılaştırılır ve raporlanır" diyordu): okunan
+  defter karar 59'un kayıtlı sayılarını (ema A portföy 369 / −0.001489; dc A 336 / −0.0486,
+  kontrol 407 / −0.0937; dc B 246 / +0.0516, kayıttaki hassasiyette) üretmezse rapor
+  YAZILMAZ, çıkış 3. Yanlış koşunun defteriyle "ölçülmüş" bir sonuç, hiç sonuç olmamasından kötüdür.
+- **DiD'in değerlendirilebilmesi** model ve kontrol karşıtlıklarının ikisinin de asgari
+  örneklemi (≥ 10 ay, ≥ 30 pozisyon/marjinal) sağlamasını ve ≥ 10 ortak ay kümesini ister.
+- **"Model X rejime göre farklı çalışıyor" cümlesi** DOĞRULANDI ∧ **A'nın VE B'nin**
+  etiketi MODELDEN iken yazılır (8 dönemi söylemiyordu; iki dönemin etiketi ayrı raporlanır).
+- **Tohum:** karşıtlık `f"{random_seed}:regime:{birim}:{kaynak}:{dönem}"`; aynı kökten
+  türeyen yan akışlar `:lehte`, `:aleyhte`, `:cell:<hücre>`, `:kontrol:<model>`, `:did` ekini alır.
+- **Ölçülemeyen birim** (xsec determinizm kapısı düşerse) aileye p = 1 ile girer, m = 3 kalır.
+
+**3. İKİ AŞAMA (altyapı güvencesi, ölçümün kuralı değil).** Bu ortam ne artifact indirebilir
+ne OKX'e ulaşabilir; ilk sınama Actions'ta olur. Tek seferlik ölçümü bir altyapı aksiliğine
+yakmamak için workflow iki aşamalıdır (`.github/workflows/measure-regime.yml`):
+- `preflight` — artifact'lerin dosya VARLIĞI ve BTC serisinin KAPSAMI (ilk/son bar, eksik gün,
+  ilk tanımlı gün). **Hiçbir R, pozisyon sayısı ya da işlem-rejim ataması üretmez** (test:
+  `test_preflight_reads_no_ledger_content`); tekrarlanabilir.
+- `measure` — §6l > 7'nin tek seferlik koşusu.
+BTC serisinin 2020-11-01'e ulaşmaması bir kapı DEĞİLDİR (4: tanımsız pozisyon sayılır ve
+raporlanır); preflight onu yalnızca ÖNCEDEN görünür kılar.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
