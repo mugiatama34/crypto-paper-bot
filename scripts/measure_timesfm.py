@@ -602,27 +602,26 @@ def load_closes(
 ) -> dict[str, pd.Series]:
     """Kapanmış 1H kapanışları; `now`dan İLERİSİ ne çekilir ne DÖNDÜRÜLÜR.
 
-    Her çağrı KENDİ önbellek dizinini kullanır. Paylaşılan önbellek bir kez ölçülmüş bir
-    arızadır (koşu #35861965835): P1'in yazdığı 2026-09 barları önbellekte kaldı,
-    `fetch_ohlcv` "önbellek zaten güncel" deyip dönem A için hiç geriye gitmedi ve A'nın
-    serisi yalnızca `now`dan SONRAKİ barlardan oluştu — 5016 gözlemin tamamı düştü. İkinci
-    savunma kesimdir: dönen seri, kaynağı ne olursa olsun `now`dan önce kapanmış barlara
-    indirilir; dönem kapısı böylece önbelleğin durumuna değil tek bir satıra bağlanır.
+    Paylaşılan önbellek bir kez ölçülmüş bir arızadır (koşu #35861965835): P1'in yazdığı
+    2026-09 barları önbellekte kaldı, `fetch_ohlcv` "önbellek zaten güncel" deyip dönem A
+    için hiç geriye gitmedi ve A'nın serisi yalnızca `now`dan SONRAKİ barlardan oluştu —
+    5016 gözlemin tamamı düştü. Onarım bu betikte başladı (çağrı başına ayrı dizin + kesim)
+    ve `core/data.py`ye TAŞINDI (docs/decisions.md > 59): `fetch_ohlcv` artık önbelleğin
+    durumundan bağımsız olarak `now`dan önce kapanmış barları döndürür ve eksik derinliği
+    geriye doğru tamamlar. Burada ikinci bir kopya tutulmaz — ilke tek yerde yaşar.
     """
     bars = int((now - since) / HOUR) + 2
-    base = Path(config["data"]["cache_dir"])
-    base.mkdir(parents=True, exist_ok=True)
-    own_cache = tempfile.mkdtemp(prefix="load-", dir=base)
     run_config = {
         **config, "timeframe": BAR,
-        "data": {**config["data"], "history_bars": bars, "cache_dir": own_cache},
+        "data": {**config["data"], "history_bars": bars},
     }
     active = client if client is not None else OKXClient.from_config(run_config)
     closes: dict[str, pd.Series] = {}
     for symbol in symbols:
         frame = fetch_ohlcv(run_config, symbol, client=active, now=now)
-        series = frame["close"].astype("float64") if not frame.empty else pd.Series(dtype="float64")
-        closes[symbol] = series[series.index + HOUR <= now]
+        closes[symbol] = (
+            frame["close"].astype("float64") if not frame.empty else pd.Series(dtype="float64")
+        )
     return closes
 
 

@@ -421,7 +421,9 @@ def test_a_warm_cache_past_the_end_does_not_stretch_the_window(
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
 
-    index = pd.date_range("2022-01-01", periods=400, freq="4h", tz="UTC", name="ts")
+    # Pencerenin önünde katmanın canlı ısınması (ema: 600 bar) kadar geçmiş olmalı —
+    # yoksa pencere kapısı (karar 59) koşuyu haklı olarak reddeder.
+    index = pd.date_range("2022-01-01", periods=1000, freq="4h", tz="UTC", name="ts")
     for k, symbol in enumerate(("BTC-USDT-SWAP", "ETH-USDT-SWAP")):
         close = pd.Series(100.0 + k + 0.1 * pd.RangeIndex(len(index)), index=index)
         frame = pd.DataFrame(
@@ -443,7 +445,7 @@ def test_a_warm_cache_past_the_end_does_not_stretch_the_window(
 
     monkeypatch.setattr(data_module, "_default_session", _Silent)
 
-    start, end = index[100], index[300]
+    start, end = index[700], index[900]
     result = run_backtest(
         layer_name="ema",
         start=start,
@@ -452,6 +454,7 @@ def test_a_warm_cache_past_the_end_does_not_stretch_the_window(
         models=["buyhold"],
         symbols=["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
         config_path=str(config_path),
+        history_bars=1000,
     )
 
     last_closed = end - pd.Timedelta("4h")  # `end` anında kapanmış son bar

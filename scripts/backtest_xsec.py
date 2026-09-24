@@ -40,7 +40,7 @@ import pandas as pd  # noqa: E402
 
 from core.config import load_config  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
-from scripts.backtest import BacktestResult, run_backtest  # noqa: E402
+from scripts.backtest import exit_code_of, BacktestResult, run_backtest  # noqa: E402
 from scripts.backtest_ema import (  # noqa: E402
     PERIOD_A_CUTOFF,
     PERIOD_A_START,
@@ -330,7 +330,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out-dir", default="backtests/xsec")
     parser.add_argument("--config", default=None)
-    parser.add_argument("--history-bars", type=int, default=3000)
+    # 3000 dönem A'yı karşılamıyordu (#35578057311, docs/decisions.md > 59); 12000
+    # ema/dc'nin derinliği. Yetmeyen derinliği artık pencere kapısı reddeder.
+    parser.add_argument("--history-bars", type=int, default=12000)
     parser.add_argument("--funding-periods", type=int, default=2000)
     # Pencereler ön-kayıtlıdır ve backtest_ema'den İTHAL EDİLİR; bayraklar yalnızca
     # tekrarlanabilirlik için açıktır, dönem B'ye bakmayı kolaylaştırmak için değil.
@@ -342,4 +344,4 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(exit_code_of(main))

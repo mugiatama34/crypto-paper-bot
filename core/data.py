@@ -16,6 +16,17 @@ bu tek bir modeli değil TÜM sonuçları geçersiz kılar. Bu yüzden:
   3) `as_of` sabit bir çıpadan okunur: BTC referans sembolünün son KAPANMIŞ barı
      (bkz. `load_market_data`); stratejiler "şimdi"yi buradan okur.
 
+ÖNBELLEK PENCEREYİ BELİRLEYEMEZ (docs/decisions.md > 59). Önbellek (sembol, zaman
+dilimi) başına tek dosyadır ve farklı `now` / derinlik değerleriyle okunur: canlı tur,
+geçmiş bir pencerenin backtest'i, ölçüm betikleri. Bu yüzden iki kural önbelleğin
+DURUMUNDAN bağımsız uygulanır:
+  4) dönen seri, kaynağı ne olursa olsun `now`dan ÖNCE kapanmış barlara kesilir —
+     önbellekte daha taze bar olması "şimdi"yi ileri taşımaz,
+  5) önbellek istenen derinliği karşılamıyorsa geriye doğru TAMAMLANIR — sığ bir
+     önbellek "zaten güncel" sayılıp daha derin bir isteği sessizce kısaltamaz.
+Önbellek bir veri deposudur, pencerenin tanımı değil: iki kuralın ikisi de bir koşunun
+sonucunu, ondan önce aynı dizini hangi koşunun doldurduğuna bağlamamak için vardır.
+
 Zaman damgaları her yerde tz-aware UTC'dir (OKX ms epoch döndürür).
 """
 
@@ -103,6 +114,21 @@ def _utc_now(now: pd.Timestamp | None = None) -> pd.Timestamp:
 
 def _to_utc(ms: str | int | float) -> pd.Timestamp:
     return pd.Timestamp(int(ms), unit="ms", tz="UTC")
+
+
+def _to_ms(stamp: pd.Timestamp) -> int:
+    return int(pd.Timestamp(stamp).value // 1_000_000)
+
+
+def _closed_by(frame: pd.DataFrame, *, now: pd.Timestamp, duration: pd.Timedelta) -> pd.DataFrame:
+    """Yalnızca `now`dan ÖNCE kapanmış barlar (açılış + süre <= now).
+
+    `_parse_candle`ın indirilen satıra uyguladığı kuralın aynısı; burada KAYNAĞI ne olursa
+    olsun (önbellek dâhil) her seriye uygulanır — tek bir `now` tanımı, iki kapı.
+    """
+    if frame.empty:
+        return frame
+    return frame.loc[frame.index + duration <= now]
 
 
 def _to_float(value: Any) -> float:
@@ -353,7 +379,13 @@ def fetch_ohlcv(
     client: OKXClient | None = None,
     now: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
-    """Sembolün kapanmış barlarını döndürür; önbellekte olanları yeniden çekmez."""
+    """Sembolün `now`dan önce kapanmış son `data.history_bars` barını döndürür.
+
+    Önbellekte olanı yeniden çekmez, ama önbelleğe PENCEREYİ de bırakmaz (modül
+    başlığı, kural 4-5): önbellekteki `now`-sonrası barlar bu çağrı için yok sayılır
+    (dosyadan silinmez — başka bir `now` onları meşru biçimde ister) ve istenen derinlik
+    karşılanmıyorsa eksik geçmiş borsadan geriye doğru tamamlanır.
+    """
     stamp = _utc_now(now)
     bar = okx_bar(config)
     duration = bar_duration(bar)
@@ -361,10 +393,12 @@ def fetch_ohlcv(
     active = client if client is not None else OKXClient.from_config(config)
 
     cache_file = _cache_path(config, symbol, bar)
-    cached = _read_cache(cache_file, OHLCV_COLUMNS)
+    stored = _read_cache(cache_file, OHLCV_COLUMNS)
+    cached = _closed_by(stored, now=stamp, duration=duration)
     last_cached = cached.index[-1] if not cached.empty else None
+    floor = _read_floor(cache_file)
 
-    fresh = _download_candles(
+    fresh, exhausted = _download_candles(
         active,
         config,
         symbol,
@@ -374,15 +408,59 @@ def fetch_ohlcv(
         stop_at=last_cached,
         max_bars=history_bars,
     )
+    # Taban yalnızca ÖNBELLEKSİZ bir yürüyüşten okunur: önbellek varken tükenme, yürüyüşün
+    # önbelleğe bağlanamadığı bir boşluk da olabilir ve taban onun gerisinde durur.
+    if exhausted and cached.empty and not fresh.empty:
+        floor = fresh.index[0]
     merged = _merge_frames(cached, fresh)
-    if not merged.empty:
-        _write_cache(cache_file, merged)
-    # Önbellek `now`dan SONRAKİ barları taşıyabilir (geçmiş bir pencereyi koşan backtest,
-    # daha yeni bir koşunun bıraktığı önbelleği okur). Kesim derinlikten ÖNCE yapılır:
-    # tersi `as_of`'u önbelleğin ucuna taşır ve pencere sessizce ileri kayardı
-    # (docs/decisions.md > 58). Önbelleğin kendisi kesilmez — sonraki barlar başka bir
-    # `now`un verisidir.
-    return _closed_by(merged, now=stamp, duration=duration).tail(history_bars)
+    # Dosya AYRIK parçalar taşıyabilir (ör. 2024'te biten geçmiş bir pencere + bugünün sığ
+    # bir isteği): bar SAYISI tutsa bile pencerenin ortası delik kalırdı. Pencere içindeki
+    # her delik borsaya bir kez sorulur; borsada da olmayan bar (bakım boşluğu) yok kalır.
+    merged = _fill_holes(
+        merged,
+        window=history_bars,
+        step=duration,
+        fetch=lambda older, newer: _download_candles(
+            active,
+            config,
+            symbol,
+            bar=bar,
+            duration=duration,
+            now=stamp,
+            stop_at=older,
+            max_bars=history_bars,
+            before=newer,
+        )[0],
+    )
+    # Önbellek yoksa ilk indirme borsanın verebildiği kadar derine zaten indi; yalnızca
+    # önbellekten BAŞLANAN bir seri geriye doğru eksik kalmış olabilir (daha sığ bir
+    # önceki istek ya da daha taze bir `now`la dolmuş bir dosya). Borsanın tabanına
+    # ulaşılmış bir seri için istek atılmaz — yeni listelenmiş bir sembol her turda
+    # boşuna sayfalanmasın.
+    if (
+        not cached.empty
+        and len(merged) < history_bars
+        and (floor is None or merged.index[0] > floor)
+    ):
+        older, exhausted = _download_candles(
+            active,
+            config,
+            symbol,
+            bar=bar,
+            duration=duration,
+            now=stamp,
+            stop_at=None,
+            max_bars=history_bars - len(merged),
+            before=merged.index[0],
+        )
+        merged = _merge_frames(older, merged)
+        if exhausted:
+            floor = merged.index[0]
+
+    if len(merged) > len(cached):
+        _write_cache(cache_file, _merge_frames(stored, merged))
+    _write_floor(cache_file, floor)
+    return merged.tail(history_bars)
 
 
 def _download_candles(
@@ -395,14 +473,18 @@ def _download_candles(
     now: pd.Timestamp,
     stop_at: pd.Timestamp | None,
     max_bars: int,
-) -> pd.DataFrame:
-    """Barları yeniden eskiye doğru sayfalayarak indirir.
+    before: pd.Timestamp | None = None,
+) -> tuple[pd.DataFrame, bool]:
+    """Barları yeniden eskiye doğru sayfalayarak indirir; (barlar, borsa tükendi mi).
 
     OKX istek başına bar sayısını sınırlar (candles ~300, history-candles ~100), bu yüzden
     sayfalama şart. `after` parametresi "verilen ts'den DAHA ESKİ kayıtlar" demektir; en yeni
     sayfadan başlayıp her turda gördüğümüz en eski ts'yi imleç olarak geri veriyoruz.
     Güncel uç /market/candles ile, daha derin geçmiş /market/history-candles ile gelir.
     `stop_at` verilirse (önbellekteki son bar) o barda durur — yalnızca eksik barlar çekilir.
+    `before` verilirse yürüyüş o barın GERİSİNDEN başlar (önbelleği geriye tamamlamak).
+    İkinci değer True ise iki uç da daha eski kayıt vermedi: dönen en eski bar borsanın
+    TABANIDIR (`stop_at`/`max_bars` ile kesilen bir yürüyüş taban hakkında bir şey söylemez).
     """
     endpoints = (
         (_CANDLE_ENDPOINT, int(get_setting(config, "exchange.candles_limit"))),
@@ -410,7 +492,7 @@ def _download_candles(
     )
 
     rows: dict[pd.Timestamp, tuple[float, ...]] = {}
-    cursor_ms: int | None = None
+    cursor_ms: int | None = None if before is None else _to_ms(before)
     endpoint_index = 0
 
     while endpoint_index < len(endpoints):
@@ -441,13 +523,13 @@ def _download_candles(
 
         reached_cache = stop_at is not None and oldest_ts is not None and oldest_ts <= stop_at
         if reached_cache or len(rows) >= max_bars:
-            break
+            return _rows_to_frame(rows).tail(max_bars), False
         # İmleç ilerlemediyse uç aynı sayfayı tekrarlıyor demektir: sonsuz döngüye
         # girmek yerine bir sonraki uca geçilir (ya da indirme bitirilir).
         if cursor_ms is None or cursor_ms == previous_cursor_ms or len(page) < limit:
             endpoint_index += 1
 
-    return _rows_to_frame(rows).tail(max_bars)
+    return _rows_to_frame(rows).tail(max_bars), True
 
 
 def _parse_candle(
@@ -469,12 +551,6 @@ def _parse_candle(
     return ts, values
 
 
-def _closed_by(frame: pd.DataFrame, *, now: pd.Timestamp, duration: pd.Timedelta) -> pd.DataFrame:
-    """`now` anında KAPANMIŞ barlar: `_parse_candle`ın indirmede uyguladığı kuralın,
-    diskten okunan çerçeveye uygulanan TEK kopyası (kural 12)."""
-    return frame.loc[frame.index + duration <= now]
-
-
 def _rows_to_frame(rows: dict[pd.Timestamp, tuple[float, ...]]) -> pd.DataFrame:
     if not rows:
         return _empty_frame(OHLCV_COLUMNS)
@@ -493,7 +569,13 @@ def fetch_funding(
     client: OKXClient | None = None,
     now: pd.Timestamp | None = None,
 ) -> pd.Series:
-    """Sembolün funding oranı geçmişini (zaman indeksli seri) döndürür."""
+    """Sembolün `now`a kadarki son `data.funding_history_periods` funding kaydı.
+
+    Mum önbelleğinin iki kuralı burada da geçerlidir (modül başlığı, kural 4-5): önbellekteki
+    `now`-sonrası kayıtlar bu çağrı için yok sayılır ve önbellekten başlayan bir seri eksik
+    kalmışsa geriye doğru tamamlanır. Dosya BUDANMAZ: budama "şimdi"ye göre yapılır ve
+    başka bir `now`ın meşru olarak istediği kayıtları silerdi.
+    """
     stamp = _utc_now(now)
     if not bool(get_setting(config, "funding.enabled")):
         return _empty_funding_series()
@@ -503,17 +585,71 @@ def fetch_funding(
     active = client if client is not None else OKXClient.from_config(config)
 
     cache_file = _cache_path(config, symbol, "funding")
-    cached = _read_cache(cache_file, (FUNDING_COLUMN,))
+    stored = _read_cache(cache_file, (FUNDING_COLUMN,))
+    cached = stored.loc[stored.index <= stamp]
     stop_at = cached.index[-1] if not cached.empty else None
+    floor = _read_floor(cache_file)
 
+    fresh, exhausted = _download_funding(
+        active, symbol, limit=limit, periods=periods, now=stamp, stop_at=stop_at
+    )
+    if exhausted and cached.empty and not fresh.empty:
+        floor = fresh.index[0]
+    merged = _merge_frames(cached, fresh)
+    # Mumlardaki ayrık parça kuralının aynısı. Fonlama aralığı sembolden sembole değişebilir
+    # (8 → 4 saat); delik, config'teki aralığın İKİ katından geniş boşluktur.
+    interval = pd.Timedelta(hours=float(get_setting(config, "funding.interval_hours")))
+    merged = _fill_holes(
+        merged,
+        window=periods,
+        step=2 * interval,
+        fetch=lambda older, newer: _download_funding(
+            active, symbol, limit=limit, periods=periods, now=stamp,
+            stop_at=older, before=newer,
+        )[0],
+    )
+    if (
+        not cached.empty
+        and len(merged) < periods
+        and (floor is None or merged.index[0] > floor)
+    ):
+        older, exhausted = _download_funding(
+            active, symbol, limit=limit, periods=periods - len(merged), now=stamp,
+            stop_at=None, before=merged.index[0],
+        )
+        merged = _merge_frames(older, merged)
+        if exhausted:
+            floor = merged.index[0]
+
+    if len(merged) > len(cached):
+        _write_cache(cache_file, _merge_frames(stored, merged))
+    _write_floor(cache_file, floor)
+    if merged.empty:
+        return _empty_funding_series()
+    return merged.tail(periods)[FUNDING_COLUMN].rename(symbol)
+
+
+def _download_funding(
+    client: OKXClient,
+    symbol: str,
+    *,
+    limit: int,
+    periods: int,
+    now: pd.Timestamp,
+    stop_at: pd.Timestamp | None,
+    before: pd.Timestamp | None = None,
+) -> tuple[pd.DataFrame, bool]:
+    """Funding kayıtlarını yeniden eskiye sayfalar; (kayıtlar, borsa tükendi mi)."""
     rows: dict[pd.Timestamp, tuple[float, ...]] = {}
-    cursor_ms: int | None = None
+    cursor_ms: int | None = None if before is None else _to_ms(before)
+    exhausted = False
     while len(rows) < periods:
         params: dict[str, str] = {"instId": symbol, "limit": str(limit)}
         if cursor_ms is not None:
             params["after"] = str(cursor_ms)
-        page = active.get(_FUNDING_ENDPOINT, params)
+        page = client.get(_FUNDING_ENDPOINT, params)
         if not page:
+            exhausted = True
             break
         previous_cursor_ms = cursor_ms
 
@@ -523,7 +659,7 @@ def fetch_funding(
             oldest_ms = funding_time if oldest_ms is None else min(oldest_ms, funding_time)
             ts = _to_utc(funding_time)
             # Gelecekte tahakkuk edecek funding bilgisi de look-ahead'dir.
-            if ts > stamp or (stop_at is not None and ts <= stop_at):
+            if ts > now or (stop_at is not None and ts <= stop_at):
                 continue
             rows[ts] = (_to_float(raw.get("fundingRate")),)
 
@@ -533,17 +669,14 @@ def fetch_funding(
             break
         # İmleç ilerlemiyorsa (uç `after`'ı yok sayıyorsa) sayfalama sonsuza gider.
         if cursor_ms is None or cursor_ms == previous_cursor_ms or len(page) < limit:
+            exhausted = len(page) < limit
             break
 
     fresh = pd.DataFrame.from_dict(rows, orient="index", columns=[FUNDING_COLUMN])
-    if not fresh.empty:
-        fresh.index.name = "ts"
-        fresh = fresh.sort_index()
-    merged = _merge_frames(cached, fresh)
-    if not merged.empty:
-        _write_cache(cache_file, merged.tail(periods))
-    # Mumdaki kesimin aynısı: `now`dan sonraki kayıtlar önce atılır, derinlik SONRA sayılır.
-    return merged.loc[:stamp].tail(periods)[FUNDING_COLUMN].rename(symbol)
+    if fresh.empty:
+        return _empty_frame((FUNDING_COLUMN,)), exhausted
+    fresh.index.name = "ts"
+    return fresh.sort_index(), exhausted
 
 
 def _empty_funding_series() -> pd.Series:
@@ -677,11 +810,11 @@ def load_cached_market_data(
 
     frames: dict[str, pd.DataFrame] = {}
     for symbol in wanted:
-        frame = _read_cache(_cache_path(config, symbol, bar), OHLCV_COLUMNS)
+        frame = cached_ohlcv(config, symbol, now=stamp)
         if frame.empty:
             logger.warning("%s önbellekte yok ya da boş, atlanıyor", symbol)
             continue
-        frames[symbol] = _closed_by(frame, now=stamp, duration=duration).tail(history_bars)
+        frames[symbol] = frame.tail(history_bars)
 
     if btc_symbol not in frames:
         raise OKXError(
@@ -711,7 +844,8 @@ def load_cached_market_data(
             cached = _read_cache(_cache_path(config, symbol, "funding"), (FUNDING_COLUMN,))
             if cached.empty:
                 continue
-            funding[symbol] = cached.loc[:stamp].tail(periods)[FUNDING_COLUMN].rename(symbol).loc[:as_of]
+            cached = cached.loc[cached.index <= as_of]
+            funding[symbol] = cached.tail(periods)[FUNDING_COLUMN].rename(symbol)
 
     return MarketData(
         ohlcv=ohlcv,
@@ -750,12 +884,13 @@ def _anchor_as_of(
     üretmek, borsa/veri kesintisi sırasında eski bir barı yeniymiş gibi işlemek olurdu.
     """
     as_of = btc_frame.index[-1]
-    # İkinci savunma: kesim çağıranda (`_closed_by`) yapılır; bir veri yolu onu atlarsa
-    # pencere sessizce `now`un ötesine taşmak yerine tur düşer (docs/decisions.md > 58).
+    # İkinci savunma: seriler `_closed_by` ile kesildiği için buraya hiç gelmemeli; bir
+    # veri yolu kesimi atlarsa pencere sessizce `now`un ötesine taşmak yerine tur düşer
+    # (docs/decisions.md > 58, 59).
     if as_of + duration > now:
         raise OKXError(
-            f"{symbol} çıpasının son barı ({as_of}) {now} anında kapanmamış: "
-            "anlık görüntü `now`un ötesini taşıyor (kural 12)"
+            f"{symbol} çıpasının son barı ({as_of}) {now} anında kapanmamış — now'dan SONRA "
+            "kapanıyor: anlık görüntü `now`un ötesini taşıyor (kural 12)"
         )
     expected = now.floor(duration) - duration
     if as_of < expected - duration * max_staleness_bars:
@@ -814,6 +949,76 @@ def _cache_path(config: dict[str, Any], symbol: str, suffix: str) -> Path:
     directory = project_path(str(get_setting(config, "data.cache_dir")))
     safe_symbol = symbol.replace("/", "_")
     return directory / f"{safe_symbol}_{suffix}.parquet"
+
+
+def _fill_holes(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+    step: pd.Timedelta,
+    fetch: Any,
+) -> pd.DataFrame:
+    """Son `window` satırın içindeki `step`ten geniş boşlukları borsadan doldurur.
+
+    Her boşluk (eski, yeni) bir KEZ sorulur — borsada da olmayan bir boşluk ikinci kez
+    istek üretmez ve döngü biter. Doldurulan barlar pencereyi ileri iter; bu yüzden pencere
+    her turda yeniden hesaplanır (eski parçanın deliği artık pencerede olmayabilir).
+    """
+    asked: set[tuple[pd.Timestamp, pd.Timestamp]] = set()
+    while True:
+        index = frame.tail(window).index
+        holes = [
+            (older, newer)
+            for older, newer in zip(index[:-1], index[1:])
+            if newer - older > step and (older, newer) not in asked
+        ]
+        if not holes:
+            return frame
+        older, newer = holes[-1]
+        asked.add((older, newer))
+        frame = _merge_frames(frame, fetch(older, newer))
+
+
+def _floor_path(cache_file: Path) -> Path:
+    return cache_file.with_suffix(".floor.json")
+
+
+def _read_floor(cache_file: Path) -> pd.Timestamp | None:
+    """Borsanın bu seri için verdiği en eski kayıt, bir önceki yürüyüşte ÖLÇÜLDÜYSE.
+
+    Yalnızca "daha eski istek atma" kararına girer; hiçbir seriyi kesmez. Kayıp ya da
+    bozuk dosya en kötü ihtimalle bir boşuna istek demektir, yanlış veri değil.
+    """
+    path = _floor_path(cache_file)
+    if not path.is_file():
+        return None
+    try:
+        return _utc_now(json.loads(path.read_text(encoding="utf-8"))["floor"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _write_floor(cache_file: Path, floor: pd.Timestamp | None) -> None:
+    if floor is None or floor == _read_floor(cache_file):
+        return
+    path = _floor_path(cache_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"floor": floor.isoformat()}) + "\n", encoding="utf-8")
+
+
+def cached_ohlcv(config: dict[str, Any], symbol: str, *, now: pd.Timestamp) -> pd.DataFrame:
+    """Önbellekteki mumları OKUR — borsaya dokunmaz — ve `now`dan önce kapananlara keser.
+
+    Önbelleği doğrudan okuyan her araç bu yoldan geçer: dosyada başka bir koşunun
+    bıraktığı daha taze barlar olabilir ve ham okuma pencereyi sessizce taşırırdı
+    (docs/decisions.md > 59).
+    """
+    bar = okx_bar(config)
+    return _closed_by(
+        _read_cache(_cache_path(config, symbol, bar), OHLCV_COLUMNS),
+        now=_utc_now(now),
+        duration=bar_duration(bar),
+    )
 
 
 def _empty_frame(columns: Sequence[str]) -> pd.DataFrame:

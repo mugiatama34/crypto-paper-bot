@@ -65,15 +65,18 @@ jobs:
       # `end`inden YENİ bir önbellek `now`da kesilmiyordu ve pencere sessizce önbelleğin ucuna
       # taşıyordu. `core/data.py::_closed_by` ile düzeltildi; `scripts/backtest.py` artık
       # `as_of > end`de koşuyu düşürür. Metin silinmedi: bir zaman bu varsayımla koşuldu.
+      # Önbellek ANAHTARI yalnızca bu workflow'un ad alanını geri yükler (docs/decisions.md
+      # > 59): eski `market-data-ema-` öneki `market-data-ema-diag-…`i de yakalıyordu ve
+      # `--` sonlandırıcısı bir önekin başka bir anahtarın öneki olmasını imkânsız kılar,
+      # `v2` o kirli önbellekleri bir daha geri yüklemez. İkinci katman `core/data.py`dir:
+      # seri önbellekten bağımsız olarak `now`a kesilir ve eksik derinlik tamamlanır.
       - name: Restore market data cache
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: market-data-dc-${{ github.run_id }}
+          key: market-data-v2--backtest-dc--${{ github.run_id }}
           restore-keys: |
-            market-data-dc-
-            market-data-ema-
-            market-data-base-
+            market-data-v2--backtest-dc--
 
       - name: Run pre-registered backtest (A → embargo → B)
         env:

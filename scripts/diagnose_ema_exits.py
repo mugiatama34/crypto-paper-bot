@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd  # noqa: E402
 
 from core.config import get_setting, load_config  # noqa: E402
-from core.data import _cache_path, bar_duration, okx_bar  # noqa: E402
+from core.data import bar_duration, cached_ohlcv  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 
@@ -61,7 +61,7 @@ from core.ledger import Ledger  # noqa: E402
 # (core/metrics.py::holding_stats'ın yorumunda anlatılan hata). Alt çizgili olmaları
 # "kopyala" davetiyesi değil, "tek tanım" işaretidir.
 from core.metrics import _median, _percentile, holding_stats, merge_fills  # noqa: E402
-from scripts.backtest import format_breakdowns, run_backtest  # noqa: E402
+from scripts.backtest import exit_code_of, format_breakdowns, run_backtest  # noqa: E402
 from scripts.backtest_ema import (  # noqa: E402
     FEE_RATE,
     LAYER,
@@ -516,7 +516,10 @@ def diagnose(
     trades = merge_fills(rows)
     payload["fills"] = {"rows": len(rows), "positions": len(trades)}
 
-    candles = _load_candles(config, sorted({str(row.get("symbol") or "") for row in trades}))
+    step = bar_duration(str(get_setting(config, "timeframe")))
+    candles = _load_candles(
+        config, sorted({str(row.get("symbol") or "") for row in trades}), now=result.end + step
+    )
     paths = position_paths(trades, candles)
     payload["paths_measured"] = len(paths)
 
@@ -584,22 +587,23 @@ def diagnose(
     return payload
 
 
-def _load_candles(config: Mapping[str, Any], symbols: Sequence[str]) -> dict[str, pd.DataFrame]:
-    """Mumları önbellekten OKUR — borsaya dokunmaz.
+def _load_candles(
+    config: Mapping[str, Any], symbols: Sequence[str], *, now: pd.Timestamp
+) -> dict[str, pd.DataFrame]:
+    """Mumları önbellekten OKUR — borsaya dokunmaz — ve pencerenin sonunda KESER.
 
     Koşu zaten aynı işte indirdi; ikinci bir indirme aynı barları iki kez çekmek olurdu.
-    Yol adı `core/data.py`nin kendi kuralından gelir (ikinci bir dosya adı şeması, bir
-    gün sessizce ayrışan iki önbellek demekti).
+    Okuma `core/data.py::cached_ohlcv`den geçer: dosya, bu işten önce başka bir koşunun
+    bıraktığı daha taze barları taşıyabilir (koşu #35435506689'da 2026-09'a kadar taşıyordu)
+    ve ham okuma çıkış sonrası yolu dönem B'nin fiyatlarıyla ölçerdi (docs/decisions.md > 59).
     """
-    bar = okx_bar(dict(config))
     frames: dict[str, pd.DataFrame] = {}
     for symbol in symbols:
-        path = _cache_path(dict(config), symbol, bar)
-        if not path.is_file():
-            logger.warning("%s: önbellek dosyası yok (%s)", symbol, path)
+        frame = cached_ohlcv(dict(config), symbol, now=now)
+        if frame.empty:
+            logger.warning("%s: önbellekte pencere içinde bar yok", symbol)
             continue
-        frame = pd.read_parquet(path)
-        frames[symbol] = frame.sort_index()
+        frames[symbol] = frame
     return frames
 
 
@@ -725,4 +729,4 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(exit_code_of(main))
