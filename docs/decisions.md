@@ -5183,3 +5183,26 @@ olan bir satır tabloda her turda duruyordu; `acceptance` kontrolün ÖRNEKLEMİ
 (`control_min_trades`), ÖLÇÜLEBİLİRLİĞİNİ değil. Kapanmış-işlem R'sine dayanan her kapının
 sessiz varsayımı "model pozisyonlarını bir gün kapatır"dır; bu varsayım hiçbir yerde
 sınanmıyordu.
+
+## 61. Rejim koşullu performans: YENİ MODEL YOK, mevcut modellerin BTC rejimine göre koşullu R'si — ön-kayıt §6l *(2026-09-24)*
+
+**Ne.** Rejim mekanizması fikrinin ilk ölçümü bir FİLTRE değil bir ÖLÇÜMDÜR: mevcut
+modellerin işlem GİRİŞ anındaki BTC rejimine (yön: günlük kapanış ↔ SMA200; oynaklık: 30
+günlük gerçekleşmiş oynaklık ↔ kendi 365 günlük medyanı; 2 × 2) göre ortalama R'si. Tanım,
+hipotezler (H1 `ema_trend`/`xsec_mom` yukarıda, H2 `dc_short` aşağıda, H3 dönüş modelleri
+yüksek oynaklıkta daha kötü), istatistik ve kontrol okuması docs/backtest.md > 6l'de,
+veri görülmeden commit edildi. Model, config, strateji, defter DEĞİŞMEDİ.
+
+**Envanterin yapısal sonuçları (veri görülmeden):**
+- Veri kuralı: yalnızca karar 59'un düzeltilmiş koşuları. ema (#35975935993) ve dc
+  (#35981639682) satırları artifact'lerde ve **2026-10-08'de siliniyor**; bu ortam
+  artifact indiremez → ölçüm Actions içinde ve o tarihten önce koşmalı.
+- xsec (#35981642832) defteri artifact'e hiç yüklenmemiş → ölçüm koşusunun içinde bir kez
+  yeniden üretilir, dönem A determinizm kapısıyla (A'da fonlama yok).
+- H3 bugün DEĞERLENDİRİLEMEZ: dönüş modellerinin karar 59 kapsamında backtest satırı yok,
+  canlı defterleri iki haftalık (tek ay kümesi, A/B yok). Tanım kayıtta kalır.
+- `ema_trend`in kontrol karşıtlığı DEĞERLENDİRİLEMEZ (karar 60).
+
+**Bir seçim kayda geçer:** aile içi BH q = 0.05, §6c'nin 0.10'u değil — m = 3'te q = 0.10
+ile "%95 CI alt sınırı > 0" şartı BH'yi her durumda geçirir ve düzeltme süs olurdu.
+Gerekçe §6l > 6.
