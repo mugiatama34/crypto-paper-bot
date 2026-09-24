@@ -4391,6 +4391,37 @@ rejim ekseninde ayrışıyor" bilgisidir; neyin yapılacağı ayrı bir karardı
 paydasına GİRER.** Satırın kendi içindeki çoklu karşılaştırma (m = 3) bu bölümün 6.
 maddesinde düzeltilir; sicile tek satır olarak girer.
 
+### TADİLAT-1 — kullanıcı onayı + iki etiket kuralı *(2026-09-24, ölçüm kodu yazılmadan, HİÇBİR veri görülmeden)*
+
+**Onaylanan iki seçim (değişiklik YOK, kayıt):** aile içi BH **q = 0.05** (§6c'nin 0.10'undan
+AİLEYE ÖZGÜ bir sapma; gerekçe 6) ve **m = 3** (H3 aileden çıktı — verisi olmayan bir
+hipotez paydada durursa ötekilerin eşiğini boşuna sertleştirir; tanımı kayıtta kalır).
+
+**Eklenen iki kural — 8'in etiket tablosunun ÖNÜNE geçer:**
+
+1. **H1a (`ema_trend`) hiçbir koşulda "MODELDEN" etiketini alamaz.** Kontrolü bozuk
+   olduğu için (karar 60) DiD yoktur; trend takipli bir long modelin BTC SMA200'ün
+   üstünde daha iyi çalışması büyük ihtimalle piyasanın kendisidir, modelin özelliği
+   değil. **H1a (a) ve (b)'yi geçse — hatta B'de doğrulansa — bile etiket en fazla
+   "KAYNAĞI AYIRT EDİLEMEDİ"dir ve bir veto/rejim kararına GİRDİ OLMAZ.** Kontrolsüz bir
+   karşıtlık bir mekanizmanın kanıtı sayılmaz. (8'deki "DEĞERLENDİRİLEMEZ — kontrol bozuk"
+   satırı bu kuralın kontrol tarafıdır; birimin nihai etiketi AYIRT EDİLEMEDİ olarak yazılır.)
+2. **dc'de (H2) öncelik — muhafazakâr taraf kazanır.** Bağlayıcı karşıtlık tek-sembollü
+   defterden, DiD ise portföy ↔ portföy kurulur (`dc_coinflip`in tek-sembollü koşusu
+   yoktur) ve karar 59 > GENEL DERS portföy yollarının nakit sınırında kırılgan olduğunu
+   söyler — iki ölçü farklı şey görebilir. Kural: **tek-sembollü karşıtlık geçer ama
+   portföy DiD'i "PİYASADAN" derse sonuç "PİYASADAN"dır.** "MODELDEN" yalnızca portföy
+   DiD'inin alt sınırı > 0 iken yazılır (8'in kuralı, değişmedi).
+
+**Beklenti (bir tahmin, kapı değil):** üç birimden en temiz okunacak olan **H1b
+(`xsec_mom`)**dir — kontrolü sağlamdır ve aynı koşu tipindendir (portföy ↔ portföy, aynı
+dönem, aynı rebalance günleri). H1a yapısı gereği en fazla "ayırt edilemedi", H2'nin
+okuması iki kaynağa bölünmüştür.
+
+**Zaman kısıtı kayda geçer:** ema ve dc artifact'leri 2026-10-08'de silinir. Ölçüm
+koşusu yine §6l > 7'nin kurallarıyla (tek sefer, xsec A determinizm kapısı) yapılır; bir
+aksilik çıkarsa yeniden koşu için zaman kalsın diye koşu bu tarihten belirgin önce hedeflenir.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
