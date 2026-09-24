@@ -4935,3 +4935,31 @@ değişmedi; karar yeni sayılar görülmeden bu metinle verildi. Bu yüzden:
 logdan TEMİZ doğrulandı (önbellek uçları istenen bitişin gerisinde); EK-1'in taşıdığı tek
 sonuç ("OKX 15m geçmişi dönem A'nın başına ulaşıyor") bir taşmayla değişemez — yeniden
 koşulmaz.
+
+### SIRA 1 SONUCU — `backtest-ema` #35975935993: A BİREBİR, B DEĞİL → kural gereği DURULDU *(2026-09-24)*
+
+Koşu `6095e95` üzerinde, B sonu `2026-09-18T12:00Z` (kayıt `rerun-59-backtest-ema.run`).
+Sonuç yükü log'dan okundu ve `docs/data/backtest_ema_trend.json` ile alan alan karşılaştırıldı:
+
+| Bölüm | Fark |
+|---|---|
+| `periods.A` (tüm modeller, kapılar, kapsama, geçerlilik) | **0 alan** — birebir |
+| `gates.repo_acceptance.A` | **0** |
+| `gates.repo_acceptance.B` | 9 alan: `ema_trend` ort. R −0.0165 → **−0.0243**, hesap getirisi −%20.36 → −%21.05, fark CI [0.897, 1.205] → [0.889, 1.198], çıpa −%7.293 → −%7.290 (0.003 puan) |
+| `coins` | yalnızca dönem B satırları; her birinde `funding` alanı değişmiş |
+| B geçerliliği | `ema_trend` ret dağılımı kaydı (`max_positions` 24 → 28, `zero_size` 119 → 115), `trend` 1 dolum fazla |
+
+**Ön-kayıtlı kural (sıra 1) birebirlik ister; tek istisna ≤ 0.05 puanlık çıpa kaymasıydı. B bu
+koşulu SAĞLAMIYOR, bu yüzden sıra 2-3 başlatılmadı.** Kapıların ikili sonucu değişmedi
+(ema_trend B'de C-1 ve C-3'ten kalmaya devam ediyor) ama kural sonuca değil birebirliğe bakar.
+
+**Gözlenen mekanizma (kanıt, karar DEĞİL):** fark YALNIZCA B'de ve B'nin her satırında önce
+`funding` alanında görünüyor; ret dağılımındaki kayma (nakit/`zero_size` ↔ `max_positions`)
+fonlamanın özsermayeyi, özsermayenin boyutu değiştirdiği yolun izidir. OKX fonlama uç noktası
+~3 aylık KAYAN bir pencere tutar (karar 50): log'daki "funding atlandı" uyarılarının son damgası
+#35435506689'da (2026-09-19) `2026-06-17 08:00`, bu koşuda (2026-09-24) `2026-06-19 00:00` —
+yani B'nin haziranındaki bir dilimin fonlaması orijinal koşuda ödendi, bugün hiç yok. A'nın
+birebir olması (fonlaması zaten hiç yoktu) aynı okumayı destekler; 58'in "açık not"u da (aynı gün
+koşulan dc B kuruşuna kadar tuttu, günler sonra koşulanlar kaydı) aynı yönde. Bu bir onarım
+farkı değil, dışsal VERİ ERİŞİLEBİLİRLİĞİ farkı olarak okunuyor — ama ön-kayıt bu istisnayı
+yazmamıştı ve ekleme kararı kullanıcınındır.
