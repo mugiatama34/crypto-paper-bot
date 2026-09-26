@@ -5362,3 +5362,16 @@ birini yiyebilecek bir önyargıyı kaçırırdı. Sentetik veri 8 × 5000 bara 
 **TADİLAT-1 (2026-09-26, sonuç görüldükten sonra, kullanıcı onayı):** sıfır-beklenti testinin
 sentetiği 15.000 bar × 256 alt adıma büyütüldü; eşiklerin hiçbiri gevşemedi. Sebepler, görülen
 sayılar ve testin fiili çözünürlüğü (≈ ±0.035R) §6n > TADİLAT-1'dedir.
+
+## 66. Oynaklık hedefleme: yön tahmini YOK, pasif maruziyetin ters oynaklıkla ölçeklenmesi — ön-kayıt §6o *(2026-09-26)*
+
+Tez (kullanıcı): oynaklık kümelenir, yön öngörülemez; `w = min(1, σ_hedef/σ̂)` ile ölçeklenmiş
+maruziyet aynı getiriyi daha düşük oynaklıkla verir. Ölçülen iki maruziyet BTC al-tut ve `ema`
+evreninin eşit ağırlıklı sepetidir; birincil metrik ölçeklenmiş − ölçeklenmemiş Sharpe farkı,
+kontrol aynı ORTALAMA ağırlıkla sabit maruziyettir. **Model DEĞİL:** motorun boyutlandırması
+(kural 11) stop ister ve stop'suz kesirli maruziyet yalnızca çıpa/kopyaya açıktır — tezi motora
+sokmak kural 3/11'i delerdi; ölçüm bu yüzden `measure_*` desenli bir getiri serisi hesabıdır.
+Güç dürüstçe yazıldı: gerçekçi bir etkide (ΔSR ≈ 0.2) iki dönemin birlikte geçme olasılığı ≈ %1,
+yani "ayırt edilemedi" beklenen sonuçtur ve tezin reddi değildir. Ön-kaydın kullanıcı tanımına
+eklediği sekiz nokta (maliyete kayma, funding hariç, sepet düzeyinde ölçekleme, uygunluk,
+uygulama fiyatı, bağlayıcı blok, B sınırı, güç) §6o > 14'te onay bekler; kod onaydan önce yazılmaz.

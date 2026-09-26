@@ -401,6 +401,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
+| 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR hafta-blok CI alt sınırı > 0, A ∧ B, varlık başına | **KOŞULMADI** — ön-kayıt açık, onay bekliyor (§6o > 14) |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -427,6 +428,10 @@ görselidir, ev içi arama uzayından seçilmedi. **Dış kökenli payda bugün 
 
 **Sicildeki 8. satır (rejim koşullu performans) ev içi BH paydasına GİRER** — dış kökenli
 değildir. Satırın kendi ailesi (m = 3) §6l > 6'da düzeltilir; sicile tek satır olarak girer.
+
+**Sicildeki 9. satır (oynaklık hedefleme) ev içi BH paydasına GİRER** — kaynak literatürdür,
+dış bir sistemin kuralları değil. İki varlık (BTC, sepet) ayrı iddialardır ve satır içinde
+düzeltilmez (§6o > 10); sicile tek satır olarak girer.
 
 **Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
 hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
@@ -5142,6 +5147,269 @@ projede boşlukların nasıl kullanıldığını gördüğümüz biçimdir (kull
 - Kural 13'ün bu geometrideki bedeli ihmal edilebilir (≤ 0.0006R); §9 > 2'nin okuma kuralı
   gerçek veri için AYNEN kalır.
 - Süre: ~6 dakika, her CI koşusunda.
+
+## 6o. ÖN-KAYIT — OYNAKLIK HEDEFLEME: yön tahmini olmadan, maruziyeti son dönem oynaklığına göre ters ölçeklemek Sharpe'ı artırıyor mu? *(2026-09-26)*
+
+**Bu belge veri görülmeden yazıldı ve AYRI bir commit olarak işlendi** — ölçüm betiği,
+workflow ve testler SONRAKİ commit'lerdedir ve **kullanıcı onayından (bkz. 14) ÖNCE
+yazılmaz.** §7'nin tamamı bu bölüme uygulanır.
+
+### 1. Köken, statü, kapsam
+
+**Tez (kullanıcı, değiştirilmeden):** oynaklık kümelenir (öngörülebilir), yön öngörülemez;
+maruziyeti oynaklığa göre ters ölçeklemek aynı getiriyi daha düşük oynaklıkla verir. Köken
+literatürdür (volatility-managed portfolios; hisse ve kredide Sharpe iyileşmesi, bazı varlık
+sınıflarında yok) — dış bir SİSTEMİN kuralları değil, ev içinde seçilmiş bir tezdir (bkz. 13).
+
+**Statü: MODEL DEĞİL, salt okunur bir ölçüm.** Yön tahmini yoktur, yani ortada bir
+"kenar" iddia eden sinyal yoktur; ölçeklenen şey bir MODEL değil iki pasif maruziyettir.
+Hiçbir şey `REGISTRY`e, bir katmanın `models` listesine, bir deftere girmez; `config.yaml`,
+`strategies/`, `core/` ve defterler DEĞİŞMEZ.
+
+**Neden motor (`scripts/backtest.py`) değil.** Kural "özsermayenin `w` kesri kadar, stop'suz,
+günlük yeniden dengelenen maruziyet"tir. Motorun boyutlandırması (kural 11) `risk / |giriş −
+stop|`tir ve stop ister; stop'suz `notional_fraction` yalnızca çıpaya ve kopyaya açıktır
+(kural 15/15b). Bu tezi motorda koşturmak yeni bir boyutlandırma muafiyeti açmak — yani kural
+3/11'i delmek — olurdu. Ölçüm bu yüzden bir getiri serisi hesabıdır (`measure_regime.py`,
+`measure_market_direction.py` deseni) ve **geçse bile bir modele ya da mevcut modellerin
+boyutlandırmasına OTOMATİK dönüşmez** (bkz. 12).
+
+### 2. Körlük beyanı (sonuç görülmeden yazıldı)
+
+- Ön-kaydı yazan taraf BTC'nin ya da 13 sembolün günlük oynaklık serisini, ağırlık serisini
+  veya herhangi bir getiri/Sharpe sayısını bu ön-kayıt için HİÇ hesaplamadı.
+- Bilinen ve gizlenmeyen: §6l > SONUÇ'un BTC serisinin kapsamı (2020-10-30 → 2026-09-22,
+  eksik gün 0, 200/30/365 kuralıyla ilk tanımlı gün 2021-11-28) — yalnızca KAPSAM, oynaklık
+  değeri değil. Genel bilgi: 2022 bir ayı yılıydı ve oynaklık patlamaları (Mayıs, Kasım)
+  çöküşlerle birlikteydi; 2023–2024 büyük ölçüde boğa. Bu, tahminin (11) yönünü etkileyebilir
+  ve bu yüzden yazılır.
+- Tez, kural, kıyaslar, metrikler, dönemler ve geçme koşulu kullanıcı tarafından veri
+  görülmeden verildi ve **değiştirilmeden** kayda girer. Bu bölümün eklediği her şey
+  (tanım ayrıntıları, sapmalar, güç hesabı) 14'te AYRICA listelenir ve onay bekler.
+
+### 3. Ölçeklenen iki maruziyet
+
+| # | Varlık | Tanım |
+|---|---|---|
+| **(a)** | BTC al-tut | `BTC-USDT-SWAP`, tek varlık |
+| **(b)** | eşit ağırlıklı sepet | `config.yaml > layers.ema.universe`in 13 sembolü; gün `t`'de UYGUN olanlar (`E_t`) arasında eşit ağırlık, **günlük yeniden dengeleme** |
+
+**Uygunluk (`E_t`) yalnızca `t−1` kapanışında bilinenle kurulur:** sembolün `t−30 … t−1`
+günlerinin tamamında günlük kapanışı varsa uygundur (listelenme yaşı ≥ 30 gün; ilk günlerin
+aşırı hareketi sepete girmez ve 30, σ̂ penceresinin kendisidir — yeni bir parametre değildir).
+Gün `t`'nin kapanışının varlığı uygunluğa GİRMEZ (girseydi seçim sonucu görürdü). Uygun bir
+sembolün `C_t`si eksikse o sembolün dilimi o gün **0 getiri** alır (nakit gibi) ve sayılır.
+
+**Sepette ÖLÇEKLENEN şey sepetin kendisidir, semboller tek tek değil.** Sepetin günlük
+getirisi `R^B_t = ortalama_{i∈E_t} R_{i,t}`; σ̂ ve σ_hedef bu serinin (tarihsel bileşimiyle)
+üzerinden kurulur ve tek bir `w_t` bütün sepete uygulanır. Sembol başına ölçekleme ters
+oynaklık AĞIRLIKLANDIRMASI olurdu — kesitsel bir tercih, yani başka bir tez (14 > O3).
+
+### 4. Veri ve günlük seri
+
+- Kaynak: OKX, `core/data.py` üzerinden 4H mumlar (projenin tek veri kapısı). Önbellek
+  koşuya özel geçici dizindir; `data/cache/`e yazılmaz.
+- **Günlük kapanış `C_d` = UTC günü `d`'nin son 4H barının (20:00 açılışlı) kapanışıdır**,
+  yani günün 24:00 UTC fiyatı — `scripts/measure_regime.py::daily_closes`in tanımı, ikinci
+  kez yazılmaz. OKX `1D` barı KULLANILMAZ (hizası UTC+8).
+- Basit getiri `R_d = C_d / C_{d−1} − 1` (PnL için); log getiri `g_d = ln(C_d / C_{d−1})`
+  (σ̂ için).
+- Veri çekimi dönem A'nın en az **396 gün** öncesinden başlar (30 + 365 + 1; ≈ 2020-11-01).
+
+### 5. Kural — veri görmeden SABİT
+
+Gün `t`'nin maruziyeti `t−1` kapanışında (24:00) belirlenir ve `C_{t−1} → C_t` aralığında tutulur:
+
+| Büyüklük | Tanım |
+|---|---|
+| **σ̂_t** | `std(g_{t−30}, …, g_{t−1})`, örneklem sapması (ddof=1), × √365. Yalnızca `t−1`'e kadar kapanmış veri. |
+| **σ_hedef,t** | `medyan(σ̂_{t−365}, …, σ̂_{t−1})` — ÖNCEKİ 365 günün σ̂'ları, `σ̂_t` HARİÇ. Tam örneklemin medyanı KULLANILMAZ (ileriye bakış). |
+| **w_t** | `min(1.0, σ_hedef,t / σ̂_t)`. Kaldıraç YOK; `1 − w_t` nakitte ve **0 getiri** alır. |
+
+- Parametreler (30, 365, üst sınır 1.0, √365) sabittir ve sonradan DEĞİŞMEZ.
+- σ̂_t ya da σ_hedef,t tanımsız olan gün **tanımsız** sayılır; bir dönemin içinde tek bir
+  tanımsız gün varsa o (varlık, dönem) **ölçülmez** (çıkış 3). (a) için beklenen: dönem A'dan
+  yaklaşık bir ay önce tanımlı (2 > kapsam).
+- `σ̂_t = 0` (tanım gereği imkânsıza yakın) → `w_t = 1.0` ve sayılır.
+
+### 6. Getiri, maliyet, özsermaye
+
+Üç strateji, **aynı günler, aynı fiyatlar, aynı maliyet kuralı:**
+
+| Strateji | Ağırlık |
+|---|---|
+| **S** — ölçeklenmiş | `w_t` (5) |
+| **U** — ölçeklenmemiş | `1.0` her gün |
+| **F** — sabit ağırlık kontrolü | `w̄` her gün; `w̄` = S'nin O DÖNEMDEKİ günlük `w_t` ortalaması |
+
+- **Brüt getiri:** `w_t · R_t` (sepette `Σ_i (w_t/|E_t|) · R_{i,t}`).
+- **Devir:** gün başında hedef ağırlığa getirmek için işlem gören özsermaye kesri. (a): `|w_t −
+  w̃_{t−1}|`, `w̃_{t−1} = w_{t−1}(1+R_{t−1}) / (1 + w_{t−1}R_{t−1})` (önceki günün kayan
+  ağırlığı). (b): `Σ_i |w_t/|E_t| − w̃_{i,t−1}|` — yani U da sepet içi yeniden dengelemenin
+  bedelini öder.
+- **Maliyet:** `devir × (fee_rate + slippage_base)` = `devir × 0.00105` (canlı config, tek
+  kaynak; değişiklik YOK — §6j > 7'nin aynı kuralı). Kullanıcının tanımı "devir × komisyon"
+  idi; kayma projenin her dolumda uyguladığı maliyettir ve üç stratejiye birebir aynı
+  uygulanır (14 > O1).
+- **Net günlük getiri:** `r_t = brüt − maliyet`. Her dönem **nakitle** başlar (özsermaye 1.0);
+  ilk günün devri ilk girişin maliyetidir (üç stratejide de).
+- **F'nin `w̄`'ı dönemin kendisinden gelir ve işlem yapılabilir DEĞİLDİR** (sonradan bilinir) —
+  bu bilerek böyledir: F bir strateji değil, "aynı ORTALAMA maruziyet" sorusunun kontrolüdür.
+
+### 7. Metrikler
+
+**Sharpe tanımı İKİNCİ KEZ YAZILMAZ:** `core/metrics.py::account_stats`in tanımıdır — risksiz
+getiri 0, ortalama / örneklem sapması (ddof=1) × √`periods_per_year`, burada **365** (kripto
+7/24). Özsermaye eğrisi net günlük getirilerden kurulur ve o fonksiyona verilir; max drawdown
+da aynı fonksiyondan (`_max_drawdown_pct`) gelir.
+
+| Sınıf | Metrik | Kıyas |
+|---|---|---|
+| **BİRİNCİL** | `ΔSR = SR(S) − SR(U)` | S ↔ U |
+| İkincil | `ΔSR_F = SR(S) − SR(F)` | S ↔ F (maliyet dışında ΔSR ile neredeyse özdeştir: `w̄·R`'nin Sharpe'ı `R`'ninkiyle aynıdır — bu yüzden birincil kıyas "aynı ortalama maruziyetle daha iyi mi" sorusunu ZATEN cevaplar) |
+| İkincil | `ΔMDD = MDD(S) − MDD(F)` (yüzde puan; negatif = S daha sığ) | S ↔ F |
+| İkincil | `ΔGetiri = toplam getiri(S) − toplam getiri(F)` ve yıllıklandırılmış hâli | S ↔ F |
+| Tanımlayıcı | her stratejinin gerçekleşen yıllık oynaklığı, toplam getirisi, MDD, Sharpe; `w̄`, `w_t < 1` gün payı, `w_t` dağılımı (min / p10 / medyan), günlük ortalama devir ve maliyet sürüklenmesi; (b) için `|E_t|` dağılımı ve eksik-kapanış sayısı | — |
+
+İkincil metrikler **kapı DEĞİLDİR** ve geçme kararını değiştirmez.
+
+### 8. İstatistik — EŞLEŞTİRİLMİŞ hafta blok bootstrap'ı
+
+- **Küme = ISO hafta (UTC)** — `measure_market_direction.py`nin küme tanımı. Dönem sınırındaki
+  yarım haftalar kendi kümesidir.
+- Her iterasyonda dönemin haftaları **yerine koyarak BİR KEZ** çekilir; çekilen haftaların
+  günlük `(r^S_t, r^U_t, r^F_t)` üçlüleri BİRLİKTE alınır (eşleştirme: aynı günler), her
+  strateji için Sharpe (7'nin tanımı) hesaplanır ve farklar kaydedilir. İkincil metrikler
+  aynı çekilişlerden.
+- Tekrar `acceptance.bootstrap_samples` (2000), yüzdelik aralık, α = `acceptance.edge_ci_alpha`
+  (0.05). Tohum `f"{random_seed}:voltarget:{varlık}:{dönem}"`. `MIN_CLUSTERS` (10) altı →
+  değerlendirilemez (bu pencerelerde ~130 hafta var; yapısal olarak bağlamaz).
+- **Hafta bloğunun sınırı yazılır:** `w_t` 30 günlük bir pencereden gelir ve oynaklık haftadan
+  uzun kümelenir; hafta bloğu bu bağımlılığın bir kısmını keser ve aralığı DARALTMA eğilimindedir.
+  **Duyarlılık:** aynı hesap **4 haftalık ardışık bloklarla** da raporlanır — **bilgi, kapı
+  değil** (kullanıcının tanımı hafta; min kuralına çevirmek 14 > O6'da onaya sunulur).
+- **Max drawdown bir YOL metriğidir** ve karıştırılan haftalarla kurulan eğrinin MDD'si gerçek
+  yolun MDD'si değildir; ΔMDD'nin bootstrap aralığı "yaklaşık" etiketiyle raporlanır, nokta
+  tahmini gerçek yoldan gelir.
+
+### 9. Dönemler
+
+Sınırlar `scripts/backtest_ema.py`den İTHAL edilir (iki yerde yazılı pencere bir gün ayrışır):
+
+| Dönem | Getiri günleri (UTC) | Gün |
+|---|---|---|
+| **A** | 2022-01-01 → 2024-06-29 (son gün `PERIOD_A_CUTOFF` 2024-06-30T00:00'da biter) | 911 |
+| **B** | 2024-06-30 → koşu anından önce KAPANMIŞ son UTC günü (yüke yazılır) | ~818 |
+
+- **Isınma (30 + 365 gün) A'nın ÖNCESİNDEN alınır**, A'nın içinden yenmez; B'nin ısınması
+  A'nın verisidir — bu bir ÖZELLİK (geçmiş veri) kullanımıdır, sonuç sızıntısı değil.
+- **Embargo YOK ve bu ölçülmüş değil yapısal:** sonuç birimi tek bir gündür, dönemler arasında
+  taşınan bir pozisyon sonucu yoktur ve her dönem nakitle yeniden başlar. `ema_trend`in
+  embargosu (6.1) tutuş süresinden gelir; burada tutuş süresi bir gündür.
+- **B'ye koşu öncesi dokunulmaz.** Tek `measure` koşusu A ve B'yi birlikte hesaplar; hiçbir
+  seçim A'nın sonucuna bağlı değildir (her şey burada sabit), bu yüzden B'nin aynı koşuda
+  hesaplanması bir kontaminasyon değildir.
+
+### 10. Geçme koşulu (bağlayıcı) ve güç
+
+**GEÇTİ (varlık başına AYRI):** `ΔSR`'nin %95 hafta-blok aralığının alt sınırı **> 0**, **hem A'da
+hem B'de**. (a) ve (b) ayrı kararlardır. "Oynaklık hedefleme işe yarıyor" genel cümlesi ancak
+İKİSİ de geçerse yazılabilir; biri geçerse cümle o varlıkla sınırlıdır.
+
+**Çoklu karşılaştırma:** varlık içinde A ∧ B birlikte istenir (kesişim–birleşim) ve ek düzeltme
+gerektirmez; iki varlık ayrı iddia olarak raporlanır, aile içi BH uygulanmaz — tek bir
+varlığın yanlışlıkla geçme olasılığı zaten ≤ 0.025² mertebesindedir. Satır sicile TEK satır
+olarak girer (13).
+
+**Güç (sonuç görülmeden, dürüst).** İki eşleştirilmiş Sharpe'ın farkının standart hatası
+(Jobson–Korkie / Memmel, günlük SR ≈ 0'da): `SE_yıllık ≈ √365 · √(2(1−ρ)/T) · √DEFF`; `ρ` = S
+ile U'nun günlük getiri korelasyonu, DEFF = hafta kümesinin tasarım etkisi. `MDE = 2.802 · SE`
+(§6j > 9'un formülü).
+
+| Dönem (T) | ρ | DEFF | SE | **MDE (ΔSR)** | Güç @ ΔSR 0.1 / 0.2 / 0.3 |
+|---|---|---|---|---|---|
+| A (911) | 0.80 | 1.0 | 0.40 | **1.12** | 4% / 7% / 11% |
+| A (911) | 0.90 | 1.0 | 0.28 | **0.79** | 5% / 11% / 18% |
+| A (911) | 0.90 | 1.5 | 0.35 | **0.97** | 5% / 8% / 14% |
+| A (911) | 0.95 | 1.0 | 0.20 | **0.56** | 7% / 17% / 32% |
+| B (818) | 0.90 | 1.0 | 0.30 | **0.84** | 5% / 10% / 17% |
+| B (818) | 0.95 | 1.0 | 0.21 | **0.59** | 7% / 16% / 30% |
+
+- `ρ` tahmini 0.80–0.95'tir: `w_t < 1` yalnızca yüksek oynaklık günlerinde olur ve varyansı
+  taşıyan da tam o günlerdir, yani ρ "yarı günler özdeş" sezgisinden düşüktür.
+- **İki dönemin BİRLİKTE geçme olasılığı**, gerçek etki ΔSR = 0.2 iken ≈ **%1** (ρ = 0.90),
+  en iyimser köşede (ρ = 0.95, ΔSR = 0.3) ≈ **%10**'dur. Literatürün hisse için bildirdiği
+  iyileşmeler bu mertebededir.
+- **Sonuç: bu tasarım gerçekçi bir etkiyi DOĞRULAYAMAZ; "ayırt edilemedi" beklenen sonuçtur ve
+  tezin reddi olarak OKUNMAZ.** Kapı yalnızca büyük bir etkiyi (ΔSR ≳ 0.6–1.0) yakalar. Bu,
+  kapıyı gevşetmek için bir gerekçe değildir; okumanın sınırıdır ve rapora yazılır.
+- Koşu sonrası rapor gerçekleşen ρ ve DEFF'i bu projeksiyonla yan yana yazar (post-hoc güç
+  değil, kesinlik beyanı).
+
+### 11. TAHMİNLER (sonucu görmeden)
+
+- **Kullanıcının (bağlayıcı olmayan, kayıt):** Sharpe farkı küçük pozitif; drawdown sabit
+  ağırlık kontrolüne göre belirgin düşük.
+- **Ön-kaydı yazanın (ayrı, kayıt):** ΔSR noktası A'da (a) ve (b) için +0.05 … +0.3, B'de sıfır
+  civarı; aralıklar sıfırı içerir (10). ΔMDD'nin işareti belirsiz, büyüklüğü birkaç yüzde puan:
+  F, `w̄` ile MDD'yi zaten orantılı küçültür ve 30 günlük pencere ani çöküşlere (bir günde gelen)
+  geç tepki verir — S'nin F'ye üstünlüğü ancak oynaklığın düşüşten ÖNCE ya da düşüşle BİRLİKTE
+  yükseldiği yavaş çöküşlerde beklenir.
+
+### 12. Sonucu gördükten sonra (ek; §7'ye ek olarak)
+
+- 30 / 365 / 1.0, uygunluk kuralı, maliyet kuralı, küme tanımı, dönem sınırları ve geçme
+  koşulu DEĞİŞMEZ. Pencere, hedef tanımı ("medyan yerine p60") ya da üst sınır ("kaldıraçlı
+  sürüm") süpürülmez.
+- Duyarlılık (4 haftalık blok) geçme kararını DEĞİŞTİREMEZ — iki yönde de.
+- Geçse bile: mevcut modellerin boyutlandırmasına oynaklık ölçeklemesi EKLENMEZ (kural 11'i
+  değiştirir; ayrı bir karar ve kendi ön-kaydı); bir "vol-target" modeli yeni bir ön-kayıtla ve
+  taze bir OOS penceresiyle gelir.
+- Tek sefer: herhangi bir sayı üretmiş `measure` koşusu tekrarlanmaz; altyapı yüzünden hiçbir
+  sayı üretmeden düşen koşu §7.6 gereği tekrarlanır ve kayda geçer.
+
+### 13. Sicil
+
+§6c'de **9. satır.** Hipotez **ev içidir** (dış bir sistemin kuralları değil) → **ev içi BH
+paydasına GİRER.** Satırın kendi içindeki iki varlık 10'da açıklandığı gibi ayrı iddialardır.
+
+### 14. ONAY BEKLEYEN noktalar — kullanıcının tanımına bu bölümün EKLEDİKLERİ
+
+Kod bunlar onaylanmadan yazılmaz. Her biri bir öneridir; değişiklik bir TADİLAT'la kayda girer.
+
+| # | Nokta | Bu ön-kaydın seçimi | Alternatif |
+|---|---|---|---|
+| **O1** | Maliyet | `fee_rate + slippage_base` (0.00105/yön) | yalnızca `fee_rate` (tanımın literal hâli) |
+| **O2** | Funding | **HARİÇ** — kabul edilen sapma. Arşiv (2022-03'ten) karar 50'nin tutarlılık kanıtını geçmedi ve A 2022-01'de başlıyor. Yönü muhtemelen MUHAFAZAKÂR: long funding'i tipik olarak yüksek oynaklıklı boğa dönemlerinde yüksektir, S tam o günlerde daha az tutar — dışlamak S'nin bir avantajını siler. Ölçülmedi. | arşivle, kanıt kapısından sonra |
+| **O3** | Sepette ölçekleme | sepet DÜZEYİNDE tek `w_t` | sembol başına ölçekleme (ters oynaklık ağırlığı — ayrı tez) |
+| **O4** | Uygunluk | son 30 günün kapanışları tam | başka bir asgari yaş |
+| **O5** | Uygulama fiyatı | `C_{t−1}` (24:00 kapanışı); kural 13'ün "sonraki barın açılışı" 7/24 piyasada bu fiyata eşit kabul edilir — üç stratejiye aynı. | 00:00 barının açılışı |
+| **O6** | Bağlayıcı aralık | hafta bloğu (tanım); 4 haftalık blok yalnızca duyarlılık | bağlayıcı = iki alt sınırın MİNİMUMU (§6j'nin iki-küme kuralı; daha muhafazakâr) |
+| **O7** | B | 2024-06-30 → koşu günü, embargo yok | 1 günlük boşluk (§6k'nin B'si 07-02'de başlıyordu) |
+| **O8** | Güç | kapı değişmez, ~%1 ortak geçme olasılığı rapora yazılır | kullanıcı bu güçle koşmaya DEĞMEYECEĞİNE karar verebilir — bu da kayda geçer |
+
+**Kabul edilen sapmalar (onaydan bağımsız, kayıt):** (1) **Hayatta kalan yanlılığı** — 13 sembol
+bugünden seçildi (SUI, PENGU, ETHFI dâhil); seviye yanlıdır, ancak S, U ve F aynı sepeti
+tuttuğu için FARK daha az etkilenir. (2) Nakit getirisi 0 (USDT faizi yok). (3) Perp fiyatı
+spot yerine (projenin veri kaynağı). (4) Sepetin bileşimi dönem içinde değişir (`|E_t|`
+raporlanır).
+
+### 15. Uygulama planı (onaydan SONRA, ayrı commit'ler)
+
+1. `scripts/measure_vol_target.py` — iki aşama. **`preflight`:** sembol başına ilk/son bar,
+  eksik gün, (a)/(b)'nin ilk tanımlı günü; **hiçbir getiri, σ̂, ağırlık ya da Sharpe
+  üretmez** (test). **`measure`:** 5–10'un tamamı, tek sefer. `strategies/*`, `core/portfolio.py`,
+  `core/engine.py`, `core/ledger.py` import EDİLMEZ (test); Sharpe/MDD `core/metrics.py::
+  account_stats`ten, günlük seri `measure_regime.py::daily_closes`ten, yüzdelikler
+  `backtest_dc.py::_percentiles`ten, pencereler `backtest_ema.py`den.
+2. Testler: ileriye bakış (t ve sonrası bozulunca `w_t` değişmez), `w_t ≤ 1`, devir/maliyet
+  aritmetiği (elle hesaplanmış küçük örnek), F'nin `w̄`'ı, eşleştirilmiş bootstrap'ın
+  determinizmi, eksik kapanış ve tanımsız gün kapıları, çıkış kodları (3 = veri kapısı).
+3. `.github/workflows/measure-vol-target.yml` — `measure-regime.yml` deseni, aşama
+  `scripts/trigger_stage.py`den (`.github/triggers/vt-preflight*.run`, `vt-measure*.run`),
+  `contents: read`; sonuçlar ayrı bir `pin-results` işiyle `docs/data/vol_target*`e sabitlenir
+  (kullanılan günlük seriler dâhil). Cron YOK.
+4. `CLAUDE.md` tablosuna betik ve workflow satırları; `docs/decisions.md`'ye sonuç kaydı.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
