@@ -4788,6 +4788,29 @@ aşağıdaki gibi okundu. Hiçbiri bir eşiği, tanımı ya da kaynağı DEĞİ�
 8. **M4:** olaylar TÜM pozisyonlardan kurulur, ICC yalnızca R'si bilinenlerden; çift
    korelasyonunun örtüşme getirisi 4'teki pencere kuralıyla (`close ≤ start → close ≤ end`).
 
+
+### SONUÇ ÖNCESİ BEKLENTİ *(2026-09-26, `measure` tetiklenmeden ÖNCE; hiçbir hiza, beta ya da haftalık sayı görülmedi)*
+
+Preflight (#36246062306) temiz geçti: pins SHA256 49/49, fiyat kapısı 5,776/5,776 pozisyonda
+hatasız (ema 0.0001, dc ve canlı 0.0005 kaymayla — yanlış kayma 4e-4 farkla her pozisyonu
+düşürürdü, yani kapı ayırt edici olduğunu da gösterdi), pozisyon sayıları karar 59'un
+kaydıyla aynı. Preflight hiçbir R/getiri/hiza üretmedi.
+
+**Kullanıcının tahmini (olduğu gibi):** beta kazancın büyük kısmını açıklayacak, alfa
+aralıkları sıfırı içerecek, BTC hizalı pay kontrole yakın çıkacak.
+
+**Okuma sırası (kullanıcı, sonuç görülmeden):**
+1. xsec determinizm kapısı — geçti mi, yoksa xsec satırları "ölçülmedi" mi.
+2. BTC hizalı pay: model − kontrol, eşleştirilmiş aralığıyla — model yönü yazı-turadan iyi mi seçiyor?
+3. β, R², α — backtest kaynaklarında (ema, dc, xsec; A ve B ayrı). En büyük örneklem ema A
+   `trend` (1246 pozisyon); ayrıştırma en keskin orada okunur.
+4. Eşzamanlılık — n ↔ n_etkin.
+5. Haftalık tablo — en iyi ve en kötü haftalar yan yana: long/short payı ve BTC'nin yönü.
+6. Canlı — yalnızca betimsel; kümeli aralıklar değerlendirilemez (§6m > 5).
+
+Tahmin bir kapı DEĞİLDİR ve tutması ya da tutmaması hiçbir modeli, kapıyı ya da kararı
+değiştirmez (§6m > 1); yalnızca sonucun ne kadar beklenmedik olduğunu sonradan okunur kılar.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
