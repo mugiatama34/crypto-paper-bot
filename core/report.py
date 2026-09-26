@@ -33,6 +33,7 @@ from core.metrics import (
     ModelMetrics,
     acceptance_flags,
     annotate_loss_streak,
+    control_map,
     arm_of,
     breakdown,
     exit_rule_of,
@@ -98,6 +99,8 @@ def build_dashboard(
     marks = marks_from_market(market)
 
     control_model = str(get_setting(config_dict, "acceptance.control_model"))
+    control_for = dict(get_setting(config_dict, "acceptance.control_for"))
+    controls = control_map(competitors, control_model=control_model, control_for=control_for)
     ci_alpha = float(get_setting(config_dict, "acceptance.edge_ci_alpha"))
     bootstrap_samples = int(get_setting(config_dict, "acceptance.bootstrap_samples"))
     # Havuzun aralığı projenin ANA sorusunu okunur kılar: "short'lar long'lardan iyi"
@@ -116,7 +119,7 @@ def build_dashboard(
     # yolundan gelir (core/metrics.py::r_series), yani tablodaki ortalama R ile aralığın
     # altındaki sayılar AYNI kümedir. Kontrol yarışmacı listesinde olmasa bile eklenir:
     # farkın öteki tarafı odur.
-    sample_models = {*competitors, control_model} & set(trades)
+    sample_models = {*competitors, control_model, *(c for c in controls.values() if c)} & set(trades)
     r_samples = {model: r_series(trades[model]) for model in sample_models}
     flags = acceptance_flags(
         metrics,
@@ -126,6 +129,7 @@ def build_dashboard(
         edge_margin_r=float(get_setting(config_dict, "acceptance.edge_margin_r")),
         control_min_trades=int(get_setting(config_dict, "acceptance.control_min_trades")),
         broken_controls=tuple(get_setting(config_dict, "acceptance.broken_controls")),
+        control_for=control_for,
         r_samples=r_samples,
         ci_alpha=ci_alpha,
         bootstrap_samples=bootstrap_samples,
@@ -142,6 +146,10 @@ def build_dashboard(
         },
         "acceptance": {
             "control_model": control_model,
+            # Model başına eşleme (karar 65) ve katmanın KONTROL kümesi: arayüz "bu satır
+            # bir kontrol mü" sorusunu tek bir `control_model`den okuyamaz hâle geldi.
+            "control_for": control_for,
+            "controls": sorted({c for c in controls.values() if c}),
             "broken_controls": list(get_setting(config_dict, "acceptance.broken_controls")),
             "min_trades": int(get_setting(config_dict, "acceptance.min_trades")),
             "control_min_trades": int(

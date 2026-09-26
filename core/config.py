@@ -39,6 +39,7 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "acceptance.min_trades",
     "acceptance.control_model",
     "acceptance.broken_controls",
+    "acceptance.control_for",
     "acceptance.control_min_trades",
     "acceptance.edge_margin_r",
     "acceptance.edge_ci_alpha",

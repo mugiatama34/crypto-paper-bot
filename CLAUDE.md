@@ -879,6 +879,15 @@ Kararlar:
   koşullara düşer — ama bu sessiz olmaz, `logger.warning` ile söylenir. Eksik bir çıta,
   geçilmiş bir çıta gibi görünmemelidir.
 
+## PR Birleştirme Kuralı *(2026-09-26, kullanıcı kararı)*
+
+- **Yalnızca altyapı, test ve araç değişikliği** içeren bir PR'ı Claude, CI yeşil döndüğünde
+  kendisi birleştirebilir (ör. PR #58: tetikleyici çözümü, workflow yapısı, test kapıları).
+- **Ön-kayıt, sonuç kaydı ya da karar metni** içeren bir PR (docs/backtest.md'nin ön-kayıt
+  ve SONUÇ bölümleri, docs/decisions.md'deki bir karar, model/kapı/strateji tasarımı) YALNIZCA
+  kullanıcının onayıyla birleştirilir.
+- Sınıf belirsizse ikinci tür sayılır.
+
 ## Kod Stili
 
 - Python 3.11+. Tüm fonksiyon ve metod imzalarında type hint zorunludur.

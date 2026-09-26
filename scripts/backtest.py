@@ -74,7 +74,7 @@ from core.funding import funding_times  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer, resolve_layer  # noqa: E402
 from core.ledger import Ledger  # noqa: E402
 from core.metrics import (  # noqa: E402
-    AcceptanceFlags, ModelMetrics, acceptance_flags, buy_hold_return, compare,
+    AcceptanceFlags, ModelMetrics, acceptance_flags, buy_hold_return, compare, check_control_map,
     format_report, holding_stats, r_series,
 )
 from core.portfolio import Portfolio  # noqa: E402
@@ -319,6 +319,10 @@ def run_backtest(
 
     layer_control = str(get_setting(config, "acceptance.control_model"))
     resolved_control = layer_control if control_model is None else str(control_model)
+    # Açık bir kontrol, katmanın model başına eşlemesini (karar 65) de EZER: iki kaynak
+    # birlikte geçerli olsaydı hangi satırın hangi zemine karşı ölçüldüğü belirsizleşirdi.
+    layer_control_for = dict(get_setting(config, "acceptance.control_for"))
+    resolved_control_for = layer_control_for if control_model is None else {}
 
     deviations: dict[str, Any] = {
         "signals_per_bar": {"live": signals_per_bar_was, "run": True},
@@ -328,7 +332,10 @@ def run_backtest(
     }
     if control_model is not None:
         # Sessiz olamaz: hangi zemine karşı ölçüldüğü manifest'ten okunmalı.
-        deviations["control_model"] = {"layer": layer_control, "run": resolved_control}
+        deviations["control_model"] = {
+            "layer": layer_control, "run": resolved_control,
+            "layer_control_for": layer_control_for,
+        }
         logger.info(
             "kontrol modeli AÇIKÇA verildi: %s (katmanın varsayılanı: %s)",
             resolved_control, layer_control,
@@ -365,6 +372,14 @@ def run_backtest(
     strategies, build_failures = build_strategies(names, config)
     if not strategies:
         raise RuntimeError("hiçbir model kurulamadı")
+    # Eşleme koşudan ÖNCE doğrulanır: eksik bir kontrol saatlerce koşan bir pencerenin
+    # SONUNDA ConfigError vermemeli (ör. `--models trend` base'de `trend_random` olmadan).
+    check_control_map(
+        [s.name for s in strategies if not s.is_benchmark and not s.is_replica],
+        control_model=resolved_control,
+        control_for=resolved_control_for,
+        available=[s.name for s in strategies],
+    )
 
     if signal_cutoff is not None:
         if signal_cutoff <= start:
@@ -491,6 +506,7 @@ def run_backtest(
         edge_margin_r=float(get_setting(config, "acceptance.edge_margin_r")),
         control_min_trades=int(get_setting(config, "acceptance.control_min_trades")),
         broken_controls=tuple(get_setting(config, "acceptance.broken_controls")),
+        control_for=resolved_control_for,
         r_samples={name: r_series(rows) for name, rows in trades.items()},
         ci_alpha=float(get_setting(config, "acceptance.edge_ci_alpha")),
         bootstrap_samples=int(get_setting(config, "acceptance.bootstrap_samples")),

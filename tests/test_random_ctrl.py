@@ -60,8 +60,18 @@ def test_registry_resolves_the_model_name() -> None:
     assert isinstance(build("random_ctrl"), RandomControl)
 
 
-def test_model_is_listed_in_config() -> None:
-    assert "random_ctrl" in get_setting(load_config(), "models")
+def test_model_is_retired_in_base_but_kept_where_its_ledger_is_read() -> None:
+    """Karar 65: base'de EMEKLİ (eşlenmiş kontroller geldi), ema kadrosunda duruyor.
+
+    Her iki katmanda da ölçü çubuğu olarak BOZUK işaretlidir (karar 63): ema'da E bu yüzden
+    değerlendirilemez. Emeklilik defteri silmez (kural 1) — bu yüzden REGISTRY'de kalır.
+    """
+    from core.layers import resolve_layer
+
+    config = load_config()
+    assert "random_ctrl" not in resolve_layer(config, "base").models
+    assert "random_ctrl" in resolve_layer(config, "ema").models
+    assert "random_ctrl" in get_setting(config, "acceptance.broken_controls")
 
 
 def test_signal_uses_the_shared_risk_sizing() -> None:
