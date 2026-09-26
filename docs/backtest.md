@@ -4901,6 +4901,166 @@ aynı ön-kayıtla ve yalnızca canlı kaynak için koşulabilir. Karar 62.
 
 ---
 
+## 6n. ÖN-KAYIT — base katmanının EŞLENMİŞ KONTROLLERİ (`trend_random`, `meanrev_random`) ve model başına kontrol eşlemesi *(2026-09-26)*
+
+**Bu belge kod yazılmadan ve hiçbir koşu yapılmadan yazıldı, AYRI bir commit'tir.** Model
+kodu, eşleme, testler ve config değişikliği SONRAKİ commit'lerdedir ve bu metni
+değiştiremez. §7'nin tamamı uygulanır.
+
+**Statü: ÖLÇÜM ALTYAPISI, hipotez DEĞİL.** §6i'nin (`scalp_coinflip`) aynı statüsü: bu iş
+var olan bir kapıyı (C-2) base katmanında yeniden ÖLÇÜLEBİLİR kılar; hiçbir modelin
+performansı hakkında yeni bir iddia taşımaz. §6c'nin siciline satır AÇMAZ ve BH paydasına
+girmez. Tahminleri (M1–M2) yine de burada, sonuçtan önce yazılır — bir ölçümün tahmini de
+bir tahmindir.
+
+**Kapsam YALNIZCA base'dir** (karar 63 > KAPSAM KARARI). ema katmanı için kontrol
+açılmaz; orada E, `broken_controls` gereği değerlendirilemez kalır.
+
+### 1. Sorun
+
+`random_ctrl` yalnızca stop'la kapanabilir; kapanmış-işlem R'si SANSÜRLÜDÜR (karar 60) ve
+C-2 ona karşı ölçülemez (karar 63, `acceptance.broken_controls`). Onarım kontrolün ÇIKIŞ
+geometrisini ölçtüğü modelinkine eşlemektir — `scalp_coinflip` (§6i) ve `dc_coinflip`
+(§6j) desenleri: fark yalnızca GİRİŞ bilgisini ölçsün. Base'in iki yarışmacısı iki ayrı
+çıkış geometrisi taşıdığı için tek bir kontrol ikisine birden eşlenemez; kontrol MODEL
+BAŞINA olur.
+
+### 2. Ortak giriş — iki kontrolde birebir aynı, tek kopya
+
+- **Uygunluk (kurulabilirlik, görüş DEĞİL):** `as_of` barını taşıyan ve ATR(14, `simple`)
+  hesaplanabilen sembol; `meanrev_random` için ek olarak Bollinger(20, 2) hesaplanabilen
+  sembol (hedef ondan türer — hesaplanamıyorsa işlem kurulamaz). Semboller ADI SIRALI.
+  Başka hiçbir eleme yoktur (`random_ctrl`in sözü): rejim, hacim, "kötü sembol"
+  filtresi kontrolü bir stratejiye çevirir.
+- **Çekiliş:** barda TEK sinyal; uygunlar arasından düzgün rastgele sembol, sonra düzgün
+  rastgele yön (`long`/`short`).
+- **Boyut, maliyet, kota, dolum, likidasyon:** evin kuralları, yarışmacılarla BİREBİR
+  (statü YARIŞMACI; `is_benchmark = is_replica = False`).
+- Giriş kuralı `random_ctrl` ile PAYLAŞILIR ama `random_ctrl`in ürettiği sinyaller
+  DEĞİŞMEZ: ortak kod çıkarılırsa `random_ctrl`in aynı `as_of`ta aynı sinyali ürettiği bir
+  testle sabitlenir (defteri tarihli bölünmesin — karar 25).
+
+### 3. Çıkış geometrileri — ölçtükleri modelden BİREBİR
+
+| | `trend_random` (↔ `trend`) | `meanrev_random` (↔ `meanrev`) |
+|---|---|---|
+| İlk stop | 2 × ATR | 2 × ATR |
+| Trailing | 1 × ATR (`trailing_atr=1.0`, motorun Chandelier kuralı) | yok |
+| Hedef | yok | `giriş ± |SMA20 − kapanış|`, yön tarafına; `fraction = 1.0` |
+| Zaman stop'u / `manage_positions` | yok (`trend`de yok) | yok (`meanrev`de yok) |
+
+Sayılar config'ten değil modellerin KENDİ sabitlerinden okunur (`strategies/trend.py`,
+`strategies/meanrev.py` modül sabitleri) — ikinci bir kopya bir gün sessizce ayrışır.
+
+**`meanrev_random`in hedefi: MESAFE korunur, taraf yönden gelir** (`reflect` deseni, §6i >
+2). `meanrev` hedefi orta bandın KENDİSİNE koyar; rastgele bir girişte orta bant kabaca
+yarı yarıya ters tarafta kalır ve `meanrev`in o durumdaki davranışı (hedefsiz açılış)
+kontrolde SANSÜRÜ geri getirirdi. "Hedefi yalnızca bant doğru taraftayken aç" ise yönü
+ortalamaya dönüşe bağlar, yani kontrolü `meanrev`in tezine çevirir. `|SMA20 − kapanış| = 0`
+ise işlem kurulamaz (atlanır, `logger.info`).
+
+### 4. RNG
+
+```
+trend_random    random.Random(f"{random_seed}:{as_of}:trend_random")
+meanrev_random  random.Random(f"{random_seed}:{as_of}:meanrev_random")
+```
+
+Akışlar `random_ctrl`inkinden (`{seed}:{as_of}`) ve birbirinden AYRIDIR: iki kontrol iki
+ayrı modelin sıfır noktasıdır, paylaşacakları ölçülmeyen bir eksen yoktur. Aynı `as_of`
+yeniden koşulduğunda birebir aynı sinyal (tekrarlanabilirlik). Tohum bu belgeyle sabittir.
+
+### 5. Eşleme — `acceptance.control_for`
+
+- Yeni ZORUNLU anahtar `acceptance.control_for` (kökte `{}`). Boşsa her yarışmacının
+  kontrolü katmanın `control_model`idir (bugünkü davranış, scalp/dc/xsec DEĞİŞMEZ).
+- DOLUYSA eşleme **tüketicidir**: katmanın her yarışmacısı bir anahtar olmak zorundadır;
+  eksik model ya da `models` listesinde olmayan bir kontrol `ConfigError`dır — sessiz
+  geri düşme yok. Kontroller kendilerine eşlenir (kendi satırlarında E alamazlar).
+- Base: `trend → trend_random`, `meanrev → meanrev_random`, iki kontrol kendine.
+- Tek çözücü `core/metrics.py`de; `acceptance_flags`, `core/report.py`,
+  `scripts/backtest.py`, `scripts/backtest_ema.py` ve skorboard (`assignStyles`e kontrol
+  LİSTESİ) aynı çözücüyü okur. `AcceptanceFlags` bir `control_model` alanı kazanır: her
+  satırın hangi kontrole karşı ölçüldüğü yükte yazılıdır.
+- `broken_controls` kuralı eşlenen kontrole de uygulanır.
+
+### 6. Katman bağlantısı
+
+- `layers.base.models`: `trend_random` ve `meanrev_random` EKLENİR; `random_ctrl`
+  ÇIKARILIR (emekli: defteri ve açık pozisyonları olduğu gibi DONAR — `avwap`,
+  `confluence`, `scalp_bandit` emsali; kural 1). `broken_controls`te kalır.
+- Yeni kontroller boş defterle başlar; geçmişe doldurma YOKTUR. Her biri kendi
+  `control_min_trades` (30) kapısını geçene kadar eşlendiği modelin E'si
+  DEĞERLENDİRİLEMEZ — beklenen ve istenen davranış.
+- Bildirim: `run.yml` zaten `--models trend`; yeni kontroller bildirilmez. Yakınlık
+  taraması (`scripts/proximity.py`) kapsamına EKLENMEZ (bilgisiz çekiliş).
+
+### 7. SIFIR-BEKLENTİ TESTİ — değişmez, tolerans burada sabit
+
+**Veri:** sentetik, sürüklenmesiz aritmetik rastgele yürüyüş; 8 sembol × 2000 bar (4H);
+başlangıç 1000, bar başına σ = 5; her bar 16 alt adımdan kurulur (high/low alt adımların
+uç değeri), `open = önceki close` (boşluk yok), sabit hacim, fonlama YOK. Tohum testte
+sabit. Motorun kendisi koşar (`core/engine.py` üzerinden, ikinci bir simülatör YOK);
+sentetik üretecin yalnızca alt adım yolunu saklaması serbesttir (bkz. kâhin).
+
+**Kural 13 kâhini (yalnızca `meanrev_random`).** Aynı barda hem stop hem hedef aralıktaysa
+motor stop'u varsayar (kural 13) ve bu, sürüklenmesiz veride beklentiyi SIFIRIN ALTINA
+iter — kontrolün değil kuralın etkisi. Sentetik veride alt adım yolu bilindiği için test,
+motorun `ambiguous_stop_exits` olarak işaretlediği her kapanışta hangi seviyeye ÖNCE
+değildiğini okur ve düzeltilmiş R'yi (`R_düz`) kurar. Pozisyon her iki durumda da o barda
+kapandığı için sonraki yol değişmez; düzeltme işlem başınadır. `trend_random`da hedef
+olmadığından `R_düz = R`.
+
+Koşullar (her kontrol için ayrı):
+
+| | Koşul | Tolerans |
+|---|---|---|
+| **(a)** maliyet SIFIR (`fee_rate = slippage_base = slippage_short_stop = 0`) | `|ort(R_düz)| ≤ 0.08` | sabit |
+| **(b)** canlı maliyet config'i | `|ort(R_düz) + ort(cost_per_r)| ≤ 0.08` | sabit |
+| **(c)** SINIRLI tutuş (sansür yok) | pencere sonunda AÇIK hiçbir pozisyon 200 bardan yaşlı değil **ve** kapanmış pozisyonların azami tutuşu ≤ 200 bar | sabit |
+| **geçerlilik** | kapanmış pozisyon ≥ 1000 **ve** `ort(R_düz)`in bootstrap standart hatası ≤ 0.02 (tolerans ≥ 4 SE) | sağlanmazsa test TASARIM hatasıyla düşer, "geçti" sayılmaz |
+
+Ayrıca **raporlanır, sınanmaz:** motorun ham `ort(R)` değeri ve `ort(R) − ort(R_düz)` —
+kural 13'ün bu geometrideki bedeli.
+
+**Regresyon — `random_ctrl` aynı testten KALMALI:** (a)'da `ort(R) ≤ −0.5` ve (c) ihlali
+iddia edilir. Hatanın kalıcı belgesi budur.
+
+⚠ **(c) ilk önerideki biçiminden DEĞİŞTİ (kod öncesi, gerekçesiyle).** Önerilen biçim
+"pencere sonunda pozisyonların ≥ %95'i kapanmış" idi. Bu `random_ctrl`i YAKALAMAZDI:
+`max_positions = 5` açık pozisyon sayısını 5'le sınırlar, yani binlerce pozisyonluk bir
+pencerede açık kalan pay tanım gereği küçüktür. Sansürün imzası açık kalan pozisyonların
+SAYISI değil YAŞIDIR — `random_ctrl`in kazananları kotayı yüzlerce/binlerce bar boyunca
+tutar (ema A: azami 6323 bar). (c) bu yüzden yaş sınırıdır. Ortalama R koşulu (a) sansürü
+zaten ayrıca yakalar (kapanmış R ≈ −1).
+
+### 8. Canlı tahminler (KAPI DEĞİL — tutmazsa C-2 okunmadan önce sebep aranır)
+
+- **M1:** her kontrol n ≥ 30'a ulaştığında ortalama R'sinin bootstrap aralığı
+  `−ort(cost_per_r)` değerini (± kural 13 bedeli) içerir.
+- **M2:** hiçbir kontrolün açık pozisyonu 200 bardan yaşlı değildir.
+
+### 9. KABUL EDİLEN SAPMALAR
+
+1. **`meanrev_random`in hedef MESAFESİ `meanrev`inkiyle aynı dağılımda değildir.** Rastgele
+   barlarda orta banda uzaklık, `meanrev`in aşırılıkta girdiği barlardakinden ortalamada
+   KÜÇÜKTÜR. Kabul edilir: kontrolün işi sıfır noktası vermektir ve rastgele girişte
+   beklenen R hedef mesafesinden bağımsız olarak −maliyet'e yakınsar — (a)/(b) bunu sınar.
+2. **Kural 13'ün bedeli iki tarafta farklı olabilir.** Yakın hedef, aynı barda stop+hedef
+   olasılığını artırır; kontrol `meanrev`e göre DAHA SIK kötü varsayıma düşebilir ve bu
+   kontrolü olduğundan kötü göstererek C-2 farkını ŞİŞİRİR. Bu yüzden `meanrev` için C-2
+   okunmadan önce iki modelin belirsiz-stop payı harness'tan
+   (`scripts/backtest.py::format_fill_ambiguity`) aynı pencerede okunur ve farkla birlikte
+   raporlanır. Kural 13 DEĞİŞMEZ (defterin kuralı tektir).
+3. **`trend_random` `trend`in rejim/kırılım kapısını taşımaz** — taşısaydı kontrol olmazdı;
+   kotayı doldurma hızı farklıdır ve bu, kontrolün ölçtüğü şeyin (giriş bilgisi) parçasıdır.
+
+### 10. Sonucu gördükten sonra YAPILMAYACAKLAR (§7'ye ek)
+
+- Toleranslar (0.08, 200 bar, 1000 pozisyon, SE 0.02) test sonucunu gördükten sonra
+  GEVŞETİLMEZ. Test düşerse sebep kodda aranır; tolerans değişikliği yeni bir ön-kayıttır.
+- Kontrol geometrisi C-2 sonucunu gördükten sonra değiştirilmez.
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.

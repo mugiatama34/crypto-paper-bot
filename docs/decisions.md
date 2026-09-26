@@ -5310,3 +5310,15 @@ olurdu, ama `ema_trend` C-1'den kaldı — karar değişmez — ve katmanda akti
 **Açık iş (unutulmasın):** ema katmanına yeni bir model önerildiğinde, kontrolü O MODELİN
 ön-kaydıyla birlikte ve O MODELİN geometrisine eşlenerek kurulur. O güne kadar ema'da E
 değerlendirilemez; `random_ctrl` `broken_controls` listesinde kalır.
+
+## 64. base katmanına EŞLENMİŞ kontroller: `trend_random`, `meanrev_random` — ön-kayıt §6n *(2026-09-26)*
+
+Karar 63'ün onarım yarısı. Kontrol MODEL BAŞINA olur (`acceptance.control_for`), çünkü
+base'in iki yarışmacısı iki ayrı çıkış geometrisi taşır. Kararlar (kullanıcı):
+`meanrev_random`in hedefi orta banda UZAKLIĞIN yansıtılmasıdır (§6n > 3); ön-kayıt kod ve
+koşudan ÖNCE sabitlenir — geometri, tohum ve sıfır-beklenti testi dâhil; kapsam yalnızca
+base. `random_ctrl` base'de emekli olur, defteri donar. Ön-kayıt yazılırken iki düzeltme
+kayda geçti (§6n > 7): sansür koşulu açık PAY yerine açık pozisyon YAŞI olarak tanımlandı
+(pay, `max_positions` yüzünden `random_ctrl`i yakalamazdı) ve `meanrev_random`in
+sıfır-beklenti testine kural 13 kâhini eklendi (aynı barda stop+hedef varsayımı beklentiyi
+kontrolden bağımsız olarak sıfırın altına iter).
