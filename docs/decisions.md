@@ -5322,3 +5322,6 @@ kayda geçti (§6n > 7): sansür koşulu açık PAY yerine açık pozisyon YAŞI
 (pay, `max_positions` yüzünden `random_ctrl`i yakalamazdı) ve `meanrev_random`in
 sıfır-beklenti testine kural 13 kâhini eklendi (aynı barda stop+hedef varsayımı beklentiyi
 kontrolden bağımsız olarak sıfırın altına iter).
+Tolerans ±0.05R'dir (kullanıcı kararı): C-2 marjı 0.15R olduğu için ±0.08R, marjın üçte
+birini yiyebilecek bir önyargıyı kaçırırdı. Sentetik veri 8 × 5000 bara büyütüldü, SE ≤
+0.0125, yani tolerans 4 SE. Tohum sabittir ve değiştirilmez.

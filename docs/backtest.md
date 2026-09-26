@@ -4997,7 +4997,7 @@ yeniden koşulduğunda birebir aynı sinyal (tekrarlanabilirlik). Tohum bu belge
 
 ### 7. SIFIR-BEKLENTİ TESTİ — değişmez, tolerans burada sabit
 
-**Veri:** sentetik, sürüklenmesiz aritmetik rastgele yürüyüş; 8 sembol × 2000 bar (4H);
+**Veri:** sentetik, sürüklenmesiz aritmetik rastgele yürüyüş; 8 sembol × 5000 bar (4H);
 başlangıç 1000, bar başına σ = 5; her bar 16 alt adımdan kurulur (high/low alt adımların
 uç değeri), `open = önceki close` (boşluk yok), sabit hacim, fonlama YOK. Tohum testte
 sabit. Motorun kendisi koşar (`core/engine.py` üzerinden, ikinci bir simülatör YOK);
@@ -5015,10 +5015,10 @@ Koşullar (her kontrol için ayrı):
 
 | | Koşul | Tolerans |
 |---|---|---|
-| **(a)** maliyet SIFIR (`fee_rate = slippage_base = slippage_short_stop = 0`) | `|ort(R_düz)| ≤ 0.08` | sabit |
-| **(b)** canlı maliyet config'i | `|ort(R_düz) + ort(cost_per_r)| ≤ 0.08` | sabit |
+| **(a)** maliyet SIFIR (`fee_rate = slippage_base = slippage_short_stop = 0`) | `|ort(R_düz)| ≤ 0.05` | sabit |
+| **(b)** canlı maliyet config'i | `|ort(R_düz) + ort(cost_per_r)| ≤ 0.05` | sabit |
 | **(c)** SINIRLI tutuş (sansür yok) | pencere sonunda AÇIK hiçbir pozisyon 200 bardan yaşlı değil **ve** kapanmış pozisyonların azami tutuşu ≤ 200 bar | sabit |
-| **geçerlilik** | kapanmış pozisyon ≥ 1000 **ve** `ort(R_düz)`in bootstrap standart hatası ≤ 0.02 (tolerans ≥ 4 SE) | sağlanmazsa test TASARIM hatasıyla düşer, "geçti" sayılmaz |
+| **geçerlilik** | kapanmış pozisyon ≥ 1000 **ve** `ort(R_düz)`in bootstrap standart hatası ≤ 0.0125 (tolerans ≥ 4 SE) | sağlanmazsa test TASARIM hatasıyla düşer, "geçti" sayılmaz |
 
 Ayrıca **raporlanır, sınanmaz:** motorun ham `ort(R)` değeri ve `ort(R) − ort(R_düz)` —
 kural 13'ün bu geometrideki bedeli.
@@ -5057,8 +5057,19 @@ zaten ayrıca yakalar (kapanmış R ≈ −1).
 
 ### 10. Sonucu gördükten sonra YAPILMAYACAKLAR (§7'ye ek)
 
-- Toleranslar (0.08, 200 bar, 1000 pozisyon, SE 0.02) test sonucunu gördükten sonra
-  GEVŞETİLMEZ. Test düşerse sebep kodda aranır; tolerans değişikliği yeni bir ön-kayıttır.
+- Toleranslar (0.05R, 200 bar, 1000 pozisyon, SE 0.0125) ve sentetik verinin boyutu
+  (8 × 5000 bar, σ = 5, başlangıç 1000) test sonucunu gördükten sonra GEVŞETİLMEZ. Test
+  düşerse sebep kodda aranır; tolerans değişikliği yeni bir ön-kayıttır.
+- **Tohum da sabittir ve DEĞİŞTİRİLMEZ.** Test deterministiktir: aynı kod her koşuda aynı
+  sonucu verir, yani "başka tohumla dene" düşen bir testi geçen bir teste çevirmenin
+  yoludur — yasaktır. Bu kapıyı açık bırakmamak için tolerans 4 SE'de tutuldu: doğru bir
+  uygulamanın sabit tohumda yanlışlıkla düşme olasılığı ihmal edilebilir.
+
+**Toleransın gerekçesi (sayı neden 0.05R).** C-2 marjı 0.15R'dir; kontrolde 0.05–0.08R'lik
+bir önyargı o marjın üçte birinden fazlasını yerdi, yani ±0.08R'lik bir tolerans önemli
+bir önyargıyı kaçırabilirdi. İlk taslaktaki 0.08R (2000 bar, SE ≤ 0.02) bu yüzden
+reddedildi; sentetik veri ucuz olduğu için boyut büyütüldü (5000 bar) ve hem sıkılık
+(0.05R) hem güvenlik (4 SE) birlikte sağlandı.
 - Kontrol geometrisi C-2 sonucunu gördükten sonra değiştirilmez.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
