@@ -401,7 +401,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
-| 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR hafta-blok CI alt sınırı > 0, A ∧ B, varlık başına | **KOŞULMADI** — ön-kayıt açık, onay bekliyor (§6o > 14) |
+| 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **KOŞULMADI** — ön-kayıt açık, onaylandı (§6o > TADİLAT-1) |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -5410,6 +5410,63 @@ raporlanır).
   `contents: read`; sonuçlar ayrı bir `pin-results` işiyle `docs/data/vol_target*`e sabitlenir
   (kullanılan günlük seriler dâhil). Cron YOK.
 4. `CLAUDE.md` tablosuna betik ve workflow satırları; `docs/decisions.md`'ye sonuç kaydı.
+
+### TADİLAT-1 — kullanıcı onayı, O6 değişikliği ve MEKANİZMA ölçümü *(2026-09-26, kod yazılmadan, HİÇBİR veri görülmeden)*
+
+**1. Onaylanan seçimler (değişiklik YOK, kayıt).** O1 komisyon + kayma, üç stratejiye aynı;
+O2 funding hariç (yönü S aleyhine, muhafazakâr); O3 sepette tek `w_t` (sembol başına ayrı
+tezdir); O4 30 günlük uygunluk; O5 önceki günün 24:00 kapanışı; O7 embargo yok — B'nin ilk
+günlerinin ağırlıkları A'nın verisini kullanır, ama bu o anda BİLİNEN bilgidir.
+
+**2. O8 — koşulur, neyi öğrenebileceği bilinerek.** 4.5 yıllık günlük seriyle bir Sharpe
+farkını doğrulamak bilinen bir imkânsızlıktır (literatür bunu onlarca yıllık serilerle
+yapar); 10'daki ~%1 bunu teyit eder. Koşunun değeri iki yerdedir: (i) **betimsel sayılar** —
+gerçekleşen drawdown'lar, gerçek ortalama maruziyet, maliyet sürüklenmesi; (ii) **tezin
+öncülü** (aşağıda 4) yüksek güçle ölçülebilir. Geçme koşulu (10) DEĞİŞMEZ.
+
+**3. O6 DEĞİŞTİ — bağlayıcı aralık iki alt sınırın MİNİMUMUDUR** (§6j'nin iki-küme kuralıyla
+tutarlı). 8'in "4 haftalık blok yalnızca duyarlılık" cümlesinin yerine geçer:
+
+- **Hafta bloğu:** ISO hafta (UTC), 8'deki gibi.
+- **4 haftalık blok:** dönemin ilk ISO haftasından başlayarak ardışık 4 ISO haftalık gruplar;
+  son grup kısa kalabilir ve kendi kümesidir. Aynı eşleştirilmiş çekiliş, aynı tekrar, aynı α;
+  tohum `f"{random_seed}:voltarget:{varlık}:{dönem}:4w"`. `MIN_CLUSTERS` (10) altında
+  değerlendirilemez (A ~33, B ~30 grup; yapısal olarak bağlamaz).
+- **GEÇTİ (10'un yerine):** `min(alt_hafta, alt_4hafta) > 0`, A'da VE B'de, varlık başına.
+- İkincil metrikler (7) iki blok tanımıyla da raporlanır; kapı değildirler.
+
+**4. EKLENDİ — MEKANİZMA ölçümü: σ̂ gelecekteki oynaklığı öngörüyor mu?** Bilgi amaçlıdır,
+**KAPI DEĞİLDİR** ve 10'un kararını değiştirmez.
+
+| Büyüklük | Tanım |
+|---|---|
+| Öngörücü | `σ̂_t` — 5'in tanımı, `g_{t−30..t−1}` |
+| Hedef | `σ_ileri,t = std(g_t, …, g_{t+29})` (ddof=1) × √365 — `t` GÜNÜ DÂHİL sonraki 30 gün; öngörücünün penceresiyle ÖRTÜŞMEZ |
+| İstatistik | Spearman sıra korelasyonu `ρ_S(σ̂_t, σ_ileri,t)`, dönemin uygun günleri üzerinden |
+| Uygun gün | `t` ve `t+29` AYNI dönemin içinde (A'nın hedef penceresi B'ye TAŞMAZ; dönemin son 29 günü düşer ve sayısı yazılır) |
+| Aralık | 3'ün iki bloğu, gün `t`'nin kümesine göre; tohum `…:{dönem}:mech` ve `…:mech:4w`; aynı tekrar ve α |
+
+- (a) BTC için BTC'nin, (b) sepet için sepetin serisi (3'teki tarihsel bileşimle).
+- **Sınır, önceden yazılır:** hedef pencereleri 30 gün örtüşür, yani ardışık günler neredeyse
+  aynı gözlemdir. 4 haftalık blok bile bu bağımlılığı tam kesmez ve aralık DAR kalma
+  eğilimindedir. Bu yüzden ayrıca **örtüşmeyen** bir nokta tahmini raporlanır: dönemin ilk
+  uygun gününden başlayarak her 30. gün (`t₀, t₀+30, …`), Spearman ve örnek sayısı — aralıksız,
+  yalnızca nokta.
+- **Okuma kuralı (önceden, mekanik):**
+  - **ÖNCÜL TUTTU** (varlık başına): `ρ_S > 0` ve `min(alt_hafta, alt_4hafta) > 0`, A'da VE B'de,
+    VE örtüşmeyen nokta tahmini iki dönemde de > 0.
+  - **ÖNCÜL TUTMADI:** iki dönemden birinde `ρ_S`'nin aralığı sıfırı içeriyor ya da nokta ≤ 0.
+  - Cümleler: 10 GEÇMEDİ ∧ ÖNCÜL TUTTU → *"tez doğrulanamadı, dayanağı sağlam"*; 10 GEÇMEDİ ∧
+    ÖNCÜL TUTMADI → *"tez dayanaksız"*; 10 GEÇTİ ∧ ÖNCÜL TUTMADI → *"Sharpe farkı var ama önerilen
+    mekanizmadan gelmiyor — kaynağı açıklanmadı"*; 10 GEÇTİ ∧ ÖNCÜL TUTTU → *"doğrulandı"*.
+- **Tahmin (ön-kaydı yazan, kayıt):** `ρ_S` iki varlıkta, iki dönemde açıkça pozitif (+0.4 …
+  +0.7); oynaklığın kümelenmesi kriptoda iyi bilinen bir olgudur. Asıl belirsiz olan, öngörünün
+  ÇÖKÜŞ günlerini yakalayıp yakalamadığıdır — sıra korelasyonu bunu söylemez (11'in "geç
+  tepki" notu).
+
+**5. 15'e ek:** betik mekanizma ölçümünü aynı `measure` koşusunda üretir; testler ileriye bakış
+kapısını (öngörücü `t` ve sonrasını görmez), dönem sınırı kuralını (hedef penceresi dönem dışına
+taşmaz) ve örtüşmeyen örneklemenin adımını sınar.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 

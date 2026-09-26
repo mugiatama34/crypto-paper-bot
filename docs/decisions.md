@@ -5375,3 +5375,10 @@ Güç dürüstçe yazıldı: gerçekçi bir etkide (ΔSR ≈ 0.2) iki dönemin b
 yani "ayırt edilemedi" beklenen sonuçtur ve tezin reddi değildir. Ön-kaydın kullanıcı tanımına
 eklediği sekiz nokta (maliyete kayma, funding hariç, sepet düzeyinde ölçekleme, uygunluk,
 uygulama fiyatı, bağlayıcı blok, B sınırı, güç) §6o > 14'te onay bekler; kod onaydan önce yazılmaz.
+
+**TADİLAT-1 (2026-09-26, kod öncesi, kullanıcı onayı):** O1–O5 ve O7 onaylandı. O6 değişti:
+bağlayıcı aralık hafta ve 4 haftalık blokların alt sınırlarının MİNİMUMUDUR (§6j'nin kuralı).
+O8: koşulur — kazanç betimsel sayılar ve tezin ÖNCÜLÜDÜR. Öncül ("oynaklık öngörülebilir")
+yüksek güçle ölçülebildiği için bilgi amaçlı bir mekanizma ölçümü eklendi: σ̂_t ile sonraki 30
+günün gerçekleşen oynaklığı arasında Spearman, aynı blok bootstrap'ı; kapı değildir ama
+sonucun hangi cümleyle okunacağını belirler (§6o > TADİLAT-1 > 4).
