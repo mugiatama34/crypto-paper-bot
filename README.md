@@ -431,7 +431,12 @@ defter yazan modeller), **katalog** (`strategies/registry.py`'de kayıtlı ama l
 | — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
 | 1 | `trend` | long + short | Donchian kırılımı + EMA rejim filtresi |
 | 2 | `meanrev` | long + short | RSI + Bollinger ortalamaya dönüş (short'ta BTC rejim kapısı) |
-| 9 | `random_ctrl` | long + short | **kontrol grubu**: bilgisiz çekiliş, edge'in referansı |
+| 25 | `trend_random` | long + short | **`trend`in KONTROLÜ** (`acceptance.control_for`): bilgisiz giriş + `trend`in çıkışı (2×ATR stop, 1×ATR trailing) — docs/backtest.md > 6n |
+| 26 | `meanrev_random` | long + short | **`meanrev`in KONTROLÜ**: bilgisiz giriş + `meanrev`in 2×ATR stop'u + orta banda UZAKLIĞIN yön tarafına yansıtılmış hedefi |
+
+`random_ctrl` (9) base'de **emekli** (karar 65): yalnızca stop'la kapanabildiği için
+kapanmış-işlem R'si sansürlüydü (karar 60) ve ölçü çubuğu olamazdı. Defteri ve açık
+pozisyonları donar (kural 1).
 
 ### Aktif lig — `scalp` (15m, `config.yaml > layers.scalp.models`)
 
@@ -578,7 +583,7 @@ Bir model ancak **iki kapı da** yeşilken doğrulanmış sayılır.
 | Kapı | Soru | Geçme koşulu |
 |---|---|---|
 | **Ö** örneklem | Bu ortalama bir ölçüm mü, gürültü mü? | R'ye giren kapanmış işlem ≥ `acceptance.min_trades` (**30**) |
-| **E** edge | Sonuç sinyalden mi geliyor? | ort. R > 0 **ve** `random_ctrl`'ü **en az `edge_margin_r` = 0.15R marjla** aşıyor **ve** farkın bootstrap güven aralığının **alt sınırı > 0** **ve** hesap getirisi `buyhold` çıpasını geçiyor. `random_ctrl`'ün KENDİ örneklemi `control_min_trades` (**30**) altındaysa kapı **değerlendirilemez** |
+| **E** edge | Sonuç sinyalden mi geliyor? | ort. R > 0 **ve** modelin KONTROLÜNÜ (base: `acceptance.control_for` — `trend` ↔ `trend_random`, `meanrev` ↔ `meanrev_random`; öteki katmanlar: `acceptance.control_model`) **en az `edge_margin_r` = 0.15R marjla** aşıyor **ve** farkın bootstrap güven aralığının **alt sınırı > 0** **ve** hesap getirisi `buyhold` çıpasını geçiyor. Kontrolün KENDİ örneklemi `control_min_trades` (**30**) altındaysa ya da kontrol `acceptance.broken_controls` listesindeyse (bugün `random_ctrl`, ema katmanı) kapı **değerlendirilemez** |
 
 Marj olmadan kontrolü 0.01R ile geçen bir model de "geçti" sayılırdı; oysa bilgisiz
 çekilişin kendi gürültüsü o kadar farkı tek başına üretir.
@@ -594,7 +599,7 @@ notional ile taşımış, yani R başına farklı komisyon+kayma ödemiştir. Ta
 olarak durur; tooltip ne yapılacağını söyler.
 
 Referans çıpası bu kapılara hiç girmez (kural 15): yarışmacı olmadığı için ölçmediği bir
-yarışta not almaz. `random_ctrl` girer — bilgisiz çekilişin sıralamada nerede durduğu
+yarışta not almaz. Kontroller girer — bilgisiz çekilişin sıralamada nerede durduğu
 gizlenecek bir kusur değil, raporlanacak bir sonuçtur. Gerekçeler için bkz.
 [`CLAUDE.md` > Kabul Çıtası](./CLAUDE.md#kabul-çıtası-iki-kapı--bir-uyarı).
 

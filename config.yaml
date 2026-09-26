@@ -80,10 +80,16 @@ random_seed: 20240217
 # satırlar tabloda yalnızca gürültü üretir. Emekli edilen modellerin KODU ve DEFTERİ durur
 # (kural 1: append-only); listeye geri eklemek bir commit'tir.
 #
-# `random_ctrl` kalır: kabul çıtasının kontrol grubudur (`acceptance.control_model`).
+# `random_ctrl` EMEKLİ (karar 65): yalnızca stop'la kapanabildiği için kapanmış-işlem R'si
+# SANSÜRLÜYDÜ (karar 60) ve ölçü çubuğu olamazdı. Yerine iki EŞLENMİŞ kontrol geldi —
+# `trend_random` (`trend`in 2×ATR stop + 1×ATR trailing'i) ve `meanrev_random` (`meanrev`in
+# 2×ATR stop'u + orta banda uzaklığın yansıtılmış hedefi); `acceptance.control_for` her
+# yarışmacıyı kendi kontrolüne bağlar (docs/backtest.md > 6n). Defteri ve açık pozisyonları
+# DONAR (kural 1). ema katmanı `random_ctrl`i kendi listesinde taşımaya devam eder; orada E
+# `broken_controls` gereği değerlendirilemez (karar 63 > KAPSAM KARARI).
 # `buyhold` kalır: çıpadır (kural 15) ve 0 işlem görünmesi bir arıza DEĞİL — hiç kapatmaz,
 # bilgisi hesap getirisindedir.
-models: ["buyhold", "trend", "meanrev", "random_ctrl"]
+models: ["buyhold", "trend", "meanrev", "trend_random", "meanrev_random"]
 
 # --- Kabul çıtası (dashboard rozetleri ve Telegram özeti) ---
 # Bir modelin sonucunun nasıl okunacağını belirleyen eşikler. Burada dururlar, çünkü rozet
@@ -97,6 +103,14 @@ acceptance:
                                  # buna göre ölçülür. is_benchmark DEĞİLdir (aynı sütunda
                                  # yarışır), bu yüzden adı benchmarks listesinden
                                  # türetilemez; açıkça yazılır.
+  control_for: {}         # KAPI — MODEL BAŞINA KONTROL (karar 65, docs/backtest.md > 6n). Boşsa
+                          # her yarışmacının kontrolü katmanın `control_model`idir (scalp, dc,
+                          # xsec: değişmedi). DOLUYSA TÜKETİCİDİR: katmanın her yarışmacısı bir
+                          # anahtar olmalı ve her kontrol katmanın `models` listesinde bulunmalıdır
+                          # — eksik model ya da eksik kontrol ConfigError'dır, sessiz geri düşme
+                          # yoktur (kontrolü kümede olmayan bir satır E'nin koşulunu DÜŞÜRÜRDÜ).
+                          # Kontroller kendilerine eşlenir. Gerekçe: base'in iki yarışmacısı iki
+                          # ayrı çıkış geometrisi taşır ve tek kontrol ikisine birden eşlenemez.
   broken_controls: ["random_ctrl"]
                           # KAPI — ÖLÇÜ ÇUBUĞU BOZUK OLAN KONTROLLER (karar 60, 63). Burada
                           # adı geçen bir model bir katmanın control_model'i ise edge O
@@ -209,6 +223,14 @@ layers:
       equity_compaction_days: null   # bar başına bir tur: equity.csv yavaş büyür, sıkıştırma gereksiz
       model_trade_limit: 100
     breakdowns: []            # 4 saatlik modellerde kol/sembol kırılımı yok
+    acceptance:
+      # Model başına EŞLENMİŞ kontrol (karar 65; ön-kayıt docs/backtest.md > 6n): kontrol,
+      # ölçtüğü modelin ÇIKIŞ geometrisini taşır, fark yalnızca GİRİŞ bilgisini ölçer.
+      control_for:
+        trend: "trend_random"
+        meanrev: "meanrev_random"
+        trend_random: "trend_random"
+        meanrev_random: "meanrev_random"
 
   ema:
     # EMA(21/55) kesişim katmanı (4H) — model 18'in ölçüldüğü yer.

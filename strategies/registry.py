@@ -27,6 +27,7 @@ from strategies.ensemble import Ensemble
 from strategies.failed_breakout import FailedBreakout
 from strategies.meanrev import MeanReversion
 from strategies.momentum import Momentum
+from strategies.meanrev_random import MeanrevRandom
 from strategies.random_ctrl import RandomControl
 from strategies.scalp_bandit import ScalpBandit
 from strategies.scalp_coinflip import ScalpCoinflip
@@ -36,6 +37,7 @@ from strategies.scalp_patient import ScalpPatient
 from strategies.scalp_vol import ScalpVol
 from strategies.squeeze import Squeeze
 from strategies.trend import Trend
+from strategies.trend_random import TrendRandom
 from strategies.vwap_clone import VwapClone
 from strategies.vwap_managed import VwapManaged
 from strategies.wave_coinflip import WaveCoinflip
@@ -57,6 +59,11 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     Avwap.name: Avwap,
     Ensemble.name: Ensemble,
     RandomControl.name: RandomControl,
+    # trend_random / meanrev_random — base katmanının EŞLENMİŞ kontrolleri (karar 65; ön-kayıt
+    # docs/backtest.md > 6n). Bilgisiz giriş (`strategies/random_entry.py`) + ölçtükleri
+    # modelin ÇIKIŞ geometrisi; `acceptance.control_for` her yarışmacıyı kendi kontrolüne bağlar.
+    TrendRandom.name: TrendRandom,
+    MeanrevRandom.name: MeanrevRandom,
     # ema_trend — `ema` katmanının (4H, sabit 13 sembol) ölçtüğü model. Kuralları dış bir
     # sistemden gelir ama KOPYA değildir (kural 15b): dışarıdan gelen yalnızca sinyal,
     # boyutlandırma ve maliyet evin. Ön-kayıt: docs/backtest.md > 6d.

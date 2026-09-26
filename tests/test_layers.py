@@ -247,3 +247,31 @@ def test_random_ctrl_is_marked_broken_exactly_where_it_is_the_control() -> None:
         else:
             assert control not in broken, name
     assert {"base", "ema"} <= set(marked)
+
+
+def test_every_filled_control_map_covers_the_layers_competitors() -> None:
+    """Karar 65: dolu bir `control_for` statik olarak TÜKETİCİDİR — canlıdaki karşılığı bu test.
+
+    Çalışma anında eksik bir kontrol yalnızca o satırın E'sini kapatır (tur düşmez); bu yüzden
+    yanlış yapılandırma koşudan önce, config'ten yakalanmalıdır. Yarışmacılık modelin kendi
+    bayrağından okunur (`is_benchmark`/`is_replica`), elle listelenmez.
+    """
+    from core.metrics import check_control_map
+    from strategies.registry import build
+
+    config = load_config()
+    checked = []
+    for name in layer_names(config):
+        layer = resolve_layer(config, name)
+        control_for = get_setting(layer.config, "acceptance.control_for")
+        if not control_for:
+            continue
+        models = [build(model, config=layer.config) for model in layer.models]
+        check_control_map(
+            [m.name for m in models if not m.is_benchmark and not m.is_replica],
+            control_model=get_setting(layer.config, "acceptance.control_model"),
+            control_for=control_for,
+            available=layer.models,
+        )
+        checked.append(name)
+    assert checked == ["base"]

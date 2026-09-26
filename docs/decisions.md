@@ -5343,3 +5343,22 @@ eski kabuk kalıbının hiçbir yerde kalmadığı, liste `.github/workflows/`ta
 açılıp ÖNCE push edilirse, asıl dalın push'u o commit'i "başka dalda da var" görür ve koşu
 başlamaz (`notice`). Bu, hata yönünün doğru tarafıdır: yanlışlıkla koşmamak bir tetikleyici
 dosyayla onarılır, yanlışlıkla koşmak onarılamaz.
+
+## 65. base katmanına EŞLENMİŞ kontroller: `trend_random`, `meanrev_random` — ön-kayıt §6n *(2026-09-26)*
+
+Karar 63'ün onarım yarısı. Kontrol MODEL BAŞINA olur (`acceptance.control_for`), çünkü
+base'in iki yarışmacısı iki ayrı çıkış geometrisi taşır. Kararlar (kullanıcı):
+`meanrev_random`in hedefi orta banda UZAKLIĞIN yansıtılmasıdır (§6n > 3); ön-kayıt kod ve
+koşudan ÖNCE sabitlenir — geometri, tohum ve sıfır-beklenti testi dâhil; kapsam yalnızca
+base. `random_ctrl` base'de emekli olur, defteri donar. Ön-kayıt yazılırken iki düzeltme
+kayda geçti (§6n > 7): sansür koşulu açık PAY yerine açık pozisyon YAŞI olarak tanımlandı
+(pay, `max_positions` yüzünden `random_ctrl`i yakalamazdı) ve `meanrev_random`in
+sıfır-beklenti testine kural 13 kâhini eklendi (aynı barda stop+hedef varsayımı beklentiyi
+kontrolden bağımsız olarak sıfırın altına iter).
+Tolerans ±0.05R'dir (kullanıcı kararı): C-2 marjı 0.15R olduğu için ±0.08R, marjın üçte
+birini yiyebilecek bir önyargıyı kaçırırdı. Sentetik veri 8 × 5000 bara büyütüldü, SE ≤
+0.0125, yani tolerans 4 SE. Tohum sabittir ve değiştirilmez.
+
+**TADİLAT-1 (2026-09-26, sonuç görüldükten sonra, kullanıcı onayı):** sıfır-beklenti testinin
+sentetiği 15.000 bar × 256 alt adıma büyütüldü; eşiklerin hiçbiri gevşemedi. Sebepler, görülen
+sayılar ve testin fiili çözünürlüğü (≈ ±0.035R) §6n > TADİLAT-1'dedir.

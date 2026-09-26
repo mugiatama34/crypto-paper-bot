@@ -4901,6 +4901,248 @@ aynı ön-kayıtla ve yalnızca canlı kaynak için koşulabilir. Karar 62.
 
 ---
 
+## 6n. ÖN-KAYIT — base katmanının EŞLENMİŞ KONTROLLERİ (`trend_random`, `meanrev_random`) ve model başına kontrol eşlemesi *(2026-09-26)*
+
+**Bu belge kod yazılmadan ve hiçbir koşu yapılmadan yazıldı, AYRI bir commit'tir.** Model
+kodu, eşleme, testler ve config değişikliği SONRAKİ commit'lerdedir ve bu metni
+değiştiremez. §7'nin tamamı uygulanır.
+
+**Statü: ÖLÇÜM ALTYAPISI, hipotez DEĞİL.** §6i'nin (`scalp_coinflip`) aynı statüsü: bu iş
+var olan bir kapıyı (C-2) base katmanında yeniden ÖLÇÜLEBİLİR kılar; hiçbir modelin
+performansı hakkında yeni bir iddia taşımaz. §6c'nin siciline satır AÇMAZ ve BH paydasına
+girmez. Tahminleri (M1–M2) yine de burada, sonuçtan önce yazılır — bir ölçümün tahmini de
+bir tahmindir.
+
+**Kapsam YALNIZCA base'dir** (karar 63 > KAPSAM KARARI). ema katmanı için kontrol
+açılmaz; orada E, `broken_controls` gereği değerlendirilemez kalır.
+
+### 1. Sorun
+
+`random_ctrl` yalnızca stop'la kapanabilir; kapanmış-işlem R'si SANSÜRLÜDÜR (karar 60) ve
+C-2 ona karşı ölçülemez (karar 63, `acceptance.broken_controls`). Onarım kontrolün ÇIKIŞ
+geometrisini ölçtüğü modelinkine eşlemektir — `scalp_coinflip` (§6i) ve `dc_coinflip`
+(§6j) desenleri: fark yalnızca GİRİŞ bilgisini ölçsün. Base'in iki yarışmacısı iki ayrı
+çıkış geometrisi taşıdığı için tek bir kontrol ikisine birden eşlenemez; kontrol MODEL
+BAŞINA olur.
+
+### 2. Ortak giriş — iki kontrolde birebir aynı, tek kopya
+
+- **Uygunluk (kurulabilirlik, görüş DEĞİL):** `as_of` barını taşıyan ve ATR(14, `simple`)
+  hesaplanabilen sembol; `meanrev_random` için ek olarak Bollinger(20, 2) hesaplanabilen
+  sembol (hedef ondan türer — hesaplanamıyorsa işlem kurulamaz). Semboller ADI SIRALI.
+  Başka hiçbir eleme yoktur (`random_ctrl`in sözü): rejim, hacim, "kötü sembol"
+  filtresi kontrolü bir stratejiye çevirir.
+- **Çekiliş:** barda TEK sinyal; uygunlar arasından düzgün rastgele sembol, sonra düzgün
+  rastgele yön (`long`/`short`).
+- **Boyut, maliyet, kota, dolum, likidasyon:** evin kuralları, yarışmacılarla BİREBİR
+  (statü YARIŞMACI; `is_benchmark = is_replica = False`).
+- Giriş kuralı `random_ctrl` ile PAYLAŞILIR ama `random_ctrl`in ürettiği sinyaller
+  DEĞİŞMEZ: ortak kod çıkarılırsa `random_ctrl`in aynı `as_of`ta aynı sinyali ürettiği bir
+  testle sabitlenir (defteri tarihli bölünmesin — karar 25).
+
+### 3. Çıkış geometrileri — ölçtükleri modelden BİREBİR
+
+| | `trend_random` (↔ `trend`) | `meanrev_random` (↔ `meanrev`) |
+|---|---|---|
+| İlk stop | 2 × ATR | 2 × ATR |
+| Trailing | 1 × ATR (`trailing_atr=1.0`, motorun Chandelier kuralı) | yok |
+| Hedef | yok | `giriş ± |SMA20 − kapanış|`, yön tarafına; `fraction = 1.0` |
+| Zaman stop'u / `manage_positions` | yok (`trend`de yok) | yok (`meanrev`de yok) |
+
+Sayılar config'ten değil modellerin KENDİ sabitlerinden okunur (`strategies/trend.py`,
+`strategies/meanrev.py` modül sabitleri) — ikinci bir kopya bir gün sessizce ayrışır.
+
+**`meanrev_random`in hedefi: MESAFE korunur, taraf yönden gelir** (`reflect` deseni, §6i >
+2). `meanrev` hedefi orta bandın KENDİSİNE koyar; rastgele bir girişte orta bant kabaca
+yarı yarıya ters tarafta kalır ve `meanrev`in o durumdaki davranışı (hedefsiz açılış)
+kontrolde SANSÜRÜ geri getirirdi. "Hedefi yalnızca bant doğru taraftayken aç" ise yönü
+ortalamaya dönüşe bağlar, yani kontrolü `meanrev`in tezine çevirir. `|SMA20 − kapanış| = 0`
+ise işlem kurulamaz (atlanır, `logger.info`).
+
+### 4. RNG
+
+```
+trend_random    random.Random(f"{random_seed}:{as_of}:trend_random")
+meanrev_random  random.Random(f"{random_seed}:{as_of}:meanrev_random")
+```
+
+Akışlar `random_ctrl`inkinden (`{seed}:{as_of}`) ve birbirinden AYRIDIR: iki kontrol iki
+ayrı modelin sıfır noktasıdır, paylaşacakları ölçülmeyen bir eksen yoktur. Aynı `as_of`
+yeniden koşulduğunda birebir aynı sinyal (tekrarlanabilirlik). Tohum bu belgeyle sabittir.
+
+### 5. Eşleme — `acceptance.control_for`
+
+- Yeni ZORUNLU anahtar `acceptance.control_for` (kökte `{}`). Boşsa her yarışmacının
+  kontrolü katmanın `control_model`idir (bugünkü davranış, scalp/dc/xsec DEĞİŞMEZ).
+- DOLUYSA eşleme **tüketicidir**: katmanın her yarışmacısı bir anahtar olmak zorundadır;
+  eksik model ya da `models` listesinde olmayan bir kontrol `ConfigError`dır — sessiz
+  geri düşme yok. Kontroller kendilerine eşlenir (kendi satırlarında E alamazlar).
+- Base: `trend → trend_random`, `meanrev → meanrev_random`, iki kontrol kendine.
+- Tek çözücü `core/metrics.py`de; `acceptance_flags`, `core/report.py`,
+  `scripts/backtest.py`, `scripts/backtest_ema.py` ve skorboard (`assignStyles`e kontrol
+  LİSTESİ) aynı çözücüyü okur. `AcceptanceFlags` bir `control_model` alanı kazanır: her
+  satırın hangi kontrole karşı ölçüldüğü yükte yazılıdır.
+- `broken_controls` kuralı eşlenen kontrole de uygulanır.
+
+### 6. Katman bağlantısı
+
+- `layers.base.models`: `trend_random` ve `meanrev_random` EKLENİR; `random_ctrl`
+  ÇIKARILIR (emekli: defteri ve açık pozisyonları olduğu gibi DONAR — `avwap`,
+  `confluence`, `scalp_bandit` emsali; kural 1). `broken_controls`te kalır.
+- Yeni kontroller boş defterle başlar; geçmişe doldurma YOKTUR. Her biri kendi
+  `control_min_trades` (30) kapısını geçene kadar eşlendiği modelin E'si
+  DEĞERLENDİRİLEMEZ — beklenen ve istenen davranış.
+- Bildirim: `run.yml` zaten `--models trend`; yeni kontroller bildirilmez. Yakınlık
+  taraması (`scripts/proximity.py`) kapsamına EKLENMEZ (bilgisiz çekiliş).
+
+### 7. SIFIR-BEKLENTİ TESTİ — değişmez, tolerans burada sabit
+
+**Veri:** sentetik, sürüklenmesiz aritmetik rastgele yürüyüş; 8 sembol × 5000 bar (4H);
+başlangıç 1000, bar başına σ = 5; her bar 16 alt adımdan kurulur (high/low alt adımların
+uç değeri), `open = önceki close` (boşluk yok), sabit hacim, fonlama YOK. Tohum testte
+sabit. Motorun kendisi koşar (`core/engine.py` üzerinden, ikinci bir simülatör YOK);
+sentetik üretecin yalnızca alt adım yolunu saklaması serbesttir (bkz. kâhin).
+
+**Kural 13 kâhini (yalnızca `meanrev_random`).** Aynı barda hem stop hem hedef aralıktaysa
+motor stop'u varsayar (kural 13) ve bu, sürüklenmesiz veride beklentiyi SIFIRIN ALTINA
+iter — kontrolün değil kuralın etkisi. Sentetik veride alt adım yolu bilindiği için test,
+motorun `ambiguous_stop_exits` olarak işaretlediği her kapanışta hangi seviyeye ÖNCE
+değildiğini okur ve düzeltilmiş R'yi (`R_düz`) kurar. Pozisyon her iki durumda da o barda
+kapandığı için sonraki yol değişmez; düzeltme işlem başınadır. `trend_random`da hedef
+olmadığından `R_düz = R`.
+
+Koşullar (her kontrol için ayrı):
+
+| | Koşul | Tolerans |
+|---|---|---|
+| **(a)** maliyet SIFIR (`fee_rate = slippage_base = slippage_short_stop = 0`) | `|ort(R_düz)| ≤ 0.05` | sabit |
+| **(b)** canlı maliyet config'i | `|ort(R_düz) + ort(cost_per_r)| ≤ 0.05` | sabit |
+| **(c)** SINIRLI tutuş (sansür yok) | pencere sonunda AÇIK hiçbir pozisyon 200 bardan yaşlı değil **ve** kapanmış pozisyonların azami tutuşu ≤ 200 bar | sabit |
+| **geçerlilik** | kapanmış pozisyon ≥ 1000 **ve** `ort(R_düz)`in bootstrap standart hatası ≤ 0.0125 (tolerans ≥ 4 SE) | sağlanmazsa test TASARIM hatasıyla düşer, "geçti" sayılmaz |
+
+Ayrıca **raporlanır, sınanmaz:** motorun ham `ort(R)` değeri ve `ort(R) − ort(R_düz)` —
+kural 13'ün bu geometrideki bedeli.
+
+**Regresyon — `random_ctrl` aynı testten KALMALI:** (a)'da `ort(R) ≤ −0.5` ve (c) ihlali
+iddia edilir. Hatanın kalıcı belgesi budur.
+
+⚠ **(c) ilk önerideki biçiminden DEĞİŞTİ (kod öncesi, gerekçesiyle).** Önerilen biçim
+"pencere sonunda pozisyonların ≥ %95'i kapanmış" idi. Bu `random_ctrl`i YAKALAMAZDI:
+`max_positions = 5` açık pozisyon sayısını 5'le sınırlar, yani binlerce pozisyonluk bir
+pencerede açık kalan pay tanım gereği küçüktür. Sansürün imzası açık kalan pozisyonların
+SAYISI değil YAŞIDIR — `random_ctrl`in kazananları kotayı yüzlerce/binlerce bar boyunca
+tutar (ema A: azami 6323 bar). (c) bu yüzden yaş sınırıdır. Ortalama R koşulu (a) sansürü
+zaten ayrıca yakalar (kapanmış R ≈ −1).
+
+### 8. Canlı tahminler (KAPI DEĞİL — tutmazsa C-2 okunmadan önce sebep aranır)
+
+- **M1:** her kontrol n ≥ 30'a ulaştığında ortalama R'sinin bootstrap aralığı
+  `−ort(cost_per_r)` değerini (± kural 13 bedeli) içerir.
+- **M2:** hiçbir kontrolün açık pozisyonu 200 bardan yaşlı değildir.
+
+### 9. KABUL EDİLEN SAPMALAR
+
+1. **`meanrev_random`in hedef MESAFESİ `meanrev`inkiyle aynı dağılımda değildir.** Rastgele
+   barlarda orta banda uzaklık, `meanrev`in aşırılıkta girdiği barlardakinden ortalamada
+   KÜÇÜKTÜR. Kabul edilir: kontrolün işi sıfır noktası vermektir ve rastgele girişte
+   beklenen R hedef mesafesinden bağımsız olarak −maliyet'e yakınsar — (a)/(b) bunu sınar.
+2. **Kural 13'ün bedeli iki tarafta farklı olabilir.** Yakın hedef, aynı barda stop+hedef
+   olasılığını artırır; kontrol `meanrev`e göre DAHA SIK kötü varsayıma düşebilir ve bu
+   kontrolü olduğundan kötü göstererek C-2 farkını ŞİŞİRİR. Bu yüzden `meanrev` için C-2
+   okunmadan önce iki modelin belirsiz-stop payı harness'tan
+   (`scripts/backtest.py::format_fill_ambiguity`) aynı pencerede okunur ve farkla birlikte
+   raporlanır. Kural 13 DEĞİŞMEZ (defterin kuralı tektir).
+3. **`trend_random` `trend`in rejim/kırılım kapısını taşımaz** — taşısaydı kontrol olmazdı;
+   kotayı doldurma hızı farklıdır ve bu, kontrolün ölçtüğü şeyin (giriş bilgisi) parçasıdır.
+
+### 10. Sonucu gördükten sonra YAPILMAYACAKLAR (§7'ye ek)
+
+- Toleranslar (0.05R, 200 bar, 1000 pozisyon, SE 0.0125) ve sentetik verinin boyutu
+  (8 × 5000 bar, σ = 5, başlangıç 1000) test sonucunu gördükten sonra GEVŞETİLMEZ. Test
+  düşerse sebep kodda aranır; tolerans değişikliği yeni bir ön-kayıttır.
+- **Tohum da sabittir ve DEĞİŞTİRİLMEZ.** Test deterministiktir: aynı kod her koşuda aynı
+  sonucu verir, yani "başka tohumla dene" düşen bir testi geçen bir teste çevirmenin
+  yoludur — yasaktır. Bu kapıyı açık bırakmamak için tolerans 4 SE'de tutuldu: doğru bir
+  uygulamanın sabit tohumda yanlışlıkla düşme olasılığı ihmal edilebilir.
+
+**Toleransın gerekçesi (sayı neden 0.05R).** C-2 marjı 0.15R'dir; kontrolde 0.05–0.08R'lik
+bir önyargı o marjın üçte birinden fazlasını yerdi, yani ±0.08R'lik bir tolerans önemli
+bir önyargıyı kaçırabilirdi. İlk taslaktaki 0.08R (2000 bar, SE ≤ 0.02) bu yüzden
+reddedildi; sentetik veri ucuz olduğu için boyut büyütüldü (5000 bar) ve hem sıkılık
+(0.05R) hem güvenlik (4 SE) birlikte sağlandı.
+- Kontrol geometrisi C-2 sonucunu gördükten sonra değiştirilmez.
+
+### TADİLAT-1 — sentetik veri 15.000 bar × 256 alt adım *(2026-09-26, kullanıcı onayı; SONUÇ GÖRÜLDÜKTEN SONRA)*
+
+**Bu değişiklik ilk koşunun sayıları görüldükten SONRA yapıldı ve öyle kaydedilir.** İki
+değişikliğin ikisi de ölçümü SIKILAŞTIRIR; hiçbir eşik gevşetilmedi. Tolerans (±0.05R), SE
+sınırı (≤ 0.0125), pozisyon tabanı (≥ 1000), yaş sınırı (200 bar), σ (5), başlangıç fiyatı
+(1000), sembol sayısı (8) ve tohum AYNEN kalır.
+
+**Görülen sayılar (8 × 5000 bar, 16 alt adım — §7'deki sabitlerle):**
+
+| | n | ort(R) maliyetsiz | (b) farkı | SE | azami yaş | sonuç |
+|---|---|---|---|---|---|---|
+| `trend_random` | 2946 | +0.042 | +0.044 | 0.0117 | 16 | geçti |
+| `meanrev_random` | 1738 | +0.003 | +0.0001 | **0.021** | 120 | **geçerlilik koşulu düştü** |
+| `random_ctrl` | 60 | −1.000 | — | — | 4925 (açık) | beklendiği gibi kaldı |
+
+**1. Bar sayısı 5000 → 15.000 (`meanrev_random`in SE'si).** Kök sebep bir tasarım
+varsayımıdır: 8 × 5000 önerisi (kullanıcının; ilk taslak 8 × 2000'di) sembol sayısının
+pozisyon sayısını artıracağını varsayıyordu ve bu varsayım taslakta da sınanmamıştı. Yanlıştı:
+kontrol barda TEK sinyal üretir ve `max_positions` (5) ile nakit kapısı açılışları sınırlar,
+yani pozisyon sayısını SEMBOL değil BAR sayısı belirler (`meanrev_random` ≈ 0.35 pozisyon/bar).
+SE ≤ 0.0125 için σ(R) ≈ 0.88 ile ~5000 pozisyon gerekir → ~15.000 bar.
+
+**2. Alt adım 16 → 256 (`trend_random`in +0.042'si).** Bu sapma kontrolün değil sentetiğin
+KESİKLİĞİNİN ürünüdür: motor stop'u bir seviye olarak doldurur (sürekli yol varsayımı), oysa
+kesikli alt adımlı yolda fiyat stop'u bir adımda AŞARAK geçer. Beklenen aşım ≈ 0.58 × alt adım
+σ; stop çıkışı başına ≈ +0.045R eder ve yalnızca stop'la çıkan bir geometride (trailing) tek
+yönlü birikir. `meanrev_random`de aşım stop'ta lehte, hedefte aleyhtedir ve birbirini götürür
+(+0.003). Teşhis koşusu (ön-kayıtlı sabitlere dokunmadan, yalnızca alt adım 256): `trend_random`
+**+0.017** — aşımın 1/√(alt adım) ile küçüleceği beklentisiyle uyumlu (≈ 0.011, kalan fark
+~1.5 SE).
+
+**Testin FİİLİ çözünürlüğü (sınırın nerede olduğu, sınırın kendisi kadar önemli).** 256 alt
+adımda bile trailing'li geometride ≈ +0.011–0.017R yapay sapma kalır, yani ±0.05R toleransının
+yaklaşık üçte biri sentetikten gider. Bu testin `trend_random`de YAKALAYABİLECEĞİ gerçek kontrol
+sapması bu yüzden fiilen **≈ ±0.035R** mertebesindedir; daha küçük bir önyargı bu test
+tarafından görülmez. Kabul edilir: C-2 marjı 0.15R'dir ve bu çözünürlük onun dörtte birinin
+altındadır.
+
+**3. Kural 13 bedeli sentetikte pratikte SIFIR** (iki koşuda toplam 1 düzeltme, 0.0005R).
+§9'un 2. sapmasındaki okuma kuralı yine de AYNEN kalır: gerçek piyasa barları sentetikten daha
+sivridir ve belirsiz barlar orada daha sık olabilir; kural ancak sorun varsa devreye girer.
+
+**Uygulama notu — 15.000 bar TEK yürüyüş olamaz (sonuç görülmeden, test gövdesi hiç koşmadan
+yakalandı).** σ·√15000 ≈ 612 fiyatı sıfırın altına iter; testin koruması (`fiyat sıfıra
+indi`) ilk denemede tetikledi ve hiçbir R hesaplanmadı. Ön-kayıtlı sabitlerin HİÇBİRİ
+değiştirilmedi: bar sayısı, her biri kendi tohumuyla (`SEED + segment`, segment 0-2) BAĞIMSIZ
+üç 5000 barlık segmente bölündü ve pozisyonlar havuzlandı. Reddedilen alternatifler: başlangıç
+fiyatını yükseltmek (stop yüzdesini gerçekçi olmayan bir düzeye indirir, yani `cost/R`
+ölçeğini kaydırır) ve geometrik yürüyüş (ön-kayıtlı veri modelini değiştirirdi).
+
+**Maliyet:** test süresi ~2 dakikadan ~6–7 dakikaya çıkar ve HER CI koşusunda sınanır.
+Alternatif (ayrı, seyrek bir workflow) reddedildi: bir koruma katmanını "bazen" yapmak, bu
+projede boşlukların nasıl kullanıldığını gördüğümüz biçimdir (kullanıcı kararı).
+
+
+### SONUÇ — sıfır-beklenti testi GEÇTİ *(2026-09-26, TADİLAT-1 sabitleriyle: 3 × 5000 bar, 256 alt adım)*
+
+| | n | ort(R_düz) maliyetsiz (a) | SE | (b) ort(R_düz) + ort(cost/R) | kural 13 bedeli | azami yaş kapanmış / açık |
+|---|---|---|---|---|---|---|
+| `trend_random` | 9696 | **+0.012** | 0.0055 | **+0.011** (cost/R 0.159) | 0 | 17 / 3 |
+| `meanrev_random` | 5679 | **+0.0075** | 0.0111 | **+0.010** (cost/R 0.138) | −0.0006 (3 düzeltme) | 120 / 29 |
+| `random_ctrl` (regresyon) | 170 | **−1.000** | — | −0.970 | 0 | 3229 / **4824** |
+
+- (a), (b), (c) ve geçerlilik iki kontrolde de sağlandı; tolerans ±0.05R, SE ≤ 0.0125.
+- `trend_random`in +0.012'si TADİLAT-1'in öngördüğü kesiklik sapmasıyla (≈ +0.011) örtüşüyor;
+  kontrolün kendisine ait bir sapma bu testin çözünürlüğünde (≈ ±0.035R) görülmüyor.
+- `random_ctrl` testten beklendiği gibi KALDI: kapanmış R tam −1, açık pozisyon 4824 bar yaşında.
+- Kural 13'ün bu geometrideki bedeli ihmal edilebilir (≤ 0.0006R); §9 > 2'nin okuma kuralı
+  gerçek veri için AYNEN kalır.
+- Süre: ~6 dakika, her CI koşusunda.
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.

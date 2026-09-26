@@ -369,13 +369,15 @@ def _competitors(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     Kontrol grubu girer ve `_control` ile işaretlenir: bilgisiz çekilişin ilk üçte
     olması özetin taşıması gereken bir bilgidir, gizlenecek bir kusur değil.
     """
-    control = (payload.get("acceptance") or {}).get("control_model")
+    acceptance = payload.get("acceptance") or {}
+    # Model başına eşleme (karar 65): katmanın kontrol KÜMESİ; eski yüklerde tek ad.
+    controls = set(acceptance.get("controls") or [acceptance.get("control_model")])
     replicas = set(payload.get("replicas") or ())
     rows = [
         {
             **item,
             "model": item.get("model") or item.get("name"),
-            "_control": (item.get("model") or item.get("name")) == control,
+            "_control": (item.get("model") or item.get("name")) in controls,
         }
         for item in (payload.get("models") or [])
         if not item.get("is_benchmark")

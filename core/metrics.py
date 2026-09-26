@@ -64,7 +64,7 @@ from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
 
 import pandas as pd
 
-from core.config import get_setting
+from core.config import ConfigError, get_setting
 from core.data import bar_duration
 from core.ledger import Ledger
 from core.tags import find_tag, parse_tag
@@ -1263,6 +1263,9 @@ class AcceptanceFlags:
     # `edge` örneklemden bağımsız olarak DEĞERLENDİRİLEMEZ; alan, arayüzün "henüz
     # ölçülmedi" ile "ölçülse de anlamsız" durumlarını ayırabilmesi için ayrı durur.
     control_broken: bool = False
+    # Bu satırın HANGİ kontrole karşı ölçüldüğü (`control_for`, karar 65): model başına
+    # eşlemede katmanın tek `control_model`i satırı anlatmaya yetmez.
+    control_model: str = ""
     # Farkın (model − kontrol) bootstrap güven aralığı. `nan` = hesaplanamadı (örneklem
     # verilmedi ya da bir taraf boş); o durumda `edge` yalnızca marja düşer ve bu
     # logger.warning ile söylenir — eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
@@ -1392,6 +1395,7 @@ def acceptance_flags(
     edge_margin_r: float,
     control_min_trades: int | None = None,
     broken_controls: Collection[str] = (),
+    control_for: Mapping[str, str] | None = None,
     r_samples: Mapping[str, Sequence[float]] | None = None,
     ci_alpha: float = 0.05,
     bootstrap_samples: int = 0,
@@ -1418,61 +1422,62 @@ def acceptance_flags(
     DEĞERLENDİRİLEMEZ yapar (karar 60/63). Kümede OLMAYAN kontrolden farkı budur:
     orada koşul düşer ve kapı kolaylaşır, burada kontrol ölçülmüştür ama ölçtüğü şey
     bir çekiliş değil bir sansürdür — ona karşı marj ölçmek kapıyı bedava yapardı.
+
+    `control_for` doluysa her yarışmacı KENDİ kontrolüne karşı ölçülür (`control_map`,
+    karar 65); `control_model` o zaman kullanılmaz. Bayrak hangi kontrole karşı
+    ölçüldüğünü `AcceptanceFlags.control_model`de taşır.
     """
     competitors = [item for item in metrics if item.is_competitor]
     band_low, band_high = _stop_band(competitors, ratio=stop_band_ratio)
-    control_avg_r = _control_avg_r(metrics, control_model)
     benchmark_return = _benchmark_return(metrics)
-
     control_gate = int(min_trades if control_min_trades is None else control_min_trades)
-    measured_control = _control_trades(metrics, control_model)
-    control_trades = measured_control or 0
-    # Kümede hiç olmayan kontrol (None) koşulu DÜŞÜRÜR, kapıyı düşürmez — bkz.
-    # `_control_trades`. `_control_avg_r` o durumu zaten ayrıca loglar.
-    control_broken = control_model in set(broken_controls)
-    control_ready = (
-        not control_broken
-        and (measured_control is None or measured_control >= control_gate)
+    broken = set(broken_controls)
+    mapping = control_map(
+        [item.model for item in competitors],
+        control_model=control_model,
+        control_for=control_for or {},
     )
-    if control_broken:
-        logger.warning(
-            "kontrol grubu %r BOZUK olarak işaretli (acceptance.broken_controls): edge "
-            "bayrağı DEĞERLENDİRİLEMEZ — ölçü çubuğu bozuk bir kontrole karşı marj "
-            "ölçmek kapıyı bedava yapar (karar 60)",
-            control_model,
-        )
-    elif not control_ready:
-        logger.warning(
-            "kontrol grubu %r kendi örneklem kapısını geçmedi (%d < %d): edge bayrağı "
-            "DEĞERLENDİRİLEMEZ — %d işlemlik bir ortalamaya karşı marj ölçmek, gürültüyü "
-            "gürültüyle kıyaslamaktır",
-            control_model, control_trades, control_gate, control_trades,
-        )
+    # Dolu bir eşlemede kontrolün kümede OLMAMASI koşulu düşürmez, kapıyı KAPATIR: eski
+    # "kümede yok → koşul düşer" kuralı yalnızca katman düzeyindeki tek kontrol içindir.
+    strict = bool(control_for)
 
     samples = dict(r_samples) if r_samples is not None else {}
-    control_sample = samples.get(control_model, ())
     if r_samples is None or bootstrap_samples <= 0:
         logger.warning(
             "R örneklemi verilmedi (ya da bootstrap_samples=0): edge bayrağı güven "
             "aralığı koşulunu değerlendiremiyor, yalnızca marja düşüyor",
         )
 
-    return [
-        _flags_for(
+    # Kontrol başına durum BİR KEZ kurulur (uyarılar da bir kez yazılır): eşlemede aynı
+    # kontrole bakan birden çok model olabilir.
+    states = {
+        name: _control_state(metrics, name, gate=control_gate, broken=name in broken,
+                             strict=strict)
+        for name in dict.fromkeys(mapping.values())
+    }
+
+    flags: list[AcceptanceFlags] = []
+    for item in competitors:
+        control = mapping[item.model]
+        state = states[control]
+        if control is None:
+            control = ""
+        flags.append(_flags_for(
             item,
             min_trades=int(min_trades),
             band_low=band_low,
             band_high=band_high,
-            control_avg_r=control_avg_r,
+            control_model=control,
+            control_avg_r=state.avg_r,
             edge_margin_r=float(edge_margin_r),
             benchmark_return=benchmark_return,
-            control_trades=control_trades,
+            control_trades=state.trades,
             control_gate=control_gate,
-            control_ready=control_ready,
-            control_broken=control_broken,
+            control_ready=state.ready,
+            control_broken=state.broken,
             diff_ci=bootstrap_diff_ci(
                 samples.get(item.model, ()),
-                control_sample,
+                samples.get(control, ()),
                 alpha=float(ci_alpha),
                 iterations=int(bootstrap_samples),
                 # Tohum model adına bağlanır: her model kendi yeniden örneklemesini alır
@@ -1481,9 +1486,102 @@ def acceptance_flags(
                 seed=int(seed) ^ (hash_name(item.model) if item.model else 0),
             ),
             ci_alpha=float(ci_alpha),
+        ))
+    return flags
+
+
+def control_map(
+    competitors: Sequence[str],
+    *,
+    control_model: str,
+    control_for: Mapping[str, str],
+) -> dict[str, str | None]:
+    """Yarışmacı -> kontrolü. Kabul çıtasının kontrolü çözen TEK yer (karar 65).
+
+    `control_for` boşsa her yarışmacının kontrolü katmanın `control_model`idir (eski
+    davranış). DOLUYSA TÜKETİCİDİR: eşlemede olmayan yarışmacı `None` alır ve
+    `acceptance_flags` onun E'sini DEĞERLENDİRİLEMEZ yapar — katmanın `control_model`ine
+    geri DÜŞMEZ, çünkü o, modeli ölçtüğü geometriye hiç benzemeyen bir kontrola karşı
+    ölçerdi (⚠B'nin itirazı). Statik yanlış yapılandırma `check_control_map` ile kurulumda
+    yakalanır; burada patlamak, izole edilmiş bir model KURULUM hatasını (main.py) bütün
+    turun düşmesine çevirirdi.
+    """
+    if not control_for:
+        return {name: control_model for name in competitors}
+    return {name: (str(control_for[name]) if name in control_for else None)
+            for name in competitors}
+
+
+def check_control_map(
+    competitors: Sequence[str],
+    *,
+    control_model: str,
+    control_for: Mapping[str, str],
+    available: Collection[str],
+) -> None:
+    """Statik kapı: dolu bir `control_for` her yarışmacıyı kapsar ve her kontrol kümededir.
+
+    Backtest bunu koşudan ÖNCE çağırır (eksik kontrol saatlerce koşan bir pencerenin
+    sonunda anlaşılmasın); canlı katmanlar için aynı kural `tests/test_layers.py`de
+    config'ten sınanır. İhlal `ConfigError`dır.
+    """
+    if not control_for:
+        return
+    missing = [name for name in competitors if name not in control_for]
+    if missing:
+        raise ConfigError(
+            "acceptance.control_for doluysa tüketici olmalı; eşlenmemiş yarışmacı: "
+            + ", ".join(missing)
         )
-        for item in competitors
-    ]
+    absent = sorted({str(control_for[name]) for name in competitors} - set(available))
+    if absent:
+        raise ConfigError(
+            "acceptance.control_for kümede olmayan bir kontrole bakıyor: " + ", ".join(absent)
+        )
+
+
+@dataclass(frozen=True)
+class _ControlState:
+    avg_r: float
+    trades: int
+    ready: bool
+    broken: bool
+
+
+def _control_state(
+    metrics: Sequence[ModelMetrics], control: str | None, *, gate: int, broken: bool,
+    strict: bool = False,
+) -> _ControlState:
+    present = control is not None and any(item.model == control for item in metrics)
+    if strict and not present:
+        logger.warning(
+            "kontrol %r kümede yok ya da model eşlenmemiş (acceptance.control_for): edge "
+            "bayrağı DEĞERLENDİRİLEMEZ — eşlenen kontrol ölçülmeden koşul düşürülmez",
+            control,
+        )
+        return _ControlState(avg_r=_NAN, trades=0, ready=False, broken=broken)
+    assert control is not None
+    avg_r = _control_avg_r(metrics, control)
+    measured = _control_trades(metrics, control)
+    trades = measured or 0
+    # Kümede hiç olmayan kontrol (None) koşulu DÜŞÜRÜR, kapıyı düşürmez — bkz.
+    # `_control_trades`. `_control_avg_r` o durumu zaten ayrıca loglar.
+    ready = not broken and (measured is None or measured >= gate)
+    if broken:
+        logger.warning(
+            "kontrol grubu %r BOZUK olarak işaretli (acceptance.broken_controls): edge "
+            "bayrağı DEĞERLENDİRİLEMEZ — ölçü çubuğu bozuk bir kontrole karşı marj "
+            "ölçmek kapıyı bedava yapar (karar 60)",
+            control,
+        )
+    elif not ready:
+        logger.warning(
+            "kontrol grubu %r kendi örneklem kapısını geçmedi (%d < %d): edge bayrağı "
+            "DEĞERLENDİRİLEMEZ — %d işlemlik bir ortalamaya karşı marj ölçmek, gürültüyü "
+            "gürültüyle kıyaslamaktır",
+            control, trades, gate, trades,
+        )
+    return _ControlState(avg_r=avg_r, trades=trades, ready=ready, broken=broken)
 
 
 def hash_name(name: str) -> int:
@@ -1505,6 +1603,7 @@ def _flags_for(
     min_trades: int,
     band_low: float,
     band_high: float,
+    control_model: str,
     control_avg_r: float,
     edge_margin_r: float,
     benchmark_return: float,
@@ -1567,6 +1666,7 @@ def _flags_for(
         benchmark_return=benchmark_return,
         control_trades=control_trades,
         control_min_trades=control_gate,
+        control_model=control_model,
         control_broken=control_broken,
         edge_diff_ci_low=ci_low,
         edge_diff_ci_high=ci_high,

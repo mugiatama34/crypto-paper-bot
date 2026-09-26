@@ -33,28 +33,28 @@ farklı sembol seçebilirdi ve "tekrarlanabilir koşu" iddiası çökerdi. Modü
 Rollere dikkat: bu modül boyut/komisyon/bakiye hesaplamaz (kural 1/2/3/7); ATR
 `core/indicators.py`'dedir. Pozisyon sayısı, short limiti ve tekrar reddi
 `core/portfolio.py`'nin işidir — kontrol de o kapılardan diğerleriyle aynı şekilde geçer.
+
+**EMEKLİ (base katmanında, karar 65) ve ölçü çubuğu olarak BOZUK (karar 60, 63).** Yalnızca
+stop'la kapanabildiği için kapanmış-işlem R'si SANSÜRLÜDÜR; `acceptance.broken_controls`
+listesindedir. Kod ve defter DURUR (kural 1); giriş kuralı artık `strategies/random_entry.py`
+gövdesidir ve bu modelin ürettiği sinyaller o taşımadan önceki hâliyle BİREBİR aynıdır
+(tohum biçimi dâhil — test: `tests/test_random_entry.py`).
 """
 
 from __future__ import annotations
 
-import logging
-import random
 from typing import Any, Mapping
 
-from core.config import get_setting, load_config
-from core.indicators import average_true_range, bars_until
-from strategies.base import Direction, MarketData, Signal, Strategy
-
-logger = logging.getLogger(__name__)
+from strategies.base import Direction, MarketData, Signal
+from strategies.random_entry import DIRECTIONS, SIGNALS_PER_ROUND, RandomEntryControl
 
 STOP_ATR_MULTIPLE = 2.0
-DIRECTIONS: tuple[Direction, ...] = ("long", "short")
-SIGNALS_PER_ROUND = 1
+
+__all__ = ["DIRECTIONS", "SIGNALS_PER_ROUND", "STOP_ATR_MULTIPLE", "RandomControl"]
 
 
-class RandomControl(Strategy):
+class RandomControl(RandomEntryControl):
     name = "random_ctrl"
-    allowed_directions: list[Direction] = ["long", "short"]
 
     def __init__(
         self,
@@ -62,71 +62,34 @@ class RandomControl(Strategy):
         config: Mapping[str, Any] | None = None,
         stop_atr_multiple: float = STOP_ATR_MULTIPLE,
     ) -> None:
-        settings = dict(config) if config is not None else load_config()
-        self._atr_period = int(get_setting(settings, "trailing.atr_period"))
-        self._seed = int(get_setting(settings, "random_seed"))
+        super().__init__(config=config)
         self._stop_atr_multiple = stop_atr_multiple
 
-    def generate_signals(
+    def _rng_key(self, market: MarketData) -> str:
+        """Eski tohum biçimi (model adı YOK): defter tarihli bölünmesin diye korunur."""
+        return f"{self._seed}:{market.as_of.isoformat()}"
+
+    def _signal(
         self,
         market: MarketData,
-        peer_signals: Mapping[str, tuple[Signal, ...]] | None = None,
-    ) -> list[Signal]:
-        eligible = self._eligible(market)
-        if not eligible:
-            logger.info(
-                "%s: %s barında işlem kurulabilir sembol yok, çekiliş yapılmadı",
-                self.name, market.as_of,
-            )
-            return []
-
-        rng = self._round_rng(market)
-        signals: list[Signal] = []
-        for _ in range(SIGNALS_PER_ROUND):
-            symbol, close, atr = rng.choice(eligible)
-            direction = rng.choice(DIRECTIONS)
-            distance = atr * self._stop_atr_multiple
-            stop_price = close - distance if direction == "long" else close + distance
-            signals.append(
-                Signal(
-                    symbol=symbol,
-                    direction=direction,
-                    stop_price=stop_price,
-                    reason=(
-                        f"KONTROL GRUBU: bilgisiz çekiliş — {len(eligible)} uygun sembol "
-                        f"arasından {symbol}, yön {direction}; tohum {self._seed} + "
-                        f"{market.as_of:%Y-%m-%d %H:%M} UTC; stop "
-                        f"{self._stop_atr_multiple:g}×ATR({self._atr_period})={distance:.6g} "
-                        f"uzakta ({stop_price:.6g})"
-                    ),
-                )
-            )
-        return signals
-
-    def _round_rng(self, market: MarketData) -> random.Random:
-        """Tur başına bağımsız RNG: tohum sabit, çekiliş `as_of` ile karışır.
-
-        Modül düzeyinde `random` kullanılmaz ve `core/data.py`'nin jitter RNG'si ile örnek
-        paylaşılmaz (bkz. modül docstring'i): ikisi de aynı `as_of` için aynı sinyalin
-        üretilmesi garantisini kırardı.
-        """
-        return random.Random(f"{self._seed}:{market.as_of.isoformat()}")
-
-    def _eligible(self, market: MarketData) -> list[tuple[str, float, float]]:
-        """`as_of` barını taşıyan ve ATR'si hesaplanabilen semboller, ADI SIRALI.
-
-        Sıra çekilişin tekrarlanabilirliğinin parçasıdır: sözlük sırasına bırakmak, aynı
-        tohumla aynı turun veri katmanının sırasına göre farklı sembol seçmesi demekti.
-        Eleme ölçütü bir görüş değil, işlemin kurulabilirliğidir — kontrolün tasarımı
-        gereği burada filtre olamaz.
-        """
-        eligible: list[tuple[str, float, float]] = []
-        for symbol in sorted(market.ohlcv):
-            frame = bars_until(market.ohlcv[symbol], market.as_of)
-            if frame.empty or frame.index[-1] != market.as_of:
-                continue
-            atr = average_true_range(frame, self._atr_period)
-            if atr is None or atr <= 0.0:
-                continue
-            eligible.append((symbol, float(frame["close"].iloc[-1]), atr))
-        return eligible
+        *,
+        symbol: str,
+        direction: Direction,
+        close: float,
+        atr: float,
+        setup: Any,
+        eligible_count: int,
+    ) -> Signal:
+        distance = atr * self._stop_atr_multiple
+        stop_price = close - distance if direction == "long" else close + distance
+        return Signal(
+            symbol=symbol,
+            direction=direction,
+            stop_price=stop_price,
+            reason=(
+                self._draw_note(market, symbol=symbol, direction=direction,
+                                eligible_count=eligible_count)
+                + f"; stop {self._stop_atr_multiple:g}×ATR({self._atr_period})={distance:.6g} "
+                f"uzakta ({stop_price:.6g})"
+            ),
+        )

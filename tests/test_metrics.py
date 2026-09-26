@@ -13,10 +13,11 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from core.config import load_config
+from core.config import ConfigError, load_config
 from core.ledger import TRADE_COLUMNS, Ledger
 from core.tags import TagError, format_tags
 from core.metrics import (
+    check_control_map,
     acceptance_flags,
     bootstrap_diff_ci,
     bootstrap_mean_ci,
@@ -548,6 +549,72 @@ def test_broken_list_names_models_not_layers() -> None:
     flags = _flags(_broken_control_set(), broken_controls=("random_ctrl",))
     assert not flags["good"].control_broken
     assert flags["good"].edge
+
+
+def _ctrl(model: str, *, pnl: float) -> Any:
+    return _competitor(model, avg_r_trades=[
+        _trade(pnl=pnl, risk=100.0, entry_price=100.0, stop_price=97.0) for _ in range(30)
+    ], final=10_000.0 + 30 * pnl)
+
+
+def _mapped_set() -> list[Any]:
+    return [
+        _winner("a"),
+        _winner("b", pnl=20.0),
+        _ctrl("a_ctrl", pnl=-5.0),     # ort. R −0.05
+        _ctrl("b_ctrl", pnl=10.0),     # ort. R +0.10 → b'nin farkı 0.10 < 0.15 marj
+        model_metrics("bench", trades=[], equity_rows=_equity(10_000.0, 10_500.0),
+                      initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
+    ]
+
+
+MAPPING = {"a": "a_ctrl", "b": "b_ctrl", "a_ctrl": "a_ctrl", "b_ctrl": "b_ctrl"}
+
+
+def test_control_for_measures_each_model_against_its_own_control() -> None:
+    """Karar 65: her yarışmacı KENDİ kontrolüne karşı ölçülür; satır hangisi olduğunu taşır."""
+    flags = _flags(_mapped_set(), control_model="yok", control_for=MAPPING)
+    assert flags["a"].control_model == "a_ctrl"
+    assert flags["a"].control_avg_r == pytest.approx(-0.05)
+    assert flags["a"].edge
+    assert flags["b"].control_model == "b_ctrl"
+    assert flags["b"].control_avg_r == pytest.approx(0.10)
+    assert not flags["b"].edge          # b'nin KENDİ kontrolüne marjı yetmiyor
+    assert not flags["a_ctrl"].edge     # kontrol kendini geçemez
+
+
+def test_unmapped_competitor_is_unevaluable_not_measured_against_the_layer_control() -> None:
+    """Dolu eşlemede eksik yarışmacı katmanın `control_model`ine GERİ DÜŞMEZ."""
+    mapping = {k: v for k, v in MAPPING.items() if k != "a"}
+    flags = _flags(_mapped_set(), control_model="a_ctrl", control_for=mapping)
+    assert not flags["a"].edge
+    assert flags["a"].control_model == ""
+
+
+def test_mapped_control_missing_from_the_set_closes_the_gate_instead_of_dropping_it() -> None:
+    """Eşlenen kontrol kümede yoksa (ör. kurulumda patladı) E KAPANIR; koşul düşmez, tur da düşmez."""
+    metrics = [item for item in _mapped_set() if item.model != "a_ctrl"]
+    flags = _flags(metrics, control_model="yok", control_for=MAPPING)
+    assert not flags["a"].edge
+    assert math.isnan(flags["a"].control_avg_r)
+    assert flags["b"].control_model == "b_ctrl"   # öteki satır etkilenmez
+
+
+def test_broken_list_applies_to_a_mapped_control() -> None:
+    flags = _flags(_mapped_set(), control_model="yok", control_for=MAPPING,
+                   broken_controls=("a_ctrl",))
+    assert flags["a"].control_broken and not flags["a"].edge
+    assert not flags["b"].control_broken
+
+
+def test_check_control_map_is_the_static_gate() -> None:
+    check_control_map(["a", "b"], control_model="x", control_for={}, available=[])
+    check_control_map(["a"], control_model="x", control_for={"a": "c"}, available=["a", "c"])
+    with pytest.raises(ConfigError, match="eşlenmemiş yarışmacı: b"):
+        check_control_map(["a", "b"], control_model="x", control_for={"a": "c"},
+                          available=["a", "b", "c"])
+    with pytest.raises(ConfigError, match="kümede olmayan bir kontrole"):
+        check_control_map(["a"], control_model="x", control_for={"a": "c"}, available=["a"])
 
 
 def test_small_sample_fails_even_with_a_great_average() -> None:
