@@ -1,0 +1,195 @@
+# Piyasa yönü teşhisinin tetikleyicisi (TEŞHİS, KARAR DEĞİL — docs/backtest.md > 6m).
+# Hiçbir model, kapı ya da karar bu işin çıktısıyla değişmez.
+#
+# Bugün TEK aşama vardır: `snapshot` (Adım 0 — ACİL KURTARMA). Karar 59'un ema/dc
+# artifact'leri 2026-10-08'de silinir; bu aşama portföy koşularının defter dosyalarını
+# (trades.csv, equity.csv, positions.json, manifest/results JSON'ları) HİÇBİR ŞEY
+# HESAPLAMADAN kopyalar: ne R, ne pozisyon sayısı, ne getiri. Kopyalanan dosyalar:
+#   (1) 90 günlük yeni bir artifact'e (`market-direction-snapshot`) ve
+#   (2) repoya, `docs/data/pins/decision59/` altına (gzip + SHA256SUMS + MANIFEST.json).
+# (2) ayrı bir işte ve YALNIZCA o işte `contents: write` ile yapılır: artifact okuyan iş
+# yazamaz, yazan iş yalnızca kendi ürettiği artifact'i okur ve yalnızca pins dizinini
+# commit eder. Gerekçe: bu konteynerden artifact deposuna erişilemiyor ve megabaytlık
+# log aktarımı elle kopyalama gerektirirdi — sabitlemenin denetlenebilir tek yolu budur.
+#
+# Tek-sembollü koşular KOPYALANMAZ: ölçüm yalnızca portföy koşularını okur (6m > kaynaklar).
+# xsec'in defteri hiçbir artifact'te yoktur; ölçüm aşamasında yeniden üretilir.
+#
+# Tetikleme `measure-regime.yml`in deseni: `claude/**` dallarında, push aralığında EKLENEN
+# `.github/triggers/mdir-snapshot*.run` dosyası. Dosya bir daha DEĞİŞTİRİLMEZ. Cron YOK.
+name: measure-market-direction
+
+on:
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - ".github/triggers/mdir-*.run"
+
+concurrency:
+  group: measure-market-direction
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  EMA_RUN_ID: "35975935993"    # karar 59 > sıra 1 (artifact 10799037756)
+  DC_RUN_ID: "35981639682"     # karar 59 > sıra 2 (artifact 10801320478)
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      stage: ${{ steps.stage.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve stage
+        id: stage
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            ADDED=$(git diff-tree --no-commit-id --name-only --diff-filter=A -r "$GITHUB_SHA" -- .github/triggers/)
+          else
+            ADDED=$(git diff --name-only --diff-filter=A "$BEFORE" "$GITHUB_SHA" -- .github/triggers/)
+          fi
+          echo "eklenen tetikleyiciler: ${ADDED:-(yok)}"
+          if echo "$ADDED" | grep -q "mdir-snapshot"; then
+            echo "stage=snapshot" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::bu push'ta snapshot tetikleyicisi EKLENMEDİ — koşu yok"
+            exit 1
+          fi
+
+      - name: Download backtest-ema artifact (karar 59 > sıra 1)
+        uses: actions/download-artifact@v4
+        with:
+          name: backtest-ema
+          run-id: ${{ env.EMA_RUN_ID }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: artifacts/ema
+
+      - name: Download backtest-dc artifact (karar 59 > sıra 2)
+        uses: actions/download-artifact@v4
+        with:
+          name: backtest-dc
+          run-id: ${{ env.DC_RUN_ID }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: artifacts/dc
+
+      - name: List artifacts (yalnızca yapı)
+        run: |
+          find artifacts -maxdepth 2 | sort
+          echo "--- portföy koşuları ---"
+          find artifacts/*/*-portfolio -type f | sort
+
+      # Yalnızca kopya + bütünlük: dosya adı, boy, satır sayısı, sha256. İçerik OKUNMAZ.
+      - name: Copy portfolio ledgers
+        run: |
+          set -euo pipefail
+          OUT=snapshot/decision59
+          mkdir -p "$OUT"
+          for src in ema dc; do
+            for period in A B; do
+              dir="artifacts/$src/$period-portfolio"
+              if [ ! -d "$dir" ]; then
+                echo "::error::$dir yok — kurtarma eksik kalır"; exit 3
+              fi
+              find "$dir" -type f \( -name '*.csv' -o -name '*.json' \) | sort | while read -r f; do
+                rel="${f#artifacts/}"
+                mkdir -p "$OUT/$(dirname "$rel")"
+                gzip -n -9 -c "$f" > "$OUT/$rel.gz"
+              done
+            done
+            # Koşunun kök düzeyindeki yükleri (results/manifest) — varsa.
+            find "artifacts/$src" -maxdepth 1 -type f -name '*.json' | sort | while read -r f; do
+              rel="${f#artifacts/}"
+              mkdir -p "$OUT/$(dirname "$rel")"
+              gzip -n -9 -c "$f" > "$OUT/$rel.gz"
+            done
+          done
+          python - <<'PY'
+          import gzip, hashlib, json, os, pathlib
+          out = pathlib.Path("snapshot/decision59")
+          files = []
+          for gz in sorted(out.rglob("*.gz")):
+              raw = gzip.decompress(gz.read_bytes())
+              files.append({
+                  "path": str(gz.relative_to(out))[:-3],
+                  "bytes": len(raw),
+                  "lines": raw.count(b"\n"),
+                  "sha256": hashlib.sha256(raw).hexdigest(),
+              })
+          manifest = {
+              "purpose": "karar 59 ema/dc portföy koşularının defter dosyaları — docs/backtest.md > 6m, Adım 0",
+              "sources": {
+                  "ema": {"run": "#" + os.environ["EMA_RUN_ID"], "artifact": "backtest-ema"},
+                  "dc": {"run": "#" + os.environ["DC_RUN_ID"], "artifact": "backtest-dc"},
+              },
+              "snapshot_run": "#" + os.environ["GITHUB_RUN_ID"],
+              "note": "sha256 ve satır sayısı SIKIŞTIRILMAMIŞ içeriğe aittir; hiçbir metrik hesaplanmadı",
+              "files": files,
+          }
+          (out / "MANIFEST.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+          (out / "SHA256SUMS").write_text("".join(f"{f['sha256']}  {f['path']}\n" for f in files))
+          print(json.dumps({"files": len(files), "bytes": sum(f["bytes"] for f in files)}, indent=2))
+          PY
+          cat "$OUT/SHA256SUMS"
+          du -sh "$OUT"
+
+      - name: Upload snapshot (90 gün)
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-direction-snapshot
+          path: snapshot
+          if-no-files-found: error
+          retention-days: 90
+
+  pin:
+    needs: snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Bu işin TEK yazma yetkisi: aynı koşunun ürettiği snapshot'ı pins dizinine commit etmek.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Download snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: market-direction-snapshot
+          path: snapshot
+
+      - name: Commit pins
+        run: |
+          set -euo pipefail
+          mkdir -p docs/data/pins
+          rm -rf docs/data/pins/decision59
+          cp -r snapshot/decision59 docs/data/pins/decision59
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data/pins/decision59
+          if git diff --cached --quiet; then
+            echo "değişiklik yok"; exit 0
+          fi
+          git commit -m "pins: karar 59 ema/dc portföy defterleri (6m Adım 0, #${GITHUB_RUN_ID})"
+          for attempt in 1 2 3 4; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız"; exit 1
