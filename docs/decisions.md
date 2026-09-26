@@ -5325,3 +5325,7 @@ kontrolden bağımsız olarak sıfırın altına iter).
 Tolerans ±0.05R'dir (kullanıcı kararı): C-2 marjı 0.15R olduğu için ±0.08R, marjın üçte
 birini yiyebilecek bir önyargıyı kaçırırdı. Sentetik veri 8 × 5000 bara büyütüldü, SE ≤
 0.0125, yani tolerans 4 SE. Tohum sabittir ve değiştirilmez.
+
+**TADİLAT-1 (2026-09-26, sonuç görüldükten sonra, kullanıcı onayı):** sıfır-beklenti testinin
+sentetiği 15.000 bar × 256 alt adıma büyütüldü; eşiklerin hiçbiri gevşemedi. Sebepler, görülen
+sayılar ve testin fiili çözünürlüğü (≈ ±0.035R) §6n > TADİLAT-1'dedir.

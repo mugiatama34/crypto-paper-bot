@@ -5072,6 +5072,53 @@ reddedildi; sentetik veri ucuz olduğu için boyut büyütüldü (5000 bar) ve h
 (0.05R) hem güvenlik (4 SE) birlikte sağlandı.
 - Kontrol geometrisi C-2 sonucunu gördükten sonra değiştirilmez.
 
+### TADİLAT-1 — sentetik veri 15.000 bar × 256 alt adım *(2026-09-26, kullanıcı onayı; SONUÇ GÖRÜLDÜKTEN SONRA)*
+
+**Bu değişiklik ilk koşunun sayıları görüldükten SONRA yapıldı ve öyle kaydedilir.** İki
+değişikliğin ikisi de ölçümü SIKILAŞTIRIR; hiçbir eşik gevşetilmedi. Tolerans (±0.05R), SE
+sınırı (≤ 0.0125), pozisyon tabanı (≥ 1000), yaş sınırı (200 bar), σ (5), başlangıç fiyatı
+(1000), sembol sayısı (8) ve tohum AYNEN kalır.
+
+**Görülen sayılar (8 × 5000 bar, 16 alt adım — §7'deki sabitlerle):**
+
+| | n | ort(R) maliyetsiz | (b) farkı | SE | azami yaş | sonuç |
+|---|---|---|---|---|---|---|
+| `trend_random` | 2946 | +0.042 | +0.044 | 0.0117 | 16 | geçti |
+| `meanrev_random` | 1738 | +0.003 | +0.0001 | **0.021** | 120 | **geçerlilik koşulu düştü** |
+| `random_ctrl` | 60 | −1.000 | — | — | 4925 (açık) | beklendiği gibi kaldı |
+
+**1. Bar sayısı 5000 → 15.000 (`meanrev_random`in SE'si).** Kök sebep bir tasarım
+varsayımıdır: 8 × 5000 önerisi (kullanıcının; ilk taslak 8 × 2000'di) sembol sayısının
+pozisyon sayısını artıracağını varsayıyordu ve bu varsayım taslakta da sınanmamıştı. Yanlıştı:
+kontrol barda TEK sinyal üretir ve `max_positions` (5) ile nakit kapısı açılışları sınırlar,
+yani pozisyon sayısını SEMBOL değil BAR sayısı belirler (`meanrev_random` ≈ 0.35 pozisyon/bar).
+SE ≤ 0.0125 için σ(R) ≈ 0.88 ile ~5000 pozisyon gerekir → ~15.000 bar.
+
+**2. Alt adım 16 → 256 (`trend_random`in +0.042'si).** Bu sapma kontrolün değil sentetiğin
+KESİKLİĞİNİN ürünüdür: motor stop'u bir seviye olarak doldurur (sürekli yol varsayımı), oysa
+kesikli alt adımlı yolda fiyat stop'u bir adımda AŞARAK geçer. Beklenen aşım ≈ 0.58 × alt adım
+σ; stop çıkışı başına ≈ +0.045R eder ve yalnızca stop'la çıkan bir geometride (trailing) tek
+yönlü birikir. `meanrev_random`de aşım stop'ta lehte, hedefte aleyhtedir ve birbirini götürür
+(+0.003). Teşhis koşusu (ön-kayıtlı sabitlere dokunmadan, yalnızca alt adım 256): `trend_random`
+**+0.017** — aşımın 1/√(alt adım) ile küçüleceği beklentisiyle uyumlu (≈ 0.011, kalan fark
+~1.5 SE).
+
+**Testin FİİLİ çözünürlüğü (sınırın nerede olduğu, sınırın kendisi kadar önemli).** 256 alt
+adımda bile trailing'li geometride ≈ +0.011–0.017R yapay sapma kalır, yani ±0.05R toleransının
+yaklaşık üçte biri sentetikten gider. Bu testin `trend_random`de YAKALAYABİLECEĞİ gerçek kontrol
+sapması bu yüzden fiilen **≈ ±0.035R** mertebesindedir; daha küçük bir önyargı bu test
+tarafından görülmez. Kabul edilir: C-2 marjı 0.15R'dir ve bu çözünürlük onun dörtte birinin
+altındadır.
+
+**3. Kural 13 bedeli sentetikte pratikte SIFIR** (iki koşuda toplam 1 düzeltme, 0.0005R).
+§9'un 2. sapmasındaki okuma kuralı yine de AYNEN kalır: gerçek piyasa barları sentetikten daha
+sivridir ve belirsiz barlar orada daha sık olabilir; kural ancak sorun varsa devreye girer.
+
+**Maliyet:** test süresi ~2 dakikadan ~6–7 dakikaya çıkar ve HER CI koşusunda sınanır.
+Alternatif (ayrı, seyrek bir workflow) reddedildi: bir koruma katmanını "bazen" yapmak, bu
+projede boşlukların nasıl kullanıldığını gördüğümüz biçimdir (kullanıcı kararı).
+
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
