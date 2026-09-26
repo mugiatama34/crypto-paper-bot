@@ -5167,6 +5167,13 @@ Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıka
    "değerlendirilemez = GEÇMEDİ" olarak KALIR. Ayrım tek bir sayıdadır: **gözlem sayısı sıfır
    mı, yoksa sıfırdan büyük ama yetersiz mi.** Araç tarafında karşılığı karar 51'in "boş
    rapor yeşil dönmez" kuralıdır: sıfır gözlem bir karar yazmaz, veri kapısıyla (çıkış 3) durur.
+7. **Tetikleyici dosya bir dala TAŞINARAK koşu başlatamaz** *(2026-09-26, karar 64)*. Tek
+   seferlik bir aşamanın kimliği onu EKLEYEN commit'tir, dosyanın yolu değil. `main`i ya da
+   başka bir dalı bir `claude/**` dalına birleştirmek, oraya eklenmiş tetikleyicileri bu dala
+   da "eklenmiş" gösterir. Bu yüzden push ile dinleyen her ölçüm workflow'u aşamayı
+   `scripts/trigger_stage.py`den okur: ekleyen commit başka bir uzak dalda da duruyorsa
+   dosya yok sayılır ve bir `notice` yazılır. Aksi hâlde 1. madde bir `git merge` kadar
+   kolay delinirdi.
 
 ---
 

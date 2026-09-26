@@ -50,7 +50,45 @@ env:
   XSEC_RUN_ID: "35981642832"   # karar 59 > sıra 3
 
 jobs:
+  # Aşama AYRI bir işte çözülür: taşınmış tetikleyici boş aşama döndürür ve ölçüm işi
+  # hiç başlamaz (adım adım `if` yazmak, bir adımın koşulu unutulduğu gün sızardı).
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      stage: ${{ steps.stage.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Aşama `scripts/trigger_stage.py`den gelir: push aralığında EKLENEN tetikleyici dosya,
+      # ANCAK onu ekleyen commit yalnızca bu dalda ise sayılır. `main`den ya da başka bir
+      # daldan merge ile TAŞINAN tetikleyici aşama başlatmaz (`::notice`, yeşil) — tek
+      # seferlik bir aşamanın başka bir dalda ikinci kez koşmasını kapatan kural budur.
+      - name: Resolve stage
+        id: stage
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCH_STAGE: ${{ inputs.stage }}
+          BEFORE: ${{ github.event.before }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            case "$DISPATCH_STAGE" in preflight|measure) ;; *) echo "::error::geçersiz aşama: $DISPATCH_STAGE"; exit 1;; esac
+            echo "stage=$DISPATCH_STAGE" >> "$GITHUB_OUTPUT"
+            echo "aşama: $DISPATCH_STAGE"
+          else
+            python scripts/trigger_stage.py --before "$BEFORE" --sha "$GITHUB_SHA" --branch "$BRANCH" --stage "preflight=regime-preflight*.run" --stage "measure=regime-measure*.run"
+          fi
+
   measure:
+    needs: stage
+    if: needs.stage.outputs.stage != ''
     runs-on: ubuntu-latest
     # measure: xsec'in iki dönemi soğuk önbellekle (~12.000 bar × 13 sembol) + BTC 4H.
     timeout-minutes: 240
@@ -58,40 +96,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # Aşama, bu push'ta EKLENEN tetikleyici dosyanın adından okunur. Liste git'ten
-      # çıkarılır (`head_commit.added` boş gelir — measure-timesfm'in dersi). Aynı push'ta
-      # iki aşama eklenirse koşu YOK.
-      - name: Resolve stage
-        id: stage
-        env:
-          EVENT: ${{ github.event_name }}
-          DISPATCH_STAGE: ${{ inputs.stage }}
-          BEFORE: ${{ github.event.before }}
-        run: |
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            STAGE="$DISPATCH_STAGE"
-          else
-            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-              ADDED=$(git diff-tree --no-commit-id --name-only --diff-filter=A -r "$GITHUB_SHA" -- .github/triggers/)
-            else
-              ADDED=$(git diff --name-only --diff-filter=A "$BEFORE" "$GITHUB_SHA" -- .github/triggers/)
-            fi
-            echo "eklenen tetikleyiciler: ${ADDED:-(yok)}"
-            HAS_PRE=$(echo "$ADDED" | grep -c "regime-preflight" || true)
-            HAS_MEASURE=$(echo "$ADDED" | grep -c "regime-measure" || true)
-            if [ "$HAS_PRE" -gt 0 ] && [ "$HAS_MEASURE" -gt 0 ]; then
-              echo "::error::aynı push'ta iki aşama eklendi — koşu yok"; exit 1
-            elif [ "$HAS_PRE" -gt 0 ]; then STAGE=preflight
-            elif [ "$HAS_MEASURE" -gt 0 ]; then STAGE=measure
-            else
-              echo "::error::bu push'ta tetikleyici dosya EKLENMEDİ (değiştirilmiş olabilir) — koşu yok"
-              exit 1
-            fi
-          fi
-          case "$STAGE" in preflight|measure) ;; *) echo "::error::geçersiz aşama: $STAGE"; exit 1;; esac
-          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
-          echo "aşama: $STAGE"
 
       - uses: actions/setup-python@v5
         with:
@@ -137,7 +141,7 @@ jobs:
       # Yalnızca `measure` aşamasında: xsec'in defteri BİR KEZ, karar 59'un koşusunun
       # girdileriyle yeniden üretilir (derinlik 12000, fonlama 2000, B sonu kayıttan).
       - name: Regenerate xsec ledgers (measure only)
-        if: steps.stage.outputs.stage == 'measure'
+        if: needs.stage.outputs.stage == 'measure'
         run: |
           set -o pipefail
           B_END="$(python scripts/rerun_record.py --workflow backtest-xsec.yml .github/triggers/rerun-59-backtest-xsec.run)"
@@ -147,7 +151,7 @@ jobs:
 
       - name: Run
         env:
-          STAGE: ${{ steps.stage.outputs.stage }}
+          STAGE: ${{ needs.stage.outputs.stage }}
         run: |
           set -o pipefail
           python scripts/measure_regime.py --stage "$STAGE" \
@@ -157,7 +161,7 @@ jobs:
             --out-dir backtests/regime
 
       - name: Upload results
-        if: always() && steps.stage.outputs.stage == 'measure'
+        if: always() && needs.stage.outputs.stage == 'measure'
         uses: actions/upload-artifact@v4
         with:
           name: measure-regime

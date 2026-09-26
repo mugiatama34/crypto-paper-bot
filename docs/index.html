@@ -1033,7 +1033,9 @@ function collect() {
     const d = PAYLOADS[layer.key];
     const benchNames = d.benchmarks || [];
     const replicaNames = d.replicas || [];
-    const control = (d.acceptance || {}).control_model || null;
+    // Model başına eşleme (karar 65): katmanın kontrol KÜMESİ; eski yüklerde tek ad.
+    const acc = d.acceptance || {};
+    const control = acc.controls || (acc.control_model ? [acc.control_model] : []);
 
     for (const m of (d.models || [])) {
       const name = m.model || m.name;
@@ -1047,7 +1049,7 @@ function collect() {
       };
       keys.push(key);
       if (MODELS[key].is_benchmark) benchKeys.push(key);
-      if (name === control) controlKeys.push(key);
+      if (control.includes(name)) controlKeys.push(key);
     }
     for (const f of ((d.acceptance || {}).models || [])) FLAGS[keyOf(layer.key, f.model)] = f;
     /* AÇIK pozisyon sayısı KATMANIN KENDİ yükünden gelir: base'in haritasını scalp
@@ -1619,8 +1621,9 @@ function modelTag(key) {
   const m = MODELS[key] || {};
   if (m.is_benchmark) return '<span class="tag">REFERANS</span>';
   if (m.is_replica) return '<span class="tag">KOPYA</span>';
-  const control = ((PAYLOADS[layerOf(key)] || {}).acceptance || {}).control_model || null;
-  return nameOf(key) === control ? '<span class="tag">KONTROL</span>' : "";
+  const acc = (PAYLOADS[layerOf(key)] || {}).acceptance || {};
+  const controls = acc.controls || (acc.control_model ? [acc.control_model] : []);
+  return controls.includes(nameOf(key)) ? '<span class="tag">KONTROL</span>' : "";
 }
 
 /* Rütbesizliğin SEBEBİ görünür olmalı: `—` tek başına "ölçülemedi" ile "kapıya 4

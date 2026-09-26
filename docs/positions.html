@@ -255,7 +255,9 @@ function collect() {
     if (!d) continue;
     const replicaNames = d.replicas || [];
     const benchNames = d.benchmarks || [];
-    const control = (d.acceptance || {}).control_model || null;
+    // Model başına eşleme (karar 65): katmanın kontrol KÜMESİ; eski yüklerde tek ad.
+    const acc = d.acceptance || {};
+    const control = acc.controls || (acc.control_model ? [acc.control_model] : []);
 
     for (const m of (d.models || [])) {
       const name = m.model || m.name;
@@ -267,7 +269,7 @@ function collect() {
       });
       styleModels.push(name);
       if (benchNames.includes(name)) benchmarks.push(name);
-      if (name === control) controls.push(name);
+      if (control.includes(name)) controls.push(name);
     }
 
     for (const p of (d.open_positions || [])) POSITIONS.push({ ...p, layer: layer.key });
