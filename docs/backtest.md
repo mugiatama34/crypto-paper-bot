@@ -4811,6 +4811,88 @@ aralıkları sıfırı içerecek, BTC hizalı pay kontrole yakın çıkacak.
 Tahmin bir kapı DEĞİLDİR ve tutması ya da tutmaması hiçbir modeli, kapıyı ya da kararı
 değiştirmez (§6m > 1); yalnızca sonucun ne kadar beklenmedik olduğunu sonradan okunur kılar.
 
+
+### SONUÇ — koşuldu *(2026-09-26, `measure-market-direction` #36246757531, sonuçlar `db87a9ca`)*
+
+**TEŞHİS, KARAR DEĞİL (§6m > 1):** aşağıdaki hiçbir sayı bir modeli, kapıyı, parametreyi ya da
+kararı değiştirmez ve yeni bir tez seçmek için kullanılmaz. Yük `docs/data/market_direction.json`;
+işlem başına alanlar, haftalık tablo, kullanılan her fiyat ve günlük BTC serisi aynı önekli
+CSV'lerde. Okuma sırası kullanıcının sonuç öncesi yazdığı sıradır.
+
+**1. Kapılar.** Pins SHA256 49/49. xsec determinizm kapısı GEÇTİ ("A birebir, orijinal
+`results.json` ile alan bazında"). Fiyat kapısı sekiz (kaynak, dönem) biriminin hepsinde
+hatasız (xsec A 497/497, B 432/432 dâhil). Hiçbir kaynak `measured: false` değil.
+
+**2. BTC hizalı pay, model − kontrol** (eşleştirilmiş hafta bootstrap'ı, %95):
+
+| Çift | A | B |
+|---|---|---|
+| `dc_short` − `dc_coinflip` | −0.037 [−0.135, 0.057] | +0.066 [−0.047, 0.167] |
+| `xsec_mom` − `xsec_random` | −0.038 [−0.114, 0.040] | −0.017 [−0.088, 0.053] |
+| `ema_trend` − `random_ctrl` ⚠ karar 60 | +0.329 [0.208, 0.440] | +0.178 [0.029, 0.318] |
+| `trend` − `random_ctrl` ⚠ karar 60 | +0.353 [0.236, 0.445] | +0.197 [0.071, 0.318] |
+
+- Geçerli kontrolü olan iki çiftte dört aralığın dördü sıfırı içeriyor: bu modellerin yön
+  seçimi yazı-turadan / rastgele seçimden ayırt edilemiyor.
+- ema satırları OKUNAMAZ: `random_ctrl`in kapanmış pozisyonlarının kazanma oranı iki dönemde
+  de 0 (51/51 ve 103/103 kayıp) ve BTC hizalı payı 0.10 / 0.25. Yalnızca stop'la kapandığı
+  için defterine yalnızca aleyhe giden pozisyonlar düşüyor (karar 60'ın sansürü); fark
+  kontrolün bozukluğunun ölçüsüdür, modelin becerisinin değil.
+- Düzey: tüm modellerin BTC hizalı payı 0.43–0.50 arasında.
+- Coin tanımı beklenen totolojiyi gösterdi: hizalı grubun kazanma oranı 0.88–0.98.
+
+**3. β, R², α (günlük, pozisyonsuz günler dâhil):**
+
+| Model | β A | β B | R² A | R² B | α %/yıl A | α %/yıl B |
+|---|---|---|---|---|---|---|
+| `ema_trend` | 0.159 [0.117, 0.209] | 0.232 [0.171, 0.301] | 0.148 | 0.158 | −4.9 [−27.7, 18.3] | −11.6 [−49.1, 22.1] |
+| `trend` | 0.010 [−0.026, 0.053] | −0.006 [−0.082, 0.081] | 0.001 | 0.000 | −7.1 [−29.4, 14.2] | −2.6 [−31.0, 27.1] |
+| `dc_short` | −0.295 [−0.360, −0.240] | −0.365 [−0.453, −0.285] | 0.314 | 0.302 | 2.3 [−31.8, 37.2] | 15.8 [−13.0, 46.7] |
+| `dc_coinflip` | 0.033 [−0.009, 0.074] | −0.038 [−0.096, 0.016] | 0.009 | 0.009 | −13.6 [−34.1, 7.6] | −2.4 [−30.1, 24.6] |
+| `xsec_mom` | 0.236 [0.210, 0.266] | 0.319 [0.255, 0.398] | 0.477 | 0.456 | 0.6 [−17.2, 19.4] | 14.1 [−7.8, 36.4] |
+| `xsec_random` | 0.239 [0.205, 0.279] | 0.322 [0.249, 0.410] | 0.495 | 0.452 | −1.5 [−19.7, 18.0] | 9.0 [−15.4, 34.6] |
+
+- α aralığı on iki satırın on ikisinde sıfırı içeriyor.
+- `dc_short` ↔ `dc_coinflip` farkı β'dadır (Δβ A −0.328 [−0.394, −0.271], B −0.326
+  [−0.429, −0.240]); α farkının aralığı iki dönemde de sıfırı içeriyor.
+- `xsec_mom` ↔ `xsec_random`: Δβ A −0.003, B −0.003; Δα iki dönemde de sıfır etrafında.
+- `random_ctrl` (ema) maruziyet payı 1.00 — hiç çıkmayan pozisyonlar; A'da gün penceresi son
+  kapanışa uzadığı için 1068 gün.
+
+**4. Eşzamanlılık (n → n_etkin):** `trend` 1246 → 1001 / 1258 → 963; `ema_trend` 369 → 294 /
+389 → 244; `dc_short` 336 → 268 (68 olay) / 246 → 150 (37 olay); `xsec_mom` 183 → 114 (20
+olay) / 168 → 168 (20 olay, ICC −0.02); `xsec_random` 314 → 133 / 264 → 166. Çift korelasyonu
+tek yönlü modellerde yüksek (`dc_short` 0.67 / 0.81), yazı-tura kontrolünde sıfıra yakın
+(−0.07 / 0.00). Canlı: `scalp_patient`in 43 pozisyonu **2 olaya** düşüyor (n_etkin 9) —
+katmandaki başlangıç kazancı tek bir örtüşme zincirinden; `scalp_fixed` 127 → 77 (30 olay);
+`vwap_clone` 711 → 496, en uzun zincir 152 pozisyon.
+
+**5. Haftalık tablo, en iyi / en kötü haftalar** (modelin hafta getirisine göre): `dc_short`un
+en iyi haftalarında BTC düşmüş (A −15.8%, −11.1% / B −2.1%, −14.4%), en kötülerinde yükselmiş
+(+6.1%, +9.3% / +4.7%, +6.8%), hepsi short. `xsec_mom`un en iyi haftaları BTC'nin yükseldiği,
+en kötüleri düştüğü haftalar; çoğunda 0–2 yeni pozisyon açılmış (getiri taşınan pozisyonlardan).
+`ema_trend`in en iyi haftaları BTC +7…+16%, en kötüleri karışık (BTC −2.8%, +1.9%, 0.0%).
+`trend` karışık; B'deki en iyi haftası (+9.1%) BTC −6.9% iken %55 short.
+
+**6. Canlı (yalnızca betimsel; kümeli aralıklar değerlendirilemez, 2–3 hafta):** BTC hizalı
+pay `trend` 0.49 (n=75), `scalp_fixed` 0.48, `scalp_patient` 0.47, `scalp_coinflip` 0.46
+(n=13). β/α 3–14 günden hesaplandı ve okunacak sayılar değildir.
+
+**Görülen bir sapma boyutu:** nötr pozisyon payı `vwap_clone`da 176/711, `dc_short` A'da
+42/336 — dolum barı içinde kapanan pozisyonlar, kapanış-kapanış penceresinde sıfır getiri
+alır (§6m > 4'ün kabul edilen sapması). Nötrler hizalı pay paydasına girmez.
+
+**Beklenti ↔ sonuç (kullanıcının tahmini, SONUÇ ÖNCESİ BEKLENTİ):**
+
+| Tahmin | Sonuç |
+|---|---|
+| Alfa aralıkları sıfırı içerecek | **TUTTU** — 12/12 backtest satırı |
+| BTC hizalı pay kontrole yakın çıkacak | **TUTTU** geçerli kontrolde (dc, xsec: 4/4 aralık sıfırı içeriyor); ema'da kontrol bozuk olduğu için okunamaz |
+| Beta kazancın büyük kısmını açıklayacak | **TUTMADI** — R² en fazla ~0.5 (xsec), `dc_short` ~0.3, `ema_trend` ~0.15, `trend` ~0. Açıklanacak anlamlı bir kazanç yok (α ≈ 0) ve getiri oynaklığının çoğunu BTC de açıklamıyor: getiriler büyük ölçüde ne betadan ne alfadan, BTC'den bağımsız hareketten geliyor. Beta yalnızca `dc_short` (negatif) ve xsec (pozitif) için baskın bileşen; `dc_short`un kontrolden farkının tamamı β'da |
+
+**Karar üretmez.** Canlı tekrar §6m > 8'deki tarihlerde (base 2026-11-23, scalp 2026-12-07),
+aynı ön-kayıtla ve yalnızca canlı kaynak için koşulabilir. Karar 62.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
