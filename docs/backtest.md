@@ -5114,10 +5114,34 @@ altındadır.
 §9'un 2. sapmasındaki okuma kuralı yine de AYNEN kalır: gerçek piyasa barları sentetikten daha
 sivridir ve belirsiz barlar orada daha sık olabilir; kural ancak sorun varsa devreye girer.
 
+**Uygulama notu — 15.000 bar TEK yürüyüş olamaz (sonuç görülmeden, test gövdesi hiç koşmadan
+yakalandı).** σ·√15000 ≈ 612 fiyatı sıfırın altına iter; testin koruması (`fiyat sıfıra
+indi`) ilk denemede tetikledi ve hiçbir R hesaplanmadı. Ön-kayıtlı sabitlerin HİÇBİRİ
+değiştirilmedi: bar sayısı, her biri kendi tohumuyla (`SEED + segment`, segment 0-2) BAĞIMSIZ
+üç 5000 barlık segmente bölündü ve pozisyonlar havuzlandı. Reddedilen alternatifler: başlangıç
+fiyatını yükseltmek (stop yüzdesini gerçekçi olmayan bir düzeye indirir, yani `cost/R`
+ölçeğini kaydırır) ve geometrik yürüyüş (ön-kayıtlı veri modelini değiştirirdi).
+
 **Maliyet:** test süresi ~2 dakikadan ~6–7 dakikaya çıkar ve HER CI koşusunda sınanır.
 Alternatif (ayrı, seyrek bir workflow) reddedildi: bir koruma katmanını "bazen" yapmak, bu
 projede boşlukların nasıl kullanıldığını gördüğümüz biçimdir (kullanıcı kararı).
 
+
+### SONUÇ — sıfır-beklenti testi GEÇTİ *(2026-09-26, TADİLAT-1 sabitleriyle: 3 × 5000 bar, 256 alt adım)*
+
+| | n | ort(R_düz) maliyetsiz (a) | SE | (b) ort(R_düz) + ort(cost/R) | kural 13 bedeli | azami yaş kapanmış / açık |
+|---|---|---|---|---|---|---|
+| `trend_random` | 9696 | **+0.012** | 0.0055 | **+0.011** (cost/R 0.159) | 0 | 17 / 3 |
+| `meanrev_random` | 5679 | **+0.0075** | 0.0111 | **+0.010** (cost/R 0.138) | −0.0006 (3 düzeltme) | 120 / 29 |
+| `random_ctrl` (regresyon) | 170 | **−1.000** | — | −0.970 | 0 | 3229 / **4824** |
+
+- (a), (b), (c) ve geçerlilik iki kontrolde de sağlandı; tolerans ±0.05R, SE ≤ 0.0125.
+- `trend_random`in +0.012'si TADİLAT-1'in öngördüğü kesiklik sapmasıyla (≈ +0.011) örtüşüyor;
+  kontrolün kendisine ait bir sapma bu testin çözünürlüğünde (≈ ±0.035R) görülmüyor.
+- `random_ctrl` testten beklendiği gibi KALDI: kapanmış R tam −1, açık pozisyon 4824 bar yaşında.
+- Kural 13'ün bu geometrideki bedeli ihmal edilebilir (≤ 0.0006R); §9 > 2'nin okuma kuralı
+  gerçek veri için AYNEN kalır.
+- Süre: ~6 dakika, her CI koşusunda.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 

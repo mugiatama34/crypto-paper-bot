@@ -47,12 +47,13 @@ from strategies.meanrev_random import MeanrevRandom
 from strategies.random_ctrl import RandomControl
 from strategies.trend_random import TrendRandom
 
-# --- §6n > 7: ön-kayıtlı sabitler (DEĞİŞTİRİLMEZ) ---------------------------------------
+# --- §6n > 7 + TADİLAT-1: ön-kayıtlı sabitler (DEĞİŞTİRİLMEZ) -----------------------------
 SYMBOLS = 8
-BARS = 5000
+BARS = 15000        # TADİLAT-1: 5000 → 15000 (pozisyon sayısını BAR belirler, sembol değil)
+SEGMENT_BARS = 5000 # TADİLAT-1 > uygulama notu: 15.000 bar, 3 BAĞIMSIZ 5000'lik segment
 START_PRICE = 1000.0
 SIGMA_PER_BAR = 5.0
-SUBSTEPS = 16
+SUBSTEPS = 256      # TADİLAT-1: 16 → 256 (kesikli yolun stop aşımı ∝ 1/√alt adım)
 SEED = 20260926
 TOLERANCE_R = 0.05
 MAX_AGE_BARS = 200
@@ -72,15 +73,23 @@ class Synthetic:
     paths: dict[str, np.ndarray]      # sembol -> (BARS, SUBSTEPS + 1): open + alt adımlar
 
 
-def _synthetic() -> Synthetic:
-    rng = np.random.default_rng(SEED)
-    index = pd.date_range(T0, periods=BARS, freq="4h", tz="UTC", name="ts")
+def _synthetic(segment: int) -> Synthetic:
+    """Bir segment: aritmetik yürüyüş, başlangıç 1000, σ 5 — ön-kayıtlı sabitler AYNEN.
+
+    15.000 bar TEK yürüyüş olamaz: σ·√15000 ≈ 612 fiyatı sıfırın altına iter (koruma
+    aşağıda). Başlangıcı yükseltmek stop yüzdesini gerçekçi olmayan bir düzeye indirir,
+    geometrik yürüyüş ön-kayıtlı veri modelini değiştirirdi; bu yüzden bar sayısı, her biri
+    kendi tohumuyla (`SEED + segment`) BAĞIMSIZ üç segmente bölünür ve pozisyonlar havuzlanır.
+    """
+    rng = np.random.default_rng(SEED + segment)
+    bars = SEGMENT_BARS
+    index = pd.date_range(T0, periods=bars, freq="4h", tz="UTC", name="ts")
     frames: dict[str, pd.DataFrame] = {}
     paths: dict[str, np.ndarray] = {}
     for i in range(SYMBOLS):
-        steps = rng.normal(0.0, SIGMA_PER_BAR / math.sqrt(SUBSTEPS), size=(BARS, SUBSTEPS))
+        steps = rng.normal(0.0, SIGMA_PER_BAR / math.sqrt(SUBSTEPS), size=(bars, SUBSTEPS))
         closes_flat = START_PRICE + np.cumsum(steps.ravel())
-        within = closes_flat.reshape(BARS, SUBSTEPS)
+        within = closes_flat.reshape(bars, SUBSTEPS)
         opens = np.concatenate([[START_PRICE], within[:-1, -1]])   # boşluk yok
         path = np.column_stack([opens, within])
         paths_i = path
@@ -90,7 +99,7 @@ def _synthetic() -> Synthetic:
                 "high": path.max(axis=1),
                 "low": path.min(axis=1),
                 "close": within[:, -1],
-                "volume": np.ones(BARS),
+                "volume": np.ones(bars),
             },
             index=index,
         )
@@ -125,15 +134,32 @@ class Outcome:
 
 
 def _run(tmp: Path, *, costs: bool) -> tuple[dict[str, Outcome], dict[str, Any]]:
-    data = _synthetic()
     config = _config(costs=costs)
-    models = [TrendRandom(config=config), MeanrevRandom(config=config), RandomControl(config=config)]
-    ledger = Ledger(tmp)
-    engine = Engine(models, config=config, ledger=ledger, portfolio=Portfolio(config))
-    engine.run_round(_market(data, WARMUP))     # boş defterde yalnızca son bar işlenir
-    engine.run_round(_market(data, BARS))
-    end = data.frames[next(iter(data.frames))].index[-1]
-    return {m.name: _outcome(ledger, m.name, data, config, end) for m in models}, config
+    names = (TrendRandom.name, MeanrevRandom.name, RandomControl.name)
+    parts: dict[str, list[Outcome]] = {name: [] for name in names}
+    for segment in range(BARS // SEGMENT_BARS):
+        data = _synthetic(segment)
+        models = [TrendRandom(config=config), MeanrevRandom(config=config),
+                  RandomControl(config=config)]
+        ledger = Ledger(tmp / f"segment{segment}")
+        engine = Engine(models, config=config, ledger=ledger, portfolio=Portfolio(config))
+        engine.run_round(_market(data, WARMUP))     # boş defterde yalnızca son bar işlenir
+        engine.run_round(_market(data, SEGMENT_BARS))
+        end = data.frames[next(iter(data.frames))].index[-1]
+        for m in models:
+            parts[m.name].append(_outcome(ledger, m.name, data, config, end))
+    return {name: _pool(outcomes) for name, outcomes in parts.items()}, config
+
+
+def _pool(outcomes: list[Outcome]) -> Outcome:
+    return Outcome(
+        r_engine=np.concatenate([o.r_engine for o in outcomes]),
+        r_corrected=np.concatenate([o.r_corrected for o in outcomes]),
+        cost_per_r=np.concatenate([o.cost_per_r for o in outcomes]),
+        corrected_exits=sum(o.corrected_exits for o in outcomes),
+        max_closed_age=max(o.max_closed_age for o in outcomes),
+        max_open_age=max(o.max_open_age for o in outcomes),
+    )
 
 
 def _outcome(ledger: Ledger, model: str, data: Synthetic, config: dict[str, Any],
