@@ -125,6 +125,7 @@ def build_dashboard(
         control_model=control_model,
         edge_margin_r=float(get_setting(config_dict, "acceptance.edge_margin_r")),
         control_min_trades=int(get_setting(config_dict, "acceptance.control_min_trades")),
+        broken_controls=tuple(get_setting(config_dict, "acceptance.broken_controls")),
         r_samples=r_samples,
         ci_alpha=ci_alpha,
         bootstrap_samples=bootstrap_samples,
@@ -141,6 +142,7 @@ def build_dashboard(
         },
         "acceptance": {
             "control_model": control_model,
+            "broken_controls": list(get_setting(config_dict, "acceptance.broken_controls")),
             "min_trades": int(get_setting(config_dict, "acceptance.min_trades")),
             "control_min_trades": int(
                 get_setting(config_dict, "acceptance.control_min_trades")

@@ -97,6 +97,20 @@ acceptance:
                                  # buna göre ölçülür. is_benchmark DEĞİLdir (aynı sütunda
                                  # yarışır), bu yüzden adı benchmarks listesinden
                                  # türetilemez; açıkça yazılır.
+  broken_controls: ["random_ctrl"]
+                          # KAPI — ÖLÇÜ ÇUBUĞU BOZUK OLAN KONTROLLER (karar 60, 62). Burada
+                          # adı geçen bir model bir katmanın control_model'i ise edge O
+                          # KATMANDA DEĞERLENDİRİLEMEZ (geçilmiş sayılmaz) ve logger.warning
+                          # yazar — örneklemi ne olursa olsun. `random_ctrl` yalnızca stop'la
+                          # kapanabiliyor: kapanmış-işlem R'si tanım gereği SANSÜRLÜDÜR (≈−1R)
+                          # ve "kontrolü 0.15R marjla geç" koşulu her yarışmacıya bedava
+                          # olur. Kontrol n=30'a ulaştığı gün trend/meanrev C-2'den SAHTE
+                          # "geçti" alacaktı; bu anahtar o kapıyı açılmadan kapatır.
+                          # Liste MODEL ADIDIR, katman değil: bozukluk modelin özelliğidir,
+                          # kontrolünü ezen katmanlar (scalp/dc/xsec) etkilenmez. Kontrolü
+                          # kümeden ÇIKARMAK bunun yerine geçemezdi — kümede olmayan kontrol
+                          # koşulu DÜŞÜRÜR, yani kapıyı kolaylaştırırdı. Model KOŞMAYA ve
+                          # deftere yazmaya devam eder (kural 1). Boş liste = bozuk kontrol yok.
   control_min_trades: 30  # KAPI — KONTROLÜN KENDİ ÖRNEKLEMİ. Marj, kontrolün ortalama
                           # R'sine göre ölçülür ve o ortalama da bir örneklemden gelir.
                           # Bu kapı olmadan şu mümkündü (ve base katmanında GERÇEKTEN

@@ -129,6 +129,7 @@ bu yüzden `ema` katmanı kendi kıyas hedefini (`trend`), kontrolünü (`random
 | `acceptance.min_trades` | `30` | **Kapı** — örneklem: R'ye giren kapanmış işlem bu sayının altındaysa ortalama R bir ölçüm değil gürültüdür. |
 | `acceptance.control_model` | `"random_ctrl"` (kök; `scalp`: `"scalp_coinflip"`, `xsec`: `"xsec_random"`) | **Kapı** — edge'in kontrol referansı. `is_benchmark` değildir (aynı sütunda yarışır), bu yüzden adı `benchmarks` listesinden türetilemez. **Katman başına ezilir ve ezilmesi zorunludur:** kontrol o katmanın kendi geometrisini taşımalıdır, yoksa iki farklı stop ölçeği aynı farkta toplanır (⚠B yanar, `cost_per_r` kıyaslanamaz). Kök değeri bir katmanda bırakmak, kapının kümede olmayan bir modele bakıp SESSİZCE düşmesi demekti — scalp katmanında aylarca böyleydi (karar 54). |
 | `acceptance.control_min_trades` | `30` | **Kapı** — kontrolün KENDİ örneklemi. Marj kontrolün ortalamasına göre ölçülür; kontrol bu sayıya ulaşmadıysa edge değerlendirilemez. |
+| `acceptance.broken_controls` | `["random_ctrl"]` | **Kapı** — ölçü çubuğu BOZUK kontroller (karar 60, 62). Adı listede geçen model bir katmanın `control_model`i ise o katmanda edge örneklemden bağımsız olarak DEĞERLENDİRİLEMEZ (`AcceptanceFlags.control_broken`). Liste MODEL adıdır: kendi kontrolünü ezen katmanlar etkilenmez. Kontrolü kümeden çıkarmak yerine geçemez — kümede olmayan kontrol koşulu DÜŞÜRÜR, yani kapıyı kolaylaştırırdı. Bugün `random_ctrl`: yalnızca stop'la kapanabildiği için kapanmış-işlem R'si sansürlüdür (≈−1R). |
 | `acceptance.edge_margin_r` | `0.15` | **Kapı** — edge marjı: kontrolü geçmek için ortalama R farkının en az bu kadar olması gerekir. Çekilişin kendi gürültüsü kıl payı bir farkı tek başına üretebilir. |
 | `acceptance.edge_ci_alpha` | `0.05` | **Kapı** — edge'in kesinlik koşulu: (model − kontrol) farkının yüzdelik bootstrap aralığı bu alfa ile kurulur, ALT SINIRI sıfırın üstünde olmalıdır. |
 | `acceptance.bootstrap_samples` | `2000` | Bootstrap yeniden örnekleme sayısı. Tohum `random_seed`den türer: aynı defter her zaman aynı aralığı verir. |
@@ -866,6 +867,11 @@ Kararlar:
 - **Edge'in "çıpayı geç" koşulu** kural 15'in sorusudur: on model de pozitif getirse ama
   hiçbiri çıpayı geçemese sonuç "stratejiler işe yarıyor" değildir. Birden çok çıpa varsa
   **en yükseği** zemindir; geçilmesi en kolay olanı seçmek çıtayı sessizce indirirdi.
+- **Bozuk kontrol kümede OLSA da değerlendirilemez** (`acceptance.broken_controls`, karar 62):
+  ölçü çubuğunun kendisi bozuksa ona karşı marj ölçmek kapıyı bedava yapar. Bu, aşağıdaki
+  "kümede yok → koşul düşer" durumunun TERSİDİR: orada kıyaslanacak bir şey yoktur, burada
+  kıyaslanacak şey yanlış ölçülmüştür — ve ikisini karıştırmak, kontrolü listeden çıkarmayı
+  kapıyı geçmenin yolu yapardı.
 - **Kontrol ya da çıpa kümede yoksa** ilgili koşul değerlendirilemez ve `edge` geri kalan
   koşullara düşer — ama bu sessiz olmaz, `logger.warning` ile söylenir. Eksik bir çıta,
   geçilmiş bir çıta gibi görünmemelidir.

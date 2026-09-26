@@ -112,6 +112,12 @@ Bir model ancak aşağıdakilerin **tamamı** sağlanırsa canlıya alınır:
 |---|---|
 | **C-1** | ortalama R **> 0** |
 | **C-2** | `random_ctrl`'ün ortalama R'sini **≥ 0.15R** marjla geçer (`acceptance.edge_margin_r`) |
+
+> ⚠ **C-2 — `random_ctrl` BOZUK (karar 60, 62; 2026-09-26).** `random_ctrl` yalnızca stop'la kapanabildiği için
+> kapanmış-işlem R'si sansürlüdür (≈−1R) ve ona karşı ölçülen C-2 anlamsızdır. `acceptance.broken_controls`
+> ile base ve ema katmanlarında C-2 artık DEĞERLENDİRİLEMEZ (geçilmiş sayılmaz). Bu kontrolle daha önce
+> yazılmış "C-2 geçti" satırları (ör. §6d, `ema_trend`) eşlenmiş kontrol ön-kayıtla gelip yeniden
+> koşulana kadar OKUNMAZ; metinleri silinmedi.
 | **C-3** | hesap getirisi referans çıpasını (`buyhold`) geçer |
 | **C-4** | `avg_stop_distance_pct` yarışmacı bandının İÇİNDE (⚠B yanmıyor) |
 | **C-5** | **C-1, C-2 ve C-3 OOS penceresinde de sağlanıyor** (§6) |

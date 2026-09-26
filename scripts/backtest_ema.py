@@ -376,7 +376,8 @@ def format_gates(gates: Mapping[str, Any]) -> str:
         out.append(
             f"  Dönem {period}: örneklem {'✓' if flag['sample'] else '✗'} "
             f"(n={flag['measured_trades']}/{flag['min_trades']})  "
-            f"edge {'✓' if flag['edge'] else '✗'} "
+            f"edge {'✓' if flag['edge'] else '✗'}"
+            f"{' [KONTROL BOZUK — değerlendirilemez]' if flag.get('control_broken') else ''} "
             f"(ort.R {flag['avg_r']:+.3f} ↔ kontrol {flag['control_avg_r']:+.3f})  "
             f"band {'✓' if flag['band'] else '⚠'}  "
             f"getiri {flag['total_return'] * 100:+.2f}% ↔ çıpa {flag['benchmark_return'] * 100:+.2f}%  "
@@ -411,6 +412,9 @@ def _verdict(gates: Mapping[str, Any]) -> str:
     # Yalnızca çıpa koşulundan (C-3) kalma durumu: karar otomatik değildir.
     only_benchmark = all(
         flag["sample"] and flag["avg_r"] > 0.0
+        # Bozuk kontrol (karar 60/62) C-2'yi DEĞERLENDİRİLEMEZ yapar; "yalnızca çıpadan
+        # kaldı" demek marjı bozuk bir ölçü çubuğuyla geçilmiş saymak olurdu.
+        and not flag.get("control_broken", False)
         and flag["avg_r"] - flag["control_avg_r"] >= flag["edge_margin_r"]
         and flag["total_return"] <= flag["benchmark_return"]
         for flag in repo_failed

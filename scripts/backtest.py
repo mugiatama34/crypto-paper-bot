@@ -490,6 +490,7 @@ def run_backtest(
         control_model=resolved_control,
         edge_margin_r=float(get_setting(config, "acceptance.edge_margin_r")),
         control_min_trades=int(get_setting(config, "acceptance.control_min_trades")),
+        broken_controls=tuple(get_setting(config, "acceptance.broken_controls")),
         r_samples={name: r_series(rows) for name, rows in trades.items()},
         ci_alpha=float(get_setting(config, "acceptance.edge_ci_alpha")),
         bootstrap_samples=int(get_setting(config, "acceptance.bootstrap_samples")),

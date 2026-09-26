@@ -516,6 +516,40 @@ def test_acceptance_needs_both_gates() -> None:
     assert not flags["ctrl"].edge
 
 
+def _broken_control_set() -> list[Any]:
+    return [
+        _winner("good"),
+        _competitor("ctrl", avg_r_trades=[
+            _trade(pnl=-100.0, risk=100.0, entry_price=100.0, stop_price=97.0)
+            for _ in range(30)
+        ], final=7_000.0),
+        model_metrics("bench", trades=[], equity_rows=_equity(10_000.0, 10_500.0),
+                      initial_capital=10_000.0, periods_per_year=2190.0, is_benchmark=True),
+    ]
+
+
+def test_broken_control_makes_edge_unevaluable_whatever_its_sample() -> None:
+    """Karar 60/62: ölçü çubuğu bozuk kontrol (−1R'ye yapışık, n ≥ 30) edge'i KAPATIR.
+
+    Aynı küme bayrak olmadan edge'i geçer — regresyonun özü tam bu: kontrol örneklem
+    kapısına ulaştığı gün sansürlü −1R'ye karşı marj bedavaya geçilirdi.
+    """
+    assert _flags(_broken_control_set())["good"].edge
+    flags = _flags(_broken_control_set(), broken_controls=("ctrl",))
+    assert flags["good"].control_broken
+    assert flags["good"].control_trades == 30  # örneklem tamam; kapatan örneklem DEĞİL
+    assert not flags["good"].edge
+    assert not flags["good"].passed
+    assert flags["good"].sample  # örneklem kapısı etkilenmez
+
+
+def test_broken_list_names_models_not_layers() -> None:
+    """Listede başka bir model varsa bu katmanın kontrolü etkilenmez."""
+    flags = _flags(_broken_control_set(), broken_controls=("random_ctrl",))
+    assert not flags["good"].control_broken
+    assert flags["good"].edge
+
+
 def test_small_sample_fails_even_with_a_great_average() -> None:
     flags = _flags([_winner("tiny", n=3, final=15_000.0)])
     assert not flags["tiny"].sample
