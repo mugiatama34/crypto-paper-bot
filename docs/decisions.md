@@ -5267,3 +5267,46 @@ kazanç yok (α ≈ 0) ve getiri oynaklığının çoğunu BTC de açıklamıyor
 §6m > 8'deki tarihlerde (base 2026-11-23, scalp 2026-12-07), aynı ön-kayıtla, yalnızca canlı
 kaynak için.
 
+## 63. `random_ctrl` BOZUK olarak işaretlendi: base ve ema'da E DEĞERLENDİRİLEMEZ — kapı açılmadan kapatıldı *(2026-09-26)*
+
+**Neden şimdi, onarımdan ÖNCE.** Karar 60'ın teşhisi bağımsız olarak yeniden doğrulandı
+(canlı `ledgers/random_ctrl`: 8/8 çıkış stop, stop 8/8 doğru tarafta, R ≈ −1 − maliyet/R,
+dolum 8/8 sinyal barından tam bir bar sonra — aday "mekanik" sebeplerin hepsi elendi; kök
+sebep çıkış kuralının yokluğundan doğan SANSÜRDÜR). Base'de `trend` 75 pozisyonla örneklem
+kapısını geçmiş durumda ve kontrole farkının aralığı [+0.94, +1.36]R; E bugün yalnızca
+kontrolün kendi örneklemi 8 < 30 olduğu için değerlendirilemiyordu. `random_ctrl` n=30'a
+ulaştığı gün `trend` ve `meanrev` için C-2 SAHTE "geçti" verecekti (geriye yalnızca çıpa
+koşulu kalırdı). Onarım (eşlenmiş kontroller) ön-kayıt gerektirir ve zaman alır; kapı o
+süre boyunca açık kalamaz.
+
+**Ne yapıldı.** `acceptance.broken_controls: ["random_ctrl"]` (kök). Adı bu listede geçen bir
+model bir katmanın `control_model`i ise `core/metrics.py::acceptance_flags` o katmanda
+`edge`i örneklemden bağımsız olarak DEĞERLENDİRİLEMEZ yapar, `logger.warning` yazar ve
+bayrağa `control_broken=True` koyar; dashboard'un E rozeti gerekçeyi söyler,
+`scripts/backtest_ema.py`nin "yalnızca çıpadan kaldı → DUR" istisnası bozuk kontrolde
+tetiklenmez. Kapsam: `random_ctrl`i kontrol olarak kullanan **base** ve **ema**. scalp/dc/xsec
+kendi kontrollerini taşıdıkları için etkilenmez — liste MODEL adıdır, katman değil
+(test: `tests/test_layers.py`, katman listesi config'ten okunur).
+
+**Neden kontrolü kümeden çıkarmak DEĞİL.** Kümede olmayan kontrol koşulu DÜŞÜRÜR (CLAUDE.md
+> Kabul Çıtası): E kolaylaşırdı. Buradaki durum farklıdır — kontrol ölçülmüştür ama ölçtüğü
+şey bir çekiliş değil bir sansürdür; doğru statü "değerlendirilemez"dir, "koşul yok" değil.
+
+**Değişmeyenler.** `random_ctrl` koşmaya ve deftere yazmaya devam eder (kural 1); davranışı,
+kapıların eşikleri ve hiçbir modelin sinyali değişmez. Bugün hiçbir kararın sonucu değişmez:
+base'de E zaten değerlendirilemiyordu, `ema_trend` C-1'den kaldı. Bayrak, eşlenmiş kontroller
+ön-kayıtla gelip `control_model` onlara geçtiğinde listeden çıkar — o zamana kadar geçici
+değil, BAĞLAYICIDIR.
+
+### KAPSAM KARARI — onarım yalnızca base; ema "değerlendirilemez" kalır *(2026-09-26, kullanıcı kararı)*
+
+Eşlenmiş kontroller (`trend_random`, `meanrev_random`) ön-kaydı YALNIZCA base katmanını
+kapsar. ema katmanı için `ema_random` açılmaz ve karar 59 kurallarıyla `backtest-ema`
+yeniden koşusu YAPILMAZ. Gerekçe: `broken_controls` ema'yı zaten doğru işaretliyor (sahte
+geçiş riski kapalı); `ema_random`ın tek getirisi `ema_trend`in C-2 satırını düzeltmek
+olurdu, ama `ema_trend` C-1'den kaldı — karar değişmez — ve katmanda aktif bir tez yok.
+`ema_trend`in eski "C-2 geçti" satırları ⚠ notlarıyla kayıt olarak durur ve OKUNMAZ.
+
+**Açık iş (unutulmasın):** ema katmanına yeni bir model önerildiğinde, kontrolü O MODELİN
+ön-kaydıyla birlikte ve O MODELİN geometrisine eşlenerek kurulur. O güne kadar ema'da E
+değerlendirilemez; `random_ctrl` `broken_controls` listesinde kalır.

@@ -226,3 +226,24 @@ def test_overrides_merge_deeply() -> None:
     resolved = resolve_layer(config, "x").config
 
     assert resolved["data"] == {"cache_dir": "c", "history_bars": 999}
+
+
+def test_random_ctrl_is_marked_broken_exactly_where_it_is_the_control() -> None:
+    """Karar 60/63: `random_ctrl`e bakan her katmanda E DEĞERLENDİRİLEMEZ, diğerlerinde dokunulmaz.
+
+    Katman listesi config'ten okunur: `random_ctrl`i kontrol olarak miras alan yeni bir
+    katman bu testten kaçamaz. Kendi kontrolünü taşıyan katmanlar (scalp/dc/xsec) bayrağı
+    miras alır ama bayrak model adına bağlı olduğu için onlarda etkisizdir.
+    """
+    config = load_config()
+    marked = []
+    for name in layer_names(config):
+        layer_config = resolve_layer(config, name).config
+        control = get_setting(layer_config, "acceptance.control_model")
+        broken = set(get_setting(layer_config, "acceptance.broken_controls"))
+        if control == "random_ctrl":
+            assert control in broken, name
+            marked.append(name)
+        else:
+            assert control not in broken, name
+    assert {"base", "ema"} <= set(marked)

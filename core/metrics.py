@@ -1259,6 +1259,10 @@ class AcceptanceFlags:
     # da bir örneklemden gelir. Denetlenebilir olması için sayı bayrakla birlikte durur.
     control_trades: int = 0
     control_min_trades: int = 0
+    # Kontrolün ÖLÇÜ ÇUBUĞU bozuk mu (`acceptance.broken_controls`, karar 60/63). True ise
+    # `edge` örneklemden bağımsız olarak DEĞERLENDİRİLEMEZ; alan, arayüzün "henüz
+    # ölçülmedi" ile "ölçülse de anlamsız" durumlarını ayırabilmesi için ayrı durur.
+    control_broken: bool = False
     # Farkın (model − kontrol) bootstrap güven aralığı. `nan` = hesaplanamadı (örneklem
     # verilmedi ya da bir taraf boş); o durumda `edge` yalnızca marja düşer ve bu
     # logger.warning ile söylenir — eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
@@ -1387,6 +1391,7 @@ def acceptance_flags(
     control_model: str,
     edge_margin_r: float,
     control_min_trades: int | None = None,
+    broken_controls: Collection[str] = (),
     r_samples: Mapping[str, Sequence[float]] | None = None,
     ci_alpha: float = 0.05,
     bootstrap_samples: int = 0,
@@ -1408,6 +1413,11 @@ def acceptance_flags(
     Kontrol ya da referans modeli kümede yoksa ilgili koşul değerlendirilemez ve `edge`
     geri kalan koşullara düşer — ama bu sessiz olmaz, `logger.warning` ile söylenir:
     eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
+
+    `broken_controls` içinde adı geçen bir kontrol, örneklemi ne olursa olsun `edge`i
+    DEĞERLENDİRİLEMEZ yapar (karar 60/63). Kümede OLMAYAN kontrolden farkı budur:
+    orada koşul düşer ve kapı kolaylaşır, burada kontrol ölçülmüştür ama ölçtüğü şey
+    bir çekiliş değil bir sansürdür — ona karşı marj ölçmek kapıyı bedava yapardı.
     """
     competitors = [item for item in metrics if item.is_competitor]
     band_low, band_high = _stop_band(competitors, ratio=stop_band_ratio)
@@ -1419,8 +1429,19 @@ def acceptance_flags(
     control_trades = measured_control or 0
     # Kümede hiç olmayan kontrol (None) koşulu DÜŞÜRÜR, kapıyı düşürmez — bkz.
     # `_control_trades`. `_control_avg_r` o durumu zaten ayrıca loglar.
-    control_ready = measured_control is None or measured_control >= control_gate
-    if not control_ready:
+    control_broken = control_model in set(broken_controls)
+    control_ready = (
+        not control_broken
+        and (measured_control is None or measured_control >= control_gate)
+    )
+    if control_broken:
+        logger.warning(
+            "kontrol grubu %r BOZUK olarak işaretli (acceptance.broken_controls): edge "
+            "bayrağı DEĞERLENDİRİLEMEZ — ölçü çubuğu bozuk bir kontrole karşı marj "
+            "ölçmek kapıyı bedava yapar (karar 60)",
+            control_model,
+        )
+    elif not control_ready:
         logger.warning(
             "kontrol grubu %r kendi örneklem kapısını geçmedi (%d < %d): edge bayrağı "
             "DEĞERLENDİRİLEMEZ — %d işlemlik bir ortalamaya karşı marj ölçmek, gürültüyü "
@@ -1448,6 +1469,7 @@ def acceptance_flags(
             control_trades=control_trades,
             control_gate=control_gate,
             control_ready=control_ready,
+            control_broken=control_broken,
             diff_ci=bootstrap_diff_ci(
                 samples.get(item.model, ()),
                 control_sample,
@@ -1489,6 +1511,7 @@ def _flags_for(
     control_trades: int,
     control_gate: int,
     control_ready: bool,
+    control_broken: bool,
     diff_ci: tuple[float, float],
     ci_alpha: float,
 ) -> AcceptanceFlags:
@@ -1544,6 +1567,7 @@ def _flags_for(
         benchmark_return=benchmark_return,
         control_trades=control_trades,
         control_min_trades=control_gate,
+        control_broken=control_broken,
         edge_diff_ci_low=ci_low,
         edge_diff_ci_high=ci_high,
         ci_alpha=ci_alpha,

@@ -1473,7 +1473,12 @@ const GATE_DEFS = [
         "\n    marjı geçer ama aralığı sıfırı içerir)" +
         "\n4) hesap getirisi " + pct(f.total_return, 2) + ", referans çıpası " +
         pct(f.benchmark_return, 2) + " aşılmalı." +
-        (controlReady ? "" :
+        (f.control_broken
+          ? "\n\n⚠ KONTROL BOZUK (karar 60): kontrol grubu yalnızca stop'la kapanabiliyor; kapanmış-işlem R'si SANSÜRLÜ." +
+            "\nFark ve aralık bir çekilişe karşı değil bir sansüre karşı ölçülüyor;" +
+            "\nedge örneklemden bağımsız olarak DEĞERLENDİRİLEMEZ ve geçilmiş sayılmaz."
+          : "") +
+        (f.control_broken || controlReady ? "" :
           "\n\n⚠ KONTROL HENÜZ ÖLÇÜLMEDİ: " + f.control_trades + " / " + f.control_min_trades +
           " işlem." +
           "\nBu kadar işlemlik bir ortalamaya karşı marj ölçmek, gürültüyü gürültüyle" +
