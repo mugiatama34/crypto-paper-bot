@@ -4759,6 +4759,35 @@ Hiçbir sonuç bir filtre, bir rejim kuralı ya da yeni bir tez önerisi olarak 
 BESLENMEZ; öyle bir öneri gelirse yeni bir ön-kayıtla ve dönem B'den sonraki taze bir
 pencereyle gelir (§7.2).
 
+
+### TADİLAT-1 — uygulamanın dar okumaları *(2026-09-26, ölçüm betiği yazılırken, HİÇBİR veri görülmeden)*
+
+Betik (`scripts/measure_market_direction.py`) yazılırken metnin tek anlamlı olmadığı yerler
+aşağıdaki gibi okundu. Hiçbiri bir eşiği, tanımı ya da kaynağı DEĞİŞTİRMEZ; hepsi
+`preflight`'tan ve `measure`dan ÖNCE commit edildi.
+
+1. **Fiyat kapısının kayması koşunun KENDİ kaymasıdır:** backtest'lerde `manifest.json >
+   deviations.costs.run_slippage_base` (karar 59 koşularında 0.0001 — kayıtlı maliyet
+   sapması), canlıda `config.yaml > slippage_base`. Canlı değeri backtest'e uygulamak her
+   pozisyonu kapıdan düşürürdü; bu bir veri hatası değil yanlış bir karşılaştırma olurdu.
+2. **"≥ 10 ortak hafta" (M5)** = iki modelin hafta kümelerinin BİRLEŞİMİ ≥ 10
+   (`scripts/backtest_dc.py::cluster_diff_ci`in sayımı; iki model aynı takvimde koşar).
+3. **Bootstrap çekilişinde OLS tanımsızsa** (çekilen günlerde BTC getirisinin varyansı
+   sıfır) çekiliş atılır ve SAYILIR; geçerli çekiliş `iterations`ın yarısından azsa aralık
+   "değerlendirilemez".
+4. **M3'ün ilk haftasının modeli getirisi** başlangıç bakiyesine (equity'nin ilk satırı)
+   göre ölçülür; ilk günün kapanışını taban almak ilk günün hareketini düşürürdü.
+5. **Pins listesi boşsa** "doğrulandı" sayılmaz, pins kapısı düşer.
+6. **Çıkış kodu 3 raporu engellemez:** kapısı düşen (kaynak, dönem) raporda
+   `measured: false` ve sebebiyle durur, geçenler ölçülür ve sonuç sabitlenir (§6m > 3'ün
+   izolasyonu; kullanıcı onayı).
+7. **Kontrol çiftleri metnin LİTERAL listesidir:** canlı base'de yalnızca `trend ↔
+   random_ctrl`; canlı scalp'te her model `scalp_coinflip`e karşı; ema'da `ema_trend ↔
+   random_ctrl` VE `trend ↔ random_ctrl` ("ikinci kıyas aynı tabloda"), ikisi de karar 60
+   uyarısıyla.
+8. **M4:** olaylar TÜM pozisyonlardan kurulur, ICC yalnızca R'si bilinenlerden; çift
+   korelasyonunun örtüşme getirisi 4'teki pencere kuralıyla (`close ≤ start → close ≤ end`).
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
