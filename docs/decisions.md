@@ -5252,3 +5252,16 @@ kapıların eşikleri ve hiçbir modelin sinyali değişmez. Bugün hiçbir kara
 base'de E zaten değerlendirilemiyordu, `ema_trend` C-1'den kaldı. Bayrak, eşlenmiş kontroller
 ön-kayıtla gelip `control_model` onlara geçtiğinde listeden çıkar — o zamana kadar geçici
 değil, BAĞLAYICIDIR.
+
+### KAPSAM KARARI — onarım yalnızca base; ema "değerlendirilemez" kalır *(2026-09-26, kullanıcı kararı)*
+
+Eşlenmiş kontroller (`trend_random`, `meanrev_random`) ön-kaydı YALNIZCA base katmanını
+kapsar. ema katmanı için `ema_random` açılmaz ve karar 59 kurallarıyla `backtest-ema`
+yeniden koşusu YAPILMAZ. Gerekçe: `broken_controls` ema'yı zaten doğru işaretliyor (sahte
+geçiş riski kapalı); `ema_random`ın tek getirisi `ema_trend`in C-2 satırını düzeltmek
+olurdu, ama `ema_trend` C-1'den kaldı — karar değişmez — ve katmanda aktif bir tez yok.
+`ema_trend`in eski "C-2 geçti" satırları ⚠ notlarıyla kayıt olarak durur ve OKUNMAZ.
+
+**Açık iş (unutulmasın):** ema katmanına yeni bir model önerildiğinde, kontrolü O MODELİN
+ön-kaydıyla birlikte ve O MODELİN geometrisine eşlenerek kurulur. O güne kadar ema'da E
+değerlendirilemez; `random_ctrl` `broken_controls` listesinde kalır.
