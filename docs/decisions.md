@@ -5222,7 +5222,52 @@ beklenti ↔ sonuç: docs/backtest.md > 6l > SONUÇ; yük ve sabitlenmiş BTC se
 **Karar üretmez:** hiçbir model, filtre, parametre değişmez. `dc_short` A'daki oynaklık deseni
 ön-kayıtta olmadığı için seçilmedi; yalnızca görüldüğü kayda geçti.
 
-## 62. `random_ctrl` BOZUK olarak işaretlendi: base ve ema'da E DEĞERLENDİRİLEMEZ — kapı açılmadan kapatıldı *(2026-09-26)*
+## 62. Piyasa yönü teşhisi: kazancın ne kadarı BTC'nin yönünden — TEŞHİS, KARAR DEĞİL; ön-kayıt §6m *(2026-09-26)*
+
+**Ne.** Modellerin kazancının ne kadarının piyasanın (BTC) yönünden geldiğinin salt okunur
+ölçümü: işlem başına BTC ve coin hizası (M1), günlük β/R²/α hafta kümeli bootstrap'la (M2),
+haftalık tablo (M3), eşzamanlılık — olay kümesi, ICC, n_etkin, çift korelasyonu (M4) — ve
+kontrol çiftlerinde eşleştirilmiş farklar (M5). Tanımlar, kaynaklar ve eşikler
+docs/backtest.md > 6m'de veri görülmeden commit edildi (`71dfe3f8`; TADİLAT-1 `61eec6b1`;
+sonuç öncesi beklenti `434f3f1f`). Model, config, strateji, defter DEĞİŞMEDİ; hiçbir kapı
+ya da karar bu sonuçla değişmez ve sonuç yeni bir tez seçmek için kullanılmaz.
+
+**Adım 0 — kurtarma.** Karar 59'un ema/dc artifact'leri 2026-10-08'de silindiği için portföy
+koşularının defterleri hiçbir şey hesaplanmadan kopyalandı (`measure-market-direction`
+#36243851807, `docs/data/pins/decision59/`, `a4bab034`; 49 dosya, SHA256). Bu konteyner
+artifact deposuna erişemediği için sabitleme workflow'un ayrı bir işinde commit edildi;
+artifact okuyan iş yazamaz.
+
+**Bir alet dersi kayda geçer:** fiyat kapısı (yeniden çekilen dolum barı açılışı ↔ defterdeki
+giriş fiyatı, kayma geri çıkarılarak) koşunun KENDİ kaymasını kullanmak zorundaydı — karar 59
+koşuları kayıtlı bir maliyet sapmasıyla 0.0001, dc ve canlı 0.0005. Canlı değeri backtest'e
+uygulamak her pozisyonu düşürür ve "veri tutmuyor" gibi görünürdü; sorun alette olurdu.
+Preflight (#36246062306) 5,776/5,776 pozisyonda sıfır hatayla geçti ve tolerans (1e-6) iki
+kaymayı ayırt ettiği için kapının yanlışı yakalayabildiği de gösterilmiş oldu.
+
+### SONUÇ — koşuldu *(2026-09-26, #36246757531, `db87a9ca`)*
+
+Kapılar geçti (pins, xsec determinizmi — A alan bazında birebir —, fiyat kapısı sekiz
+birimde hatasız). Geçerli kontrolü olan çiftlerde BTC hizalı pay farkının dört aralığı da
+sıfırı içeriyor (`dc_short`−`dc_coinflip` A −0.037, B +0.066; `xsec_mom`−`xsec_random` A
+−0.038, B −0.017): model yönü rastgeleden iyi seçmiyor. ema'nın farkı (+0.18…+0.35) okunamaz —
+`random_ctrl`in kapanmış pozisyonlarının tamamı kayıp, fark kontrolün sansürünü ölçüyor
+(karar 60). α on iki backtest satırının on ikisinde sıfırı içeriyor. R² düşük: `trend` ~0,
+`ema_trend` ~0.15, `dc_short` ~0.3, xsec ~0.46–0.50. `dc_short`un kontrolden farkı β'da
+(Δβ ≈ −0.33), α'da değil; `xsec_mom` ile `xsec_random` β ve α'da ayırt edilemiyor. Canlı:
+`scalp_patient`in 43 pozisyonu 2 olay (n_etkin 9). Ayrıntı docs/backtest.md > 6m > SONUÇ.
+
+**Kullanıcının tahmini — tutmayan kısım dâhil:** "alfa aralıkları sıfırı içerecek" TUTTU
+(12/12); "BTC hizalı pay kontrole yakın çıkacak" geçerli kontrolde TUTTU (4/4), ema'da
+okunamaz; **"beta kazancın büyük kısmını açıklayacak" TUTMADI** — açıklanacak anlamlı bir
+kazanç yok (α ≈ 0) ve getiri oynaklığının çoğunu BTC de açıklamıyor (en yüksek R² ~0.5,
+`trend`de ~0); beta yalnızca `dc_short` ve xsec için baskın bileşen.
+
+**Karar üretmez:** hiçbir model, filtre, parametre ya da kapı değişmez. Canlı tekrar
+§6m > 8'deki tarihlerde (base 2026-11-23, scalp 2026-12-07), aynı ön-kayıtla, yalnızca canlı
+kaynak için.
+
+## 63. `random_ctrl` BOZUK olarak işaretlendi: base ve ema'da E DEĞERLENDİRİLEMEZ — kapı açılmadan kapatıldı *(2026-09-26)*
 
 **Neden şimdi, onarımdan ÖNCE.** Karar 60'ın teşhisi bağımsız olarak yeniden doğrulandı
 (canlı `ledgers/random_ctrl`: 8/8 çıkış stop, stop 8/8 doğru tarafta, R ≈ −1 − maliyet/R,

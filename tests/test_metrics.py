@@ -529,7 +529,7 @@ def _broken_control_set() -> list[Any]:
 
 
 def test_broken_control_makes_edge_unevaluable_whatever_its_sample() -> None:
-    """Karar 60/62: ölçü çubuğu bozuk kontrol (−1R'ye yapışık, n ≥ 30) edge'i KAPATIR.
+    """Karar 60/63: ölçü çubuğu bozuk kontrol (−1R'ye yapışık, n ≥ 30) edge'i KAPATIR.
 
     Aynı küme bayrak olmadan edge'i geçer — regresyonun özü tam bu: kontrol örneklem
     kapısına ulaştığı gün sansürlü −1R'ye karşı marj bedavaya geçilirdi.

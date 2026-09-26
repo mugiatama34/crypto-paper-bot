@@ -113,7 +113,7 @@ Bir model ancak aşağıdakilerin **tamamı** sağlanırsa canlıya alınır:
 | **C-1** | ortalama R **> 0** |
 | **C-2** | `random_ctrl`'ün ortalama R'sini **≥ 0.15R** marjla geçer (`acceptance.edge_margin_r`) |
 
-> ⚠ **C-2 — `random_ctrl` BOZUK (karar 60, 62; 2026-09-26).** `random_ctrl` yalnızca stop'la kapanabildiği için
+> ⚠ **C-2 — `random_ctrl` BOZUK (karar 60, 63; 2026-09-26).** `random_ctrl` yalnızca stop'la kapanabildiği için
 > kapanmış-işlem R'si sansürlüdür (≈−1R) ve ona karşı ölçülen C-2 anlamsızdır. `acceptance.broken_controls`
 > ile base ve ema katmanlarında C-2 artık DEĞERLENDİRİLEMEZ (geçilmiş sayılmaz). Bu kontrolle daha önce
 > yazılmış "C-2 geçti" satırları (ör. §6d, `ema_trend`) eşlenmiş kontrol ön-kayıtla gelip yeniden
@@ -4568,6 +4568,336 @@ aşağı: −0.49 ↔ +0.34). Bu karşıtlık ön-kayıtta YOKTUR, B zaten gör�
 karşıtlık seçmek §6l > 10 ve §7.2'nin yasakladığı şeydir. Burada yalnızca GÖRÜLDÜĞÜ kayda
 geçer — sonradan "keşfedilmiş" gibi sunulmasın diye. Sınanması yeni bir ön-kayıt ve dönem B'den
 sonraki taze bir pencere ister.
+
+---
+
+## 6m. ÖN-KAYIT — PİYASA YÖNÜ TEŞHİSİ: modellerin kazancının ne kadarı piyasanın yönünden geliyor? *(2026-09-26)*
+
+**Bu belge veri görülmeden yazıldı ve AYRI bir commit olarak işlendi** — ölçüm betiği,
+testler ve workflow'un `preflight`/`measure` aşamaları SONRAKİ commit'lerdedir. §7'nin
+tamamı bu bölüme uygulanır.
+
+### 1. Statü: TEŞHİS, KARAR DEĞİL
+
+**Hiçbir model, kapı, parametre ya da karar bu ölçümün sonucuyla DEĞİŞMEZ** ve sonuç yeni
+bir tez SEÇMEK için de kullanılmaz (kullanıcının çerçevesi, olduğu gibi). Hiçbir model
+`REGISTRY`e, hiçbir katmanın `models` listesine girmez; `config.yaml`, `strategies/`,
+`core/` ve defterler DEĞİŞMEZ. Çıktı hiçbir satırda `passed`, bir kapı ya da bir etiket
+("MODELDEN", "PİYASADAN") ÜRETMEZ — yalnızca sayılar ve aralıklar yazılır; okuma bir
+insanındır (7).
+
+Cevaplanan soru: *bir modelin kazancı (ya da kaybı) piyasanın — BTC'nin — yönünü taşımasından
+mı geliyor, ve model yönü rastgele bir girişten daha iyi mi seçiyor?* `core/metrics.py`deki
+`market_tailwind_pct` / `market_r` bu sorunun ortalama düzeyindeki hâlidir (beta = 1
+varsayımıyla); bu ölçüm onu işlem, gün, hafta ve eşzamanlılık düzeyine açar. **Hipotez
+YOKTUR, `p` değeri YOKTUR** → sicile (§6c) satır açılmaz ve BH paydası değişmez (kontrolün
+eklenmesinin §6c'deki aynı gerekçesi).
+
+### 2. Körlük beyanı
+
+- Modellerin genel dönem A/B sonuçları (karar 57, 59; §6d, §6g, §6j > SONUÇ) ve rejim
+  kırılımları (§6l > SONUÇ) GÖRÜLDÜ. Bu ölçümün hiçbir sayısı — hiza payı, beta, R², alfa,
+  haftalık tablo, eşzamanlılık — hiçbir kaynakta, hiçbir modelde GÖRÜLMEDİ.
+- Adım 0'da (bkz. 3) defter dosyalarından yalnızca SATIR SAYILARI ve SHA256 okundu; hiçbir
+  satırın içeriği, getirisi ya da R'si okunmadı.
+- Genel bilgi gizlenmez: 2022 bir ayı yılıydı, 2023–2024 büyük ölçüde boğa. Bu, dönem A'da
+  short-only bir modelin (`dc_short`) BTC hizasının yüksek çıkabileceğini önceden söyler —
+  tam da bu yüzden kontrol farkı (M5) okumanın merkezindedir.
+
+### 3. Kaynaklar — yalnızca PORTFÖY koşuları, dönemler AYRI, seçim yok
+
+**Adım 0 (tamamlandı, 2026-09-26):** karar 59'un ema/dc artifact'leri 2026-10-08'de
+silindiği için portföy koşularının defter dosyaları hiçbir şey hesaplanmadan kopyalandı —
+`measure-market-direction` #36243851807, commit `a4bab034`, `docs/data/pins/decision59/`
+(49 dosya, gzip; SHA256 sıkıştırılmamış içeriğe aittir ve `SHA256SUMS`ta durur; ayrıca 90
+günlük artifact `market-direction-snapshot`). Ölçüm artifact'i DEĞİL bu sabitlenmiş kopyayı
+okur ve her dosyanın SHA256'sını ölçümden önce doğrular.
+
+| Kaynak | Modeller | Dönem | Satırlar |
+|---|---|---|---|
+| `backtest-ema` #35975935993 | `ema_trend`, kontrol `random_ctrl` (⚠ karar 60), ikinci kıyas `trend` | A, B | `pins/decision59/ema/{A,B}-portfolio` |
+| `backtest-dc` #35981639682 | `dc_short`, kontrol `dc_coinflip` | A, B | `pins/decision59/dc/{A,B}-portfolio` |
+| `backtest-xsec` #35981642832 | `xsec_mom`, kontrol `xsec_random` | A, B | **yeniden üretilir** (§6l > 3 > 2'nin aynısı: aynı config/tohum, kayıttaki B sonu, `measure_regime.py::xsec_gate` determinizm kapısı) |
+| canlı `ledgers/` | işlemi olan HER defter (emekliler dâhil); kontrol `random_ctrl` | canlı | `measure` tetikleyicisinin commit'indeki defter; SHA rapora yazılır |
+| canlı `ledgers_scalp/` | 7 defterin HEPSİ; `vwap_clone` "kopya" etiketiyle; kontrol `scalp_coinflip` | canlı | aynı |
+
+- **Tek-sembollü koşular KULLANILMAZ:** ayrı bir koşu sınıfıdır ve kararlar portföyden
+  okundu. `buyhold` kapanmış işlem taşımaz; yalnızca varlığı raporlanır.
+- **Dönemler ve kaynaklar TOPLANMAZ:** her (kaynak, dönem, model) kendi satırıdır. Katmanlar
+  arası havuz yoktur (CLAUDE.md > Katmanlar).
+- **xsec kapısı düşerse** xsec satırları "ölçülmedi (determinizm kapısı)" olarak yazılır;
+  öteki kaynaklar devam eder — bir kaynağın arızası ötekilerin sayısını geçersiz kılmaz.
+- **Ölçümün birimi POZİSYONDUR** (`core/metrics.py::merge_fills`); R oradan gelir, burada
+  yeniden tanımlanmaz. Kazanç = pozisyonun `pnl > 0` (projenin tanımı).
+- `n < acceptance.min_trades` (30) olan satır GİZLENMEZ, `Ö` işaretiyle yazılır.
+
+### 4. İşlem başına alanlar
+
+**Pencere kuralı `core/metrics.py::_market_context`in kuralıdır, İKİNCİ BİR TANIM YAZILMAZ:**
+başlangıç fiyatı `opened_at` anında ya da öncesindeki son barın KAPANIŞI, bitiş fiyatı
+`closed_at` anında ya da öncesindeki son barın KAPANIŞI. Aynı kural BTC'ye ve işlem yapılan
+COINE uygulanır; seri katmanın kendi barından (4H ya da 15m) gelir. Ölçüm, kendi hesapladığı
+yöne göre işaretli BTC getirisinin `core/metrics.py`nin aynı pozisyon için vereceği
+`market_tailwind_pct` ile birebir aynı olduğunu bir TESTLE sabitler.
+
+- `coin_ret`, `btc_ret` (yüzde, işaretsiz ham getiri), pozisyonun R'si, yön, sembol.
+- `aligned_btc = sign(btc_ret) == yön` — **okumada ağırlığı BU taşır** (kullanıcı onayı,
+  2026-09-26).
+- `aligned_coin = sign(coin_ret) == yön` — kullanıcının ilk tanımı; **neredeyse
+  totolojiktir** (coin pencerede yönde gittiyse brüt kazanç da odur) ve bu, veri görülmeden
+  burada yazıldı. Kaldırılmaz, yan yana raporlanır.
+- Getiri tam sıfırsa (`|ret| < 1e-12`) pozisyon **nötr**dür: ne hizalı ne hizasız, ayrı
+  sayılır ve payların paydasına girmez.
+- **Fiyat kapısı** (yalnızca fiyat, R değil): defterdeki `entry_price`, `slippage_base`
+  geri çıkarılarak (long `÷(1+s)`, short `÷(1−s)`) yeniden çekilen dolum barının AÇILIŞIYLA
+  karşılaştırılır; göreli fark ≤ 1e-6 olmalıdır. Tutmayan pozisyon oranı %1'i aşarsa o
+  (kaynak, dönem) için rapor yazılmaz ve betik çıkış kodu **3** ile biter. Gerekçe: mumlar
+  koşudan günler/aylar sonra yeniden çekiliyor; kapı, ölçülen serinin koşunun gördüğü seri
+  olduğunu sınar.
+
+**Kabul edilen sapma (pencere):** kapanış-kapanış kuralı dolum barının kendi hareketini
+dışarıda, çıkış barının hareketini içeride bırakır. Proje tanımıdır, model ve kontrol için
+AYNIDIR; düzeltmek ikinci bir tanım yazmak olurdu.
+
+### 5. Metrikler — hepsi, her (kaynak, dönem, model) için
+
+**Ortak:** bootstrap `acceptance.bootstrap_samples` (2000) çekiliş, yüzdelik aralık
+`acceptance.edge_ci_alpha` (0.05); **küme = ISO hafta** (Pazartesi 00:00 UTC; uçlardaki
+kısmi haftalar da birer kümedir); tohum `"{random_seed}:mdir:{kaynak}:{dönem}:{model}:{metrik}"`.
+**Kümeli aralık yalnızca ≥ 10 hafta kümesi varsa hesaplanır**, altında nokta tahmini
+yazılır ve aralık "değerlendirilemez"dir (`scripts/backtest_dc.py`nin eşiği). **Bu yüzden
+canlı defterlerin HİÇBİRİNDE kümeli aralık bugün hesaplanamaz** (hepsi < 3 hafta) — veri
+görülmeden sabitlendi (kullanıcı onayı, 2026-09-26).
+
+**M1 — Hiza.** İki tanım (`btc`, `coin`) × yön (long / short / toplam) için: hizalı, hizasız
+ve nötr pozisyon SAYISI; hizalı pay (`hizalı / (hizalı + hizasız)`); hizalı ve hizasız
+grupların AYRI ayrı kazanma oranı ve ortalama R'si.
+
+**M2 — Beta, R², alfa (günlük).**
+- Model günlük getirisi: `equity.csv`de UTC günü D'ye damgalı SON satırın bakiyesi `E_D`;
+  `r_D = E_D / E_{D−1} − 1`. BTC günlük getirisi: 4H'nin 20:00 barının kapanışından
+  (`scripts/measure_regime.py::daily_closes`; OKX `1D` barı KULLANILMAZ — UTC+8 hizası).
+- **Pozisyonsuz günler DÂHİLDİR** — hesap getirisi budur (kullanıcı onayı). Yanına **pozisyonda
+  geçen gün payı** yazılır: gün içinde herhangi bir an açık pozisyon taşıyan gün / toplam
+  gün. Az pozisyonda duran modelde beta sıfırlar yüzünden doğal olarak küçüktür; pay bunu
+  okunur kılar.
+- **Gün penceresi:** dönemin ilk equity günü → `max(sinyal kesimi ya da dönem sonu, son
+  closed_at günü)`. Kesimden ve son kapanıştan sonraki günler harness'ın yapısıdır (model
+  pozisyon AÇAMAZ), modelin tercihi değil; dâhil etmek betayı harness'a göre sulandırırdı.
+  Canlıda pencere defterin tamamıdır.
+- Model ya da BTC tarafı eksik gün dışarıda kalır ve SAYILIR.
+- OLS: `r_model = α + β · r_btc`. Raporlanan: β, R², α (günlük, yüzde) ve `α × 365`;
+  üçü için hafta kümeli bootstrap aralığı (haftalar iadeli çekilir, her çekilişte OLS yeniden
+  kurulur).
+
+**M3 — Haftalık tablo.** Dönemin HER ISO haftası bir satırdır, işlemsiz haftalar `n = 0`
+ile dâhil — hiçbir satır süzülmez. Kolonlar: hafta başı, o hafta AÇILAN pozisyon sayısı,
+long payı, short payı, BTC haftalık getirisi (Pazar kapanışı / önceki Pazar kapanışı − 1),
+modelin haftalık hesap getirisi (aynı kural, equity'den), açılan pozisyonların ortalama R'si
+(`n = 0` ise boş). CSV olarak sabitlenir.
+
+**M4 — Eşzamanlılık.**
+- **Piyasa olayı** = modelin tutuş pencereleri (`[opened_at, closed_at)`) birbiriyle örtüşen
+  pozisyonlarının bağlı bileşeni, sembolden bağımsız. Raporlanan: pozisyon sayısı, olay
+  sayısı, ortalama ve azami olay boyu, R'nin olay içi korelasyonu (ICC, tek yönlü ANOVA,
+  eşit olmayan grup boyu için `n₀` düzeltmesi; negatif değer olduğu gibi yazılır) ve
+  `n_etkin = n / (1 + (m̄ − 1) · max(ICC, 0))`.
+- **Çift korelasyonu:** örtüşen her pozisyon çifti için iki pozisyonun AYNI örtüşme
+  aralığındaki kendi coin getirisi, kendi yönüyle işaretlenir (pencere kuralı 4'teki kural);
+  çiftler üzerinden Pearson korelasyonu. Örtüşmesi bir bardan kısa çiftler dışarıda kalır
+  ve SAYILIR. Ayrıca aynı yönlü çift payı ve aynı sembollü çift sayısı.
+
+**M5 — Kontroller.** Çiftler: `ema_trend ↔ random_ctrl` (⚠ karar 60: kontrolün çıkışı
+yalnızca stop, R'si sansürlü — satır bu uyarıyla yazılır; `trend` ikinci kıyas olarak aynı
+tabloda), `dc_short ↔ dc_coinflip`, `xsec_mom ↔ xsec_random`, canlı `scalp_patient ↔
+scalp_coinflip` (katmanın `acceptance.control_model`ü; öteki scalp modelleri de aynı
+kontrole karşı yazılır), canlı base `trend ↔ random_ctrl`. Her iki taraf için M1–M4'ün
+tamamı; ayrıca **hizalı paydaki fark** (model − kontrol, iki tanım) ve **β ile α farkı** için
+EŞLEŞTİRİLMİŞ hafta bootstrap'ı: haftalar iki modelde ortaktır ve birlikte çekilir
+(`scripts/backtest_dc.py::cluster_diff_draws`in deseni — bağımsız yeniden örnekleme ortak
+piyasa kovaryansını atardı). ≥ 10 ortak hafta yoksa fark aralığı "değerlendirilemez".
+
+### 6. Aşamalar ve koşu kuralları
+
+`.github/workflows/measure-market-direction.yml`, `measure-regime.yml`in deseni:
+`claude/**` dallarında push aralığında EKLENEN tetikleyici dosya aşamayı seçer; dosya bir
+daha değiştirilmez.
+
+- `snapshot` — `mdir-snapshot*.run` (Adım 0, KOŞULDU).
+- `preflight` — `mdir-preflight*.run`: pins SHA256 doğrulaması, canlı defterlerin varlığı,
+  mum kapsamı (her sembol, her pencere) ve fiyat kapısı (4). **Hiçbir R, getiri, hiza ya da
+  beta üretmez**; tekrarlanabilir.
+- `measure` — `mdir-measure*.run`: **TEK SEFER.** Yeni bir dosya yalnızca önceki tetikleme
+  HİÇBİR SAYI ÜRETMEDEN düştüyse eklenir ve gerekçesi dosyanın içinde yazılır (§7.6).
+- Artifact ya da ağ okuyan iş YAZAMAZ (`contents: read`); sabitleme ayrı bir işte, yalnızca
+  `docs/data/market_direction*` yollarına commit edilir (Adım 0'ın deseni).
+
+**Repoya sabitlenenler:** `docs/data/market_direction.json` (tüm metrikler + girdilerin
+SHA'ları + canlı defterlerin commit'i), `docs/data/market_direction_weekly.csv`,
+`docs/data/market_direction_trades.csv` (işlem başına alanlar), `docs/data/market_direction_prices.csv`
+(kullanılan her fiyat: sembol, bar, açılış/kapanış — yalnızca başvurulanlar) ve
+`docs/data/market_direction_btc_daily.csv`.
+
+### 7. Okuma şekli (kullanıcının cümleleri; KAPI DEĞİL)
+
+- Alfa aralığı sıfırı içeriyorsa: kazanç piyasa yönünden.
+- Hizalı işlemlerin R'si yüksek, hizasızlarınki düşük olması BEKLENEN — bilgi değil.
+- **Asıl bilgi: hizalı işlem payının (BTC tanımı) kontrolden farklı olup olmadığı** — model
+  yönü rastgeleden iyi mi seçiyor? Rastgele giriş de piyasa yönünü taşır; farkı model
+  gösterir.
+
+Bu cümleler bir sonuç yazılırken kullanılır; hiçbiri bir modeli, kapıyı ya da kararı
+değiştirmez (1).
+
+### 8. Canlı tekrar — ÖNCEDEN kayıtlı
+
+Canlı defterler her iki tarafta ≥ 10 TAM ISO hafta biriktirdiğinde AYNI ölçüm, AYNI bu
+ön-kayıtla, yalnızca canlı kaynak için bir kez daha koşulabilir (yeni tetikleyici
+`mdir-measure-live*.run`; kural ve eşikler değişmez). Veri görülmeden hesaplanan en erken
+tarihler: base çifti (`random_ctrl` equity'si 2026-09-12'de başlıyor) **2026-11-23**, scalp
+çifti (`scalp_coinflip` 2026-09-22 Salı başlıyor, ilk tam hafta 09-28) **2026-12-07**. Backtest satırları o koşuda
+yeniden ÖLÇÜLMEZ.
+
+### 9. Bu ön-kayıt neyi SEÇMİYOR
+
+Bir dönem, bir model, bir alt pencere ya da bir hiza tanımı seçilmez: hepsi raporlanır.
+Hiçbir sonuç bir filtre, bir rejim kuralı ya da yeni bir tez önerisi olarak GERİ
+BESLENMEZ; öyle bir öneri gelirse yeni bir ön-kayıtla ve dönem B'den sonraki taze bir
+pencereyle gelir (§7.2).
+
+
+### TADİLAT-1 — uygulamanın dar okumaları *(2026-09-26, ölçüm betiği yazılırken, HİÇBİR veri görülmeden)*
+
+Betik (`scripts/measure_market_direction.py`) yazılırken metnin tek anlamlı olmadığı yerler
+aşağıdaki gibi okundu. Hiçbiri bir eşiği, tanımı ya da kaynağı DEĞİŞTİRMEZ; hepsi
+`preflight`'tan ve `measure`dan ÖNCE commit edildi.
+
+1. **Fiyat kapısının kayması koşunun KENDİ kaymasıdır:** backtest'lerde `manifest.json >
+   deviations.costs.run_slippage_base` (karar 59 koşularında 0.0001 — kayıtlı maliyet
+   sapması), canlıda `config.yaml > slippage_base`. Canlı değeri backtest'e uygulamak her
+   pozisyonu kapıdan düşürürdü; bu bir veri hatası değil yanlış bir karşılaştırma olurdu.
+2. **"≥ 10 ortak hafta" (M5)** = iki modelin hafta kümelerinin BİRLEŞİMİ ≥ 10
+   (`scripts/backtest_dc.py::cluster_diff_ci`in sayımı; iki model aynı takvimde koşar).
+3. **Bootstrap çekilişinde OLS tanımsızsa** (çekilen günlerde BTC getirisinin varyansı
+   sıfır) çekiliş atılır ve SAYILIR; geçerli çekiliş `iterations`ın yarısından azsa aralık
+   "değerlendirilemez".
+4. **M3'ün ilk haftasının modeli getirisi** başlangıç bakiyesine (equity'nin ilk satırı)
+   göre ölçülür; ilk günün kapanışını taban almak ilk günün hareketini düşürürdü.
+5. **Pins listesi boşsa** "doğrulandı" sayılmaz, pins kapısı düşer.
+6. **Çıkış kodu 3 raporu engellemez:** kapısı düşen (kaynak, dönem) raporda
+   `measured: false` ve sebebiyle durur, geçenler ölçülür ve sonuç sabitlenir (§6m > 3'ün
+   izolasyonu; kullanıcı onayı).
+7. **Kontrol çiftleri metnin LİTERAL listesidir:** canlı base'de yalnızca `trend ↔
+   random_ctrl`; canlı scalp'te her model `scalp_coinflip`e karşı; ema'da `ema_trend ↔
+   random_ctrl` VE `trend ↔ random_ctrl` ("ikinci kıyas aynı tabloda"), ikisi de karar 60
+   uyarısıyla.
+8. **M4:** olaylar TÜM pozisyonlardan kurulur, ICC yalnızca R'si bilinenlerden; çift
+   korelasyonunun örtüşme getirisi 4'teki pencere kuralıyla (`close ≤ start → close ≤ end`).
+
+
+### SONUÇ ÖNCESİ BEKLENTİ *(2026-09-26, `measure` tetiklenmeden ÖNCE; hiçbir hiza, beta ya da haftalık sayı görülmedi)*
+
+Preflight (#36246062306) temiz geçti: pins SHA256 49/49, fiyat kapısı 5,776/5,776 pozisyonda
+hatasız (ema 0.0001, dc ve canlı 0.0005 kaymayla — yanlış kayma 4e-4 farkla her pozisyonu
+düşürürdü, yani kapı ayırt edici olduğunu da gösterdi), pozisyon sayıları karar 59'un
+kaydıyla aynı. Preflight hiçbir R/getiri/hiza üretmedi.
+
+**Kullanıcının tahmini (olduğu gibi):** beta kazancın büyük kısmını açıklayacak, alfa
+aralıkları sıfırı içerecek, BTC hizalı pay kontrole yakın çıkacak.
+
+**Okuma sırası (kullanıcı, sonuç görülmeden):**
+1. xsec determinizm kapısı — geçti mi, yoksa xsec satırları "ölçülmedi" mi.
+2. BTC hizalı pay: model − kontrol, eşleştirilmiş aralığıyla — model yönü yazı-turadan iyi mi seçiyor?
+3. β, R², α — backtest kaynaklarında (ema, dc, xsec; A ve B ayrı). En büyük örneklem ema A
+   `trend` (1246 pozisyon); ayrıştırma en keskin orada okunur.
+4. Eşzamanlılık — n ↔ n_etkin.
+5. Haftalık tablo — en iyi ve en kötü haftalar yan yana: long/short payı ve BTC'nin yönü.
+6. Canlı — yalnızca betimsel; kümeli aralıklar değerlendirilemez (§6m > 5).
+
+Tahmin bir kapı DEĞİLDİR ve tutması ya da tutmaması hiçbir modeli, kapıyı ya da kararı
+değiştirmez (§6m > 1); yalnızca sonucun ne kadar beklenmedik olduğunu sonradan okunur kılar.
+
+
+### SONUÇ — koşuldu *(2026-09-26, `measure-market-direction` #36246757531, sonuçlar `db87a9ca`)*
+
+**TEŞHİS, KARAR DEĞİL (§6m > 1):** aşağıdaki hiçbir sayı bir modeli, kapıyı, parametreyi ya da
+kararı değiştirmez ve yeni bir tez seçmek için kullanılmaz. Yük `docs/data/market_direction.json`;
+işlem başına alanlar, haftalık tablo, kullanılan her fiyat ve günlük BTC serisi aynı önekli
+CSV'lerde. Okuma sırası kullanıcının sonuç öncesi yazdığı sıradır.
+
+**1. Kapılar.** Pins SHA256 49/49. xsec determinizm kapısı GEÇTİ ("A birebir, orijinal
+`results.json` ile alan bazında"). Fiyat kapısı sekiz (kaynak, dönem) biriminin hepsinde
+hatasız (xsec A 497/497, B 432/432 dâhil). Hiçbir kaynak `measured: false` değil.
+
+**2. BTC hizalı pay, model − kontrol** (eşleştirilmiş hafta bootstrap'ı, %95):
+
+| Çift | A | B |
+|---|---|---|
+| `dc_short` − `dc_coinflip` | −0.037 [−0.135, 0.057] | +0.066 [−0.047, 0.167] |
+| `xsec_mom` − `xsec_random` | −0.038 [−0.114, 0.040] | −0.017 [−0.088, 0.053] |
+| `ema_trend` − `random_ctrl` ⚠ karar 60 | +0.329 [0.208, 0.440] | +0.178 [0.029, 0.318] |
+| `trend` − `random_ctrl` ⚠ karar 60 | +0.353 [0.236, 0.445] | +0.197 [0.071, 0.318] |
+
+- Geçerli kontrolü olan iki çiftte dört aralığın dördü sıfırı içeriyor: bu modellerin yön
+  seçimi yazı-turadan / rastgele seçimden ayırt edilemiyor.
+- ema satırları OKUNAMAZ: `random_ctrl`in kapanmış pozisyonlarının kazanma oranı iki dönemde
+  de 0 (51/51 ve 103/103 kayıp) ve BTC hizalı payı 0.10 / 0.25. Yalnızca stop'la kapandığı
+  için defterine yalnızca aleyhe giden pozisyonlar düşüyor (karar 60'ın sansürü); fark
+  kontrolün bozukluğunun ölçüsüdür, modelin becerisinin değil.
+- Düzey: tüm modellerin BTC hizalı payı 0.43–0.50 arasında.
+- Coin tanımı beklenen totolojiyi gösterdi: hizalı grubun kazanma oranı 0.88–0.98.
+
+**3. β, R², α (günlük, pozisyonsuz günler dâhil):**
+
+| Model | β A | β B | R² A | R² B | α %/yıl A | α %/yıl B |
+|---|---|---|---|---|---|---|
+| `ema_trend` | 0.159 [0.117, 0.209] | 0.232 [0.171, 0.301] | 0.148 | 0.158 | −4.9 [−27.7, 18.3] | −11.6 [−49.1, 22.1] |
+| `trend` | 0.010 [−0.026, 0.053] | −0.006 [−0.082, 0.081] | 0.001 | 0.000 | −7.1 [−29.4, 14.2] | −2.6 [−31.0, 27.1] |
+| `dc_short` | −0.295 [−0.360, −0.240] | −0.365 [−0.453, −0.285] | 0.314 | 0.302 | 2.3 [−31.8, 37.2] | 15.8 [−13.0, 46.7] |
+| `dc_coinflip` | 0.033 [−0.009, 0.074] | −0.038 [−0.096, 0.016] | 0.009 | 0.009 | −13.6 [−34.1, 7.6] | −2.4 [−30.1, 24.6] |
+| `xsec_mom` | 0.236 [0.210, 0.266] | 0.319 [0.255, 0.398] | 0.477 | 0.456 | 0.6 [−17.2, 19.4] | 14.1 [−7.8, 36.4] |
+| `xsec_random` | 0.239 [0.205, 0.279] | 0.322 [0.249, 0.410] | 0.495 | 0.452 | −1.5 [−19.7, 18.0] | 9.0 [−15.4, 34.6] |
+
+- α aralığı on iki satırın on ikisinde sıfırı içeriyor.
+- `dc_short` ↔ `dc_coinflip` farkı β'dadır (Δβ A −0.328 [−0.394, −0.271], B −0.326
+  [−0.429, −0.240]); α farkının aralığı iki dönemde de sıfırı içeriyor.
+- `xsec_mom` ↔ `xsec_random`: Δβ A −0.003, B −0.003; Δα iki dönemde de sıfır etrafında.
+- `random_ctrl` (ema) maruziyet payı 1.00 — hiç çıkmayan pozisyonlar; A'da gün penceresi son
+  kapanışa uzadığı için 1068 gün.
+
+**4. Eşzamanlılık (n → n_etkin):** `trend` 1246 → 1001 / 1258 → 963; `ema_trend` 369 → 294 /
+389 → 244; `dc_short` 336 → 268 (68 olay) / 246 → 150 (37 olay); `xsec_mom` 183 → 114 (20
+olay) / 168 → 168 (20 olay, ICC −0.02); `xsec_random` 314 → 133 / 264 → 166. Çift korelasyonu
+tek yönlü modellerde yüksek (`dc_short` 0.67 / 0.81), yazı-tura kontrolünde sıfıra yakın
+(−0.07 / 0.00). Canlı: `scalp_patient`in 43 pozisyonu **2 olaya** düşüyor (n_etkin 9) —
+katmandaki başlangıç kazancı tek bir örtüşme zincirinden; `scalp_fixed` 127 → 77 (30 olay);
+`vwap_clone` 711 → 496, en uzun zincir 152 pozisyon.
+
+**5. Haftalık tablo, en iyi / en kötü haftalar** (modelin hafta getirisine göre): `dc_short`un
+en iyi haftalarında BTC düşmüş (A −15.8%, −11.1% / B −2.1%, −14.4%), en kötülerinde yükselmiş
+(+6.1%, +9.3% / +4.7%, +6.8%), hepsi short. `xsec_mom`un en iyi haftaları BTC'nin yükseldiği,
+en kötüleri düştüğü haftalar; çoğunda 0–2 yeni pozisyon açılmış (getiri taşınan pozisyonlardan).
+`ema_trend`in en iyi haftaları BTC +7…+16%, en kötüleri karışık (BTC −2.8%, +1.9%, 0.0%).
+`trend` karışık; B'deki en iyi haftası (+9.1%) BTC −6.9% iken %55 short.
+
+**6. Canlı (yalnızca betimsel; kümeli aralıklar değerlendirilemez, 2–3 hafta):** BTC hizalı
+pay `trend` 0.49 (n=75), `scalp_fixed` 0.48, `scalp_patient` 0.47, `scalp_coinflip` 0.46
+(n=13). β/α 3–14 günden hesaplandı ve okunacak sayılar değildir.
+
+**Görülen bir sapma boyutu:** nötr pozisyon payı `vwap_clone`da 176/711, `dc_short` A'da
+42/336 — dolum barı içinde kapanan pozisyonlar, kapanış-kapanış penceresinde sıfır getiri
+alır (§6m > 4'ün kabul edilen sapması). Nötrler hizalı pay paydasına girmez.
+
+**Beklenti ↔ sonuç (kullanıcının tahmini, SONUÇ ÖNCESİ BEKLENTİ):**
+
+| Tahmin | Sonuç |
+|---|---|
+| Alfa aralıkları sıfırı içerecek | **TUTTU** — 12/12 backtest satırı |
+| BTC hizalı pay kontrole yakın çıkacak | **TUTTU** geçerli kontrolde (dc, xsec: 4/4 aralık sıfırı içeriyor); ema'da kontrol bozuk olduğu için okunamaz |
+| Beta kazancın büyük kısmını açıklayacak | **TUTMADI** — R² en fazla ~0.5 (xsec), `dc_short` ~0.3, `ema_trend` ~0.15, `trend` ~0. Açıklanacak anlamlı bir kazanç yok (α ≈ 0) ve getiri oynaklığının çoğunu BTC de açıklamıyor: getiriler büyük ölçüde ne betadan ne alfadan, BTC'den bağımsız hareketten geliyor. Beta yalnızca `dc_short` (negatif) ve xsec (pozitif) için baskın bileşen; `dc_short`un kontrolden farkının tamamı β'da |
+
+**Karar üretmez.** Canlı tekrar §6m > 8'deki tarihlerde (base 2026-11-23, scalp 2026-12-07),
+aynı ön-kayıtla ve yalnızca canlı kaynak için koşulabilir. Karar 62.
 
 ---
 

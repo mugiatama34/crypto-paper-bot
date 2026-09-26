@@ -1259,7 +1259,7 @@ class AcceptanceFlags:
     # da bir örneklemden gelir. Denetlenebilir olması için sayı bayrakla birlikte durur.
     control_trades: int = 0
     control_min_trades: int = 0
-    # Kontrolün ÖLÇÜ ÇUBUĞU bozuk mu (`acceptance.broken_controls`, karar 60/62). True ise
+    # Kontrolün ÖLÇÜ ÇUBUĞU bozuk mu (`acceptance.broken_controls`, karar 60/63). True ise
     # `edge` örneklemden bağımsız olarak DEĞERLENDİRİLEMEZ; alan, arayüzün "henüz
     # ölçülmedi" ile "ölçülse de anlamsız" durumlarını ayırabilmesi için ayrı durur.
     control_broken: bool = False
@@ -1415,7 +1415,7 @@ def acceptance_flags(
     eksik bir çıta, geçilmiş bir çıta gibi görünmemelidir.
 
     `broken_controls` içinde adı geçen bir kontrol, örneklemi ne olursa olsun `edge`i
-    DEĞERLENDİRİLEMEZ yapar (karar 60/62). Kümede OLMAYAN kontrolden farkı budur:
+    DEĞERLENDİRİLEMEZ yapar (karar 60/63). Kümede OLMAYAN kontrolden farkı budur:
     orada koşul düşer ve kapı kolaylaşır, burada kontrol ölçülmüştür ama ölçtüğü şey
     bir çekiliş değil bir sansürdür — ona karşı marj ölçmek kapıyı bedava yapardı.
     """

@@ -412,7 +412,7 @@ def _verdict(gates: Mapping[str, Any]) -> str:
     # Yalnızca çıpa koşulundan (C-3) kalma durumu: karar otomatik değildir.
     only_benchmark = all(
         flag["sample"] and flag["avg_r"] > 0.0
-        # Bozuk kontrol (karar 60/62) C-2'yi DEĞERLENDİRİLEMEZ yapar; "yalnızca çıpadan
+        # Bozuk kontrol (karar 60/63) C-2'yi DEĞERLENDİRİLEMEZ yapar; "yalnızca çıpadan
         # kaldı" demek marjı bozuk bir ölçü çubuğuyla geçilmiş saymak olurdu.
         and not flag.get("control_broken", False)
         and flag["avg_r"] - flag["control_avg_r"] >= flag["edge_margin_r"]

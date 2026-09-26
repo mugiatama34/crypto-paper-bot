@@ -229,7 +229,7 @@ def test_overrides_merge_deeply() -> None:
 
 
 def test_random_ctrl_is_marked_broken_exactly_where_it_is_the_control() -> None:
-    """Karar 60/62: `random_ctrl`e bakan her katmanda E DEĞERLENDİRİLEMEZ, diğerlerinde dokunulmaz.
+    """Karar 60/63: `random_ctrl`e bakan her katmanda E DEĞERLENDİRİLEMEZ, diğerlerinde dokunulmaz.
 
     Katman listesi config'ten okunur: `random_ctrl`i kontrol olarak miras alan yeni bir
     katman bu testten kaçamaz. Kendi kontrolünü taşıyan katmanlar (scalp/dc/xsec) bayrağı
