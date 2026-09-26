@@ -43,7 +43,41 @@ permissions:
   contents: read
 
 jobs:
+  # Push yolunda kapı `scripts/trigger_stage.py`dir: `backtest-dc.run` ANCAK onu ekleyen
+  # commit yalnızca bu dalda ise koşu başlatır. Dosya `main`e girdikten sonra `main`i başka
+  # bir `claude/**` dalına birleştirmek onu o dala "eklenmiş" gösterirdi ve ön-kayıtlı TEK
+  # koşu ikinci kez başlardı (§7). Taşınmış tetikleyici boş aşama döndürür (`::notice`, yeşil).
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      stage: ${{ steps.stage.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve stage
+        id: stage
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "stage=run" >> "$GITHUB_OUTPUT"
+            echo "aşama: run (elle tetikleme)"
+          else
+            python scripts/trigger_stage.py --before "$BEFORE" --sha "$GITHUB_SHA" --branch "$BRANCH" --stage "run=backtest-dc.run"
+          fi
+
   backtest:
+    needs: stage
+    if: needs.stage.outputs.stage == 'run'
     runs-on: ubuntu-latest
     # 2 dönem × (1 portföy + 13 tek sembol) = 28 koşu; ilk koşu ~12.000 barlık geçmişi
     # sembol başına indirir (`backtest-ema.yml` ile aynı ölçek).

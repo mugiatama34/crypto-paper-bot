@@ -5310,3 +5310,36 @@ olurdu, ama `ema_trend` C-1'den kaldı — karar değişmez — ve katmanda akti
 **Açık iş (unutulmasın):** ema katmanına yeni bir model önerildiğinde, kontrolü O MODELİN
 ön-kaydıyla birlikte ve O MODELİN geometrisine eşlenerek kurulur. O güne kadar ema'da E
 değerlendirilemez; `random_ctrl` `broken_controls` listesinde kalır.
+
+## 64. Tetikleyici dosya bir dala TAŞINARAK koşu başlatamaz — `scripts/trigger_stage.py` *(2026-09-26)*
+
+**Ne görüldü.** PR #57'de `main`i çalışma dalına birleştiren commit, `measure-market-direction`
+workflow'unu tetikledi: birleştirme `main`in üç tetikleyici dosyasını (`mdir-snapshot`,
+`mdir-preflight`, `mdir-measure`) push aralığında "eklenmiş" gösterdi ve kapı "aynı push'ta
+birden çok aşama" diyerek reddetti. Hiçbir şey koşmadı — ama yalnızca üç dosya birlikte
+geldiği için. `main`e TEK bir tetikleyici eklenmiş olsaydı (ör. yalnızca `mdir-measure.run`),
+`main`i herhangi bir `claude/**` dalına birleştirmek o TEK SEFERLİK aşamayı ikinci kez
+koştururdu: §7'nin "sonucu görüp tekrar koşma" yasağı bir `git merge` ile, sessizce delinirdi.
+Aynı kalıp `measure-regime`, `measure-timesfm` ve `backtest-dc`de de vardı.
+
+**Karar (kullanıcı: "öncelikli, yeni tetikleyicilerden önce main'de olmalı").** Tek seferlik
+bir aşamanın KİMLİĞİ onu EKLEYEN commit'tir, dosyanın yolu değil. Aşama çözümü tek bir
+betiğe taşındı (`scripts/trigger_stage.py`; dört kabuk kopyası bir gün ayrışırdı): tetikleyici
+ancak onu ekleyen merge-dışı commit push aralığındaysa VE başka hiçbir uzak dalda
+bulunmuyorsa sayılır. Taşınmış tetikleyici boş aşama döndürür, bir `notice` yazar ve iş YEŞİL
+biter — kırmızı, her merge'de "arıza" diye boyayıp gerçek bir arızanın görünürlüğünü
+tüketirdi. Hiç eklenmemiş ya da birden çok aşama eskisi gibi `error`dür.
+
+**Yapı.** `measure-regime` ve `measure-timesfm` tek işti; aşama çözümü ayrı bir `stage` işine
+alındı ve ölçüm işi `needs: stage` + boş olmayan aşama koşuluyla başlar (adım adım `if`
+yazmak, bir adımın koşulu unutulduğu gün sızardı). `backtest-dc`ye aynı kapı eklendi.
+
+**Kapı testle sabit** (`tests/test_trigger_stage.py`): gerçek bir git deposu ve bare `origin`
+ile — kapatılan açığın kendisi ("main'den TEK tetikleyici merge ile gelir → koşu YOK") ayrı
+bir testtir; push ile `.github/triggers/`e dinleyen her workflow'un bu betikten geçtiği ve
+eski kabuk kalıbının hiçbir yerde kalmadığı, liste `.github/workflows/`tan okunarak sınanır.
+
+**Kabul edilen sınır.** Bir tetikleyici commit'i henüz push edilmeden başka bir dal ondan
+açılıp ÖNCE push edilirse, asıl dalın push'u o commit'i "başka dalda da var" görür ve koşu
+başlamaz (`notice`). Bu, hata yönünün doğru tarafıdır: yanlışlıkla koşmamak bir tetikleyici
+dosyayla onarılır, yanlışlıkla koşmak onarılamaz.
