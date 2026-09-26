@@ -5311,7 +5311,7 @@ olurdu, ama `ema_trend` C-1'den kaldı — karar değişmez — ve katmanda akti
 ön-kaydıyla birlikte ve O MODELİN geometrisine eşlenerek kurulur. O güne kadar ema'da E
 değerlendirilemez; `random_ctrl` `broken_controls` listesinde kalır.
 
-## 64. base katmanına EŞLENMİŞ kontroller: `trend_random`, `meanrev_random` — ön-kayıt §6n *(2026-09-26)*
+## 65. base katmanına EŞLENMİŞ kontroller: `trend_random`, `meanrev_random` — ön-kayıt §6n *(2026-09-26)*
 
 Karar 63'ün onarım yarısı. Kontrol MODEL BAŞINA olur (`acceptance.control_for`), çünkü
 base'in iki yarışmacısı iki ayrı çıkış geometrisi taşır. Kararlar (kullanıcı):
