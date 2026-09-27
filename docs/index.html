@@ -644,7 +644,7 @@
           </p>
           <p class="note">
             Rozetler: <b>Ö</b> örneklem, <b>E</b> edge — model ancak ikisi de yeşilken
-            doğrulanmış sayılır. <b>⚠ B</b> kapı değildir, yalnızca bu satırı başkasıyla
+            canlı kapıları geçmiş sayılır. <b>⚠ B</b> kapı değildir, yalnızca bu satırı başkasıyla
             kıyaslarken maliyet farkının (<code>cost_per_r</code>) dikkate alınması
             gerektiğini söyler. Rozet kolonu SIRALANMAZ: iki ayrı kapının durumunu tek bir
             sıra değerine indirmek, geçilmemiş bir kapıyı bir puana çevirirdi.
@@ -751,7 +751,18 @@
             ortalama R bir ölçüm değil gürültüdür. <b>E (edge)</b>: ortalama R pozitif
             olmalı, kontrol grubunu anlamlı bir marjla aşmalı, farkın bootstrap güven
             aralığının alt sınırı sıfırın üstünde olmalı ve hesap getirisi referans
-            çıpasını geçmeli. Model ancak <b>ikisi birden</b> yeşilken doğrulanmış sayılır.
+            çıpasını geçmeli. Model ancak <b>ikisi birden</b> yeşilken canlı kapıları geçmiş sayılır.
+          </p>
+          <p class="note">
+            <b>Durum etiketi</b> (docs/backtest.md &gt; 7.8) kapılardan AYRI bir şeydir ve modelin
+            ön-kayıtlı sınamalardaki yerini söyler: <b>DOĞRULANMAMIŞ</b> — ön-kayıtlı A/B
+            kapılarından geçmemiş, deney olarak koşuyor; <b>DENEME — KASA TESTİ BEKLENİYOR</b> — A ve
+            B'yi geçmiş, geliştirmede hiç kullanılmamış verideki (kasa) tek sınamasını bekliyor;
+            <b>DOĞRULANDI</b> — kasa sınamasını geçmiş. A ve B geliştirme sırasında görülmüş
+            veridir; bu yüzden canlı Ö/E kapılarını geçmek bile bir modeli "doğrulandı" yapmaz.
+            Etiket bir sunum bilgisidir: sıralamayı, kapıları ve defteri değiştirmez. Kaynağı
+            <code>data/model_status.json</code>'dur; orada yazılı olmayan model doğrulanmamıştır.
+            Referans çıpası, dış sistem kopyası ve kontrol grupları bir tez olmadığı için etiket taşımaz.
           </p>
           <p class="note">
             <b>⚠ B (band)</b> bir kapı DEĞİLDİR. Bandın dışında kalmak bir kusur değil, bir
@@ -964,9 +975,9 @@ renderSiteNav("index");
 
 entryWasDetail = !!hashKey();
 
-Promise.all(LAYERS.map((layer) =>
+Promise.all([loadModelStatus()].concat(LAYERS.map((layer) =>
   fetchPayload(layer.file).then((d) => ({ layer, data: d })).catch(() => ({ layer, data: null }))
-)).then((results) => {
+))).then(([, ...results]) => {
   for (const { layer, data } of results) {
     if (data) { PAYLOADS[layer.key] = data; LOADED.push(layer); } else { MISSING.push(layer); }
   }
@@ -1348,7 +1359,7 @@ function renderSummary() {
         " · referans satırları havuzda değil (kural 15/15b)",
     },
     {
-      k: "doğrulanmış model",
+      k: "kapıları geçen model",
       v: verified + '<small>/ ' + names.length + "</small>",
       sub: verified
         ? "Ö (örneklem) ve E (edge) kapılarının İKİSİNİ birden geçen model sayısı."
@@ -1623,7 +1634,8 @@ function modelTag(key) {
   if (m.is_replica) return '<span class="tag">KOPYA</span>';
   const acc = (PAYLOADS[layerOf(key)] || {}).acceptance || {};
   const controls = acc.controls || (acc.control_model ? [acc.control_model] : []);
-  return controls.includes(nameOf(key)) ? '<span class="tag">KONTROL</span>' : "";
+  if (controls.includes(nameOf(key))) return '<span class="tag">KONTROL</span>';
+  return statusBadge(nameOf(key));
 }
 
 /* Rütbesizliğin SEBEBİ görünür olmalı: `—` tek başına "ölçülemedi" ile "kapıya 4
@@ -2655,7 +2667,7 @@ function renderDetailFlags(key, m) {
   host.innerHTML = badges(flags, true) +
     (flags
       ? '<p class="note" style="margin:8px 0 0">' +
-        (flags.passed ? "İki kapı da geçildi." : "Doğrulanmış değil: iki kapı birden yeşil olmalı.") +
+        (flags.passed ? "İki kapı da geçildi." : "Canlı kapılar geçilmedi: iki kapı birden yeşil olmalı.") +
         " Rozete dokunun, gerekçesi açılır.</p>"
       : "");
   const tipHost = el("detail-tip");
