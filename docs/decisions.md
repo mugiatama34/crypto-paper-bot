@@ -5423,3 +5423,14 @@ ağırlığını taşır (işlem yapılabilir, ileriye bakışsız); ham getiri 
 hamda kalıcılık" = *"seçici değil, piyasa zamanlaması"* — ayrı ve daha basit bir tez adayı.
 Hedge sembol betasını 1 varsayar; beta tahmin EDİLMEZ, sızıntı betimsel bir tanıyla ölçülür
 (§6p > TADİLAT-1 > 4–5). Öteki onay noktaları bekliyor.
+
+**TADİLAT-2 (2026-09-27, kullanıcı kararı, kod öncesi):** kalan onay noktalarının hepsi kabul;
+aylık ufuk birincil kalır (iki ufuk aynı BH ailesinde, ad yalnızca sıradır). TADİLAT-1'in
+emsali: BTC momentum vetosu tezi, `claude/btc-altcoin-momentum-thesis-60vfqc`, orada §6o >
+TADİLAT-2 (`5bd4da4`) — sürüklenmeden arınmış `D = ½(ȳ₊ + ȳ₋)` bağlayıcı, havuzlanmış ortalama
+betimsel. Birleştirme sırası: eşlenmiş kontroller → oynaklık hedefleme → BTC vetosu → model
+momentumu; her birinde sonrakilerin numaraları kayar. §7.8'e iki istisna (kasadan önce ön-kayda
+girmiş ölçümler tanımladıkları kasa verisini kullanabilir ama sonuçlarından tez türetilemez;
+fonlama arşivinin kasa öncesi kısmı serbest) ve bir sunum kuralı eklendi: kasada doğrulanmamış
+her tez paper trading'de "deneme — kasa testi bekleniyor" etiketiyle gösterilir — bugün bütün
+yarışmacılar; arayüz uygulaması açık iştir.

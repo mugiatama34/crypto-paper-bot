@@ -402,7 +402,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
 | 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
-| 10 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6p, bu commit | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **KOŞULMADI** — O2 kararlaştırıldı (TADİLAT-1), öteki onay noktaları bekliyor (§6p > 15) |
+| 10 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6p, bu commit | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **KOŞULMADI** — onay noktalarının hepsi kararlaştırıldı (TADİLAT-1, TADİLAT-2); uygulama bu dalda |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -5968,6 +5968,56 @@ ileriye bakmadığını (`ē_s` yalnızca `t−1`'den) sınar.
 **15'in durumu:** O2 kararlaştırıldı (yukarıda). O1, O3–O12 hâlâ onay bekler; kod onlar
 kararlaştırılmadan yazılmaz.
 
+### TADİLAT-2 — kalan onay noktaları, emsal atfı, kasa istisnaları, uygulamanın dar okumaları *(2026-09-27, kullanıcı kararı; kod yazılmadan önce, HİÇBİR veri görülmeden)*
+
+**1. Onay noktaları (15) — hepsi kararlaştırıldı.**
+- **O1, O3–O7, O9, O10:** ön-kaydın seçimi olduğu gibi KABUL.
+- **O8:** kabul — aylık {1, 2}, haftalık {1, 4} blok; bağlayıcı olan muhafazakâr taraf.
+- **O12:** **aylık birincil KALIR.** İki ufuk aynı BH ailesinde (m = 2) olduğu için hangisinin
+  "birincil" adını taşıdığı etiket hesabını değiştirmez; ad yalnızca raporun sırasıdır.
+- **O2:** TADİLAT-1 (kapı hedge'li getiride).
+- **O11:** kesim anı (2026-09-27T00:00Z) kabul; §7.8'e iki istisna ve bir sunum kuralı
+  eklendi (bkz. §7.8).
+
+**2. Emsal atfı (TADİLAT-1'in "projenin daha önce vardığı kural" cümlesinin kaynağı).** BTC
+momentum vetosu tezi, `claude/btc-altcoin-momentum-thesis-60vfqc` dalı, orada §6o >
+TADİLAT-2 (commit `5bd4da4`): fiyat testinin bağlayıcı ölçüsü havuzlanmış ortalamadan,
+sabit sürüklenmenin TAM olarak düştüğü `D = ½(ȳ₊ + ȳ₋)`'ye çevrildi; havuzlanmış ortalama
+betimsel kaldı. Aynı sıra burada: sürüklenmeden arınmış ölçü bağlayıcı, ham ölçü betimsel.
+⚠ O dal henüz `main`de değil ve numarası çakışıyor (oynaklık hedefleme de §6o). **Birleştirme
+sırası:** eşlenmiş kontroller (§6n) → oynaklık hedefleme (§6o) → BTC vetosu → model momentumu;
+her birleştirmede sonrakilerin bölüm, sicil satırı ve karar numaraları yeniden numaralanır.
+Bu atıf bu yüzden commit hash'iyle yazılır; numara birleştirmede düzeltilir.
+
+**3. Uygulamanın DAR okumaları (hepsi mekanik; hiçbir sayı görülmeden):**
+- **Çift kuralı (5) TABAN düzeyinde uygulanır.** Bir tersin kendi tabanının birebir negatifi
+  olması kuralın hedefi değildir (tanımıdır); bu yüzden karşılaştırma tabanlar arasında
+  yapılır: bir taban, kendinden önceki kalmış bir tabanla birebir aynı ya da birebir ters
+  ağırlık serisine sahipse o taban VE tersi düşer. Tüm ağırlıkları sıfır olan bir tabanın
+  tersi kendisiyle aynıdır; o durumda ters düşer, taban kalır ve raporlanır. `N` = 2 ×
+  kalan taban (− sıfır tabanların tersi).
+- **Durum serilerinin dayandığı barlar:** göstergeler sembolün MEVCUT barlarında (sayıya
+  göre) hesaplanır; getiri geriye bakışları (F1, F4, F6) ise tam takvim ızgarasında zamana
+  göre kaydırılır, yani eksik bir bar geriye bakışı KAYDIRMAZ, o anı tanımsız yapar
+  (tanımsız → durum 0). Durum, yeni sinyal gelene kadar korunur; uzun boşluklar uygunluk
+  kuralıyla (3) zaten nakittir.
+- **Uygunluk saat saat** sorulur (`E_h`, 3'ün kuralı `T = h` ile); durum değişmese de
+  uygunluk değişirse ağırlık `s_i / |E_h|` ile yeniden kurulur ve bu devir maliyete girer.
+- **Kesitsel (F6):** gün kapanışındaki sıralamaya yalnızca o gün sonrasının ilk saatinde
+  uygun olan ve `L` günlük getirisi tanımlı semboller girer; gün içinde uygunluğunu yitiren
+  sembolün ağırlığı o saatler için 0 olur (kalanlar yeniden ölçeklenmez).
+- **F7 durum makinesi:** giriş koşulu çıkış koşulundan önce gelir (short'tayken RSI < alt
+  → doğrudan long); giriş yoksa çıkış (long: RSI ≥ 50 / kapanış ≥ orta bant; short: ≤),
+  yoksa durum korunur.
+- **Tohumlar:** bağlayıcı `f"{random_seed}:mmom:{ufuk}:{dönem}:{blok}"`, ham `…:ham`, aile
+  kırılımı `…:aile:{F}` (ham için `…:ham:aile:{F}`); `blok` ∈ {`b1`, `b2`, `b4`}.
+- **Tutarlılık kapısı (3):** karşılaştırma iki barın da mevcut olduğu (4H bar, son 1H alt barı)
+  çiftler üzerinden; eksik alt bar ayrıca sayılır ama kapıya girmez. Kapıdan düşen sembol
+  bahçenin evreninden TAMAMEN çıkar (bütün stratejiler için; kural 6) ve raporda sebebiyle durur.
+- **Son saat:** B'nin son saatinin açılıştan açılışa getirisi kasanın ilk açılışını ister;
+  tanımsız kalır ve hiçbir tam döneme girmez (B'nin son tam haftası 09-20'de, son tam ayı
+  Ağustos'ta biter).
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
@@ -6022,6 +6072,23 @@ Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıka
      veri çekimini kesimle sınırlar ve bir testle sabitler. Kesim DEĞİŞTİRİLMEZ; yeni bir kasa
      ancak kullanıcı kararıyla ve daha İLERİ bir kesimle açılabilir (geriye çekmek görülmüş
      veriyi kasaya geri koymak olurdu).
+   - **İstisna 1 — kasadan ÖNCE ön-kayda girmiş ölçümler** (bugün §6m > 8'in canlı tekrarları:
+     2026-11-23 ve 2026-12-07): tanımladıkları kasa sonrası veriyi kullanabilir, çünkü neyi
+     ölçecekleri kasa açılmadan sabitlendi. Ama **sonuçlarından yeni tez TÜRETİLEMEZ** —
+     sonuçları kasa verisidir.
+   - **İstisna 2 — fonlama arşivinin kasa ÖNCESİ kısmı** (`data/funding_archive/`, ~Haziran →
+     Eylül 2026): tez geliştirmede kullanılabilir. Arşivin kasa başlangıcından sonra eklenen
+     satırları kasadır; arşiv yazılmaya devam eder (`archive-funding.yml`), okuyan bir araç
+     kesimi `scripts/vault.py`den alır.
+   - **Kasada doğrulanmamış bir tez paper trading'de KOŞABİLİR, ama dashboard'da "deneme — kasa
+     testi bekleniyor" etiketiyle gösterilir** ve doğrulanmış modellerle aynı biçimde
+     sunulmaz. Etiket kasa testi geçilene kadar kalır. Gerekçe: A ve B'nin ikisi de
+     geliştirme sırasında GÖRÜLMÜŞ veridir (A ölçülür, B'nin kuralı A'dan sonra yazılsa da
+     sonuç aynı araştırmacının önünden geçer); kâğıt üstünde koşan bir model, yalnızca bu
+     iki dönemi geçti diye kanıtlanmış gibi sunulursa okuyucu gördüğü tabloyu kasa
+     sınamasının yerine koyar. ⚠ Bugün hiçbir model kasada sınanmadı; kural yazıldığı an
+     canlı katmanların TÜM yarışmacılarına uygulanır. Arayüz uygulaması ayrı bir
+     değişikliktir (`docs/index.html`, `docs/positions.html`) ve bu kuralın açık işidir.
 
 ---
 
