@@ -5468,6 +5468,14 @@ tutarlı). 8'in "4 haftalık blok yalnızca duyarlılık" cümlesinin yerine ge�
 kapısını (öngörücü `t` ve sonrasını görmez), dönem sınırı kuralını (hedef penceresi dönem dışına
 taşmaz) ve örtüşmeyen örneklemenin adımını sınar.
 
+### SONUÇ ÖNCESİ BEKLENTİ *(2026-09-27, `measure` tetiklenmeden ÖNCE; preflight #36268151313 yalnızca KAPSAM gösterdi, hiçbir getiri/σ̂/ağırlık görülmedi)*
+
+**Beklenen sonuç cümlesi (Claude, koşu öncesi): "tez doğrulanamadı, dayanağı sağlam."**
+TADİLAT-1 > 4'ün dört durumlu tablosunda beklenen hücre **GEÇMEDİ ∧ ÖNCÜL TUTTU**'dur: Sharpe
+farkı güç sınırı yüzünden geçmez (10: iki dönemin birlikte geçme olasılığı gerçekçi bir etkide
+≈ %1), öncül (oynaklık kümelenmesi) tutar. Sharpe ve drawdown tahminleri 11'de ve TADİLAT-1 >
+4'te zaten kayıtlıdır; bu satır onlara yalnızca hücreyi ekler, hiçbirini değiştirmez.
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
