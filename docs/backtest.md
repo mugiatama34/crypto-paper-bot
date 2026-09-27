@@ -5536,6 +5536,14 @@ yazılır; hücre < 30 ise "değerlendirilemez".
   da tamamında yoktur; gözlem yalnızca sembolün barı olan saatlerde kurulur ve sembol başına
   gözlem sayısı yazılır. Paneli dengelemek için sembol çıkarmak bir post-hoc filtre olurdu
   (§7.2).
+  **OLGU KAYDI (2026-09-27, snapshot #36302030950, `9da9edb`; kural DEĞİŞMEZ):** ön-kayıt
+  eksik sayılmıştı — **BNB** de dönem A'nın başında yoktur: OKX `BNB-USDT-SWAP` 1H serisi
+  2022-12-23 06:00'da başlar. Dönem A'nın ilk ~12 ayında altcoin sayısı 8'dir. Snapshot'taki
+  ilk barlar: BTC ve 8 altcoin 2021-10-01 (pencere başı), BNB 2022-12-23 06:00, SUI
+  2023-05-05 03:00, ETHFI 2024-03-18 12:00, PENGU 2024-12-17 15:00; 13 seride de ilk bar ile
+  2026-09-26 12:00 arasında eksik saat YOK. Bu gecikme §6d (4H sayım, satır 621 civarı) ve
+  §6j'de (BNB 2023-04-02'den itibaren sayıldı) zaten görülmüştü; burada öngörülmemesi
+  aşağıdaki açık işin gerekçesidir.
 - **(f) Fiyat testi brüttür:** maliyet, kayma ve funding yoktur (4b).
 - **(d) xsec'in giriş kümelenmesi:** her rebalance'ta üç pozisyon aynı barda, aynı BTC
   durumuyla açılır; kümeli aralık bunu taşır, n_etkin bunu yazar.
@@ -5586,7 +5594,13 @@ bu verinin bu büyüklükte bir etkiyi dışlayamadığını söyler.
    Ağ ve artifact okuyan işler `contents: read`; sabitleme (`pin`, `pin-results`) ayrı
    işlerde yalnızca aynı koşunun artifact'ini commit eder. Cron YOK.
    `tests/test_trigger_stage.py` yeni workflow'u listeden kendiliğinden yakalar.
-4. CLAUDE.md'ye betik ve workflow satırları; §6c sicil satırının SONUÇ hücresi ve bir
+4. **AÇIK İŞ (kullanıcı notu, 2026-09-27):** sabit 13 sembollük evrenin geç listelenen
+   coinleri İLK-BAR TARİHLERİYLE tek bir yerde kayıtlı değil (BNB gecikmesi §6d ve §6j'de
+   görüldü, §6o'da yine öngörülmedi). Önerilen yer `config.yaml > layers.ema.universe`
+   yanında bir bildirim (bar başına ilk tarih, kaynak koşusuyla) ve onu okuyan bir test;
+   bir sonraki ön-kayıt bu tarihleri tahmin etmek zorunda kalmamalı. Bu ölçümün kapsamında
+   DEĞİLDİR, ayrı bir değişiklikle gelir.
+5. CLAUDE.md'ye betik ve workflow satırları; §6c sicil satırının SONUÇ hücresi ve bir
    karar kaydı yalnızca `measure`'dan SONRA.
 
 
