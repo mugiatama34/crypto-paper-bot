@@ -402,6 +402,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
 | 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
+| 10 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6p, bu commit | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı: ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; artık getiri (piyasa bileşeni hedge'li) okuma etiketi | **KOŞULMADI** — ön-kayıt onay bekliyor (§6p > 15) |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -432,6 +433,10 @@ değildir. Satırın kendi ailesi (m = 3) §6l > 6'da düzeltilir; sicile tek sa
 **Sicildeki 9. satır (oynaklık hedefleme) ev içi BH paydasına GİRER** — kaynak literatürdür,
 dış bir sistemin kuralları değil. İki varlık (BTC, sepet) ayrı iddialardır ve satır içinde
 düzeltilmez (§6o > 10); sicile tek satır olarak girer.
+
+**Sicildeki 10. satır (model momentumu) ev içi BH paydasına GİRER** — kaynak literatürdür
+(faktör momentumu), dış bir sistemin kuralları değil. Satırın kendi ailesi (m = 2 ufuk) §6p > 9'da
+düzeltilir; sicile tek satır olarak girer.
 
 **Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
 hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
@@ -5539,6 +5544,344 @@ Sepet A'da 9–12 sembol (BNB OKX'te 2022-12-23'ten itibaren — A'nın ilk yıl
 Sonuç: tasarım 10'un söylediğinden güçlüydü ve aralıkların üst sınırları (+0.07 … +0.21) bu kuralla
 **ΔSR > ~0.2'lik bir iyileşmeyi büyük ölçüde DIŞLAR.** "Ayırt edilemedi"den fazlasıdır.
 
+## 6p. ÖN-KAYIT — MODEL MOMENTUMU: bir stratejinin son dönem getirisi sonraki dönem getirisini öngörür mü? *(2026-09-27)*
+
+**Bu belge veri görülmeden yazıldı ve AYRI bir commit olarak işlendi** — ölçüm betiği,
+workflow ve testler SONRAKİ commit'lerdedir ve **kullanıcı onayından (bkz. 15) ÖNCE
+yazılmaz.** §7'nin tamamı bu bölüme uygulanır; §7.8 (KASA) bu ön-kayıtla birlikte açıldı.
+
+### 1. Köken, statü, kapsam
+
+**Tez (kullanıcı, değiştirilmeden):** bir stratejinin son dönem performansı, sonraki dönem
+performansını öngörür. Köken literatürdür (hisse faktörlerinde "faktör momentumu", en güçlü
+~1 aylık ufukta) — dış bir SİSTEMİN kuralları değil, ev içi bir tezdir (bkz. 14).
+
+**Statü: MODEL DEĞİL, salt okunur bir ölçüm.** Hiçbir şey `REGISTRY`e, bir katmanın `models`
+listesine, bir deftere girmez; `config.yaml`, `strategies/`, `core/` ve defterler DEĞİŞMEZ.
+Sonuç hiçbir modelin davranışını değiştirmez. **Geçerse** sonraki tez bir "seçici"dir (geçmiş
+getiriye göre strateji seçen) ve o, KENDİ ön-kaydıyla gelir (13).
+
+**Neden evin modelleri değil, bir HAYVANAT BAHÇESİ.** Soru "stratejiler arası kalıcılık"tır
+ve bir kesit ister: her dönemde onlarca stratejinin getirisi. Evin modelleri bu kesiti
+veremez — katman başına 3-5 yarışmacı, dönem başına bir avuç işlem, farklı barlar, farklı
+evrenler. Bahçe tek evrende, tek maliyet kuralıyla, tanımı gereği her gün pozisyonu olan
+basit stratejilerden kurulur. **Bedeli:** sonuç evin modelleri HAKKINDA değildir; "basit
+kural ailelerinde kalıcılık var mı" sorusunun cevabıdır.
+
+**Neden motor (`scripts/backtest.py`) değil.** 176 strateji × 13 sembol × ~4.1 yıl saatlik
+ızgara, bar bar motorla koşturulamayacak bir iştir; üstelik stratejilerin çoğu nakit
+durumlu ve stop'suzdur — kural 11'in boyutlandırması (`risk / |giriş − stop|`) onları
+ifade edemez (§6o > 1'in aynı gerekçesi). Ölçüm bu yüzden **vektörel bir getiri serisi
+hesabıdır** ve kural 3/11'i delmez: ortada boyutlanan bir model yoktur.
+
+### 2. Körlük beyanı (sonuç görülmeden yazıldı)
+
+- Ön-kaydı yazan taraf bahçenin HİÇBİR stratejisinin getirisini, pozisyon serisini, IC'sini
+  ya da dönem sıralamasını bu ön-kayıt için hesaplamadı.
+- Bilinen ve gizlenmeyen önceki sonuçlar (bu tezin yönünü etkileyebilir): `ema_trend` (EMA
+  21/55 kesişimi, long-only) A ve B'de ort. R ≈ 0 (§6d); `xsec_mom` (21g kesitsel top-3)
+  kontrolünden ayırt edilemedi (§6g, karar 59); TimesFM 48s yön isabeti yazı-turadan ayırt
+  edilemedi (§6k); oynaklık hedefleme §6o'da düştü ve σ̂'ın sonraki 30 günü öngörüsü zayıf
+  pozitifti (0.22–0.38). BTC ve 13 sembolün §6o'daki kapsamı (2020-11'den) biliniyor.
+- Genel bilgi: 2022 ayı yılı (Mayıs ve Kasım çöküşleri), 2023–2024 büyük ölçüde boğa;
+  kripto literatüründe zaman serisi momentumu (1–4 hafta) ve kısa vadeli geri dönüş
+  (gün içi) raporlanmıştır.
+- Tez, bahçenin aileleri ve iskeleti, test ve geçme koşulu kullanıcı tarafından veri
+  görülmeden verildi ve **değiştirilmeden** kayda girer. Bu bölümün eklediği her şey
+  (ızgaraların ayrıntısı, zamanlama, blok tanımları, piyasa bileşeni etiketi, kasa ayrıntısı)
+  15'te AYRICA listelenir ve onay bekler.
+
+### 3. Veri, evren, uygunluk
+
+- **Evren:** `config.yaml > layers.ema.universe`in 13 sembolü (sabit liste; `scripts/
+  measure_vol_target.py` ile aynı kaynaktan okunur).
+- **Kaynak:** OKX, `core/data.py` üzerinden **1H ve 4H** mumlar (projenin tek veri kapısı;
+  koşuya özel geçici önbellek, `data/cache/`e yazılmaz). Günlük kapanış `C_d`
+  `scripts/measure_regime.py::daily_closes`in tanımıdır (günün 20:00 açılışlı 4H barının
+  kapanışı) ve ikinci kez yazılmaz. OKX `1D` barı KULLANILMAZ (UTC+8 hizalı).
+- **Tutarlılık kapısı:** her (sembol, 4H bar) için 4H kapanışı, o barın son 1H barının
+  kapanışına eşit olmalıdır (göreli ≤ 1e-9); tutmayan pay bir sembolde %0.1'i aşarsa o
+  sembol ölçülmez ve raporda sebebiyle durur. İki zaman dilimi iki ayrı çekimdir ve
+  sessizce ayrışabilirler.
+- **Çekim başlangıcı** 2021-10-01 (A'dan ≥ 90 gün önce: en uzun geriye bakış 30 gün,
+  en uzun EMA 1H'de 200 bar, uygunluk 60 gün). **Çekim sonu KASA başlangıcıdır**
+  (`now = 2026-09-27T00:00Z`, §7.8): kasaya ait hiçbir bar çekilmez.
+- **Uygunluk (`E_T`), TÜM stratejiler için TEK kural** (kural 6'nın karşılığı): sembolün
+  ilk 4H barı `T − 60 gün`den önce VE `T` anında son kapanmış 1H ve 4H barı mevcut. 60 gün,
+  en uzun geriye bakışın (30 gün) ve 1H EMA(200) ısınmasının üstündedir; listelenmenin ilk
+  günlerinin aşırı hareketi bahçeye girmez. Strateji başına ayrı uygunluk YOKTUR: bir
+  stratejinin evreni başka birininkinden dar olsaydı sıralama evren farkını ölçerdi.
+
+### 4. Ortak mekanik — bütün bahçe için tek kopya
+
+| Büyüklük | Tanım |
+|---|---|
+| **Yürütme ızgarası** | 1H. Sembol getirisi `r_{i,h} = O_{i,h+1} / O_{i,h} − 1` (açılıştan açılışa). Açılışlardan biri eksikse `r = 0` ve o saat sembol NAKİTTİR (sayılır). |
+| **Sinyal zamanı** | Zaman dilimi τ ∈ {1H, 4H, 1D} olan bir sinyal, `T` anında KAPANMIŞ barlarla hesaplanır ve açılışı `≥ T` olan 1H barlarından itibaren, stratejinin bir sonraki sinyaline kadar geçerlidir. Kural 12 (yalnızca kapanmış bar) ve kural 13'ün (sonraki barın açılışında dolum) karşılığıdır: 7/24 piyasada `T`'deki açılış `T`'deki kapanışa eşit kabul edilir (§6o > O5'in aynı kabulü). |
+| **Sembol durumu** | `s_i ∈ {−1, 0, +1}` (aile tanımları 5'te). |
+| **Ağırlık (zaman serisi aileleri)** | `w_i = s_i / |E_T|` — sembol başına eşit ağırlık, brüt maruziyet ≤ 1, kaldıraç yok. |
+| **Ağırlık (kesitsel aile)** | LS: üst `k` +1/(2k), alt `k` −1/(2k); LO: üst `k` +1/k. `|E_T| < 2k` ise nakit. |
+| **TERS strateji** | `w^ters = −w`, saat saat, birebir. Her taban stratejinin tersi bahçeye girer (`<id>~ters`). |
+| **Saatlik brüt getiri** | `R_{s,h} = Σ_i w_{i,h} · r_{i,h}` |
+| **Maliyet** | `c_{s,h} = (fee_rate + slippage_base) · Σ_i |w_{i,h} − w_{i,h−1}|` = devir × 0.00105 (canlı config, tek kaynak). Funding HARİÇ (§6o > O2'nin gerekçesi). |
+| **Dönem getirisi** | `G_{s,P} = Σ_{h∈P} R_{s,h}` (brüt), `N_{s,P} = Σ_{h∈P} (R_{s,h} − c_{s,h})` (net) — **aritmetik TOPLAM**, bileşik değil: yalnızca toplamda tersin getirisi TAM olarak `−G`'dir ve bahçenin brüt simetrisi (6) bir yaklaşıklık değil özdeşlik olur. |
+| **Piyasa bileşeni** | `m_h = ortalama_{i∈E} r_{i,h}` (eşit ağırlıklı sepet), net maruziyet `e_{s,h} = Σ_i w_{i,h}` (sinyal anında BİLİNİR), artık `R^art_{s,h} = R_{s,h} − e_{s,h} · m_h` = stratejinin net maruziyetini sepette hedge eden, işlem yapılabilir hâli. Yalnızca 8'deki OKUMA ETİKETİ için; kapı değildir. |
+
+Ağırlıkların iki sinyal arasındaki fiyat kaymasıyla sürüklenmesi modellenmez (hedef ağırlık
+sürekli korunur ve bu yeniden dengelemenin maliyeti yazılmaz) — kabul edilen sapma (15 > O6):
+maliyeti bir miktar DÜŞÜK gösterir, yalnızca net rapora dokunur, sıralamaya (brüt) dokunmaz.
+
+### 5. Aileler ve ızgaralar — SABİT, süpürülmez
+
+Göstergeler `core/indicators.py`den (`ema_series`, `rsi_series`); Bollinger ve Donchian'ın
+vektörel hâli, rastgele barlarda `core/indicators.py::bollinger` / `donchian` ile birebir
+karşılaştırılan bir testle sabitlenir (ikinci uygulama sessizce ayrışamaz). LS = long/short,
+LO = yalnızca long.
+
+| # | Aile | Kural (`s_i`) | Izgara | Taban |
+|---|---|---|---|---|
+| **F1** | Zaman serisi momentumu `tsmom` | LS: `sign(C_T / C_{T−L} − 1)`; LO: getiri > 0 ise +1, değilse 0. τ = 4H, her 4H barda güncellenir, `C` 4H kapanışı, `L` gün × 6 bar. | L ∈ {1g, 3g, 7g, 14g, 30g} × {LS, LO} | 10 |
+| **F2** | EMA dizilimi `ema_stack` | `a > b > c` → +1, `a < b < c` → −1, diğer → 0 (kullanıcının tanımı) | (5,21,50), (8,21,55), (10,30,100) × τ {1H, 4H} | 6 |
+| **F3** | Ortalama kesişimi `ma_cross` | DURUM, olay değil: LS: EMA(hızlı) > EMA(yavaş) → +1, değilse −1; LO: +1 / 0 | (5,20), (10,30), (20,50), (21,55), (50,200) × τ {1H, 4H} × {LS, LO} | 20 |
+| **F4** | Kısa vadeli geri dönüş `st_rev` | LS: `−sign(son H getirisi)`; LO: getiri < 0 ise +1, değilse 0 | (H=1s, τ=1H), (H=4s, τ=1H kayan 4 bar), (H=4s, τ=4H), (H=1g, τ=1D) × {LS, LO} | 8 |
+| **F5** | Kırılım `donchian` | Üst = önceki `N` barın `high` maksimumu, alt = `low` minimumu (mevcut bar HARİÇ). LS: kapanış > üst → +1, < alt → −1, arada durum KORUNUR (başlangıç 0); LO: üst kırılım +1, alt kırılım 0 | N ∈ {20, 55, 120} × τ {1H, 4H} × {LS, LO} | 12 |
+| **F6** | Kesitsel `xsec` | Her UTC gün kapanışında (00:00) uygun sembolleri `L` günlük getiriye (`C_d`) göre sırala, eşitlikte sembol adı; üst `k` / alt `k` (4) | L ∈ {1g, 3g, 7g, 14g, 30g} × k ∈ {2, 4} × {LS, LO} | 20 |
+| **F7** | Aşırılık geri dönüşü `extreme` | RSI: `RSI < alt` → +1, `RSI > üst` → −1; long 50'yi yukarı, short 50'yi aşağı kesince 0. Bollinger(20, k): kapanış < alt bant → +1, > üst bant → −1; orta bandı geçince 0. Yalnızca LS. | RSI (2; 10/90), (2; 25/75), (14; 30/70), (14; 20/80) × τ {1H, 4H} + Bollinger k ∈ {2.0, 2.5} × τ {1H, 4H} | 12 |
+
+**88 taban + 88 ters = 176 strateji.** F1 L = 1g'nin tersi ile F4 (1g, τ=1D) AYNI strateji
+DEĞİLDİR (güncelleme sıklığı 4H ↔ günlük); ızgara bu çakışmayı önlemek için böyle seçildi.
+
+**Çift kural (mekanik, getiri görülmeden).** Pozisyon serileri (ağırlık matrisi, A ∪ B'nin
+tüm saatleri) kurulduktan sonra ve HİÇBİR getiri hesaplanmadan: bir strateji, sırada
+kendinden önce gelen bir stratejiyle (sıra: F1 → F7, tablodaki parametre sırası, taban
+tersinden önce) birebir aynı ya da birebir ters ağırlık serisine sahipse düşer ve raporda
+adıyla yazılır. Kalan sayı `N`dir; beklenen `N = 176`. Kural pozisyonlara bakar,
+performansa değil — hiçbir sonuç görmez.
+
+### 6. Simetri — ne sağlar, ne SAĞLAMAZ
+
+Her stratejinin tersi bahçede olduğu için her dönemde bahçenin brüt getiri ortalaması
+**tam olarak sıfırdır** (4'ün aritmetik toplamıyla bir özdeşlik). Bu, "bahçe ortalamada
+kazandı" türünden bir okumayı imkânsız kılar ve spread'in bir SEVİYE etkisinden gelmesini
+engeller.
+
+⚠ **Simetri SIRALAMADAKİ kalıcılığı piyasadan temizlemez** — kullanıcının tanımındaki
+"sürüklenmeden ya da piyasa yönünden kalıcılık üretilemez" cümlesi bu ön-kayıtta bu kadar
+daraltılır. Net maruziyeti pozitif bir strateji ile onun tersi, piyasa iki dönem üst üste
+aynı yöne gittiğinde iki dönem üst üste aynı uçta durur: sabit bir sürüklenme de, piyasanın
+kendi yön kalıcılığı da (piyasanın zaman serisi momentumu) IC'yi pozitife iter — sembol
+seçiminde ya da zamanlamada hiçbir beceri olmadan. Bahçede net maruziyet taşıyan aileler
+(F1, F2, F3, F5, LO varyantları ve tersleri) bu kanalın tam ortasındadır. Bu yüzden:
+
+- **Kapı değişmez** (kullanıcının tanımı: ham brüt getiriyle sıralama, 7–9).
+- Aynı test **artık getiriyle** (`R^art`, 4) de koşulur ve sonucun hangi cümleyle
+  okunacağını MEKANİK olarak belirler (9). Kapı değildir.
+- Betimsel tanı: her dönem çifti için sepetin iki dönem getirisinin işareti aynı mı; IC'nin
+  bu iki alt kümedeki ortalaması yan yana yazılır.
+
+### 7. Test
+
+| Büyüklük | Tanım |
+|---|---|
+| **Ufuk** | Oluşturma = izleme. **Aylık** (UTC takvim ayı) BİRİNCİL, **haftalık** (ISO hafta, UTC) İKİNCİL. |
+| **Dönem çifti** | Ardışık iki TAM dönem `(t−1, t)`, ikisi de AYNI ölçüm döneminin (A ya da B, 10) içinde. Yarım dönem hiçbir çifte girmez. |
+| **Sıralama** | `G_{s,t−1}` azalan; eşitlikte strateji kimliği. **Sıralama BRÜT getiriyle** (soru kalıcılıktır; maliyet yüksek devirli ailelere sistematik bir fark ekler ve kalıcılığı taklit ederdi). |
+| **IC_t** | Spearman sıra korelasyonu `ρ(G_{·,t−1}, G_{·,t})`, `N` strateji üzerinden, eşitlikte ortalama sıra. |
+| **Spread_t** | `n_q = ⌊0.2 · N⌋` (N = 176 → 35); `t−1`'in üst `n_q` stratejisinin `G_{·,t}` ortalaması − alt `n_q`'nunki. |
+| **Özet** | Dönem (A/B) ve ufuk başına `ĪC` ve `S̄pread` = çiftler üzerinden ortalama. |
+
+**Kârlılık AYRICA ve betimsel olarak** (kapı değil): üst ve alt beşte birin `N_{·,t}`
+(net) ortalaması, net spread, bahçenin net ortalaması (tanım gereği negatif: ters strateji de
+maliyet öder, net bahçe simetrik DEĞİLDİR), aile başına günlük ortalama devir ve maliyet
+sürüklenmesi.
+
+### 8. İstatistik — dönem serisinin blok bootstrap'ı
+
+- **Birim = dönem çifti.** Stratejiler birbirine yüksek korelasyonludur (komşu parametreler,
+  tersler); çıkarım strateji sayısı üzerinden DEĞİL zaman üzerinden yapılır.
+- **İki blok tanımı**, çiftlerin ilkinden başlayarak ardışık sabit gruplar (son grup kısa
+  kalabilir, kendi bloğudur): **aylık {1, 2} çift, haftalık {1, 4} çift.** Ardışık iki çift
+  bir dönemi paylaşır (`t`'nin getirisi `IC_t`'de izleme, `IC_{t+1}`'de oluşturmadır); tek
+  çiftlik blok bu bağımlılığı görmez, çok çiftlik blok görür. Aylıkta 3 aylık blok
+  KULLANILAMAZ: B'nin 25 çifti 9 blok eder ve `MIN_CLUSTERS` (10) altında kalır.
+- Her iterasyonda bloklar **yerine koyarak**, orijinal blok sayısı kadar çekilir; IC ve spread
+  **AYNI çekilişten** (eşleştirilmiş). `acceptance.bootstrap_samples` (2000), yüzdelik aralık,
+  α = `acceptance.edge_ci_alpha` (0.05). Tohum `f"{random_seed}:mmom:{ufuk}:{dönem}:{blok}"`
+  (artık getiri için `…:art`). Yüzdelikler `scripts/backtest_dc.py::_percentiles`ten.
+- **p** (BH için), §6l > 6'nın tanımı, aynı çekilişlerden: `p = min(1, 2 · min(#(x* ≤ 0)+1,
+  #(x* ≥ 0)+1) / (B+1))`.
+- **Bağlayıcı olan, iki blok tanımının DAHA MUHAFAZAKÂR olanıdır:** alt sınır = iki alt
+  sınırın MİNİMUMU, p = iki p'nin MAKSİMUMU (§6j ve §6o > TADİLAT-1'in kuralı).
+- Bir blok tanımında `< MIN_CLUSTERS` blok → o ufuk o dönemde **değerlendirilemez = GEÇMEDİ**,
+  p = 1 ile BH'ye girer (m küçültülmez).
+
+### 9. Geçme koşulu (bağlayıcı) ve okuma
+
+**Ufuk p'si:** `p_ufuk = max(p_IC, p_spread)` — iki koşul BİRLİKTE istenir (kesişim–birleşim),
+ek düzeltme gerektirmez.
+
+**Dönem A — GEÇTİ (ufuk başına):**
+- (a) `ĪC > 0` **ve** `S̄pread > 0`;
+- (b) `ĪC`'nin ve `S̄pread`'in %95 aralıklarının bağlayıcı alt sınırları **> 0**;
+- (c) BH, **m = 2** (aylık, haftalık), **q = 0.05**: `p₍ᵢ₎ ≤ (i/2) · 0.05`. q'nun
+  gerekçesi §6l > 6 ve TADİLAT-2'ninkidir: iki yönlü p ile 0.10 birinci sırada neredeyse
+  hiç bağlamazdı; 0.05'te birinci sıranın eşiği 0.025'tir ve (b)'den sıkıdır.
+
+**Dönem B — doğrulama:** yalnızca A'da GEÇEN ufuklar; `m_B` = A'da geçen ufuk sayısı; kurallar
+(a)–(c) AYNI, bahçe AYNI (aynı `N`, aynı çiftler kuralı). **DOĞRULANDI = A ∧ B.** A'da geçmeyen
+ufkun B sayıları "bilgi — doğrulama değil" etiketiyle raporlanır.
+
+**Okuma etiketi (MEKANİK, kapı DEĞİL; 6):** artık getiriyle (`R^art`) aynı (a)–(c), A ve B.
+
+| Ham | Artık | Cümle |
+|---|---|---|
+| DOĞRULANDI | DOĞRULANDI | *"model momentumu var — piyasa yönünün ötesinde"* |
+| DOĞRULANDI | DOĞRULANMADI | *"kalıcılık var, ama net maruziyet × piyasa yönünden geliyor"* — seçici tezi bu kaynağı TAŞIR ve bu, ön-kaydının ilk satırına yazılır |
+| DOĞRULANMADI | DOĞRULANDI | *"piyasa bileşeni kalıcılığı örtüyor; ham test bunu göremedi"* — seçici tezine GEÇİRMEZ (kapı hamdır), ayrı bir tez adayı olarak kayda geçer |
+| DOĞRULANMADI | — | *"ayırt edilemedi"* — tezin reddi DEĞİL, güç sınırı (10) ile okunur |
+
+**Seçici tezine geçiş = ham DOĞRULANDI** (kullanıcının "geçerse"si), ardından §7.8'in
+kasa sınaması (13).
+
+**Aile kırılımı — BETİMSEL** (kapı yok, BH yok, "betimsel" etiketiyle): her aile için
+aile-içi IC ve spread (yalnızca o ailenin stratejileri ve tersleri; `n_q` aile içinde
+`⌊0.2 · N_aile⌋`, en az 1), iki blok tanımının aralıkları; üst ve alt beşte birin aile
+bileşimi (her ailenin payı ↔ bahçedeki payı). Hangi ailenin kalıcı olduğu buradan OKUNUR,
+seçilmez: bir aileyi sonradan "asıl bulgu" diye öne çıkarmak §7.2'nin post-hoc filtresidir.
+
+### 10. Dönemler (A ve B) ve güç
+
+Sınırlar `scripts/backtest_ema.py`den İTHAL (A) ve §7.8'den (B sonu) gelir; girdi DEĞİLDİR.
+
+| Dönem | Saatler (UTC) | Aylık çift | Haftalık çift |
+|---|---|---|---|
+| **A** | 2022-01-01 → `PERIOD_A_CUTOFF` (2024-06-30T00:00) | 2022-01 … 2024-05: 29 ay → **28** (Haziran 2024 yarım, hiçbir çifte girmez) | 2022-01-03 … 2024-06-23: 129 hafta → **128** |
+| **B** | 2024-06-30 → **KASA başlangıcı 2026-09-27T00:00** | 2024-07 … 2026-08: 26 ay → **25** | 2024-07-01 … 2026-09-20: 116 hafta → **115** |
+
+- **Embargo YOK ve bu yapısaldır:** ölçüm birimi bir dönem çiftidir, dönemler arasında taşınan
+  bir pozisyon sonucu yoktur; B'nin ilk oluşturma dönemi B'nin içindedir (çift kuralı).
+  Göstergelerin ısınması önceki veriyi kullanır — bu bir ÖZELLİK kullanımıdır, sonuç sızıntısı değil.
+- **Tek `measure` koşusu** A ve B'yi birlikte hesaplar; hiçbir seçim A'nın sonucuna bağlı
+  değildir (bahçe, çiftler ve kurallar burada sabit), bu yüzden B'nin aynı koşuda hesaplanması
+  kontaminasyon değildir (§6o > 9'un aynı gerekçesi).
+
+**Güç (sonuç görülmeden, dürüst).** `SE = sd(IC_t) / √n`, `MDE = 2.802 · SE` (§6j > 9;
+blok tasarım etkisi ve BH hariç — gerçek MDE daha büyüktür). `sd(IC_t)` bilinmiyor: bahçenin
+etkin boyutu küçüktür (net maruziyet, trend ↔ geri dönüş) ve 6'daki piyasa kanalı IC'yi her
+dönem ±0.5'e savurabilir; aralık 0.3–0.5 alınır.
+
+| Ufuk, dönem (n) | MDE @ sd 0.3 | MDE @ sd 0.5 | Güç @ gerçek IC 0.10 (sd 0.3 / 0.5) |
+|---|---|---|---|
+| aylık A (28) | 0.16 | 0.26 | %42 / %18 |
+| aylık B (25) | 0.17 | 0.28 | %39 / %17 |
+| haftalık A (128) | 0.07 | 0.12 | %96 / %62 |
+| haftalık B (115) | 0.08 | 0.13 | %95 / %57 |
+
+- **Aylık ufuk (birincil) gerçekçi bir etkiyi DOĞRULAYAMAZ:** gerçek IC 0.10'da A ∧ B'nin
+  birlikte geçme olasılığı ≈ %16 (sd 0.3) … %3 (sd 0.5), BH ve spread şartı hariç. Aylıkta
+  **"ayırt edilemedi" beklenen sonuçtur** ve tezin reddi olarak OKUNMAZ. Haftalık ufuk 0.1
+  mertebesindeki bir IC'yi görebilir. Bu, kapıyı gevşetmek için bir gerekçe değildir;
+  okumanın sınırıdır ve rapora yazılır.
+- Koşu sonrası rapor gerçekleşen `sd(IC_t)`'yi ve blok tasarım etkisini bu projeksiyonla
+  yan yana yazar (post-hoc güç değil, kesinlik beyanı).
+
+### 11. TAHMİNLER (sonucu görmeden)
+
+- **Kullanıcının (bağlayıcı olmayan, kayıt):** aylık IC küçük pozitif, haftalık sıfıra yakın;
+  kalıcılık varsa zaman serisi momentumu (F1) ve kesitsel (F6) ailelerde yoğunlaşır, geri
+  dönüş ailelerinde (F4, F7) yok.
+- **Ön-kaydı yazanın (ayrı, kayıt):** aylık `ĪC` A'da pozitif (+0.05 … +0.20) ama aralığı
+  sıfırı içerir → GEÇMEDİ; noktanın büyük kısmı 6'daki piyasa kanalından (2022'nin süregiden
+  düşüşü, 2023'ün süregiden yükselişi) gelir ve **artık IC sıfıra yakındır**. Haftalık `ĪC`
+  sıfır civarı ya da hafif negatif (kripto haftalık getirilerinde kısa vadeli geri dönüş);
+  haftalık GEÇMEZ. Aile kırılımında ham kalıcılık net maruziyet taşıyan ailelerde (F1, F2,
+  F3, F5) toplanır, F6 LS'de (net maruziyet sıfır) zayıftır; F4 ve F7'de aile-içi IC ≤ 0.
+  Beklenen hücre: **"ayırt edilemedi"** (her iki ufukta).
+
+### 12. Sonucu gördükten sonra (ek; §7'ye ek olarak)
+
+- Bahçe (aileler, ızgaralar, tersler, çift kuralı), uygunluk, zamanlama, maliyet kuralı,
+  %20 eşiği, dönem ve blok tanımları, q ve geçme koşulu DEĞİŞMEZ. Aile çıkarılmaz, eklenmez;
+  ızgara süpürülmez; "üst %10" ya da "Sharpe'a göre sıralama" varyantı koşulmaz.
+- Aile kırılımından bir aileyi seçip "asıl bulgu" diye yeniden test etmek YENİ bir tezdir,
+  taze bir pencere ister — ve §7.8 gereği o pencere kasa DEĞİLDİR, çünkü kasa yalnızca
+  dondurulmuş bir tezin sınaması için açılır.
+- Tek sefer: herhangi bir sayı üretmiş `measure` koşusu tekrarlanmaz; altyapı yüzünden
+  hiçbir sayı üretmeden düşen koşu §7.6 gereği tekrarlanır ve kayda geçer.
+
+### 13. Kasa bağlantısı (§7.8'in bu teze uygulanışı)
+
+- A ve B'nin tamamı kasa başlangıcından (2026-09-27T00:00Z) ÖNCEDİR; ölçüm kasaya ait tek
+  bar çekmez (3), betik bunu bir testle sabitler.
+- **Ham DOĞRULANDI ise** bahçe DONDURULUR: betiğin, bu bölümün ve varsa TADİLAT'ların commit
+  hash'i bir dondurma kaydına yazılır ve kasa sınaması bu kayıtla, kasaya dokunmadan önce
+  ön-kayda alınır. Kasa sınaması A/B'nin AYNI kurallarıyla, geçen ufuk(lar) için tek seferdir.
+- **Asgari kasa uzunluğu (yapısal, sonuç görülmeden):** her iki blok tanımında
+  `MIN_CLUSTERS` (10) sağlanmalıdır → aylık ufuk için **≥ 21 çift = 22 tam ay** (en erken
+  2028-08), haftalık için **≥ 40 çift = 41 tam hafta** (en erken 2027-07). Daha önce açılan
+  kasa değerlendirilemez döner ve kasayı boşa harcar; bu yüzden erken açılmaz.
+- **Seçici tezi** kasa sınamasını BEKLEMEDEN, A/B verisiyle geliştirilip ön-kayda alınabilir
+  ve dondurulabilir; ama model momentumunun kasa sonucu görüldükten SONRA seçicinin hiçbir
+  kuralı değiştirilemez (§7.8: kasa sonucu da kasa verisidir).
+
+### 14. Sicil
+
+§6c'de **10. satır.** Hipotez **ev içidir** (literatür; dış bir sistemin kuralları değil) →
+**ev içi BH paydasına GİRER.** Satırın kendi ailesi (m = 2 ufuk) 9'da düzeltilir; sicile tek
+satır olarak girer.
+
+### 15. ONAY BEKLEYEN noktalar — kullanıcının tanımına bu bölümün EKLEDİKLERİ
+
+Kod bunlar onaylanmadan yazılmaz. Her biri bir öneridir; değişiklik bir TADİLAT'la kayda girer.
+
+| # | Nokta | Bu ön-kaydın seçimi | Alternatif |
+|---|---|---|---|
+| **O1** | Izgaralar | 5'teki tablo: 88 taban + 88 ters = 176. F3/F5/F6'ya LO eklendi (kullanıcının F6 tanımında vardı), F7 yalnızca LS | başka bir ızgara (100–200 bandında) |
+| **O2** | Piyasa kanalı (6) | kapı HAM kalır; artık getiri yalnızca okuma ETİKETİ | kapı artık getiriyle (daha dar soru: "piyasa yönünün ötesinde kalıcılık") ya da ikisi birlikte |
+| **O3** | Dönem getirisi | aritmetik toplam (simetri özdeşlik olur) | bileşik getiri (simetri yaklaşık) |
+| **O4** | Zamanlama | 1H açılıştan açılışa ızgara; 4H/1D sinyalleri o ızgaraya eşlenir | her aile kendi barında, kapanıştan kapanışa |
+| **O5** | Uygunluk | 60 gün, bütün bahçe için tek kural | başka bir asgari yaş |
+| **O6** | Maliyet | `fee_rate + slippage_base`, funding HARİÇ, ağırlık sürüklenmesinin yeniden dengeleme maliyeti yazılmaz (net rapor iyimser; sıralama etkilenmez) | yalnızca `fee_rate`; sürüklenmeyi modellemek |
+| **O7** | Dönemler | tam dönemler; Haziran 2024 hiçbir çifte girmez; B kasa başlangıcında biter | A'nın son yarım ayını dahil etmek |
+| **O8** | Bloklar | aylık {1, 2}, haftalık {1, 4}; bağlayıcı = muhafazakâr olan | aylık {1, 3} (B'de değerlendirilemez döner) |
+| **O9** | BH | q = 0.05, iki yönlü p, `p_ufuk = max(p_IC, p_spread)` | q = 0.10 (§6c'nin sicil q'su) |
+| **O10** | Çift kuralı | 5'teki mekanik kural (pozisyonlara bakar) | yok |
+| **O11** | Kasa ayrıntıları (§7.8) | kesim 2026-09-27T00:00Z; canlı katmanların ön-kayıtlı kapıları kuralın DIŞINDA, canlı defterden tez türetmek İÇİNDE; asgari kasa uzunluğu 13'teki gibi | kesim başka bir an; canlı defterin tamamı kasada |
+| **O12** | Güç | kapı değişmez; aylıkta "ayırt edilemedi"nin beklenen sonuç olduğu rapora yazılır | kullanıcı bu güçle aylık ufku birincil tutmaya DEĞMEYECEĞİNE karar verebilir (haftalığı birincil yapmak) — kayda geçer |
+
+**Kabul edilen sapmalar (onaydan bağımsız, kayıt):** (1) **Hayatta kalan yanlılığı** — 13 sembol
+bugünden seçildi; bahçe simetrik olduğu için seviye değil ama sıralamanın evreni etkilenir.
+(2) Nakit getirisi 0. (3) Perp fiyatı spot yerine. (4) Evren dönem içinde büyür (SUI, ETHFI,
+PENGU sonradan girer; `|E_T|` raporlanır). (5) Stop'suz ve kaldıraçsız: bahçe evin kurallarıyla
+(kural 11, 14) işlem yapan stratejiler DEĞİLDİR — sonuç evin modellerine doğrudan taşınmaz (1).
+
+### 16. Uygulama planı (onaydan SONRA, ayrı commit'ler)
+
+1. `scripts/vault.py` — `KASA_START` (tek sabit) ve `assert_before_vault(ts)`; §7.8'in
+   uygulaması. Test: kesimden sonraki bir `now`/`end` istenirse hata.
+2. `scripts/measure_model_momentum.py` — iki aşama. **`preflight`:** sembol başına 1H/4H ilk/son
+   bar, eksik saat, 1H ↔ 4H tutarlılık kapısı, uygunluk tarihleri, çift kuralının sonucu ve `N`
+   (pozisyon serilerinden; **hiçbir getiri, IC ya da sıralama üretmez** — test);
+   tekrarlanabilir. **`measure`:** 4–9'un tamamı, tek sefer. `strategies/*`,
+   `core/portfolio.py`, `core/engine.py`, `core/ledger.py`, `core/metrics.py` import EDİLMEZ
+   (test); göstergeler `core/indicators.py`den, günlük kapanış
+   `measure_regime.py::daily_closes`ten, yüzdelikler `backtest_dc.py::_percentiles`ten,
+   pencereler `backtest_ema.py`den, kesim `vault.py`den.
+3. Testler: ileriye bakış (`T` sonrası bozulunca `T`'deki ağırlık değişmez, her aile için);
+   tersin saatlik getirisinin birebir `−R` ve dönem toplamının `−G` olması; bahçe brüt
+   ortalamasının her dönemde 0 olması; Bollinger/Donchian vektörel ↔ `core/indicators.py`
+   birebir; devir/maliyet aritmetiği (elle hesaplanmış küçük örnek); çift kuralı; yarım
+   dönemin dışlanması; blok bootstrap determinizmi; BH; kasaya ait bar çekilmemesi; çıkış
+   kodları (3 = veri kapısı).
+4. `.github/workflows/measure-model-momentum.yml` — `measure-vol-target.yml` deseni: aşama
+   **`scripts/trigger_stage.py`den** (karar 64; `.github/triggers/mm-preflight*.run`,
+   `mm-measure*.run`), ölçüm işi `contents: read`; sonuçlar ayrı bir `pin-results` işiyle
+   `docs/data/model_momentum*`e sabitlenir (dönem çiftlerinin strateji × dönem getiri
+   matrisi dâhil). Cron YOK. `tests/test_trigger_stage.py` workflow'u listeden kendisi bulur.
+5. `CLAUDE.md` tablosuna betik, workflow ve `vault.py` satırları; `docs/decisions.md`'ye sonuç kaydı.
+
+---
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
@@ -5570,6 +5913,27 @@ Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıka
    `scripts/trigger_stage.py`den okur: ekleyen commit başka bir uzak dalda da duruyorsa
    dosya yok sayılır ve bir `notice` yazılır. Aksi hâlde 1. madde bir `git merge` kadar
    kolay delinirdi.
+8. **KASA — 2026-09-27T00:00:00Z'den sonra biriken veri hiçbir tezin GELİŞTİRİLMESİNDE
+   kullanılmaz** *(2026-09-27, kullanıcı kararı; §6p ile açıldı, karar 67)*.
+   - **Kapsam:** bu andan sonra kapanan her bar, her fonlama kaydı ve her defter satırı.
+     "Geliştirme" = fikir ya da aile seçimi, parametre/eşik seçimi, teşhis, bir ön-kaydın
+     dönem A'sı ve dönem B'si. Bu tarihten sonra yazılan her ön-kaydın B'si **en geç kasa
+     başlangıcında biter** — "B sonu = koşu anı" yeni tezlerde artık kasa başlangıcı demektir.
+   - **Kasa yalnızca bir SINAMA için açılır:** A ve B'yi geçmiş ve DONDURULMUŞ (betik, ön-kayıt
+     ve TADİLAT'ların commit hash'leri bir dondurma kaydında) bir tezin, kasaya dokunmadan önce
+     ön-kayda alınmış TEK seferlik sınaması. Asgari kasa uzunluğu o ön-kayıtta, sonuç görülmeden
+     yazılır; sonuç sicile girer (§6c).
+   - **Kasa sonucu da kasa verisidir:** sınaması görülen tez değiştirilemez; değiştirilmiş hâli
+     YENİ bir tezdir ve kasa ona KAPALIDIR (onun için artık görülmüş veridir). O tezin ardılı
+     (ör. bir seçici) kasa sonucuna göre değiştirilemez.
+   - **Canlı katmanlar koşmaya devam eder** ve ön-kayıtlı kabul kapılarının canlı okunması bu
+     kuralın dışındadır — onlar zaten ileriye dönük, önceden tanımlı bir ölçümdür. Ama canlı
+     defterin kasa dönemine ait satırlarından (bir kırılım, bir grup ortalaması) yeni bir tez
+     TÜRETMEK kasa ihlalidir; karar 27 ve 28'in hatası tam olarak buydu.
+   - **Uygulama tek sabittedir** (`scripts/vault.py::KASA_START`, §6p > 16): ölçüm betikleri
+     veri çekimini kesimle sınırlar ve bir testle sabitler. Kesim DEĞİŞTİRİLMEZ; yeni bir kasa
+     ancak kullanıcı kararıyla ve daha İLERİ bir kesimle açılabilir (geriye çekmek görülmüş
+     veriyi kasaya geri koymak olurdu).
 
 ---
 

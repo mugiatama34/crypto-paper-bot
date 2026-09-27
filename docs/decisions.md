@@ -5390,3 +5390,27 @@ sonucun hangi cümleyle okunacağını belirler (§6o > TADİLAT-1 > 4).
 σ̂'ın sonraki 30 günü öngörüsü pozitif ama zayıf (Spearman 0.22–0.38). Aynı ortalama maruziyetle
 sabit ağırlık aynı oynaklık düşüşünü aynı Sharpe'la veriyor. Hiçbir modele ya da boyutlandırmaya
 bir şey eklenmez; tez sicilde (9. satır) kalır. Ayrıntı §6o > SONUÇ.
+
+## 67. Model momentumu ölçümü ve KASA kuralı — ön-kayıt §6p, §7.8 *(2026-09-27)*
+
+Tez (kullanıcı): bir stratejinin son dönem getirisi sonraki dönemi öngörür (faktör momentumu).
+**Model DEĞİL:** evin modelleri bir kesit veremediği için ölçüm motor dışında, `ema` evreninin
+13 sembolünde, vektörel kurulan 176 stratejilik bir bahçede (7 aile × sabit ızgara, 88 taban +
+her birinin TERSİ) yapılır; kural 3/11 delinmez çünkü boyutlanan bir model yoktur. Her dönem
+stratejiler geçen dönemin brüt getirisine göre sıralanır; sonraki dönemin Spearman IC'si ve
+üst − alt beşte bir farkı, aylık (birincil) ve haftalık ufukta, dönem serisinin blok
+bootstrap'ıyla ölçülür; BH m = 2, A'da ölç B'de doğrula.
+
+Ön-kaydın kullanıcı tanımına eklediği tek İÇERİK düzeltmesi: tersler bahçeyi ORTALAMADA
+simetrik yapar ama SIRALAMADA piyasadan temizlemez — net maruziyet taşıyan bir strateji ile
+tersi, piyasa aynı yöne iki dönem üst üste gittiğinde iki dönem üst üste aynı uçta durur. Kapı
+değişmedi; aynı test net maruziyeti hedge edilmiş artık getiriyle de koşulur ve sonucun hangi
+cümleyle okunacağını mekanik belirler (§6p > 6, 9). Güç dürüstçe yazıldı: aylık ufukta gerçekçi
+bir etkide A ∧ B'nin birlikte geçme olasılığı %3–16'dır; "ayırt edilemedi" beklenen sonuçtur.
+
+**KASA (§7.8, genel kural):** 2026-09-27T00:00Z'den sonra biriken veri hiçbir tezin
+geliştirilmesinde kullanılmaz; yeni ön-kayıtların B'si kasa başlangıcında biter; kasa yalnızca
+A/B'yi geçmiş ve dondurulmuş bir tezin tek seferlik sınaması için açılır ve kasa sonucu da
+kasa verisidir. Canlı katmanların ön-kayıtlı kapıları kuralın dışında, canlı defterden tez
+türetmek içindedir. On iki onay noktası (§6p > 15) kullanıcı kararını bekler; kod onaydan önce
+yazılmaz.
