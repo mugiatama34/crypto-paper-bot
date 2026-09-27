@@ -1,0 +1,99 @@
+# OKX fonlama geçmişinin GÜNLÜK arşivi (scripts/archive_funding.py). ALTYAPI — ölçüm değil.
+#
+# Neden: REST uç noktası ~3 aylık KAYAN bir pencere tutuyor (karar 50). Pencereden düşen
+# kayıt bir daha gelmez; tek yol onu düşmeden önce kendimiz yazmak. İlk koşu pencereyi
+# (~3 ay) doldurur, sonrakiler birikir.
+#
+# Ne DEĞİL: `core/funding.py` bu arşivi okumaz. Arşivi bir ölçümde kullanmak ayrı bir
+# karardır (karar 50'nin damga bazlı tutarlılık kanıtı). Bu iş yalnızca veriyi korur.
+#
+# Neden `measure-funding.yml`e eklenmedi: o dosya ELLE tetiklenen, `contents: read`,
+# cron'suz bir ÖLÇÜM işidir ve cron'suzluğu bilinçlidir (docs/backtest.md > 7: periyodik
+# bir dağılım koşusu "sonucu görüp tekrar koşma"yı otomatikleştirirdi). Bu iş ise
+# periyodik OLMAK ZORUNDA ve yazmak zorunda — ikisini tek dosyada birleştirmek o dosyanın
+# yetkisini genişletirdi. Bu iş hiçbir sonuç, oran ya da eşik basmaz: yalnızca sayım ve damga.
+#
+# Zamanlama: fonlama damgaları 00/08/16 UTC. Günde bir koşu pencereyi rahatça örter
+# (pencere ~90 gün; bir haftalık cron kesintisi bile kayıp üretmez).
+name: archive-funding
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+# Kendi grubu: iki arşiv koşusu aynı dosyaya aynı anda ekleme yapmasın.
+concurrency:
+  group: archive-funding
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Çıkış kodu 0 = tamam (yeni satır yoksa da 0, ama betik `::warning` yazar — boş
+      # koşu sessiz geçmez); 1 = bütünlük hatası / evren çözülemedi / hiçbir sembol
+      # çekilemedi. 1'de bile çekilebilen sembollerin satırları diske yazılmıştır ve
+      # aşağıdaki commit adımı (`always()`) onları taşır — tek bir sembolün arızası
+      # ötekilerin pencereden düşen kaydını kaybettirmemeli.
+      - name: Archive funding history
+        run: python scripts/archive_funding.py
+
+      - name: Commit archive
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -d data/funding_archive ]; then
+            echo "arşiv klasörü yok, commit atlanıyor"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # YALNIZCA arşiv dosyaları: evren dosyası (data/universe.json) gibi yan
+          # ürünler depoya girmez.
+          git add data/funding_archive
+
+          if git diff --cached --quiet; then
+            echo "arşivde değişiklik yok, commit atlanıyor"
+            exit 0
+          fi
+
+          # Append-only: mevcut bir satırın DEĞİŞTİĞİ ya da silindiği bir diff commit
+          # edilmez. Betik bunu zaten yapmaz; bu kapı sözü tek bir fonksiyona değil
+          # commit'in kendisine bağlar.
+          if git diff --cached --numstat -- data/funding_archive | awk '$2 != 0 {bad=1} END {exit !bad}'; then
+            echo "::error title=Fonlama arşivi::append-only ihlali — silinen/değişen satır var, commit edilmedi"
+            git diff --cached --numstat -- data/funding_archive
+            exit 1
+          fi
+
+          git commit -m "funding-archive: $(date -u +%Y-%m-%d) [skip ci]"
+
+          for attempt in 1 2 3 4; do
+            if git push; then
+              exit 0
+            fi
+            echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            sleep $((2 ** attempt))
+          done
+          echo "push 4 denemede başarısız oldu"
+          exit 1
