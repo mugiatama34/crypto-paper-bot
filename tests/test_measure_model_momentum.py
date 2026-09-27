@@ -344,3 +344,27 @@ def test_forbidden_imports():
     assert not modules & forbidden
     assert not any(m.startswith("strategies") for m in modules)
     assert "scripts.vault" in modules
+
+
+# (12) preflight-2 (§6q > TADİLAT-3): yalnızca pozisyon/kapsam bilgisi -----------------
+def test_cash_share_and_monthly_eligibility(small):
+    _, _, market = small
+    w = mm.xsec_weights(market, days=3, k=4, long_only=False)   # 9 sembol ≥ 8: pozisyon var
+    share = mm.cash_share(w, market)
+    assert set(share) == {"A", "B"} and share["B"] is None      # sentetik pencere B'ye ulaşmıyor
+    assert 0.0 <= share["A"] < 1.0
+    none = mm.cash_share(np.zeros_like(w), market)
+    assert none["A"] == 1.0
+    months = mm.eligibility_by_month(market)
+    assert list(months) == ["2022-01", "2022-02", "2022-03", "2022-04"]
+    assert months["2022-01"]["max"] == 0 and months["2022-04"]["min"] == len(SYMBOLS)
+
+
+def test_consistency_reports_where_mismatches_are():
+    idx = pd.date_range("2022-01-01", periods=48, freq="h", tz="UTC")
+    h1 = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 100.101, "volume": 1.0}, index=idx)
+    h4 = to_4h(h1)
+    h4.loc[h4.index[2], "close"] = 100.1
+    out = mm.consistency(h1, h4)
+    assert out["mismatch"] == 1 and out["mismatch_bars"] == [str(h4.index[2])]
+    assert out["first_mismatch"] == out["last_mismatch"] and out["max_rel_diff"] > 0

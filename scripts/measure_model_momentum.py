@@ -385,6 +385,31 @@ def zoo() -> list[Base]:
     return bases
 
 
+def cash_share(weights: np.ndarray, market: Market) -> dict[str, float | None]:
+    """Dönem başına, evrende en az bir uygun sembol varken HİÇ pozisyon taşınmayan saat payı.
+
+    Yalnızca ağırlıklardan (pozisyonlardan) gelir, getiri görmez — preflight'ta raporlanır
+    (§6q > TADİLAT-3): F6'nın k=4 kolu gibi evren darken fiilen nakitte kalan bir taban aile
+    kırılımında görünmez biçimde boş kalırdı.
+    """
+    flat = ~np.any(weights != 0.0, axis=1)
+    live = market.count > 0
+    out: dict[str, float | None] = {}
+    for dn, (lo, hi) in period_bounds().items():
+        mask = live & (market.hours >= lo) & (market.hours < hi)
+        out[dn] = float(flat[mask].mean()) if mask.any() else None
+    return out
+
+
+def eligibility_by_month(market: Market) -> dict[str, dict[str, float]]:
+    """UTC ayı başına uygun sembol sayısı (en az / medyan / en çok), dönem A'dan itibaren."""
+    series = pd.Series(market.count, index=market.hours)
+    series = series[series.index >= period_bounds()["A"][0]]
+    grouped = series.groupby(series.index.strftime("%Y-%m"))
+    return {month: {"min": int(v.min()), "median": float(v.median()), "max": int(v.max())}
+            for month, v in grouped}
+
+
 def weight_digest(weights: np.ndarray) -> str:
     """Birebir eşitlik için özet; `-0.0` ile `0.0` aynı sayılır."""
     return hashlib.sha256(np.ascontiguousarray(weights + 0.0).tobytes()).hexdigest()
@@ -703,11 +728,13 @@ def build_zoo(market: Market, bases: Sequence[Base], *, settings: Settings,
     from_a = market.hours >= a_start
     tables = {h: period_table(market.hours, h) for h in HORIZONS} if with_returns else {}
     digests = []
+    cash: dict[str, dict[str, float | None]] = {}
     per_base: dict[str, dict[str, Any]] = {}
     for base in bases:
         w = base.build(market)
         sub = w[from_a]
         digests.append((base.id, weight_digest(sub), weight_digest(-sub), bool(not np.any(sub))))
+        cash[base.id] = cash_share(w, market)
         if with_returns:
             hr = hourly(w, market, cost_rate=settings.cost_rate)
             per_base[base.id] = {
@@ -719,6 +746,8 @@ def build_zoo(market: Market, bases: Sequence[Base], *, settings: Settings,
             }
         del w
     dedup = deduplicate(digests)
+    families = {b.id: b.family for b in bases}
+    dedup["cash_share"] = {bid: {"family": families[bid], **v} for bid, v in cash.items()}
     if not with_returns:
         return dedup, None
 
@@ -937,11 +966,19 @@ def consistency(h1: pd.DataFrame, h4: pd.DataFrame) -> dict[str, Any]:
     both = sub.notna().to_numpy()
     c4 = h4["close"].to_numpy(dtype=float)[both]
     c1 = sub.to_numpy(dtype=float)[both]
-    mismatch = int((np.abs(c4 - c1) > CONSISTENCY_REL * np.abs(c4)).sum())
+    rel = np.abs(c4 - c1) / np.abs(c4)
+    bad = rel > CONSISTENCY_REL
+    mismatch = int(bad.sum())
     compared = int(both.sum())
     share = mismatch / compared if compared else None
+    # Nerede ve ne büyüklükte: bir kapı kararının (sembol dışlama) nedenini okunur kılar.
+    stamps = h4.index[both][bad]
     return {"compared": compared, "mismatch": mismatch, "missing_sub_bar": int((~both).sum()),
-            "share": share, "ok": bool(compared and share is not None and share <= CONSISTENCY_MAX_SHARE)}
+            "share": share, "ok": bool(compared and share is not None and share <= CONSISTENCY_MAX_SHARE),
+            "first_mismatch": str(stamps[0]) if mismatch else None,
+            "last_mismatch": str(stamps[-1]) if mismatch else None,
+            "max_rel_diff": float(rel[bad].max()) if mismatch else None,
+            "mismatch_bars": [str(t) for t in stamps] if mismatch <= 10 else None}
 
 
 def coverage(frame: pd.DataFrame, step: pd.Timedelta) -> dict[str, Any]:
@@ -1007,6 +1044,7 @@ def run(args: argparse.Namespace) -> int:
             "stage": "preflight", "kasa_start": str(KASA_START), "data_start": str(DATA_START),
             "periods": bounds, "bases": len(bases), "dedup": dedup, **data_report,
             "pairs": {h: {dn: len(t.pairs[dn]) for dn in ("A", "B")} for h, t in tables.items()},
+            "eligible_by_month": eligibility_by_month(market),
         }
         print("=== PREFLIGHT BEGIN ===")
         print(json.dumps(clean(report), indent=2, ensure_ascii=False, default=_json, allow_nan=False))
