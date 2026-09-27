@@ -7196,6 +7196,25 @@ elle hesaplanmış bir örneğini sınar.
 
 **15'in durumu:** O1–O9 kararlaştırıldı. Kod bu TADİLAT'tan sonra yazılır.
 
+### PREFLIGHT — kapsam ve etiket tanımlılığı *(2026-09-27, #36338015986, çıkış 0; yalnızca kapsam, getiri/doku değeri/etiket yok)*
+
+- **Tutarlılık (15m ↔ 4H):** 13 sembolün 13'ü geçti. Kesinlik farkı yalnızca SOL 208, DOGE 206,
+  AVAX 204 bar, hepsi 2022-04-23 → 2022-06-01 04:00 içinde; `outside_known_window` 13 sembolde
+  BOŞ; ham metni olmayan bar 0. Kalan uyuşmazlıklar §6q > PREFLIGHT-2'dekiyle birebir ve TEK
+  güne aittir: 2022-12-18 00:00 ve/veya 08:00 (BTC 2; ETH, SOL, XRP, DOGE, AVAX, LINK, ADA, NEAR
+  1'er). Yeni bir olay yok. 15m serilerinde iç boşluk 0; "alt bar eksik" sayıları (ör. 2004)
+  yalnızca 15m çekiminin başladığı 2021-10-01'den önceki 4H barlarıdır.
+- **15m derinliği:** 15m geçmişi 9 eski sembolde 2021-10-01'e, geç listelenenlerde (BNB, SUI,
+  PENGU, ETHFI) listelemenin ilk gününe ulaşıyor.
+- **Kol başına uygunluk:** üç kolda da A'nın ilk barında **9**, B'nin ilk barında **12** uygun
+  sembol (asgari 5) → üç kol iki dönemde de değerlendirilebilir. BNB 2023-02-21, SUI 2023-07-04,
+  ETHFI 2024-05-17, PENGU 2025-02-15'te girer (60 günlük yaş kuralı).
+- **Doku etiketi:** A'da 903, B'de 812 günün hiçbirinde tanımsız etiket beklenmiyor (sayımlardan
+  tahmin); V ve D'ye giren asgari sembol A'da 9, B'de 12. 4H verisi 2020-11-01'den başladığı için
+  365 günlük eşiğin ısınması A'dan önce doluyor.
+- **Hafta/kaydırma:** A 129 hafta / 844 kaydırma, B 116 hafta / 753 kaydırma — ön-kayıtla birebir.
+  59 taban/kol.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
