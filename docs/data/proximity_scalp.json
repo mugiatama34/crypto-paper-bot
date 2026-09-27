@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-09-27T13:17:20.075713+00:00",
+  "generated_at": "2026-09-27T13:32:15.007463+00:00",
   "kind": "proximity",
   "layers": [
     {
-      "as_of": "2026-09-27T13:00:00+00:00",
+      "as_of": "2026-09-27T13:15:00+00:00",
       "assumptions": [
         "TAHMİN DEĞİLDİR: bir sonraki bar bu fiyatta KAPANIRSA modelin kendi kodu bu sinyali üretir. Olasılık ölçülmez.",
         "Hipotetik bar: open = son kapanış, close = aday fiyat, high/low = gövdenin uçları (fitil yok), volume = son 20 barın medyanı.",
@@ -18,22 +18,25 @@
         "range_pct": 5.0,
         "step_pct": 0.05
       },
-      "hypothetical_bar_at": "2026-09-27T13:15:00+00:00",
+      "hypothetical_bar_at": "2026-09-27T13:30:00+00:00",
       "layer": "scalp",
       "models": [
         {
           "model": "scalp_fixed",
           "no_trigger": [
+            "ADA-USDT-SWAP",
+            "BNB-USDT-SWAP",
+            "DOGE-USDT-SWAP",
+            "PENGU-USDT-SWAP",
+            "SOL-USDT-SWAP",
             "SUI-USDT-SWAP"
           ],
           "position_state": {
             "max_positions": 5,
             "max_short_positions": 3,
-            "open_keys": [
-              "XRP-USDT-SWAP|long"
-            ],
-            "open_long": 1,
-            "open_positions": 1,
+            "open_keys": [],
+            "open_long": 0,
+            "open_positions": 0,
             "open_short": 0,
             "quota_full": false
           },
@@ -56,37 +59,47 @@
           "triggers": [
             {
               "arm": "rsi2_reversal",
-              "atr": 0.004907142857142864,
+              "atr": 0.006285714285714307,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 175362",
+                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 53088.4",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.0733216885007094,
-              "distance_pct": 0.04999999999998752,
+              "direction": "short",
+              "distance_atr": 0.1217124999999714,
+              "distance_pct": 0.04999999999998842,
               "gates": [
                 {
                   "name": "house_gates",
-                  "passed": false
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
                 }
               ],
-              "gates_passed": false,
-              "last_close": 0.7196,
+              "gates_passed": true,
+              "last_close": 1.5301,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 3.311682918169289
+                  "value": 1.9495291707316533
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.5877329171147941
+                  "value": 2.0000000000000075
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 4.999999999999984
                 }
               ],
               "position_state": {
@@ -97,129 +110,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=4.30 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.045% < 0.200%; engel Bollinger(20) orta bandı 0.733973",
-              "reward_risk": 0.5877329171147941,
-              "stop_distance_pct": 3.311682918169289,
-              "stop_price": 0.6961170142857142,
-              "symbol": "ETHFI-USDT-SWAP",
-              "target_price": 0.73397299,
-              "trigger_price": 0.7199597999999999
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.004907142857142864,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 175362",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.0733216885007094,
-              "distance_pct": -0.04999999999998752,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.7196,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 3.3149962577572514
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.6164049023514091
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.051% < 0.200%; engel Bollinger(20) orta bandı 0.733937",
-              "reward_risk": 0.6164049023514091,
-              "stop_distance_pct": 3.3149962577572514,
-              "stop_price": 0.6953974142857143,
-              "symbol": "ETHFI-USDT-SWAP",
-              "target_price": 0.73393701,
-              "trigger_price": 0.7192402000000001
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.005842857142857165,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 52671.2",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.13021882640583549,
-              "distance_pct": -0.049999999999987714,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 1.5217,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.8658783949377606
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.4897236941210598
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": false,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.166% < 0.200%; engel Bollinger(20) orta bandı 1.53484",
-              "reward_risk": 0.4897236941210598,
-              "stop_distance_pct": 1.8658783949377606,
-              "stop_price": 1.4925602750000002,
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.181% < 0.200%; engel Bollinger(20) orta bandı 1.53503",
+              "reward_risk": 2.0000000000000075,
+              "stop_distance_pct": 1.9495291707316533,
+              "stop_price": 1.5607097107142855,
               "symbol": "XRP-USDT-SWAP",
-              "target_price": 1.5348369575,
-              "trigger_price": 1.5209391500000002
+              "target_price": 1.4711757285714282,
+              "trigger_price": 1.5308650499999998
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 121.57142857142753,
+              "atr": 132.6071428571418,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 67210.5",
+                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 69130.1",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.34797238542886516,
-              "distance_pct": -0.04999999999999353,
+              "direction": "short",
+              "distance_atr": 0.32011284675457724,
+              "distance_pct": 0.04999999999998889,
               "gates": [
                 {
                   "name": "house_gates",
@@ -227,19 +138,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 84607.0,
+              "last_close": 84898.5,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 0.6720144313244372
+                  "value": 0.7326725488144256
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.4250112006415152
+                  "value": 0.170303941194187
                 }
               ],
               "position_state": {
@@ -249,28 +160,28 @@
                 "opposite_position": false,
                 "quota_full": false
               },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.173% < 0.200%; engel Bollinger(20) orta bandı 84806.2",
-              "reward_risk": 0.4250112006415152,
-              "stop_distance_pct": 0.6720144313244372,
-              "stop_price": 83996.4095357143,
+              "price_direction": "up",
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.196% < 0.200%; engel Bollinger(20) orta bandı 84835",
+              "reward_risk": 0.170303941194187,
+              "stop_distance_pct": 0.7326725488144256,
+              "stop_price": 85563.28826785713,
               "symbol": "BTC-USDT-SWAP",
-              "target_price": 84806.224825,
-              "trigger_price": 84564.6965
+              "target_price": 84834.9624625,
+              "trigger_price": 84940.94924999999
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 4.874285714285699,
+              "atr": 5.359999999999998,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 199700",
+                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184515",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.276770808909733,
-              "distance_pct": -0.050000000000000315,
+              "direction": "short",
+              "distance_atr": 0.2526417910447511,
+              "distance_pct": 0.04999999999999503,
               "gates": [
                 {
                   "name": "house_gates",
@@ -278,19 +189,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 2698.12,
+              "last_close": 2708.32,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 0.8670297798024059
+                  "value": 0.9512762122765944
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.5516941834814889
+                  "value": 2.0
                 }
               ],
               "position_state": {
@@ -300,48 +211,58 @@
                 "opposite_position": false,
                 "quota_full": false
               },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.121% < 0.200%; engel Bollinger(20) orta bandı 2709.67",
-              "reward_risk": 0.5516941834814889,
-              "stop_distance_pct": 0.8670297798024059,
-              "stop_price": 2673.3891328571426,
+              "price_direction": "up",
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.141% < 0.200%; engel Bollinger(20) orta bandı 2709.98",
+              "reward_risk": 2.0,
+              "stop_distance_pct": 0.9512762122765944,
+              "stop_price": 2735.4506457142857,
               "symbol": "ETH-USDT-SWAP",
-              "target_price": 2709.670547,
-              "trigger_price": 2696.77094
+              "target_price": 2658.121188571429,
+              "trigger_price": 2709.67416
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 0.0622857142857144,
+              "atr": 0.06578571428571424,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 63338.6",
+                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 65523.2",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.11319610091743211,
-              "distance_pct": -0.0500000000000005,
+              "direction": "short",
+              "distance_atr": 0.10782736156351592,
+              "distance_pct": 0.049999999999999045,
               "gates": [
                 {
                   "name": "house_gates",
-                  "passed": false
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
                 }
               ],
-              "gates_passed": false,
-              "last_close": 14.101,
+              "gates_passed": true,
+              "last_close": 14.187,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 2.0704185863586333
+                  "value": 2.1766938782368483
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.6751043295365484
+                  "value": 1.9999999999999942
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 5.00000000000001
                 }
               ],
               "position_state": {
@@ -351,48 +272,58 @@
                 "opposite_position": false,
                 "quota_full": false
               },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.123% < 0.200%; engel Bollinger(20) orta bandı 14.2909",
-              "reward_risk": 0.6751043295365484,
-              "stop_distance_pct": 2.0704185863586333,
-              "stop_price": 13.802145750000001,
+              "price_direction": "up",
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.124% < 0.200%; engel Bollinger(20) orta bandı 14.2885",
+              "reward_risk": 1.9999999999999942,
+              "stop_distance_pct": 2.1766938782368483,
+              "stop_price": 14.503055464285714,
               "symbol": "LINK-USDT-SWAP",
-              "target_price": 14.290947475000001,
-              "trigger_price": 14.0939495
+              "target_price": 13.576169571428572,
+              "trigger_price": 14.1940935
             },
             {
-              "arm": "vwap_pullback",
-              "atr": 0.00014442857142857177,
+              "arm": "rsi2_reversal",
+              "atr": 0.005085714285714289,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 381822; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 994483",
+                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184032",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.07067161226507138,
-              "distance_pct": 0.09999999999998227,
+              "direction": "short",
+              "distance_atr": 0.07118960674157351,
+              "distance_pct": 0.05000000000000037,
               "gates": [
                 {
                   "name": "house_gates",
-                  "passed": false
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
                 }
               ],
-              "gates_passed": false,
-              "last_close": 0.010207,
+              "gates_passed": true,
+              "last_close": 0.7241,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 6.9148300509131415
+                  "value": 3.424316705064113
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 1.0018266035859755
+                  "value": 2.0000000000000044
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 4.9999999999999885
                 }
               ],
               "position_state": {
@@ -403,27 +334,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.0102131 (54 bar); bar aralığı [0.010207, 0.0102172] VWAP'e dokundu ve 0.0102172 ile üstünde kapandı; trend EMA20=0.0102439 > EMA50=0.0101073; engel günün zirvesi 0.010925",
-              "reward_risk": 1.0018266035859755,
-              "stop_distance_pct": 6.9148300509131415,
-              "stop_price": 0.009510704499999998,
-              "symbol": "PENGU-USDT-SWAP",
-              "target_price": 0.010925,
-              "trigger_price": 0.010217206999999999
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.082% < 0.200%; engel Bollinger(20) orta bandı 0.733568",
+              "reward_risk": 2.0000000000000044,
+              "stop_distance_pct": 3.424316705064113,
+              "stop_price": 0.7492699249999999,
+              "symbol": "ETHFI-USDT-SWAP",
+              "target_price": 0.6748463,
+              "trigger_price": 0.72446205
             },
             {
-              "arm": "vwap_pullback",
-              "atr": 121.57142857142753,
+              "arm": "rsi2_reversal",
+              "atr": 0.006285714285714307,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 67210.5",
+                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 53088.4",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.6959447708577303,
-              "distance_pct": 0.09999999999998706,
+              "direction": "short",
+              "distance_atr": 0.8519875000000118,
+              "distance_pct": 0.350000000000006,
               "gates": [
                 {
                   "name": "house_gates",
@@ -431,19 +362,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 84607.0,
+              "last_close": 1.5301,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 0.688846720245659
+                  "value": 2.050470146945575
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.6794586126659132
+                  "value": 0.006275637269888223
                 }
               ],
               "position_state": {
@@ -454,231 +385,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=84650.4 (54 bar); bar aralığı [84607, 84691.6] VWAP'e dokundu ve 84691.6 ile üstünde kapandı; trend EMA20=84771.9 > EMA50=84618.6; engel günün zirvesi 85088",
-              "reward_risk": 0.6794586126659132,
-              "stop_distance_pct": 0.688846720245659,
-              "stop_price": 84108.21164285715,
-              "symbol": "BTC-USDT-SWAP",
-              "target_price": 85088.0,
-              "trigger_price": 84691.60699999999
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.0004864285714285742,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 33207.3; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 62846",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.49842878120409084,
-              "distance_pct": 0.24999999999999103,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.09698,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 2.480486025310312
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.6914734651867117
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.0971792 (54 bar); bar aralığı [0.09698, 0.0972224] VWAP'e dokundu ve 0.0972224 ile üstünde kapandı; trend EMA20=0.097693 > EMA50=0.0973556; engel günün zirvesi 0.09889",
-              "reward_risk": 0.6914734651867117,
-              "stop_distance_pct": 2.480486025310312,
-              "stop_price": 0.09481086071428568,
-              "symbol": "DOGE-USDT-SWAP",
-              "target_price": 0.09889,
-              "trigger_price": 0.09722244999999999
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.4678571428571437,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 80379.1; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 154324",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.6552748091602938,
-              "distance_pct": 0.24999999999999606,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 122.63,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.8873190156329422
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.8677787911322571
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=122.895 (54 bar); bar aralığı [122.63, 122.937] VWAP'e dokundu ve 122.937 ile üstünde kapandı; trend EMA20=123.446 > EMA50=122.73; engel günün zirvesi 124.95",
-              "reward_risk": 0.8677787911322571,
-              "stop_distance_pct": 1.8873190156329422,
-              "stop_price": 120.61636964285714,
-              "symbol": "SOL-USDT-SWAP",
-              "target_price": 124.95,
-              "trigger_price": 122.93657499999999
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 4.874285714285699,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 199700",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 1.6606248534583048,
-              "distance_pct": 0.2999999999999851,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 2698.12,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 0.9530229104668084
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.6973653439565375
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=2705.98 (54 bar); bar aralığı [2698.12, 2706.21] VWAP'e dokundu ve 2706.21 ile üstünde kapandı; trend EMA20=2708.44 > EMA50=2704.65; engel günün zirvesi 2724.2",
-              "reward_risk": 0.6973653439565375,
-              "stop_distance_pct": 0.9530229104668084,
-              "stop_price": 2680.423517142857,
-              "symbol": "ETH-USDT-SWAP",
-              "target_price": 2724.2,
-              "trigger_price": 2706.2143599999995
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.005842857142857165,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 52671.2",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 1.1719694376527854,
-              "distance_pct": 0.4499999999999916,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 1.5217,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.998807962764991
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.5646745410306465
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": false,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=1.52802 (54 bar); bar aralığı [1.5217, 1.52855] VWAP'e dokundu ve 1.52855 ile üstünde kapandı; trend EMA20=1.53336 > EMA50=1.53041; engel günün zirvesi 1.5458",
-              "reward_risk": 0.5646745410306465,
-              "stop_distance_pct": 1.998807962764991,
-              "stop_price": 1.4979949178571428,
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.197% < 0.200%; engel Bollinger(20) orta bandı 1.53526",
+              "reward_risk": 0.006275637269888223,
+              "stop_distance_pct": 2.050470146945575,
+              "stop_price": 1.5669394035714288,
               "symbol": "XRP-USDT-SWAP",
-              "target_price": 1.5458,
-              "trigger_price": 1.52854765
+              "target_price": 1.5352577675,
+              "trigger_price": 1.53545535
             },
             {
               "arm": "vwap_pullback",
-              "atr": 0.0014999999999999974,
+              "atr": 0.06578571428571424,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 17454.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 34161.4",
+                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 65523.2",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
               "direction": "long",
-              "distance_atr": 0.7613999999999874,
-              "distance_pct": 0.4499999999999918,
+              "distance_atr": 0.8626188925081544,
+              "distance_pct": 0.40000000000000485,
               "gates": [
                 {
                   "name": "house_gates",
@@ -686,19 +413,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 0.2538,
+              "last_close": 14.187,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 2.975759706111416
+                  "value": 2.2936077939999646
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.6007937068368961
+                  "value": 0.723156104194818
                 }
               ],
               "position_state": {
@@ -709,78 +436,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.254859 (54 bar); bar aralığı [0.2538, 0.254942] VWAP'e dokundu ve 0.254942 ile üstünde kapandı; trend EMA20=0.256036 > EMA50=0.255271; engel günün zirvesi 0.2595",
-              "reward_risk": 0.6007937068368961,
-              "stop_distance_pct": 2.975759706111416,
-              "stop_price": 0.24735563571428573,
-              "symbol": "ADA-USDT-SWAP",
-              "target_price": 0.2595,
-              "trigger_price": 0.2549421
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.0622857142857144,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 63338.6",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 2.2639220183486137,
-              "distance_pct": 0.9999999999999974,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 14.101,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 2.3848208825259154
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.7006992565798453
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=14.2411 (54 bar); bar aralığı [14.101, 14.242] VWAP'e dokundu ve 14.242 ile üstünde kapandı; trend EMA20=14.2717 > EMA50=14.2461; engel günün zirvesi 14.48",
-              "reward_risk": 0.7006992565798453,
-              "stop_distance_pct": 2.3848208825259154,
-              "stop_price": 13.902363571428571,
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=14.2389 (55 bar); bar aralığı [14.187, 14.2437] VWAP'e dokundu ve 14.2437 ile üstünde kapandı; trend EMA20=14.2643 > EMA50=14.244; engel günün zirvesi 14.48",
+              "reward_risk": 0.723156104194818,
+              "stop_distance_pct": 2.2936077939999646,
+              "stop_price": 13.917052285714286,
               "symbol": "LINK-USDT-SWAP",
               "target_price": 14.48,
-              "trigger_price": 14.24201
+              "trigger_price": 14.243748
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 0.05992857142857133,
+              "atr": 0.06578571428571424,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 47635.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 96549.7",
+                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 65523.2",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 1.9851132300357488,
-              "distance_pct": -1.0999999999999936,
+              "direction": "short",
+              "distance_atr": 1.7252377850162817,
+              "distance_pct": 0.7999999999999973,
               "gates": [
                 {
                   "name": "house_gates",
@@ -788,172 +464,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 10.815,
+              "last_close": 14.187,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 3.118528768571043
+                  "value": 2.4262295317788682
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.9019897961915108
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.199% < 0.200%; engel Bollinger(20) orta bandı 10.9969",
-              "reward_risk": 0.9019897961915108,
-              "stop_distance_pct": 3.118528768571043,
-              "stop_price": 10.362476071428572,
-              "symbol": "AVAX-USDT-SWAP",
-              "target_price": 10.996901750000001,
-              "trigger_price": 10.696035
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 1.5142857142857176,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 38100.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 75486.9",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 6.672188679245288,
-              "distance_pct": -1.3000000000000036,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 777.2,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.4062117877231641
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 1.0654880875127448
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.199% < 0.200%; engel Bollinger(20) orta bandı 778.59",
-              "reward_risk": 1.0654880875127448,
-              "stop_distance_pct": 1.4062117877231641,
-              "stop_price": 756.3094,
-              "symbol": "BNB-USDT-SWAP",
-              "target_price": 778.58982,
-              "trigger_price": 767.0964
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.0014999999999999974,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 17454.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 34161.4",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 2.4533999999999803,
-              "distance_pct": -1.4499999999999857,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.2538,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 3.3955286473178887
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.690706346903492
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.198% < 0.200%; engel Bollinger(20) orta bandı 0.255986",
-              "reward_risk": 0.690706346903492,
-              "stop_distance_pct": 3.3955286473178887,
-              "stop_price": 0.2416270071428572,
-              "symbol": "ADA-USDT-SWAP",
-              "target_price": 0.25598599499999997,
-              "trigger_price": 0.25011990000000006
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.05992857142857133,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 47635.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 96549.7",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 2.8874374255065653,
-              "distance_pct": 1.6000000000000028,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 10.815,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 3.2114137605198714
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.8273835067406188
+                  "value": 0.01922741833213294
                 }
               ],
               "position_state": {
@@ -964,27 +487,78 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=10.9827 (54 bar); bar aralığı [10.815, 10.988] VWAP'e dokundu ve 10.988 ile üstünde kapandı; trend EMA20=10.98 > EMA50=10.9424; engel günün zirvesi 11.28",
-              "reward_risk": 0.8273835067406188,
-              "stop_distance_pct": 3.2114137605198714,
-              "stop_price": 10.635168571428572,
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.165% < 0.200%; engel Bollinger(20) orta bandı 14.2938",
+              "reward_risk": 0.01922741833213294,
+              "stop_distance_pct": 2.4262295317788682,
+              "stop_price": 14.647458857142855,
+              "symbol": "LINK-USDT-SWAP",
+              "target_price": 14.293824800000001,
+              "trigger_price": 14.300495999999999
+            },
+            {
+              "arm": "vwap_pullback",
+              "atr": 0.06450000000000003,
+              "conditions": [
+                {
+                  "detail": "varsayılan hacim 44406.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 94308.2",
+                  "name": "volume_confirm",
+                  "satisfied": false
+                }
+              ],
+              "direction": "long",
+              "distance_atr": 1.4355116279069764,
+              "distance_pct": 0.8500000000000001,
+              "gates": [
+                {
+                  "name": "house_gates",
+                  "passed": false
+                }
+              ],
+              "gates_passed": false,
+              "last_close": 10.893,
+              "measurements": [
+                {
+                  "name": "min_stop_pct",
+                  "threshold": 1.0,
+                  "unit": "%",
+                  "value": 2.9700936097023796
+                },
+                {
+                  "name": "min_reward_risk",
+                  "threshold": 1.5,
+                  "unit": "R",
+                  "value": 0.90231520577326
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "up",
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=10.9815 (55 bar); bar aralığı [10.893, 10.9856] VWAP'e dokundu ve 10.9856 ile üstünde kapandı; trend EMA20=10.9724 > EMA50=10.9405; engel günün zirvesi 11.28",
+              "reward_risk": 0.90231520577326,
+              "stop_distance_pct": 2.9700936097023796,
+              "stop_price": 10.659308178571429,
               "symbol": "AVAX-USDT-SWAP",
               "target_price": 11.28,
-              "trigger_price": 10.98804
+              "trigger_price": 10.9855905
             },
             {
-              "arm": "vwap_pullback",
-              "atr": 0.004907142857142864,
+              "arm": "rsi2_reversal",
+              "atr": 0.005085714285714289,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 175362",
+                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184032",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 2.6395807860261944,
-              "distance_pct": 1.799999999999998,
+              "direction": "short",
+              "distance_atr": 1.9933089887640365,
+              "distance_pct": 1.399999999999995,
               "gates": [
                 {
                   "name": "house_gates",
@@ -992,19 +566,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 0.7196,
+              "last_close": 0.7241,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 3.868702121442401
+                  "value": 3.8542127421691346
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.7708884878668414
+                  "value": 0.006379361261217163
                 }
               ],
               "position_state": {
@@ -1015,78 +589,78 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.732319 (54 bar); bar aralığı [0.7196, 0.732553] VWAP'e dokundu ve 0.732553 ile üstünde kapandı; trend EMA20=0.734313 > EMA50=0.733933; engel günün zirvesi 0.7544",
-              "reward_risk": 0.7708884878668414,
-              "stop_distance_pct": 3.868702121442401,
-              "stop_price": 0.7042125142857143,
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.007% < 0.200%; engel Bollinger(20) orta bandı 0.734057",
+              "reward_risk": 0.006379361261217163,
+              "stop_distance_pct": 3.8542127421691346,
+              "stop_price": 0.7625364714285713,
+              "symbol": "ETHFI-USDT-SWAP",
+              "target_price": 0.7340568700000001,
+              "trigger_price": 0.7342373999999999
+            },
+            {
+              "arm": "vwap_pullback",
+              "atr": 0.005085714285714289,
+              "conditions": [
+                {
+                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184032",
+                  "name": "volume_confirm",
+                  "satisfied": false
+                }
+              ],
+              "direction": "long",
+              "distance_atr": 2.2068778089887786,
+              "distance_pct": 1.5500000000000114,
+              "gates": [
+                {
+                  "name": "house_gates",
+                  "passed": false
+                }
+              ],
+              "gates_passed": false,
+              "last_close": 0.7241,
+              "measurements": [
+                {
+                  "name": "min_stop_pct",
+                  "threshold": 1.0,
+                  "unit": "%",
+                  "value": 3.901273411256465
+                },
+                {
+                  "name": "min_reward_risk",
+                  "threshold": 1.5,
+                  "unit": "R",
+                  "value": 0.6649862960489141
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "up",
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.732025 (55 bar); bar aralığı [0.7241, 0.735324] VWAP'e dokundu ve 0.735324 ile üstünde kapandı; trend EMA20=0.733681 > EMA50=0.733669; engel günün zirvesi 0.7544",
+              "reward_risk": 0.6649862960489141,
+              "stop_distance_pct": 3.901273411256465,
+              "stop_price": 0.7066365678571429,
               "symbol": "ETHFI-USDT-SWAP",
               "target_price": 0.7544,
-              "trigger_price": 0.7325528
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.0004864285714285742,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 33207.3; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 62846",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 4.98428781204108,
-              "distance_pct": -2.499999999999996,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.09698,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 3.3746242758410365
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.9786524147965733
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.199% < 0.200%; engel Bollinger(20) orta bandı 0.0976783",
-              "reward_risk": 0.9786524147965733,
-              "stop_distance_pct": 3.3746242758410365,
-              "stop_price": 0.09136460714285713,
-              "symbol": "DOGE-USDT-SWAP",
-              "target_price": 0.09767827500000001,
-              "trigger_price": 0.0945555
+              "trigger_price": 0.73532355
             },
             {
               "arm": "vwap_pullback",
-              "atr": 0.040214285714285695,
+              "atr": 0.04142857142857143,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 58896.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 108724",
+                  "detail": "varsayılan hacim 58896.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 97759.4",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
               "direction": "long",
-              "distance_atr": 3.3109129662522214,
-              "distance_pct": 2.5999999999999996,
+              "distance_atr": 2.4866896551724107,
+              "distance_pct": 1.999999999999998,
               "gates": [
                 {
                   "name": "house_gates",
@@ -1094,19 +668,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 5.121,
+              "last_close": 5.151,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 4.514434886278376
+                  "value": 4.418521436918776
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 1.0154261261830977
+                  "value": 1.0380357527460717
                 }
               ],
               "position_state": {
@@ -1117,27 +691,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=5.25343 (54 bar); bar aralığı [5.121, 5.25415] VWAP'e dokundu ve 5.25415 ile üstünde kapandı; trend EMA20=5.21951 > EMA50=5.18798; engel günün zirvesi 5.495",
-              "reward_risk": 1.0154261261830977,
-              "stop_distance_pct": 4.514434886278376,
-              "stop_price": 5.016951000000001,
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=5.25185 (55 bar); bar aralığı [5.151, 5.25402] VWAP'e dokundu ve 5.25402 ile üstünde kapandı; trend EMA20=5.21391 > EMA50=5.18669; engel günün zirvesi 5.495",
+              "reward_risk": 1.0380357527460717,
+              "stop_distance_pct": 4.418521436918776,
+              "stop_price": 5.02187,
               "symbol": "NEAR-USDT-SWAP",
               "target_price": 5.495,
-              "trigger_price": 5.254146
+              "trigger_price": 5.25402
             },
             {
               "arm": "vwap_pullback",
-              "atr": 121.57142857142753,
+              "atr": 5.359999999999998,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 67210.5",
+                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184515",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
               "direction": "short",
-              "distance_atr": 28.185763219741666,
-              "distance_pct": -4.049999999999993,
+              "distance_atr": 12.632089552238828,
+              "distance_pct": -2.500000000000003,
               "gates": [
                 {
                   "name": "house_gates",
@@ -1149,25 +723,25 @@
                 }
               ],
               "gates_passed": true,
-              "last_close": 84607.0,
+              "last_close": 2708.32,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 2.1889003154561757
+                  "value": 1.8735916414181844
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 1.9999999999999918
+                  "value": 2.0
                 },
                 {
                   "name": "stop_atr_multiple",
                   "threshold": 8.0,
                   "unit": "xATR",
-                  "value": 5.0000000000000115
+                  "value": 4.999999999999989
                 }
               ],
               "position_state": {
@@ -1178,131 +752,146 @@
                 "quota_full": false
               },
               "price_direction": "down",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=84606.5 (54 bar); bar aralığı [81180.4, 84607] VWAP'e dokundu ve 81180.4 ile altında kapandı; trend EMA20=84437.5 < EMA50=84480.9; engel günün dibi 81180.4",
-              "reward_risk": 1.9999999999999918,
-              "stop_distance_pct": 2.1889003154561757,
-              "stop_price": 82957.37489285714,
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=2705.4 (55 bar); bar aralığı [2640.61, 2708.32] VWAP'e dokundu ve 2640.61 ile altında kapandı; trend EMA20=2702.16 < EMA50=2702.22; engel günün dibi 2640.61",
+              "reward_risk": 2.0,
+              "stop_distance_pct": 1.8735916414181844,
+              "stop_price": 2690.0862857142856,
+              "symbol": "ETH-USDT-SWAP",
+              "target_price": 2541.663428571429,
+              "trigger_price": 2640.612
+            },
+            {
+              "arm": "vwap_pullback",
+              "atr": 0.006285714285714307,
+              "conditions": [
+                {
+                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 53088.4",
+                  "name": "volume_confirm",
+                  "satisfied": false
+                }
+              ],
+              "direction": "short",
+              "distance_atr": 7.789599999999972,
+              "distance_pct": -3.199999999999999,
+              "gates": [
+                {
+                  "name": "house_gates",
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 1.5301,
+              "measurements": [
+                {
+                  "name": "min_stop_pct",
+                  "threshold": 1.0,
+                  "unit": "%",
+                  "value": 3.1771734868977553
+                },
+                {
+                  "name": "min_reward_risk",
+                  "threshold": 1.5,
+                  "unit": "R",
+                  "value": 2.0
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 4.9999999999999964
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=1.52743 (55 bar); bar aralığı [1.48114, 1.5301] VWAP'e dokundu ve 1.48114 ile altında kapandı; trend EMA20=1.52852 < EMA50=1.52854; engel günün dibi 1.48114",
+              "reward_risk": 2.0,
+              "stop_distance_pct": 3.1771734868977553,
+              "stop_price": 1.5281950857142859,
+              "symbol": "XRP-USDT-SWAP",
+              "target_price": 1.3870202285714284,
+              "trigger_price": 1.4811368
+            },
+            {
+              "arm": "vwap_pullback",
+              "atr": 132.6071428571418,
+              "conditions": [
+                {
+                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 69130.1",
+                  "name": "volume_confirm",
+                  "satisfied": false
+                }
+              ],
+              "direction": "short",
+              "distance_atr": 22.407899272825457,
+              "distance_pct": -3.5000000000000107,
+              "gates": [
+                {
+                  "name": "house_gates",
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 84898.5,
+              "measurements": [
+                {
+                  "name": "min_stop_pct",
+                  "threshold": 1.0,
+                  "unit": "%",
+                  "value": 2.0364577639706702
+                },
+                {
+                  "name": "min_reward_risk",
+                  "threshold": 1.5,
+                  "unit": "R",
+                  "value": 1.9999999999999913
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 5.000000000000015
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=84624.1 (55 bar); bar aralığı [81927.1, 84898.5] VWAP'e dokundu ve 81927.1 ile altında kapandı; trend EMA20=84518.8 < EMA50=84520.8; engel günün dibi 81927.1",
+              "reward_risk": 1.9999999999999913,
+              "stop_distance_pct": 2.0364577639706702,
+              "stop_price": 83595.46232142857,
               "symbol": "BTC-USDT-SWAP",
-              "target_price": 77626.49971428575,
-              "trigger_price": 81180.4165
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 1.5142857142857176,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 38100.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 75486.9",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "short",
-              "distance_atr": 24.892396226415055,
-              "distance_pct": -4.850000000000003,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": true
-                },
-                {
-                  "name": "atr_ceiling",
-                  "passed": true
-                }
-              ],
-              "gates_passed": true,
-              "last_close": 777.2,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 2.791159408659905
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 2.0000000000000053
-                },
-                {
-                  "name": "stop_atr_multiple",
-                  "threshold": 8.0,
-                  "unit": "xATR",
-                  "value": 4.999999999999992
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=776 (54 bar); bar aralığı [739.506, 777.2] VWAP'e dokundu ve 739.506 ile altında kapandı; trend EMA20=775.059 < EMA50=775.077; engel günün dibi 739.506",
-              "reward_risk": 2.0000000000000053,
-              "stop_distance_pct": 2.791159408659905,
-              "stop_price": 760.1465857142857,
-              "symbol": "BNB-USDT-SWAP",
-              "target_price": 698.2242285714285,
-              "trigger_price": 739.5058
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.040214285714285695,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 58896.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 108724",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 6.367140319715814,
-              "distance_pct": -5.000000000000002,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 5.121,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 5.777845316278393
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 1.2170421193062686
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.200% < 0.200%; engel Bollinger(20) orta bandı 5.20705",
-              "reward_risk": 1.2170421193062686,
-              "stop_distance_pct": 5.777845316278393,
-              "stop_price": 4.583860714285715,
-              "symbol": "NEAR-USDT-SWAP",
-              "target_price": 5.2070475,
-              "trigger_price": 4.86495
+              "target_price": 78590.23285714285,
+              "trigger_price": 81927.05249999999
             }
           ]
         },
         {
           "model": "scalp_patient",
           "no_trigger": [
+            "ADA-USDT-SWAP",
+            "BNB-USDT-SWAP",
+            "DOGE-USDT-SWAP",
+            "PENGU-USDT-SWAP",
+            "SOL-USDT-SWAP",
             "SUI-USDT-SWAP"
           ],
           "position_state": {
@@ -1338,37 +927,47 @@
           "triggers": [
             {
               "arm": "rsi2_reversal",
-              "atr": 0.004907142857142864,
+              "atr": 0.006285714285714307,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 175362",
+                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 53088.4",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.0733216885007094,
-              "distance_pct": 0.04999999999998752,
+              "direction": "short",
+              "distance_atr": 0.1217124999999714,
+              "distance_pct": 0.04999999999998842,
               "gates": [
                 {
                   "name": "house_gates",
-                  "passed": false
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
                 }
               ],
-              "gates_passed": false,
-              "last_close": 0.7196,
+              "gates_passed": true,
+              "last_close": 1.5301,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 3.311682918169289
+                  "value": 1.9495291707316533
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.5877329171147941
+                  "value": 2.0000000000000075
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 4.999999999999984
                 }
               ],
               "position_state": {
@@ -1379,129 +978,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=4.30 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.045% < 0.200%; engel Bollinger(20) orta bandı 0.733973",
-              "reward_risk": 0.5877329171147941,
-              "stop_distance_pct": 3.311682918169289,
-              "stop_price": 0.6961170142857142,
-              "symbol": "ETHFI-USDT-SWAP",
-              "target_price": 0.73397299,
-              "trigger_price": 0.7199597999999999
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.004907142857142864,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 175362",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.0733216885007094,
-              "distance_pct": -0.04999999999998752,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.7196,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 3.3149962577572514
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.6164049023514091
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.051% < 0.200%; engel Bollinger(20) orta bandı 0.733937",
-              "reward_risk": 0.6164049023514091,
-              "stop_distance_pct": 3.3149962577572514,
-              "stop_price": 0.6953974142857143,
-              "symbol": "ETHFI-USDT-SWAP",
-              "target_price": 0.73393701,
-              "trigger_price": 0.7192402000000001
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.005842857142857165,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 52671.2",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.13021882640583549,
-              "distance_pct": -0.049999999999987714,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 1.5217,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.8658783949377606
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.4897236941210598
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.166% < 0.200%; engel Bollinger(20) orta bandı 1.53484",
-              "reward_risk": 0.4897236941210598,
-              "stop_distance_pct": 1.8658783949377606,
-              "stop_price": 1.4925602750000002,
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.181% < 0.200%; engel Bollinger(20) orta bandı 1.53503",
+              "reward_risk": 2.0000000000000075,
+              "stop_distance_pct": 1.9495291707316533,
+              "stop_price": 1.5607097107142855,
               "symbol": "XRP-USDT-SWAP",
-              "target_price": 1.5348369575,
-              "trigger_price": 1.5209391500000002
+              "target_price": 1.4711757285714282,
+              "trigger_price": 1.5308650499999998
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 121.57142857142753,
+              "atr": 132.6071428571418,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 67210.5",
+                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 69130.1",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.34797238542886516,
-              "distance_pct": -0.04999999999999353,
+              "direction": "short",
+              "distance_atr": 0.32011284675457724,
+              "distance_pct": 0.04999999999998889,
               "gates": [
                 {
                   "name": "house_gates",
@@ -1509,19 +1006,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 84607.0,
+              "last_close": 84898.5,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 0.6720144313244372
+                  "value": 0.7326725488144256
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.4250112006415152
+                  "value": 0.170303941194187
                 }
               ],
               "position_state": {
@@ -1531,28 +1028,28 @@
                 "opposite_position": false,
                 "quota_full": false
               },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.173% < 0.200%; engel Bollinger(20) orta bandı 84806.2",
-              "reward_risk": 0.4250112006415152,
-              "stop_distance_pct": 0.6720144313244372,
-              "stop_price": 83996.4095357143,
+              "price_direction": "up",
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.196% < 0.200%; engel Bollinger(20) orta bandı 84835",
+              "reward_risk": 0.170303941194187,
+              "stop_distance_pct": 0.7326725488144256,
+              "stop_price": 85563.28826785713,
               "symbol": "BTC-USDT-SWAP",
-              "target_price": 84806.224825,
-              "trigger_price": 84564.6965
+              "target_price": 84834.9624625,
+              "trigger_price": 84940.94924999999
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 4.874285714285699,
+              "atr": 5.359999999999998,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 199700",
+                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184515",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.276770808909733,
-              "distance_pct": -0.050000000000000315,
+              "direction": "short",
+              "distance_atr": 0.2526417910447511,
+              "distance_pct": 0.04999999999999503,
               "gates": [
                 {
                   "name": "house_gates",
@@ -1560,19 +1057,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 2698.12,
+              "last_close": 2708.32,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 0.8670297798024059
+                  "value": 0.9512762122765944
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.5516941834814889
+                  "value": 2.0
                 }
               ],
               "position_state": {
@@ -1582,48 +1079,58 @@
                 "opposite_position": false,
                 "quota_full": false
               },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.121% < 0.200%; engel Bollinger(20) orta bandı 2709.67",
-              "reward_risk": 0.5516941834814889,
-              "stop_distance_pct": 0.8670297798024059,
-              "stop_price": 2673.3891328571426,
+              "price_direction": "up",
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.141% < 0.200%; engel Bollinger(20) orta bandı 2709.98",
+              "reward_risk": 2.0,
+              "stop_distance_pct": 0.9512762122765944,
+              "stop_price": 2735.4506457142857,
               "symbol": "ETH-USDT-SWAP",
-              "target_price": 2709.670547,
-              "trigger_price": 2696.77094
+              "target_price": 2658.121188571429,
+              "trigger_price": 2709.67416
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 0.0622857142857144,
+              "atr": 0.06578571428571424,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 63338.6",
+                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 65523.2",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.11319610091743211,
-              "distance_pct": -0.0500000000000005,
+              "direction": "short",
+              "distance_atr": 0.10782736156351592,
+              "distance_pct": 0.049999999999999045,
               "gates": [
                 {
                   "name": "house_gates",
-                  "passed": false
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
                 }
               ],
-              "gates_passed": false,
-              "last_close": 14.101,
+              "gates_passed": true,
+              "last_close": 14.187,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 2.0704185863586333
+                  "value": 2.1766938782368483
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.6751043295365484
+                  "value": 1.9999999999999942
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 5.00000000000001
                 }
               ],
               "position_state": {
@@ -1633,48 +1140,58 @@
                 "opposite_position": false,
                 "quota_full": false
               },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.123% < 0.200%; engel Bollinger(20) orta bandı 14.2909",
-              "reward_risk": 0.6751043295365484,
-              "stop_distance_pct": 2.0704185863586333,
-              "stop_price": 13.802145750000001,
+              "price_direction": "up",
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.124% < 0.200%; engel Bollinger(20) orta bandı 14.2885",
+              "reward_risk": 1.9999999999999942,
+              "stop_distance_pct": 2.1766938782368483,
+              "stop_price": 14.503055464285714,
               "symbol": "LINK-USDT-SWAP",
-              "target_price": 14.290947475000001,
-              "trigger_price": 14.0939495
+              "target_price": 13.576169571428572,
+              "trigger_price": 14.1940935
             },
             {
-              "arm": "vwap_pullback",
-              "atr": 0.00014442857142857177,
+              "arm": "rsi2_reversal",
+              "atr": 0.005085714285714289,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 381822; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 994483",
+                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184032",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.07067161226507138,
-              "distance_pct": 0.09999999999998227,
+              "direction": "short",
+              "distance_atr": 0.07118960674157351,
+              "distance_pct": 0.05000000000000037,
               "gates": [
                 {
                   "name": "house_gates",
-                  "passed": false
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
                 }
               ],
-              "gates_passed": false,
-              "last_close": 0.010207,
+              "gates_passed": true,
+              "last_close": 0.7241,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 6.9148300509131415
+                  "value": 3.424316705064113
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 1.0018266035859755
+                  "value": 2.0000000000000044
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 4.9999999999999885
                 }
               ],
               "position_state": {
@@ -1685,27 +1202,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.0102131 (54 bar); bar aralığı [0.010207, 0.0102172] VWAP'e dokundu ve 0.0102172 ile üstünde kapandı; trend EMA20=0.0102439 > EMA50=0.0101073; engel günün zirvesi 0.010925",
-              "reward_risk": 1.0018266035859755,
-              "stop_distance_pct": 6.9148300509131415,
-              "stop_price": 0.009510704499999998,
-              "symbol": "PENGU-USDT-SWAP",
-              "target_price": 0.010925,
-              "trigger_price": 0.010217206999999999
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.082% < 0.200%; engel Bollinger(20) orta bandı 0.733568",
+              "reward_risk": 2.0000000000000044,
+              "stop_distance_pct": 3.424316705064113,
+              "stop_price": 0.7492699249999999,
+              "symbol": "ETHFI-USDT-SWAP",
+              "target_price": 0.6748463,
+              "trigger_price": 0.72446205
             },
             {
-              "arm": "vwap_pullback",
-              "atr": 121.57142857142753,
+              "arm": "rsi2_reversal",
+              "atr": 0.006285714285714307,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 67210.5",
+                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 53088.4",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 0.6959447708577303,
-              "distance_pct": 0.09999999999998706,
+              "direction": "short",
+              "distance_atr": 0.8519875000000118,
+              "distance_pct": 0.350000000000006,
               "gates": [
                 {
                   "name": "house_gates",
@@ -1713,19 +1230,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 84607.0,
+              "last_close": 1.5301,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 0.688846720245659
+                  "value": 2.050470146945575
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.6794586126659132
+                  "value": 0.006275637269888223
                 }
               ],
               "position_state": {
@@ -1736,231 +1253,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=84650.4 (54 bar); bar aralığı [84607, 84691.6] VWAP'e dokundu ve 84691.6 ile üstünde kapandı; trend EMA20=84771.9 > EMA50=84618.6; engel günün zirvesi 85088",
-              "reward_risk": 0.6794586126659132,
-              "stop_distance_pct": 0.688846720245659,
-              "stop_price": 84108.21164285715,
-              "symbol": "BTC-USDT-SWAP",
-              "target_price": 85088.0,
-              "trigger_price": 84691.60699999999
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.0004864285714285742,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 33207.3; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 62846",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.49842878120409084,
-              "distance_pct": 0.24999999999999103,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.09698,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 2.480486025310312
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.6914734651867117
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": false,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.0971792 (54 bar); bar aralığı [0.09698, 0.0972224] VWAP'e dokundu ve 0.0972224 ile üstünde kapandı; trend EMA20=0.097693 > EMA50=0.0973556; engel günün zirvesi 0.09889",
-              "reward_risk": 0.6914734651867117,
-              "stop_distance_pct": 2.480486025310312,
-              "stop_price": 0.09481086071428568,
-              "symbol": "DOGE-USDT-SWAP",
-              "target_price": 0.09889,
-              "trigger_price": 0.09722244999999999
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.4678571428571437,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 80379.1; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 154324",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 0.6552748091602938,
-              "distance_pct": 0.24999999999999606,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 122.63,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.8873190156329422
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.8677787911322571
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": false,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=122.895 (54 bar); bar aralığı [122.63, 122.937] VWAP'e dokundu ve 122.937 ile üstünde kapandı; trend EMA20=123.446 > EMA50=122.73; engel günün zirvesi 124.95",
-              "reward_risk": 0.8677787911322571,
-              "stop_distance_pct": 1.8873190156329422,
-              "stop_price": 120.61636964285714,
-              "symbol": "SOL-USDT-SWAP",
-              "target_price": 124.95,
-              "trigger_price": 122.93657499999999
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 4.874285714285699,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 199700",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 1.6606248534583048,
-              "distance_pct": 0.2999999999999851,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 2698.12,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 0.9530229104668084
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.6973653439565375
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=2705.98 (54 bar); bar aralığı [2698.12, 2706.21] VWAP'e dokundu ve 2706.21 ile üstünde kapandı; trend EMA20=2708.44 > EMA50=2704.65; engel günün zirvesi 2724.2",
-              "reward_risk": 0.6973653439565375,
-              "stop_distance_pct": 0.9530229104668084,
-              "stop_price": 2680.423517142857,
-              "symbol": "ETH-USDT-SWAP",
-              "target_price": 2724.2,
-              "trigger_price": 2706.2143599999995
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.005842857142857165,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 52671.2",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 1.1719694376527854,
-              "distance_pct": 0.4499999999999916,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 1.5217,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.998807962764991
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.5646745410306465
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=1.52802 (54 bar); bar aralığı [1.5217, 1.52855] VWAP'e dokundu ve 1.52855 ile üstünde kapandı; trend EMA20=1.53336 > EMA50=1.53041; engel günün zirvesi 1.5458",
-              "reward_risk": 0.5646745410306465,
-              "stop_distance_pct": 1.998807962764991,
-              "stop_price": 1.4979949178571428,
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.197% < 0.200%; engel Bollinger(20) orta bandı 1.53526",
+              "reward_risk": 0.006275637269888223,
+              "stop_distance_pct": 2.050470146945575,
+              "stop_price": 1.5669394035714288,
               "symbol": "XRP-USDT-SWAP",
-              "target_price": 1.5458,
-              "trigger_price": 1.52854765
+              "target_price": 1.5352577675,
+              "trigger_price": 1.53545535
             },
             {
               "arm": "vwap_pullback",
-              "atr": 0.0014999999999999974,
+              "atr": 0.06578571428571424,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 17454.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 34161.4",
+                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 65523.2",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
               "direction": "long",
-              "distance_atr": 0.7613999999999874,
-              "distance_pct": 0.4499999999999918,
+              "distance_atr": 0.8626188925081544,
+              "distance_pct": 0.40000000000000485,
               "gates": [
                 {
                   "name": "house_gates",
@@ -1968,70 +1281,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 0.2538,
+              "last_close": 14.187,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 2.975759706111416
+                  "value": 2.2936077939999646
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.6007937068368961
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": true,
-                "quota_full": false
-              },
-              "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.254859 (54 bar); bar aralığı [0.2538, 0.254942] VWAP'e dokundu ve 0.254942 ile üstünde kapandı; trend EMA20=0.256036 > EMA50=0.255271; engel günün zirvesi 0.2595",
-              "reward_risk": 0.6007937068368961,
-              "stop_distance_pct": 2.975759706111416,
-              "stop_price": 0.24735563571428573,
-              "symbol": "ADA-USDT-SWAP",
-              "target_price": 0.2595,
-              "trigger_price": 0.2549421
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 0.0622857142857144,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 63338.6",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 2.2639220183486137,
-              "distance_pct": 0.9999999999999974,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 14.101,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 2.3848208825259154
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.7006992565798453
+                  "value": 0.723156104194818
                 }
               ],
               "position_state": {
@@ -2042,27 +1304,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=14.2411 (54 bar); bar aralığı [14.101, 14.242] VWAP'e dokundu ve 14.242 ile üstünde kapandı; trend EMA20=14.2717 > EMA50=14.2461; engel günün zirvesi 14.48",
-              "reward_risk": 0.7006992565798453,
-              "stop_distance_pct": 2.3848208825259154,
-              "stop_price": 13.902363571428571,
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=14.2389 (55 bar); bar aralığı [14.187, 14.2437] VWAP'e dokundu ve 14.2437 ile üstünde kapandı; trend EMA20=14.2643 > EMA50=14.244; engel günün zirvesi 14.48",
+              "reward_risk": 0.723156104194818,
+              "stop_distance_pct": 2.2936077939999646,
+              "stop_price": 13.917052285714286,
               "symbol": "LINK-USDT-SWAP",
               "target_price": 14.48,
-              "trigger_price": 14.24201
+              "trigger_price": 14.243748
             },
             {
               "arm": "rsi2_reversal",
-              "atr": 0.05992857142857133,
+              "atr": 0.06578571428571424,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 47635.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 96549.7",
+                  "detail": "varsayılan hacim 41917.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 65523.2",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 1.9851132300357488,
-              "distance_pct": -1.0999999999999936,
+              "direction": "short",
+              "distance_atr": 1.7252377850162817,
+              "distance_pct": 0.7999999999999973,
               "gates": [
                 {
                   "name": "house_gates",
@@ -2070,70 +1332,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 10.815,
+              "last_close": 14.187,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 3.118528768571043
+                  "value": 2.4262295317788682
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.9019897961915108
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": false,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.199% < 0.200%; engel Bollinger(20) orta bandı 10.9969",
-              "reward_risk": 0.9019897961915108,
-              "stop_distance_pct": 3.118528768571043,
-              "stop_price": 10.362476071428572,
-              "symbol": "AVAX-USDT-SWAP",
-              "target_price": 10.996901750000001,
-              "trigger_price": 10.696035
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 1.5142857142857176,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 38100.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 75486.9",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 6.672188679245288,
-              "distance_pct": -1.3000000000000036,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 777.2,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 1.4062117877231641
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 1.0654880875127448
+                  "value": 0.01922741833213294
                 }
               ],
               "position_state": {
@@ -2143,79 +1354,28 @@
                 "opposite_position": false,
                 "quota_full": false
               },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.199% < 0.200%; engel Bollinger(20) orta bandı 778.59",
-              "reward_risk": 1.0654880875127448,
-              "stop_distance_pct": 1.4062117877231641,
-              "stop_price": 756.3094,
-              "symbol": "BNB-USDT-SWAP",
-              "target_price": 778.58982,
-              "trigger_price": 767.0964
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.0014999999999999974,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 17454.8; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 34161.4",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 2.4533999999999803,
-              "distance_pct": -1.4499999999999857,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.2538,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 3.3955286473178887
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.690706346903492
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": true,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.198% < 0.200%; engel Bollinger(20) orta bandı 0.255986",
-              "reward_risk": 0.690706346903492,
-              "stop_distance_pct": 3.3955286473178887,
-              "stop_price": 0.2416270071428572,
-              "symbol": "ADA-USDT-SWAP",
-              "target_price": 0.25598599499999997,
-              "trigger_price": 0.25011990000000006
+              "price_direction": "up",
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.165% < 0.200%; engel Bollinger(20) orta bandı 14.2938",
+              "reward_risk": 0.01922741833213294,
+              "stop_distance_pct": 2.4262295317788682,
+              "stop_price": 14.647458857142855,
+              "symbol": "LINK-USDT-SWAP",
+              "target_price": 14.293824800000001,
+              "trigger_price": 14.300495999999999
             },
             {
               "arm": "vwap_pullback",
-              "atr": 0.05992857142857133,
+              "atr": 0.06450000000000003,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 47635.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 96549.7",
+                  "detail": "varsayılan hacim 44406.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 94308.2",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
               "direction": "long",
-              "distance_atr": 2.8874374255065653,
-              "distance_pct": 1.6000000000000028,
+              "distance_atr": 1.4355116279069764,
+              "distance_pct": 0.8500000000000001,
               "gates": [
                 {
                   "name": "house_gates",
@@ -2223,19 +1383,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 10.815,
+              "last_close": 10.893,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 3.2114137605198714
+                  "value": 2.9700936097023796
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.8273835067406188
+                  "value": 0.90231520577326
                 }
               ],
               "position_state": {
@@ -2246,27 +1406,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=10.9827 (54 bar); bar aralığı [10.815, 10.988] VWAP'e dokundu ve 10.988 ile üstünde kapandı; trend EMA20=10.98 > EMA50=10.9424; engel günün zirvesi 11.28",
-              "reward_risk": 0.8273835067406188,
-              "stop_distance_pct": 3.2114137605198714,
-              "stop_price": 10.635168571428572,
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=10.9815 (55 bar); bar aralığı [10.893, 10.9856] VWAP'e dokundu ve 10.9856 ile üstünde kapandı; trend EMA20=10.9724 > EMA50=10.9405; engel günün zirvesi 11.28",
+              "reward_risk": 0.90231520577326,
+              "stop_distance_pct": 2.9700936097023796,
+              "stop_price": 10.659308178571429,
               "symbol": "AVAX-USDT-SWAP",
               "target_price": 11.28,
-              "trigger_price": 10.98804
+              "trigger_price": 10.9855905
             },
             {
-              "arm": "vwap_pullback",
-              "atr": 0.004907142857142864,
+              "arm": "rsi2_reversal",
+              "atr": 0.005085714285714289,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 175362",
+                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184032",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
-              "direction": "long",
-              "distance_atr": 2.6395807860261944,
-              "distance_pct": 1.799999999999998,
+              "direction": "short",
+              "distance_atr": 1.9933089887640365,
+              "distance_pct": 1.399999999999995,
               "gates": [
                 {
                   "name": "house_gates",
@@ -2274,19 +1434,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 0.7196,
+              "last_close": 0.7241,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 3.868702121442401
+                  "value": 3.8542127421691346
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 0.7708884878668414
+                  "value": 0.006379361261217163
                 }
               ],
               "position_state": {
@@ -2297,78 +1457,78 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.732319 (54 bar); bar aralığı [0.7196, 0.732553] VWAP'e dokundu ve 0.732553 ile üstünde kapandı; trend EMA20=0.734313 > EMA50=0.733933; engel günün zirvesi 0.7544",
-              "reward_risk": 0.7708884878668414,
-              "stop_distance_pct": 3.868702121442401,
-              "stop_price": 0.7042125142857143,
+              "reason": "RSI(2) aşırılık dönüşü: RSI=100.00 (≥ 95); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.007% < 0.200%; engel Bollinger(20) orta bandı 0.734057",
+              "reward_risk": 0.006379361261217163,
+              "stop_distance_pct": 3.8542127421691346,
+              "stop_price": 0.7625364714285713,
+              "symbol": "ETHFI-USDT-SWAP",
+              "target_price": 0.7340568700000001,
+              "trigger_price": 0.7342373999999999
+            },
+            {
+              "arm": "vwap_pullback",
+              "atr": 0.005085714285714289,
+              "conditions": [
+                {
+                  "detail": "varsayılan hacim 91941.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184032",
+                  "name": "volume_confirm",
+                  "satisfied": false
+                }
+              ],
+              "direction": "long",
+              "distance_atr": 2.2068778089887786,
+              "distance_pct": 1.5500000000000114,
+              "gates": [
+                {
+                  "name": "house_gates",
+                  "passed": false
+                }
+              ],
+              "gates_passed": false,
+              "last_close": 0.7241,
+              "measurements": [
+                {
+                  "name": "min_stop_pct",
+                  "threshold": 1.0,
+                  "unit": "%",
+                  "value": 3.901273411256465
+                },
+                {
+                  "name": "min_reward_risk",
+                  "threshold": 1.5,
+                  "unit": "R",
+                  "value": 0.6649862960489141
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "up",
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=0.732025 (55 bar); bar aralığı [0.7241, 0.735324] VWAP'e dokundu ve 0.735324 ile üstünde kapandı; trend EMA20=0.733681 > EMA50=0.733669; engel günün zirvesi 0.7544",
+              "reward_risk": 0.6649862960489141,
+              "stop_distance_pct": 3.901273411256465,
+              "stop_price": 0.7066365678571429,
               "symbol": "ETHFI-USDT-SWAP",
               "target_price": 0.7544,
-              "trigger_price": 0.7325528
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.0004864285714285742,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 33207.3; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 62846",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 4.98428781204108,
-              "distance_pct": -2.499999999999996,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 0.09698,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 3.3746242758410365
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 0.9786524147965733
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": false,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.199% < 0.200%; engel Bollinger(20) orta bandı 0.0976783",
-              "reward_risk": 0.9786524147965733,
-              "stop_distance_pct": 3.3746242758410365,
-              "stop_price": 0.09136460714285713,
-              "symbol": "DOGE-USDT-SWAP",
-              "target_price": 0.09767827500000001,
-              "trigger_price": 0.0945555
+              "trigger_price": 0.73532355
             },
             {
               "arm": "vwap_pullback",
-              "atr": 0.040214285714285695,
+              "atr": 0.04142857142857143,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 58896.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 108724",
+                  "detail": "varsayılan hacim 58896.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 97759.4",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
               "direction": "long",
-              "distance_atr": 3.3109129662522214,
-              "distance_pct": 2.5999999999999996,
+              "distance_atr": 2.4866896551724107,
+              "distance_pct": 1.999999999999998,
               "gates": [
                 {
                   "name": "house_gates",
@@ -2376,19 +1536,19 @@
                 }
               ],
               "gates_passed": false,
-              "last_close": 5.121,
+              "last_close": 5.151,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 4.514434886278376
+                  "value": 4.418521436918776
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 1.0154261261830977
+                  "value": 1.0380357527460717
                 }
               ],
               "position_state": {
@@ -2399,27 +1559,27 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=5.25343 (54 bar); bar aralığı [5.121, 5.25415] VWAP'e dokundu ve 5.25415 ile üstünde kapandı; trend EMA20=5.21951 > EMA50=5.18798; engel günün zirvesi 5.495",
-              "reward_risk": 1.0154261261830977,
-              "stop_distance_pct": 4.514434886278376,
-              "stop_price": 5.016951000000001,
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=5.25185 (55 bar); bar aralığı [5.151, 5.25402] VWAP'e dokundu ve 5.25402 ile üstünde kapandı; trend EMA20=5.21391 > EMA50=5.18669; engel günün zirvesi 5.495",
+              "reward_risk": 1.0380357527460717,
+              "stop_distance_pct": 4.418521436918776,
+              "stop_price": 5.02187,
               "symbol": "NEAR-USDT-SWAP",
               "target_price": 5.495,
-              "trigger_price": 5.254146
+              "trigger_price": 5.25402
             },
             {
               "arm": "vwap_pullback",
-              "atr": 121.57142857142753,
+              "atr": 5.359999999999998,
               "conditions": [
                 {
-                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 67210.5",
+                  "detail": "varsayılan hacim 96316; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 184515",
                   "name": "volume_confirm",
                   "satisfied": false
                 }
               ],
               "direction": "short",
-              "distance_atr": 28.185763219741666,
-              "distance_pct": -4.049999999999993,
+              "distance_atr": 12.632089552238828,
+              "distance_pct": -2.500000000000003,
               "gates": [
                 {
                   "name": "house_gates",
@@ -2431,25 +1591,25 @@
                 }
               ],
               "gates_passed": true,
-              "last_close": 84607.0,
+              "last_close": 2708.32,
               "measurements": [
                 {
                   "name": "min_stop_pct",
                   "threshold": 1.0,
                   "unit": "%",
-                  "value": 2.1889003154561757
+                  "value": 1.8735916414181844
                 },
                 {
                   "name": "min_reward_risk",
                   "threshold": 1.5,
                   "unit": "R",
-                  "value": 1.9999999999999918
+                  "value": 2.0
                 },
                 {
                   "name": "stop_atr_multiple",
                   "threshold": 8.0,
                   "unit": "xATR",
-                  "value": 5.0000000000000115
+                  "value": 4.999999999999989
                 }
               ],
               "position_state": {
@@ -2460,125 +1620,135 @@
                 "quota_full": false
               },
               "price_direction": "down",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=84606.5 (54 bar); bar aralığı [81180.4, 84607] VWAP'e dokundu ve 81180.4 ile altında kapandı; trend EMA20=84437.5 < EMA50=84480.9; engel günün dibi 81180.4",
-              "reward_risk": 1.9999999999999918,
-              "stop_distance_pct": 2.1889003154561757,
-              "stop_price": 82957.37489285714,
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=2705.4 (55 bar); bar aralığı [2640.61, 2708.32] VWAP'e dokundu ve 2640.61 ile altında kapandı; trend EMA20=2702.16 < EMA50=2702.22; engel günün dibi 2640.61",
+              "reward_risk": 2.0,
+              "stop_distance_pct": 1.8735916414181844,
+              "stop_price": 2690.0862857142856,
+              "symbol": "ETH-USDT-SWAP",
+              "target_price": 2541.663428571429,
+              "trigger_price": 2640.612
+            },
+            {
+              "arm": "vwap_pullback",
+              "atr": 0.006285714285714307,
+              "conditions": [
+                {
+                  "detail": "varsayılan hacim 31203.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 53088.4",
+                  "name": "volume_confirm",
+                  "satisfied": false
+                }
+              ],
+              "direction": "short",
+              "distance_atr": 7.789599999999972,
+              "distance_pct": -3.199999999999999,
+              "gates": [
+                {
+                  "name": "house_gates",
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 1.5301,
+              "measurements": [
+                {
+                  "name": "min_stop_pct",
+                  "threshold": 1.0,
+                  "unit": "%",
+                  "value": 3.1771734868977553
+                },
+                {
+                  "name": "min_reward_risk",
+                  "threshold": 1.5,
+                  "unit": "R",
+                  "value": 2.0
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 4.9999999999999964
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=1.52743 (55 bar); bar aralığı [1.48114, 1.5301] VWAP'e dokundu ve 1.48114 ile altında kapandı; trend EMA20=1.52852 < EMA50=1.52854; engel günün dibi 1.48114",
+              "reward_risk": 2.0,
+              "stop_distance_pct": 3.1771734868977553,
+              "stop_price": 1.5281950857142859,
+              "symbol": "XRP-USDT-SWAP",
+              "target_price": 1.3870202285714284,
+              "trigger_price": 1.4811368
+            },
+            {
+              "arm": "vwap_pullback",
+              "atr": 132.6071428571418,
+              "conditions": [
+                {
+                  "detail": "varsayılan hacim 34522.2; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 69130.1",
+                  "name": "volume_confirm",
+                  "satisfied": false
+                }
+              ],
+              "direction": "short",
+              "distance_atr": 22.407899272825457,
+              "distance_pct": -3.5000000000000107,
+              "gates": [
+                {
+                  "name": "house_gates",
+                  "passed": true
+                },
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 84898.5,
+              "measurements": [
+                {
+                  "name": "min_stop_pct",
+                  "threshold": 1.0,
+                  "unit": "%",
+                  "value": 2.0364577639706702
+                },
+                {
+                  "name": "min_reward_risk",
+                  "threshold": 1.5,
+                  "unit": "R",
+                  "value": 1.9999999999999913
+                },
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 5.000000000000015
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=84624.1 (55 bar); bar aralığı [81927.1, 84898.5] VWAP'e dokundu ve 81927.1 ile altında kapandı; trend EMA20=84518.8 < EMA50=84520.8; engel günün dibi 81927.1",
+              "reward_risk": 1.9999999999999913,
+              "stop_distance_pct": 2.0364577639706702,
+              "stop_price": 83595.46232142857,
               "symbol": "BTC-USDT-SWAP",
-              "target_price": 77626.49971428575,
-              "trigger_price": 81180.4165
-            },
-            {
-              "arm": "vwap_pullback",
-              "atr": 1.5142857142857176,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 38100.5; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 75486.9",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "short",
-              "distance_atr": 24.892396226415055,
-              "distance_pct": -4.850000000000003,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": true
-                },
-                {
-                  "name": "atr_ceiling",
-                  "passed": true
-                }
-              ],
-              "gates_passed": true,
-              "last_close": 777.2,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 2.791159408659905
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 2.0000000000000053
-                },
-                {
-                  "name": "stop_atr_multiple",
-                  "threshold": 8.0,
-                  "unit": "xATR",
-                  "value": 4.999999999999992
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "VWAP geri çekilme: gün çapası 2026-09-27 00:00 UTC, VWAP=776 (54 bar); bar aralığı [739.506, 777.2] VWAP'e dokundu ve 739.506 ile altında kapandı; trend EMA20=775.059 < EMA50=775.077; engel günün dibi 739.506",
-              "reward_risk": 2.0000000000000053,
-              "stop_distance_pct": 2.791159408659905,
-              "stop_price": 760.1465857142857,
-              "symbol": "BNB-USDT-SWAP",
-              "target_price": 698.2242285714285,
-              "trigger_price": 739.5058
-            },
-            {
-              "arm": "rsi2_reversal",
-              "atr": 0.040214285714285695,
-              "conditions": [
-                {
-                  "detail": "varsayılan hacim 58896.6; hacim teyitli kolların (opening_range_breakout, momentum_burst) eşiği 1.5×SMA20 = 108724",
-                  "name": "volume_confirm",
-                  "satisfied": false
-                }
-              ],
-              "direction": "long",
-              "distance_atr": 6.367140319715814,
-              "distance_pct": -5.000000000000002,
-              "gates": [
-                {
-                  "name": "house_gates",
-                  "passed": false
-                }
-              ],
-              "gates_passed": false,
-              "last_close": 5.121,
-              "measurements": [
-                {
-                  "name": "min_stop_pct",
-                  "threshold": 1.0,
-                  "unit": "%",
-                  "value": 5.777845316278393
-                },
-                {
-                  "name": "min_reward_risk",
-                  "threshold": 1.5,
-                  "unit": "R",
-                  "value": 1.2170421193062686
-                }
-              ],
-              "position_state": {
-                "blocked": false,
-                "direction_quota_full": false,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "RSI(2) aşırılık dönüşü: RSI=0.00 (≤ 5); aralık rejimi doğrulandı: |EMA20−EMA50|/kapanış=0.200% < 0.200%; engel Bollinger(20) orta bandı 5.20705",
-              "reward_risk": 1.2170421193062686,
-              "stop_distance_pct": 5.777845316278393,
-              "stop_price": 4.583860714285715,
-              "symbol": "NEAR-USDT-SWAP",
-              "target_price": 5.2070475,
-              "trigger_price": 4.86495
+              "target_price": 78590.23285714285,
+              "trigger_price": 81927.05249999999
             }
           ]
         },
@@ -2629,24 +1799,16 @@
         {
           "model": "vwap_clone",
           "no_trigger": [
-            "ADA-USDT-SWAP",
-            "BNB-USDT-SWAP",
             "DOGE-USDT-SWAP",
-            "ETH-USDT-SWAP",
-            "ETHFI-USDT-SWAP",
-            "PENGU-USDT-SWAP"
+            "ETHFI-USDT-SWAP"
           ],
           "position_state": {
             "max_positions": 5,
             "max_short_positions": 3,
-            "open_keys": [
-              "BTC-USDT-SWAP|short",
-              "ETH-USDT-SWAP|short",
-              "SOL-USDT-SWAP|short"
-            ],
+            "open_keys": [],
             "open_long": 0,
-            "open_positions": 3,
-            "open_short": 3,
+            "open_positions": 0,
+            "open_short": 0,
             "quota_full": false
           },
           "scanned_symbols": [
@@ -2667,11 +1829,11 @@
           "triggers": [
             {
               "arm": "vwap_revert_src",
-              "atr": 0.005842857142857165,
+              "atr": 0.0016000000000000022,
               "conditions": [],
-              "direction": "long",
-              "distance_atr": 0.13021882640583549,
-              "distance_pct": 0.049999999999987714,
+              "direction": "short",
+              "distance_atr": 0.07993749999997402,
+              "distance_pct": -0.049999999999983814,
               "gates": [
                 {
                   "name": "atr_ceiling",
@@ -2679,13 +1841,52 @@
                 }
               ],
               "gates_passed": true,
-              "last_close": 1.5217,
+              "last_close": 0.2558,
               "measurements": [
                 {
                   "name": "stop_atr_multiple",
                   "threshold": 8.0,
                   "unit": "xATR",
-                  "value": 0.6540373718686926
+                  "value": 0.5848083923318745
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=0.252812 (300 bar), σ=0.000882555; bu bar +3.29σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2×0.5σ (0.256555), hedef VWAP mesafesinin %75'i (0.253527); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band1_tp1 | combo_r=0.232 | combo_n=20 | pick=exploit",
+              "reward_risk": 2.430938010645572,
+              "stop_distance_pct": 0.34519027726609297,
+              "stop_price": 0.2565546552308821,
+              "symbol": "ADA-USDT-SWAP",
+              "target_price": 0.25352666294275483,
+              "trigger_price": 0.25567210000000007
+            },
+            {
+              "arm": "vwap_revert_src",
+              "atr": 0.006285714285714307,
+              "conditions": [],
+              "direction": "long",
+              "distance_atr": 0.1217124999999714,
+              "distance_pct": 0.04999999999998842,
+              "gates": [
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 1.5301,
+              "measurements": [
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 0.9337694357449999
                 }
               ],
               "position_state": {
@@ -2696,21 +1897,21 @@
                 "quota_full": false
               },
               "price_direction": "up",
-              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=1.54613 (300 bar), σ=0.00494956; bu bar -4.83σ ile bandın dışında kapandı ve kapanış long yönünde döndü; stop 1.5×0.5σ (1.51875), hedef VWAP mesafesinin %100'i (1.54613); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band0_tp2 | combo_r=-0.8024 | combo_n=3 | pick=explore",
-              "reward_risk": 6.376839775595966,
-              "stop_distance_pct": 0.243826891464436,
-              "stop_price": 1.5187486810356818,
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=1.54644 (300 bar), σ=0.00445889; bu bar -3.55σ ile bandın dışında kapandı ve kapanış long yönünde döndü; stop 2.5×0.5σ (1.52529), hedef VWAP mesafesinin %75'i (1.54255); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band2_tp1 | combo_r=0.1102 | combo_n=15 | pick=exploit",
+              "reward_risk": 2.0960300335569735,
+              "stop_distance_pct": 0.3640821507445039,
+              "stop_price": 1.525291443600964,
               "symbol": "XRP-USDT-SWAP",
-              "target_price": 1.546132756705396,
-              "trigger_price": 1.5224608499999999
+              "target_price": 1.5425474964076045,
+              "trigger_price": 1.5308650499999998
             },
             {
               "arm": "vwap_revert_src",
-              "atr": 0.05992857142857133,
+              "atr": 132.6071428571418,
               "conditions": [],
               "direction": "short",
-              "distance_atr": 0.09023241954705793,
-              "distance_pct": -0.04999999999998777,
+              "distance_atr": 0.32011284675457724,
+              "distance_pct": -0.04999999999998889,
               "gates": [
                 {
                   "name": "atr_ceiling",
@@ -2718,116 +1919,38 @@
                 }
               ],
               "gates_passed": true,
-              "last_close": 10.815,
+              "last_close": 84898.5,
               "measurements": [
                 {
                   "name": "stop_atr_multiple",
                   "threshold": 8.0,
                   "unit": "xATR",
-                  "value": 1.4706877978795627
+                  "value": 0.7775042164130728
                 }
               ],
               "position_state": {
-                "blocked": true,
-                "direction_quota_full": true,
+                "blocked": false,
+                "direction_quota_full": false,
                 "duplicate_position": false,
                 "opposite_position": false,
                 "quota_full": false
               },
               "price_direction": "down",
-              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=10.6067 (300 bar), σ=0.0861831; bu bar +2.37σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2×0.5σ (10.8958), hedef VWAP mesafesinin %50'i (10.7082); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band1_tp0 | combo_r=0.2847 | combo_n=12 | pick=exploit",
-              "reward_risk": 1.1768976605745711,
-              "stop_distance_pct": 0.7972834574865364,
-              "stop_price": 10.895775592824206,
-              "symbol": "AVAX-USDT-SWAP",
-              "target_price": 10.708163819674112,
-              "trigger_price": 10.8095925
-            },
-            {
-              "arm": "vwap_revert_src",
-              "atr": 0.040214285714285695,
-              "conditions": [],
-              "direction": "short",
-              "distance_atr": 0.06367140319714622,
-              "distance_pct": -0.049999999999990656,
-              "gates": [
-                {
-                  "name": "atr_ceiling",
-                  "passed": true
-                }
-              ],
-              "gates_passed": true,
-              "last_close": 5.121,
-              "measurements": [
-                {
-                  "name": "stop_atr_multiple",
-                  "threshold": 8.0,
-                  "unit": "xATR",
-                  "value": 1.8228699510460833
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": true,
-                "duplicate_position": false,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=4.90064 (300 bar), σ=0.0694722; bu bar +3.15σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2×0.5σ (5.18791), hedef VWAP mesafesinin %75'i (4.95509); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band1_tp1 | combo_r=0.1972 | combo_n=39 | pick=exploit",
-              "reward_risk": 2.351281105808139,
-              "stop_distance_pct": 1.3572934297024402,
-              "stop_price": 5.187911743036795,
-              "symbol": "NEAR-USDT-SWAP",
-              "target_price": 4.955090727569475,
-              "trigger_price": 5.118439500000001
-            },
-            {
-              "arm": "vwap_revert_src",
-              "atr": 121.57142857142753,
-              "conditions": [],
-              "direction": "short",
-              "distance_atr": 0.34797238542886516,
-              "distance_pct": -0.04999999999999353,
-              "gates": [
-                {
-                  "name": "atr_ceiling",
-                  "passed": true
-                }
-              ],
-              "gates_passed": true,
-              "last_close": 84607.0,
-              "measurements": [
-                {
-                  "name": "stop_atr_multiple",
-                  "threshold": 8.0,
-                  "unit": "xATR",
-                  "value": 0.998913210780186
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": true,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=84183.6 (300 bar), σ=113.534; bu bar +3.48σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2×0.5σ (84678.2), hedef VWAP mesafesinin %75'i (84278.9); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band1_tp1 | combo_r=-0.6178 | combo_n=67 | pick=exploit",
-              "reward_risk": 2.5176250484324454,
-              "stop_distance_pct": 0.1342568186569814,
-              "stop_price": 84678.23037122784,
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=84190.1 (300 bar), σ=96.7742; bu bar +7.03σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2×0.5σ (84952.8), hedef VWAP mesafesinin %75'i (84356.6); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band1_tp1 | combo_r=-0.6258 | combo_n=68 | pick=exploit",
+              "reward_risk": 5.161123029312557,
+              "stop_distance_pct": 0.11404518738395188,
+              "stop_price": 84952.82499208447,
               "symbol": "BTC-USDT-SWAP",
-              "target_price": 84278.86078195131,
-              "trigger_price": 84564.6965
+              "target_price": 84356.58698053364,
+              "trigger_price": 84856.05075000001
             },
             {
               "arm": "vwap_revert_src",
-              "atr": 0.4678571428571437,
+              "atr": 0.00016757142857142887,
               "conditions": [],
               "direction": "short",
-              "distance_atr": 0.13105496183204662,
-              "distance_pct": -0.04999999999999458,
+              "distance_atr": 0.031359761295817544,
+              "distance_pct": -0.049999999999991905,
               "gates": [
                 {
                   "name": "atr_ceiling",
@@ -2835,69 +1958,264 @@
                 }
               ],
               "gates_passed": true,
-              "last_close": 122.63,
+              "last_close": 0.01051,
               "measurements": [
                 {
                   "name": "stop_atr_multiple",
                   "threshold": 8.0,
                   "unit": "xATR",
-                  "value": 0.841344968946214
+                  "value": 1.0740000460739076
                 }
               ],
               "position_state": {
-                "blocked": true,
-                "direction_quota_full": true,
-                "duplicate_position": true,
-                "opposite_position": false,
-                "quota_full": false
-              },
-              "price_direction": "down",
-              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=119.661 (300 bar), σ=0.500906; bu bar +5.84σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 1.5×0.5σ (122.944), hedef VWAP mesafesinin %75'i (120.388); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band0_tp1 | combo_r=-0.5072 | combo_n=8 | pick=explore",
-              "reward_risk": 5.804195666923476,
-              "stop_distance_pct": 0.30650525368391296,
-              "stop_price": 122.94436445889629,
-              "symbol": "SOL-USDT-SWAP",
-              "target_price": 120.38816791252202,
-              "trigger_price": 122.568685
-            },
-            {
-              "arm": "vwap_revert_src",
-              "atr": 0.0622857142857144,
-              "conditions": [],
-              "direction": "short",
-              "distance_atr": 0.11319610091743211,
-              "distance_pct": -0.0500000000000005,
-              "gates": [
-                {
-                  "name": "atr_ceiling",
-                  "passed": true
-                }
-              ],
-              "gates_passed": true,
-              "last_close": 14.101,
-              "measurements": [
-                {
-                  "name": "stop_atr_multiple",
-                  "threshold": 8.0,
-                  "unit": "xATR",
-                  "value": 1.6787536281176108
-                }
-              ],
-              "position_state": {
-                "blocked": true,
-                "direction_quota_full": true,
+                "blocked": false,
+                "direction_quota_full": false,
                 "duplicate_position": false,
                 "opposite_position": false,
                 "quota_full": false
               },
               "price_direction": "down",
-              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=13.7356 (300 bar), σ=0.0783787; bu bar +4.60σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2.5×0.5σ (14.1919), hedef VWAP mesafesinin %75'i (13.8252); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band2_tp1 | combo_r=-0.2193 | combo_n=6 | pick=exploit",
-              "reward_risk": 2.743055482900939,
-              "stop_distance_pct": 0.6951445427143393,
-              "stop_price": 14.191922820802166,
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=0.010009 (300 bar), σ=0.000177306; bu bar +2.81σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2×0.5σ (0.0106821), hedef VWAP mesafesinin %100'i (0.010009); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band1_tp2 | combo_r=0.7051 | combo_n=20 | pick=exploit",
+              "reward_risk": 2.795932305078378,
+              "stop_distance_pct": 1.6878685207008512,
+              "stop_price": 0.010682051284034898,
+              "symbol": "PENGU-USDT-SWAP",
+              "target_price": 0.010009008632573431,
+              "trigger_price": 0.010504745000000001
+            },
+            {
+              "arm": "vwap_revert_src",
+              "atr": 5.359999999999998,
+              "conditions": [],
+              "direction": "short",
+              "distance_atr": 0.2526417910447511,
+              "distance_pct": -0.04999999999999503,
+              "gates": [
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 2708.32,
+              "measurements": [
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 0.9055420937299428
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=2689.3 (300 bar), σ=3.73467; bu bar +4.85σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2.5×0.5σ (2711.63), hedef VWAP mesafesinin %100'i (2689.3); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band2_tp2 | combo_r=-0.2443 | combo_n=80 | pick=exploit",
+              "reward_risk": 3.7834857745114534,
+              "stop_distance_pct": 0.1724565009118409,
+              "stop_price": 2711.634178568543,
+              "symbol": "ETH-USDT-SWAP",
+              "target_price": 2689.3032474353154,
+              "trigger_price": 2706.9658400000003
+            },
+            {
+              "arm": "vwap_revert_src",
+              "atr": 0.04142857142857143,
+              "conditions": [],
+              "direction": "short",
+              "distance_atr": 0.06216724137930652,
+              "distance_pct": -0.049999999999996936,
+              "gates": [
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 5.151,
+              "measurements": [
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 1.5047653502479406
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=4.90524 (300 bar), σ=0.0590702; bu bar +4.13σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2×0.5σ (5.20749), hedef VWAP mesafesinin %75'i (4.96603); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band1_tp1 | combo_r=0.1972 | combo_n=39 | pick=exploit",
+              "reward_risk": 3.08770160032351,
+              "stop_distance_pct": 1.1473442988587892,
+              "stop_price": 5.207494654981799,
+              "symbol": "NEAR-USDT-SWAP",
+              "target_price": 4.966033487931341,
+              "trigger_price": 5.1484245
+            },
+            {
+              "arm": "vwap_revert_src",
+              "atr": 0.06450000000000003,
+              "conditions": [],
+              "direction": "short",
+              "distance_atr": 0.0844418604651114,
+              "distance_pct": -0.04999999999999713,
+              "gates": [
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 10.893,
+              "measurements": [
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 1.0330621195629746
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=10.6082 (300 bar), σ=0.0813115; bu bar +3.46σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 1.5×0.5σ (10.9485), hedef VWAP mesafesinin %50'i (10.7479); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band0_tp0 | combo_r=-1.056 | combo_n=33 | pick=explore",
+              "reward_risk": 2.2906459674569453,
+              "stop_distance_pct": 0.5601222750070929,
+              "stop_price": 10.948537112356815,
+              "symbol": "AVAX-USDT-SWAP",
+              "target_price": 10.747861634273907,
+              "trigger_price": 10.887553500000001
+            },
+            {
+              "arm": "vwap_revert_src",
+              "atr": 0.4985714285714299,
+              "conditions": [],
+              "direction": "short",
+              "distance_atr": 0.12336246418337438,
+              "distance_pct": -0.04999999999999741,
+              "gates": [
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 123.01,
+              "measurements": [
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 1.3704585001205472
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=119.714 (300 bar), σ=0.516193; bu bar +6.31σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2.5×0.5σ (123.594), hedef VWAP mesafesinin %75'i (120.523); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band2_tp1 | combo_r=-0.1234 | combo_n=33 | pick=exploit",
+              "reward_risk": 3.7596729879279227,
+              "stop_distance_pct": 0.5248065202213974,
+              "stop_price": 123.59373671827409,
+              "symbol": "SOL-USDT-SWAP",
+              "target_price": 120.52259714112076,
+              "trigger_price": 122.94849500000001
+            },
+            {
+              "arm": "vwap_revert_src",
+              "atr": 0.06578571428571424,
+              "conditions": [],
+              "direction": "short",
+              "distance_atr": 0.10782736156351592,
+              "distance_pct": -0.049999999999999045,
+              "gates": [
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 14.187,
+              "measurements": [
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 1.511529968853078
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=13.7406 (300 bar), σ=0.0747208; bu bar +5.91σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2.5×0.5σ (14.2733), hedef VWAP mesafesinin %75'i (13.8505); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band2_tp1 | combo_r=-0.2193 | combo_n=6 | pick=explore",
+              "reward_risk": 3.5272118522093834,
+              "stop_distance_pct": 0.6586859627791916,
+              "stop_price": 14.273307553650714,
               "symbol": "LINK-USDT-SWAP",
-              "target_price": 13.82520324519561,
-              "trigger_price": 14.0939495
+              "target_price": 13.850461196554356,
+              "trigger_price": 14.1799065
+            },
+            {
+              "arm": "vwap_revert_src",
+              "atr": 1.7071428571428555,
+              "conditions": [],
+              "direction": "short",
+              "distance_atr": 0.22839330543933747,
+              "distance_pct": -0.050000000000001474,
+              "gates": [
+                {
+                  "name": "atr_ceiling",
+                  "passed": true
+                }
+              ],
+              "gates_passed": true,
+              "last_close": 779.8,
+              "measurements": [
+                {
+                  "name": "stop_atr_multiple",
+                  "threshold": 8.0,
+                  "unit": "xATR",
+                  "value": 0.926593811301052
+                }
+              ],
+              "position_state": {
+                "blocked": false,
+                "direction_quota_full": false,
+                "duplicate_position": false,
+                "opposite_position": false,
+                "quota_full": false
+              },
+              "price_direction": "down",
+              "reason": "VWAP sapma-dönüş (kaynak kuralları): kümülatif VWAP=775.611 (300 bar), σ=1.22786; bu bar +3.20σ ile bandın dışında kapandı ve kapanış short yönünde döndü; stop 2.5×0.5σ (780.945), hedef VWAP mesafesinin %50'i (777.51); yönetim: breakeven 1R, kısmi %50 @ 1.5R, takip geri verme %50 | arm=vwap_revert_src | combo=band2_tp0 | combo_r=-0.06048 | combo_n=26 | pick=exploit",
+              "reward_risk": 1.2376675602617457,
+              "stop_distance_pct": 0.19692198556584412,
+              "stop_price": 780.9449298446207,
+              "symbol": "BNB-USDT-SWAP",
+              "target_price": 777.5104908907913,
+              "trigger_price": 779.4100999999999
             }
           ]
         }
