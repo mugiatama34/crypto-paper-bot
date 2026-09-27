@@ -401,7 +401,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
-| 9 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6o, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 9 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6o, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **DÜŞTÜ — dönem A'da, üç ufukta da** (koşu #36305667820): D (bp) 1h −3.73 [−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; `p_bağ` 0.026 / 0.356 / 0.224, BH'de hiçbiri anlamlı değil; B'de doğrulanacak ufuk yok. A 1h işareti TERS (%95 düzeyinde "tersine dönüş görüldü" bayrağı; BH'de ve B'de tutmuyor — yeni tez kurulmaz). İşlem düzeyi betimsel: `xsec_random` 1h/4h'de işaret tezin tersi, ayırt edilemedi; `dc_coinflip` yapısal olarak değerlendirilemez — §6o > SONUÇ ⚠ TASLAK |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -5617,6 +5617,79 @@ farkı, başka uyuşmazlık yok). Hiçbir R ya da ileri getiri okunmadı.
   sorununu görmeden yaptım; sürüklenmeden arınmış D ile 1h'deki etkinin daha küçük çıkmasını
   bekliyorum." Okuma sırası: D (A, üç ufuk, BH) → ȳ₊ ve ȳ₋ yan yana → geçenler için B →
   işlem düzeyi (yalnızca `xsec_random` 1h ve 4h).
+
+### SONUÇ — koşuldu, tez hiçbir ufukta GEÇMEDİ *(2026-09-27, `measure-btc-veto` #36305667820, `ec922c4`)* — ⚠ TASLAK, kullanıcı onayı bekliyor
+
+Kapılar geçti (işlem CSV'si SHA, pins, kapsam, parite — TADİLAT-4 kesinlik farkları 10b'deki
+gibi); R'si eksik satır 0. Yük `docs/data/btc_veto_results.json`.
+
+**BİRİNCİL — fiyat testi, `D = ½(ȳ₊ + ȳ₋)`, bp.** Aralıklar %95, gün / ISO hafta; bağlayıcı
+alt sınır ikisinin küçüğü, `p_bağ` büyüğü. BH q = 0.05, m = 3 (eşikler 0.0167 / 0.033 / 0.05).
+
+| Dönem | Ufuk | D | gün aralığı | hafta aralığı | `p_bağ` | MDE | Karar |
+|---|---|---|---|---|---|---|---|
+| A | 1h | **−3.73** | [−6.63, −0.64] | [−6.89, −0.53] | 0.026 | 4.55 | GEÇMEDİ — işaret TERS; "tersine dönüş görüldü" bayrağı (7) |
+| A | 4h | −4.02 | [−12.92, +4.27] | [−11.28, +3.23] | 0.356 | 12.38 | GEÇMEDİ — ayırt edilemedi |
+| A | 24h | −24.81 | [−62.46, +15.28] | [−61.59, +13.04] | 0.224 | 57.81 | GEÇMEDİ — ayırt edilemedi |
+| B | 1h | −1.01 | [−4.46, +2.22] | [−3.56, +1.41] | 0.530 | 4.76 | bilgi — doğrulama değil |
+| B | 4h | −0.21 | [−8.88, +8.44] | [−9.13, +8.83] | 0.956 | 12.50 | bilgi — doğrulama değil |
+| B | 24h | +8.84 | [−30.87, +45.25] | [−33.23, +47.72] | 0.751 | 60.12 | bilgi — doğrulama değil |
+
+A'da hiçbir ufuk geçmedi → B'de doğrulanacak ufuk yok; **DOĞRULANDI: hiçbiri.** Tez (DEVAM,
+`D > 0`) üç ufukta da desteklenmedi; üç A tahmininin hiçbiri pozitif değil.
+
+**Ters yön bayrağı — nasıl okunur.** 7'nin ters yön kuralı (`D < 0` ∧ `max(ÜS) < 0`) %95
+aralıkla yazılmıştı ve BH'ye bağlanmamıştı; A 1h bu kuralı sağlıyor. Ama aynı ailenin BH
+düzeyinde (en küçük p için eşik 0.0167) `p_bağ = 0.026` ANLAMLI DEĞİLDİR ve B 1h aynı işareti
+taşısa da (−1.01) sıfırı rahatça içeriyor. Kural gereği bu bir "geçme" değildir ve bu veride
+yeni bir tez ("BTC'nin 1h hareketinden sonra altcoinler geri döner") KURULMAZ (§7.1).
+Büyüklük de not edilir: 3.7 bp, tek bir tam turun maliyetinin (~%0.22 = 22 bp) altındadır.
+
+**Yön kırılımı (bilgi), hafta aralıkları:**
+
+| Dönem | Ufuk | ȳ₊ (BTC güçlü yukarı) | ȳ₋ (BTC güçlü aşağı) | havuzlanmış ȳ | sürüklenme (tüm saatler, ham) |
+|---|---|---|---|---|---|
+| A | 1h | −1.78 [−5.79, +1.96] | **−5.68 [−10.28, −1.28]** | −3.72 | −0.30 |
+| A | 4h | +6.11 [−5.22, +17.04] | **−14.15 [−25.45, −3.08]** | −3.62 | −1.07 |
+| A | 24h | −4.45 [−58.54, +44.15] | −45.18 [−109.67, +23.41] | −23.65 | −5.97 |
+| B | 1h | +0.13 [−4.00, +4.19] | −2.15 [−6.15, +2.05] | −1.01 | −0.27 |
+| B | 4h | −2.25 [−13.64, +8.90] | +1.82 [−10.62, +14.07] | −0.21 | −0.97 |
+| B | 24h | +0.28 [−60.16, +55.46] | +17.40 [−53.15, +79.80] | +8.85 | −6.01 |
+
+A'daki negatif D'yi aşağı yarı taşıyor: BTC güçlü DÜŞTÜKTEN sonra altcoinler 1h ve 4h'de
+yükselme eğiliminde (ȳ₋ < 0 ⇔ ham ileri getiri > 0). Yukarı yarı sıfırdan ayırt edilemiyor.
+B'de bu desen tekrarlanmıyor (ȳ₋ 1h −2.15 sıfırı içeriyor, 4h'de işaret dönüyor). Bu kırılım
+bilgi amaçlıdır; kural gereği tek bir yarıdan tez kurulmaz. Sürüklenme ufuk başına küçüktür
+(1h −0.3 bp) ve iki dönemde de negatiftir; havuz ile D burada neredeyse aynı çıktı —
+TADİLAT-2'nin koruduğu dengesizlik sonucu bu veride değiştirmedi, ama ölçü önceden
+sabitlendiği için bu, sonradan bilinen bir şeydir.
+
+**İKİNCİL-1 — işlem düzeyi.** Fiyat testi hiçbir ufukta DOĞRULANMADIĞI için bütün işlem düzeyi
+satırları **betimseldir** (7). Okunabilen tek birim `xsec_random` (yalnızca long; "BTC güçlü
+DÜŞERKEN long"):
+
+| Dönem | Ufuk | KARŞI n / ort. R | YANINDA ∪ NÖTR n / ort. R | Δ | bağlayıcı aralık |
+|---|---|---|---|---|---|
+| A | 1h | 39 / +0.16 | 244 / −0.05 | +0.22 | [−0.27, +0.80] |
+| A | 4h | 45 / +0.20 | 238 / −0.07 | +0.27 | [−0.17, +0.70] |
+| B | 1h | 38 / +0.28 | 205 / +0.11 | +0.17 | [−0.65, +1.27] |
+| B | 4h | 39 / +0.25 | 204 / +0.11 | +0.14 | [−0.54, +0.91] |
+
+(24h: KARŞI 16 / 18 < 30 → değerlendirilemez.) Dört satırın dördünde işaret tezin TERSİ
+(BTC güçlü düşerken açılan long daha İYİ), hiçbiri sıfırdan ayırt edilemiyor; yön A 1h/4h'deki
+ȳ₋ ile tutarlı. `dc_coinflip`in `Δ⁼`ı 10b'deki yapısal bulgu gereği hiçbir ufukta
+değerlendirilemedi — bulgu sonuçtan bağımsızdır ve aynen geçerlidir. Modellerin (İKİNCİL-2)
+satırları yükte durur; hiçbiri karar üretmez.
+
+**Tahminle karşılaştırma (10, olduğu gibi):** "1d'de etki yok" — TUTTU (A ve B'de ayırt
+edilemedi). "1h ve 4h belirsiz, en olası 'ayırt edilemedi'" — 4h'de TUTTU; 1h'de tez yönünde
+bir etki yok, A'da ters yönde %95 düzeyinde bir bayrak var ama BH'de ve B'de tutmuyor.
+Kullanıcının okuma notu (10b: "D ile 1h'deki etki daha küçük çıkacak") — 1h'de D'nin işareti
+tezin tersidir; "küçük" okuması bu yüzden geçerli değildir, doğru ifade "yok ve A'da ters"tir.
+
+**Veto hakkında:** bu veri "BTC güçlü hareket ederken ona karşı altcoin işlemi açma" vetosuna
+DAYANAK SAĞLAMIYOR — ne fiyat düzeyinde (devam yok) ne işlem düzeyinde (tek okunabilir birimde
+işaret ters). Hiçbir model, filtre ya da kapı değişmez (1).
 
 ### 11. Uygulama planı — sonraki commit'ler (bu metni DEĞİŞTİREMEZ)
 
