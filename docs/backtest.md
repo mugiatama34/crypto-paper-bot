@@ -6960,7 +6960,7 @@ belirler; eşleme aile düzeyinde bir iddia olduğu için her aile aynı sesle g
   rejim geçişi, yani daha çok aç/kapa devri ödetir — **sapma tezin LEHİNEDİR** (gerçek
   etiketleri plasebodan iyi gösterir, özellikle devrin pahalı olduğu yerde). Ölçülür, gizlenmez:
   (i) gerçek ve plasebo başına dönem içi rejim geçişi sayısı; (ii) **brüt plasebo testi** —
-  aynı p'nin maliyetsiz (`c ≡ 0`) hâli, betimsel. Brütte geçmeyip netlte geçen bir kol
+  aynı p'nin maliyetsiz (`c ≡ 0`) hâli, betimsel. Brütte geçmeyip nette geçen bir kol
   "geçti" sayılır (kapı nettir, kullanıcının ölçüsü) ama cümlesine *"kazanç aç/kapa
   maliyeti farkından geliyor olabilir"* yazılır. Alternatif (dairesel kaydırma, geçişleri tek
   noktada bozar) O4'te.
