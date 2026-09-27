@@ -404,7 +404,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
 | 10 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6p, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **DÜŞTÜ — dönem A'da, üç ufukta da** (koşu #36305667820): D (bp) 1h −3.73 [−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; `p_bağ` 0.026 / 0.356 / 0.224, BH'de hiçbiri anlamlı değil; B'de doğrulanacak ufuk yok. A 1h işareti TERS (%95 düzeyinde "tersine dönüş görüldü" bayrağı; BH'de ve B'de tutmuyor — yeni tez kurulmaz). İşlem düzeyi betimsel: `xsec_random` 1h/4h'de işaret tezin tersi, ayırt edilemedi; `dc_coinflip` yapısal olarak değerlendirilemez — §6p > SONUÇ |
 | 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
-| 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, bu commit | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı: net Δ plasebo %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B | **KOŞULMADI** — ön-kayıt açık, onay bekliyor (§6r > 15) |
+| 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **KOŞULMADI** — ön-kayıt açık |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -7121,6 +7121,80 @@ kesinlik penceresi sapması 4H/1D kollarında aynen.
    koşunun artifact'ini `docs/data/texture_regime*`e commit eder (günlük V/D/eşik/etiket
    serisi, kol × dönem gerçek Δ ve 1000 plasebo Δ* dahil). Cron YOK.
 5. `CLAUDE.md` tablosuna betik ve workflow satırları; `docs/decisions.md`'ye sonuç kaydı.
+
+### TADİLAT-1 — plasebo DAİRESEL KAYDIRMA, kapı HEDGE'Lİ net getiride, onay noktaları *(2026-09-27, kullanıcı kararı; kod yazılmadan, HİÇBİR veri görülmeden)*
+
+Bu TADİLAT 7, 8, 11, 13 ve 15'in aşağıdaki noktalarının yerine geçer; geri kalan her şey
+(doku, eşleme, kollar, ızgaralar, portföy, dönemler, q, m) DEĞİŞMEZ.
+
+**1. Onay noktaları (15).** O1 (bar cinsinden ızgaralar, üç kolda aynı sayılar, 59 taban,
+ters yok), O2 (aile 1/7, sabit slot, kapalı = nakit), O3 (plasebo kapı, `Δ > 0` cümle),
+O5, O6, O7 (1D barı 4H'den, 00:00 UTC), O8 (15m derinliğini preflight ölçer), O9 ve tanımsız
+etiket kuralı (4) **KABUL**. O4 **DEĞİŞTİ** (2). Not (kullanıcı): `wave_scalp`in EK-1 turunda
+15m geçmişin A'nın başına ulaştığı görülmüştü; preflight yine de ölçer.
+
+**2. Plasebo — BİRİNCİL: dairesel kaydırma, TÜM uygun kaydırmalar (7'nin yerine).**
+- Dönemin ölçüm günleri `0 … D−1` (tam ISO haftaları, 9: A'da D = 903, B'de D = 812). Kaydırma
+  `k` için plasebo etiketi `L^k_d = L_{(d − k) mod D}` — V ve D etiketleri BİRLİKTE kayar.
+- **`k ∈ {30, …, D − 30}`**: her iki yönde 30 günden kısa kaydırmalar HARİÇ (gerçek etiketlerin
+  neredeyse kopyası olan bir plasebo p'yi anlamsızca şişirirdi). **A: 844 kaydırma, B: 753.**
+  Hepsi sayılır; rastgele çekiliş ve tohum YOKTUR — sonuç deterministiktir.
+- Ne korur: rejim SIKLIĞI birebir; epizot SÜRELERİ ve GEÇİŞ SAYISI, dönemi saran tek noktada
+  (gün `k−1` → `k`) ±1 dışında birebir. 7'deki "plasebo daha sık geçiş yapar, daha çok
+  maliyet öder" sapması (tezin LEHİNE) böylece ~sıfırlanır.
+- **p (tek yönlü):** `p = (1 + #{k : Δ*_k ≥ Δ}) / (K + 1)`, K = kaydırma sayısı; en küçük p
+  A'da 1/845, B'de 1/754 (BH eşiklerinin altında). **%95 dilimi:** `_percentiles(Δ*, 0.10)`
+  üst ucu (doğrusal ara değerleme). Komşu kaydırmalar birbirine korelasyonludur; bu p'nin
+  geçerliliğini bozmaz (dairesel sıfır hipotezi altında tam sayımdır), yalnızca etkin plasebo
+  sayısının K'dan küçük olduğunu söyler ve rapora yazılır.
+- **Haftalık blok permütasyonu BETİMSEL kalır** (eski birincil): 1000 permütasyon, tohum
+  `f"{random_seed}:doku:{dönem}:blok"` (`random.Random`), aynı p ve %95 hesabı — kapı değildir.
+  **Brüt versiyon** (`c ≡ 0`) ve **geçiş sayısı** tanıları iki plasebo için de betimseldir.
+- **Dönem girişi (dar okuma):** her portföy dönemin ilk barını, o barın etiketiyle kurulu
+  hâlde devralır — ilk barın öncesindeki etiket ilk barınkiyle aynı sayılır, yani dönem
+  sınırında aç/kapa maliyeti yazılmaz. Kural gerçek, plasebo ve her zaman açık portföy için
+  aynıdır; dairesel kaydırmada dönem dışındaki (kaydırılmamış) etiketin sızmasını önler.
+
+**3. KAPI hedge'li NET getiride; ham net getiri BETİMSEL (8'in yerine).** §6q > TADİLAT-1'in
+gerekçesiyle: yüksek verimlilik dönemleri güçlü trend dönemleridir ve trend aileleri o
+dönemlerde yön taşır — rejim yönle korele olursa eşlemenin kazancı dokudan değil yönden gelir.
+- **Hedge:** portföyün net maruziyeti `e_b = Σ_i W_{i,b}` (sinyal anında bilinir), birleşik
+  ağırlık `V_{i,b} = W_{i,b} − e_b / |E_b|` (i ∈ E_b). Hedge'li net getiri
+  `N^h_P = Σ_{b∈P} (Σ_i V_{i,b} · r_{i,b} − c^h_b)`, `c^h_b = (fee_rate + slippage_base) ·
+  Σ_i |V_{i,b} − V_{i,b−1}|` (strateji ve hedge bacakları netleşir, §6q > TADİLAT-1 > 6).
+  Eşlemeli portföye, `P⁰`'a ve HER plaseboya aynı kural uygulanır.
+- **Bağlayıcı ölçü:** `Δ^h = N^h(eşlemeli) − N^h(P⁰)`; plasebo `Δ^{h*}_k`. 8'in geçme kuralı
+  (%95 dilimi ∧ BH q = 0.05 m = 3, A'da ölç B'de doğrula) bu ölçüyle uygulanır.
+- **Ham** (`N`, hedge'siz) aynı kurallarla AYRI bir ailede (m = 3) hesaplanır; betimseldir ve
+  hiçbir hücrede kapıyı değiştirmez.
+- **Okuma tablosu (8'in tablosunun yerine):**
+
+| Hedge'li (KAPI) | Ham (betimsel) | `Δ^h` (A ve B) | Cümle |
+|---|---|---|---|
+| DOĞRULANDI | — | > 0 | *"doku stratejilerin performansını yönden bağımsız öngörüyor — eşleme her zaman açıktan iyi"* |
+| DOĞRULANDI | — | ≤ 0 (A ya da B) | *"doku stratejilerin performansını yönden bağımsız öngörüyor — ama eşleme yine de kaybettiriyor"* |
+| DOĞRULANMADI | DOĞRULANDI | — | *"doku yönü öngörüyor"* — dokuz önceki ölçümün (yön öngörüsü üretilemedi) söylediğine ters düşer; ŞÜPHEYLE okunur, hiçbir tez açmaz |
+| DOĞRULANMADI | DOĞRULANMADI | > 0 | *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* |
+| DOĞRULANMADI | DOĞRULANMADI | ≤ 0 (A ya da B) | *"ayırt edilemedi"* |
+
+- Sol kuyruk (`p_ters`) ve 10'un betimsel tabloları hedge'li ve ham için yan yana yazılır;
+  rejim başına aile getirilerine hedge'li sütun eklenir.
+
+**4. 13'e (kasa):** dondurma ve kasa sınaması hedge'li kapı içindir; asgari kasa uzunluğu
+dairesel kaydırmayla yeniden yazılır: 30 günlük dışlamadan sonra en az ~100 kaydırma kalması
+için **≥ 23 tam hafta** (161 gün; en erken 2027-03-08). Değer yine o ön-kayıtta sabitlenir.
+
+**5. Tahminler (11) değişmez, yalnızca eşlenir.** Kullanıcının tahmini bu karardan ÖNCE ham
+büyüklük için yazıldı ve öyle kayıtlıdır. Ön-kaydı yazanın ek tahmini: hedge'li kapı da üç
+kolda GEÇMEZ; ham `Δ` 1D ve 4H'de hedge'liden büyüktür (trend ailelerinin yön taşıması),
+yani varsa bir ham "kazanç" hedge'le küçülür.
+
+**6. 16'ya ek (uygulama):** testler dairesel kaydırmanın sıklığı birebir ve geçiş sayısını
+±1 içinde koruduğunu, kaydırma kümesinin tam olarak `{30 … D−30}` olduğunu, `k = 0`'da
+plasebonun gerçek etiketle aynı olduğunu, hedge özdeşliğini (`Σ_i V = 0`, i ∈ E) ve p'nin
+elle hesaplanmış bir örneğini sınar.
+
+**15'in durumu:** O1–O9 kararlaştırıldı. Kod bu TADİLAT'tan sonra yazılır.
 
 ---
 
