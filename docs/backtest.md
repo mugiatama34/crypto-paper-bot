@@ -403,7 +403,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
 | 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
 | 10 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6p, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **DÜŞTÜ — dönem A'da, üç ufukta da** (koşu #36305667820): D (bp) 1h −3.73 [−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; `p_bağ` 0.026 / 0.356 / 0.224, BH'de hiçbiri anlamlı değil; B'de doğrulanacak ufuk yok. A 1h işareti TERS (%95 düzeyinde "tersine dönüş görüldü" bayrağı; BH'de ve B'de tutmuyor — yeni tez kurulmaz). İşlem düzeyi betimsel: `xsec_random` 1h/4h'de işaret tezin tersi, ayırt edilemedi; `dc_coinflip` yapısal olarak değerlendirilemez — §6p > SONUÇ |
-| 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, bu commit | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **KOŞULMADI** — onay noktalarının hepsi kararlaştırıldı (TADİLAT-1, TADİLAT-2); uygulama bu dalda |
+| 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -6654,6 +6654,132 @@ ayrıca raporlar: UTC ayı başına uygun sembol sayısı (en az / medyan / en �
 A ve B'de evren doluyken HİÇ pozisyon taşınmayan saat payı, sembol başına uyuşmazlıkların ve
 kesinlik farklarının konumu. Çift kuralı, aile tablosu ve F6'nın nakit payı nihai evrende
 bu koşudan okunur. `measure` yine yalnızca kullanıcı onayıyla tetiklenir.
+
+### PREFLIGHT-2 — nihai evren *(2026-09-27, #36327626363; yalnızca kapsam ve pozisyon, getiri yok)*
+
+- **Tutarlılık:** 13 sembolün 13'ü geçti; SOL, DOGE, AVAX evrene döndü. Kesinlik farkı SOL 208,
+  DOGE 206, AVAX 204 bar, hepsi 2022-04-23 → 2022-06-01 04:00 içinde (en büyük göreli fark
+  3.5e-4); `outside_known_window` 13 sembolde BOŞ; ham metni olmayan bar 0. Kalan tekil
+  uyuşmazlıklar ilk preflight'takilerle aynıdır ve TEK güne aittir — 2022-12-18 00:00 ve/veya
+  08:00 (BTC 2; ETH, SOL, XRP, DOGE, AVAX, LINK, ADA, NEAR 1'er); bu barlar kesme kuralını
+  sağlamaz, uyuşmazlık sayıldı ve %0.1 payının çok altındadır.
+- **Çift kuralı:** 88 taban, elenen 0, sıfır ağırlıklı 0 → N = 176. Çift sayıları 28/25/128/115.
+- **Uygunluk:** A'nın başında 9 sembol (2022-01 → 2023-02), BNB ile 10, SUI ile 11, ETHFI ile
+  12, PENGU ile 13 (2025-02). **F6'nın 20 tabanının nakit payı A ve B'de 0.000** — k = 4 kolu
+  (≥ 8 sembol) A boyunca çalıştı; TADİLAT-3'ün onarmak için yapıldığı boşluk kapandı.
+
+### SONUÇ — koşuldu, iki ufukta da GEÇMEDİ: model momentumu DOĞRULANMADI, okuma "ayırt edilemedi" *(2026-09-27, `measure-model-momentum` #36330724536, sonuçlar `6f35da2`; kullanıcı onayı 2026-09-27)*
+
+Tetikleyici `417874b` (`mm-measure.run`), tek koşu, çıkış 0. Yük `docs/data/model_momentum.json`,
+strateji × dönem matrisi `docs/data/model_momentum_periods.csv`. Okuma sırası kullanıcı
+tarafından SONUÇ görülmeden verildi ve bu bölüm o sırayı izler. Veri ve bahçe PREFLIGHT-2'deki
+gibidir; tahminler (11) değişmedi.
+
+**1. KAPI — hedge'li getiri, dönem A.** Aralıklar %95; bağlayıcı alt sınır iki blok tanımının
+küçüğü, `p = max(p_IC, p_spread)` ve iki bloğun büyüğü. BH m = 2, q = 0.05 (eşikler 0.025 / 0.05).
+Spread birimi dönem başına getiri.
+
+| Ufuk | Çift | ĪC | IC aralıkları (blok 1 / blok 2·4) | S̄pread | spread aralıkları (blok 1 / blok 2·4) | p | Karar |
+|---|---|---|---|---|---|---|---|
+| aylık | 28 | +0.097 | [−0.054, +0.237] / [−0.077, +0.268] | +%2.40 | [+%0.05, +%4.82] / [−%0.25, +%5.43] | 0.264 | GEÇMEDİ |
+| haftalık | 128 | −0.003 | [−0.054, +0.053] / [−0.050, +0.044] | +%0.09 | [−%0.31, +%0.51] / [−%0.27, +%0.43] | 0.976 | GEÇMEDİ |
+
+Aylıkta nokta tahminleri pozitif, bağlayıcı alt sınırlar negatif (spread'in bir aylık blokta
+pozitif, iki aylıkta negatif alt sınırı muhafazakâr kuralla okundu); haftalıkta iki ölçü de
+sıfırda. BH'de hiçbir ufuk anlamlı değil.
+
+**Kesinlik (10'un projeksiyonuyla yan yana).** Gerçekleşen `sd(IC_t)`: aylık A 0.408, haftalık A
+0.299, aylık B 0.314, haftalık B 0.319 (projeksiyon 0.3–0.5). i.i.d. MDE: aylık A 0.22, haftalık A
+0.07, aylık B 0.18, haftalık B 0.08. Blok tasarım etkisi (IC SE'sinin karesi, büyük blok ÷ tek
+dönem): aylık A 1.37, haftalık A 0.81, aylık B 1.02, haftalık B 1.07. Okuma: aylık ufuk ~0.2'nin
+altındaki bir IC'yi göremezdi ve +0.10'luk nokta tam o bölgededir — aylıkta sonuç tezin reddi
+DEĞİL, güç sınırıdır (10). Haftalık ufuk ~0.07'lik bir IC'yi görebilirdi ve −0.003 ölçtü:
+**haftalık ufukta 0.07'nin üzerindeki kalıcılık A'da büyük ölçüde dışlandı.**
+
+**2. B doğrulaması.** A'da geçen ufuk yok → `m_B = 0`; **DOĞRULANDI: hiçbiri.** B sayıları
+"bilgi — doğrulama değil":
+
+| Ufuk | ĪC | bağlayıcı IC alt | S̄pread | bağlayıcı spread alt | p |
+|---|---|---|---|---|---|
+| aylık | +0.056 | −0.070 | +%1.25 | −%1.48 | 0.373 |
+| haftalık | +0.040 | −0.019 | +%0.50 | −%0.04 | 0.183 |
+
+**3. Okuma etiketi — ham ile hedge'li yan yana (mekanik).**
+
+| Ufuk | Hedge'li ĪC (A / B) | Ham ĪC (A / B) | Ham p (A) | Hedge'li | Ham | Cümle |
+|---|---|---|---|---|---|---|
+| aylık | +0.097 / +0.056 | −0.058 / −0.036 | 0.906 | DOĞRULANMADI | DOĞRULANMADI | *ayırt edilemedi* |
+| haftalık | −0.003 / +0.040 | −0.015 / −0.057 | 0.996 | DOĞRULANMADI | DOĞRULANMADI | *ayırt edilemedi* |
+
+Ne "seçim becerisi" ne "piyasa zamanlaması": ham getiride de kalıcılık yok, dört hücrenin
+dördünde ham ĪC negatif. `selector_thesis_allowed = false` — seçici tezine geçilmez (9, 13).
+
+**4. Sızıntı tanıları (betimsel, TADİLAT-1 > 5).**
+
+| Ufuk, dönem | piyasa iki dönem AYNI yönde: çift / ort. IC | FARKLI yönde: çift / ort. IC | ρ(geçen dönem net maruziyet, bu dönem hedge'li getiri) | ρ × piyasa işareti |
+|---|---|---|---|---|
+| aylık A | 13 / **+0.266** | 15 / −0.049 | +0.080 | +0.080 |
+| aylık B | 14 / **+0.179** | 11 / −0.099 | +0.159 | +0.124 |
+| haftalık A | 66 / +0.009 | 62 / −0.015 | +0.017 | +0.016 |
+| haftalık B | 54 / +0.023 | 61 / +0.056 | +0.056 | +0.006 |
+
+Aylık hedge'li ĪC'nin pozitif noktası neredeyse tamamen piyasanın iki ay üst üste aynı yöne
+gittiği çiftlerden geliyor ve iki dönemde de aynı desen var; farklı yönlü çiftlerde IC negatif.
+Maruziyet tanısı da aylıkta pozitif. Okuma: eşit ağırlıklı sepetle hedge sembol betalarını 1
+varsaydığı için (TADİLAT-1 > 4) piyasa kalıcılığının bir kısmı hedge'li getiriye sızıyor; aylık
++0.10'un kaynağı büyük olasılıkla bu artıktır, seçim becerisi değil. Haftalıkta iki tanı da
+sıfıra yakın. Bu okuma betimseldir ve kararı değiştirmez — karar zaten "geçmedi"dir.
+
+**5. Aile kırılımı (betimsel, kapı yok, BH yok; hedge'li, bağlayıcı IC alt sınırı parantezde).**
+
+| Aile | Strateji | aylık A | haftalık A | aylık B | haftalık B |
+|---|---|---|---|---|---|
+| F1 zaman serisi momentumu | 20 | **+0.235 (+0.048; p 0.015)** | −0.032 (−0.122) | +0.009 (−0.200) | +0.042 (−0.080) |
+| F2 EMA dizilimi | 12 | +0.145 (−0.087) | +0.016 (−0.099) | −0.008 (−0.238) | +0.089 (−0.025) |
+| F3 MA kesişimi | 40 | +0.066 (−0.158) | +0.028 (−0.053) | +0.043 (−0.140) | +0.079 (−0.004) |
+| F4 kısa vadeli geri dönüş | 16 | +0.094 (−0.130) | +0.072 (−0.014) | +0.016 (−0.293) | −0.005 (−0.112) |
+| F5 Donchian | 24 | +0.090 (−0.084) | −0.032 (−0.117) | −0.104 (−0.297) | −0.023 (−0.108) |
+| F6 kesitsel | 40 | +0.057 (−0.188) | −0.038 (−0.111) | +0.071 (−0.102) | +0.019 (−0.059) |
+| F7 RSI/Bollinger | 24 | +0.138 (+0.002; spread alt −%0.49) | +0.035 (−0.038) | +0.085 (−0.134) | +0.052 (−0.022) |
+
+İki alt sınırı da sıfırın üstünde olan tek hücre F1 aylık A'dır ve B'de tekrarlanmıyor
+(+0.009). Kural gereği (9, 12) bu hücre "asıl bulgu" olarak ÖNE ÇIKARILMAZ; F1'i yeniden
+test etmek yeni bir tezdir, taze pencere ister ve o pencere kasa değildir. Bileşim: üst ve
+alt beşte birin ~%44'ü F6'dır (bahçedeki payı %23) — kesitsel ailenin dönem getirileri en
+oynak olanlardır ve uçlara yığılır; üst ve alt uçların aile bileşimi tersler yüzünden
+birebir aynıdır (haftalık B'de eşitlik bozmalarından gelen ≤ 0.03 puanlık fark).
+
+**6. Net kârlılık (maliyet `devir × (fee_rate + slippage_base)` = devir × %0.105, dönem başına).**
+
+| Ufuk, dönem | hedge'li üst beşte bir net | alt beşte bir net | bahçe net | ham üst beşte bir net |
+|---|---|---|---|---|
+| aylık A | −%3.95 | −%6.35 | −%5.25 | −%5.71 |
+| aylık B | −%4.85 | −%6.10 | −%5.29 | −%6.53 |
+| haftalık A | −%1.22 | −%1.31 | −%1.21 | −%1.41 |
+| haftalık B | −%1.03 | −%1.53 | −%1.22 | −%2.06 |
+
+Geçen dönemin kazananlarını seçmek hiçbir hücrede net pozitif değil. Net spread brüt spread'e
+eşittir (bir taban ile tersinin devri aynıdır, simetri maliyeti iki uçta eşit düşürür); bu
+yüzden spread işlem yapılabilir bir getiri değildir, okunacak sayı üst beşte birin netidir.
+Maliyetin ağırlığı ailelerde çok ayrışıyor: günlük devir medyanı ~0.5×, F4 ~8.3× (en yüksek
+taban `st_rev_1h_1H` ~25×), F7 ~3.3×; F4'ün günlük maliyet sürüklenmesi ~%0.87. Kalıcılık olsa
+bile bu devirlerde maliyetten sonra kalması beklenmezdi.
+
+**Tahminle karşılaştırma (11, olduğu gibi).**
+- *Kullanıcı:* aylık IC küçük pozitif — nokta TUTTU (+0.097), aralık sıfırı içeriyor; haftalık
+  ~0 — TUTTU (−0.003); kalıcılık F1 ve F6'da — F1'de yalnızca A aylıkta betimsel, B'de yok; F6'da
+  yok; geri dönüş ailelerinde yok — TUTMADI (F4 +0.094, F7 +0.138; ikisi de gürültü düzeyinde
+  pozitif).
+- *Ön-kaydı yazan:* aylık ĪC pozitif ama GEÇMEDİ — TUTTU; "artık IC sıfıra yakın" — kısmen:
+  hedge'li +0.10 sıfırdan ayırt edilemiyor ama nokta sıfır değil ve sızıntı tanısı onu piyasa
+  kanalına bağlıyor; haftalık GEÇMEZ — TUTTU; ham kalıcılık net maruziyetli ailelerde (F1, F2,
+  F3, F5) — TUTMADI (F2, F3, F5'te ham aylık A IC negatif); F4 ve F7'de IC ≤ 0 — TUTMADI;
+  beklenen hücre "ayırt edilemedi" — TUTTU.
+
+**Karar:** model momentumu bu bahçede ve bu pencerelerde DOĞRULANMADI; seçici tezi açılmaz,
+bahçe dondurulmaz, kasa açılmaz (13). Hiçbir model, filtre, parametre ya da kapı değişmez.
+Aylık ufukta sonuç güç sınırıyla okunur; haftalık ufukta ~0.07'nin üzerinde kalıcılık A'da
+dışlandı.
 
 ---
 

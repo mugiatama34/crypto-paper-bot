@@ -5444,7 +5444,7 @@ değil (BNB 2022-12-23 — §6d ve §6j'de görülmüştü, §6p'de yine öngör
 `main`deki oynaklık hedefleme ön-kaydı §6o, sicil 9 ve karar 66'yı önce aldığı için birleştirmede
 §6p ve sicil 10 oldu, bu kayıt 67 olarak yazıldı. Tetikleyici dosyalar ve sabitlenmiş yük eski adı
 taşır ve değiştirilmez.
-## 68. Model momentumu ölçümü ve KASA kuralı — ön-kayıt §6q, §7.8 *(2026-09-27)*
+## 68. Model momentumu: stratejilerin dönem getirisi kalıcı DEĞİL ("ayırt edilemedi") — ölçüm, yeni model YOK; ön-kayıt §6q ve KASA kuralı §7.8 *(2026-09-27)*
 
 Tez (kullanıcı): bir stratejinin son dönem getirisi sonraki dönemi öngörür (faktör momentumu).
 **Model DEĞİL:** evin modelleri bir kesit veremediği için ölçüm motor dışında, `ema` evreninin
@@ -5505,3 +5505,29 @@ yalnızca BTC vetosunun dar kesme istisnası eklenir (ham metinden okunan ondal�
 satırda listelenir. Kesme kuralı `core/price_text.py`de tek kopya; ham metin önbelleğe
 dokunmayan `core/data.py::fetch_ohlcv_text` ile gelir. Preflight-2 aynı koşuda aylık
 uygunluğu ve taban başına nakit payını raporlar; `measure` onaysız başlamaz.
+
+**Preflight-2** (#36327626363, yalnızca kapsam): tutarlılık 13 sembolde geçti; kesinlik farkları
+(SOL 208, DOGE 206, AVAX 204) yalnızca bilinen pencerede, pencere dışı liste boş; kalan tekil
+uyuşmazlıklar tek güne (2022-12-18) ait. Çift kuralı hiçbir tabanı elemedi (N = 176). F6'nın
+nakit payı A ve B'de 0 — k = 4 kolu A boyunca çalıştı.
+
+**SONUÇ** (#36330724536, tetikleyici `417874b`, yük `6f35da2`; §6q > SONUÇ). Hedge'li kapı dönem
+A'da iki ufukta da GEÇMEDİ: aylık ĪC +0.097 (bağlayıcı alt sınır −0.077, spread +%2.40 / alt
+−%0.25, p 0.264), haftalık ĪC −0.003 (alt −0.054, p 0.976). B'de doğrulanacak ufuk yok. Ham ĪC
+dört hücrede de negatif → okuma **"ayırt edilemedi"**: ne seçim becerisi ne piyasa zamanlaması.
+Sızıntı tanısı aylık pozitif noktayı piyasanın iki ay üst üste aynı yöne gittiği çiftlere
+bağlıyor (ort. IC +0.27 / +0.18 ↔ farklı yönlü çiftlerde −0.05 / −0.10) — hedge'in beta = 1
+varsayımından kalan piyasa kalıcılığı. Güç: aylık ufuk ~0.2'nin altındaki IC'yi göremezdi
+(sonuç güç sınırıyla okunur); haftalık ~0.07 üzerindeki kalıcılığı A'da büyük ölçüde dışladı.
+Aile kırılımında (betimsel) yalnızca F1 aylık A'nın iki alt sınırı pozitif; B'de tekrarlanmıyor
+ve kural gereği öne çıkarılmaz. Geçen dönemin kazananları maliyetten sonra hiçbir hücrede
+pozitif değil (hedge'li üst beşte bir aylık A −%3.95, B −%4.85); aile ortalaması devir 0.26×–8.3×/gün,
+kısa vadeli geri dönüş ailesi günde ~%0.87 maliyet taşıyor.
+
+**Karar:** model momentumu DOĞRULANMADI. Seçici tezi açılmaz, bahçe dondurulmaz, kasa açılmaz;
+hiçbir model, filtre, parametre ya da kapı değişmez. F1'i yeniden sınamak yeni bir tezdir ve
+§7.8 gereği o sınamanın penceresi kasa olamaz.
+
+**Numara.** Ön-kayıt ve ilk iki TADİLAT commit'leri (`ec0d01a`, `551fa67`, `f56f269`) §6p /
+karar 67 adını taşır; BTC momentum vetosu önce birleştiği için §6q / karar 68 oldu. Sicil
+satırı 11 değişmedi.
