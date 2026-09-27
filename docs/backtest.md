@@ -401,7 +401,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
-| 9 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6o, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3: işlem düzeyinde durum içi karşıtlık) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 9 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6o, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -5187,6 +5187,25 @@ durur. Kayıt: kullanıcı `dc_short`u iki yönlüler arasında saymıştı; mod
 açar (`strategies/dc_short.py::allowed_directions`) ve tek yönlüdür — sınıf modelin
 BİLDİRİMİNDEN okunur, veriden değil.
 
+**TADİLAT-4 (2026-09-27, hiçbir sonuç görülmeden; kullanıcı kararı):** preflight
+(#36305073191) parite kapısında durdu: SOL 37/1205, DOGE 27/1367, AVAX 38/1365 4H barı
+tutmadı (%1 sınırının üstünde); öteki 10 sembolde her bar birebir. Teşhis: tutmayan
+değerlerin HEPSİ, 1H değerinin 4H değerinin ondalık sayısına KESİLMİŞ hâlidir (ör.
+100.101 → 100.1, 95.096 → 95.09) ve tek bir pencerededir (2022-04-23 → 2022-06-01; en büyük
+göreli fark 3.4e-4); pencere dışında her bar birebir. OKX'in o haftalardaki 4H geçmişi bir
+eksik ondalıkla kayıtlıdır. Kapının sorusu ("1H serisi backtest'lerin gördüğü veriyle aynı
+mı") evet olarak cevaplanıyor. Kural (3 > Parite'ye eklenir): bir değer tolerans içinde
+tutmuyorsa ve **1H değeri, 4H değerinin ondalık sayısına KESİLDİĞİNDE (sıfıra doğru,
+yuvarlama DEĞİL) 4H değerine TAM eşitse** "kesinlik farkı" sayılır ve %1 kuralına girmez.
+İki şart kuralın gözlenenden geniş yazılmasını önler: (i) yalnızca kesme — yuvarlanmış
+eşitlik geçerli DEĞİLDİR (95.096'nın yuvarlanmışı 95.10'dur); (ii) ondalık sayısı
+`market_direction_prices.csv`nin HAM METNİNDEN okunur, float'tan türetilmez (float
+gösterimi sondaki sıfırları siler, 100.10 → 100.1, ve kural fark ettirmeden gevşerdi);
+karşılaştırma ondalık aritmetikle (`Decimal`) yapılır. Kesinlik farkları sembol, sayı ve
+zaman penceresiyle raporlanır; öteki her uyuşmazlık için %1 kuralı ve çıkış 3 AYNEN kalır.
+Preflight sonuç okumadığı için yeni bir tetikleyiciyle (`btcveto-preflight-2.run`) yeniden
+koşulur.
+
 ### 1. Statü: ÖLÇÜM, yeni model YOK
 
 Tez: *BTC'nin kısa vadeli güçlü hareketi sürüyorsa, ona KARŞI açılan altcoin işlemleri kötü
@@ -5273,6 +5292,8 @@ deseni); sonraki aşamalar YALNIZCA bu kopyayı okur ve önce SHA256'yı doğrul
   fark ≤ 1e-6. Tutmayan pay bir sembolde %1'i aşarsa çıkış 3 (sembol adıyla). Gerekçe: 4H
   serisi koşuların gördüğü seridir; 1H seri ona sınır noktalarında birebir inmelidir.
   4H barı dosyada olmayan saatler bu kapıyla sınanamaz; sınanan bar sayısı yazılır.
+  **TADİLAT-4:** 4H değerinin ham metnindeki ondalık sayısına KESİLMİŞ 1H değeri 4H değerine
+  tam eşitse uyuşmazlık "kesinlik farkı"dır, %1 kuralına girmez ve ayrı raporlanır.
 
 ### 4. BTC durumu — girişteki anda, yalnızca kapanmış barlar
 
