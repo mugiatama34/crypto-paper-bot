@@ -257,3 +257,48 @@ def test_trades_sha_gate(world):
     world["trades"].write_text(world["trades"].read_text() + "\n")
     assert bv.main(_argv(world, "preflight")) == 3
     assert bv.main(_argv(world, "snapshot")) == 3
+
+
+# (11) TADİLAT-3 --------------------------------------------------------------------------
+def test_combo_draws_and_precision_reduce_to_the_two_group_originals():
+    from scripts.backtest_dc import cluster_diff_draws, precision_diff
+    rng = np.random.default_rng(7)
+    a = {f"c{i}": list(rng.standard_normal(int(rng.integers(1, 6)))) for i in range(25)}
+    b = {f"c{i}": list(rng.standard_normal(int(rng.integers(1, 6)))) for i in range(5, 32)}
+    original, dropped = cluster_diff_draws(a, b, iterations=200, seed="s")
+    combo, dropped_c = bv.combo_draws([(1.0, a), (-1.0, b)], iterations=200, seed="s")
+    assert combo == pytest.approx(original) and dropped_c == dropped
+    assert bv.precision_combo([(1.0, a), (-1.0, b)])["se_cluster"] == pytest.approx(precision_diff(a, b)["se_cluster"])
+
+
+def test_balanced_contrast_removes_constant_drift():
+    rng = np.random.default_rng(8)
+    drift = 0.5
+    days = pd.date_range("2022-01-01T00:00Z", periods=420, freq="D")      # ≥ 10 ay kümesi
+    rows, cls = [], []
+    for i, day in enumerate(days):
+        for _ in range(4 if i % 3 else 1):                     # yukarı durum DAHA SIK
+            for direction in ("long", "short"):
+                sign = 1 if direction == "long" else -1
+                rows.append({"opened_at": day, "direction": direction, "r": sign * drift + rng.standard_normal()})
+                cls.append(bv.YANINDA if direction == "long" else bv.KARSI)       # yukarı durum
+        for direction in ("long", "short"):
+            sign = 1 if direction == "long" else -1
+            rows.append({"opened_at": day, "direction": direction, "r": sign * drift + rng.standard_normal()})
+            cls.append(bv.KARSI if direction == "long" else bv.YANINDA)           # aşağı durum
+    frame = pd.DataFrame(rows)
+    classes = pd.Series(cls, index=frame.index)
+    old = frame.loc[classes == bv.KARSI, "r"].mean() - frame.loc[classes != bv.KARSI, "r"].mean()
+    res = bv.combo_contrast(bv.balanced_cells(frame, classes), definitions=("month", "week"),
+                            iterations=300, alpha=0.05, seed="t")
+    assert old < -0.3                                           # eski karşıtlık sürüklenmeyi taşır
+    assert abs(res["estimate"]) < 0.15 and res["evaluable"]
+    assert res["low_binding"] < 0 < res["high_binding"]
+
+
+def test_direction_class_is_the_models_own_declaration():
+    from strategies.registry import REGISTRY
+    for model, klass in bv.DIRECTION_CLASS.items():
+        declared = set(REGISTRY[model].allowed_directions)
+        assert declared == ({"long", "short"} if klass == "both" else {klass}), model
+    assert {u.model for u in (*bv.CONTROL_UNITS, *bv.MODEL_UNITS)} <= set(bv.DIRECTION_CLASS)

@@ -40,6 +40,8 @@ import io
 import json
 import logging
 import math
+import random
+import statistics
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -56,6 +58,7 @@ from core.data import fetch_ohlcv  # noqa: E402
 from scripts.backtest_dc import (  # noqa: E402
     MIN_CLUSTERS,
     _percentiles,
+    _z,
     cluster_diff_draws,
     cluster_mean_draws,
     precision,
@@ -125,6 +128,25 @@ MODEL_UNITS = tuple(
                  "vwap_managed", "vwap_clone")]
 )
 COINFLIP_MODELS = {"dc_coinflip", "scalp_coinflip"}   # §6o > 5: ek karşıtlık yalnızca bunlarda
+
+# §6o > 5 (TADİLAT-3): YÖN SINIFI modelin `allowed_directions` bildiriminden — veriden DEĞİL.
+DIRECTION_CLASS = {
+    "dc_coinflip": "both", "scalp_coinflip": "both", "trend": "both",
+    "scalp_fixed": "both", "scalp_patient": "both", "scalp_bandit": "both",
+    "scalp_managed": "both", "vwap_managed": "both", "vwap_clone": "both",
+    "xsec_random": "long", "xsec_mom": "long", "ema_trend": "long",
+    "dc_short": "short",
+}
+ANSWERS = {
+    "both": "iki taraf da",
+    "long": "yalnızca 'BTC güçlü DÜŞERKEN long' (yukarı durumda KARŞI oluşmaz)",
+    "short": "yalnızca 'BTC güçlü YÜKSELİRKEN short' (aşağı durumda KARŞI oluşmaz)",
+}
+# Δ⁼'ın dört hücresi ve ağırlıkları: ½[(short−long | yukarı) + (long−short | aşağı)].
+BALANCED_CELLS = (
+    ("short|yukarı", KARSI, "short", 0.5), ("long|yukarı", YANINDA, "long", -0.5),
+    ("long|aşağı", KARSI, "long", 0.5), ("short|aşağı", YANINDA, "short", -0.5),
+)
 
 
 class DataGateError(RuntimeError):
@@ -391,6 +413,10 @@ def cell_counts(classes: pd.DataFrame, horizon: str) -> dict[str, Any]:
         sub = classes.loc[classes[horizon].isin(members)]
         out[name] = {"n": int(len(sub)),
                      **{f"clusters_{d}": len({cluster_of(t, d) for t in sub["opened_at"]}) for d in TRADE_DEFINITIONS}}
+    for name, klass, direction, _ in BALANCED_CELLS:
+        sub = classes.loc[(classes[horizon] == klass) & (classes["direction"] == direction)]
+        out[name] = {"n": int(len(sub)),
+                     **{f"clusters_{d}": len({cluster_of(t, d) for t in sub["opened_at"]}) for d in TRADE_DEFINITIONS}}
     out[TANIMSIZ] = int((classes[horizon] == TANIMSIZ).sum())
     return out
 
@@ -399,6 +425,96 @@ def _ci(draws: Sequence[float], alpha: float) -> tuple[float | None, float | Non
     if not draws:
         return None, None
     return _percentiles(draws, alpha)
+
+
+def combo_draws(cells: Sequence[tuple[float, Mapping[str, Sequence[float]]]], *, iterations: int,
+                seed: str) -> tuple[list[float], int]:
+    """`Σ wᵢ · ort(hücreᵢ)` için küme-EŞLEŞTİRİLMİŞ bootstrap çekilişleri: `(değerler, atılan)`.
+
+    `scripts/backtest_dc.py::cluster_diff_draws`in AYNI algoritması (küme etiketleri BİR KEZ,
+    bütün hücrelerin kümelerinin BİRLEŞİMİNDEN; boş hücreli çekiliş atılır ve sayılır; 4 ×
+    tekrar tavanı) — iki hücre ve (1, −1) ağırlıkla ona birebir eşittir (test).
+    """
+    ids = sorted(set().union(*(set(g) for _, g in cells)))
+    sums = [[float(sum(g.get(i, ()))) for i in ids] for _, g in cells]
+    counts = [[len(g.get(i, ())) for i in ids] for _, g in cells]
+    weights = [w for w, _ in cells]
+    rng = random.Random(seed)
+    values: list[float] = []
+    dropped = attempts = 0
+    while len(values) < iterations and attempts < 4 * iterations:
+        attempts += 1
+        tot = [0.0] * len(cells)
+        cnt = [0.0] * len(cells)
+        for _ in ids:
+            k = rng.randrange(len(ids))
+            for c in range(len(cells)):
+                tot[c] += sums[c][k]
+                cnt[c] += counts[c][k]
+        if any(n == 0 for n in cnt):
+            dropped += 1
+            continue
+        values.append(sum(w * t / n for w, t, n in zip(weights, tot, cnt)))
+    return values, dropped
+
+
+def precision_combo(cells: Sequence[tuple[float, Mapping[str, Sequence[float]]]]) -> dict[str, Any]:
+    """`precision_diff`in formülünün çok terimli hâli: `d_g = Σᵢ wᵢ Σ(r − r̄ᵢ)/nᵢ`, `SE = √Σ d_g²`."""
+    flat = [[r for rs in g.values() for r in rs] for _, g in cells]
+    if any(len(v) < 2 for v in flat):
+        return {"evaluable": False}
+    means = [sum(v) / len(v) for v in flat]
+    ids = set().union(*(set(g) for _, g in cells))
+    se_cluster = math.sqrt(sum(
+        sum(w * sum(r - m for r in g.get(i, ())) / len(v) for (w, g), m, v in zip(cells, means, flat)) ** 2
+        for i in ids))
+    se_iid = math.sqrt(sum(w * w * statistics.variance(v) / len(v) for (w, _), v in zip(cells, flat)))
+    deff = (se_cluster / se_iid) ** 2 if se_iid > 0 else float("nan")
+    return {"se_cluster": se_cluster, "se_iid": se_iid, "deff": deff, "mde": _z() * se_cluster}
+
+
+def combo_contrast(cells: Sequence[tuple[str, float, Sequence[pd.Timestamp], Sequence[float]]], *,
+                   definitions: Sequence[str], iterations: int, alpha: float, seed: str) -> dict[str, Any]:
+    """TADİLAT-3'ün `Δ⁼`ı: hücre başına (ad, ağırlık, damgalar, değerler); `contrast` ile aynı yük."""
+    sizes = {name: len(values) for name, _, _, values in cells}
+    point = (sum(w * float(np.mean(v)) for _, w, _, v in cells) if all(sizes.values()) else None)
+    evaluable = all(n >= MIN_N for n in sizes.values())
+    per_def: dict[str, Any] = {}
+    for definition in definitions:
+        groups = [(w, _groups(t, v, definition)) for _, w, t, v in cells]
+        entry: dict[str, Any] = {"clusters": {name: len(g) for (name, *_), (_, g) in zip(cells, groups)}}
+        if all(n >= 2 for n in sizes.values()):
+            draws, dropped = combo_draws(groups, iterations=iterations, seed=f"{seed}:{definition}")
+            low, high = _ci(draws, alpha)
+            prec = precision_combo(groups)
+            entry.update({"low": low, "high": high, "p": bootstrap_p(draws) if draws else 1.0,
+                          "draws": len(draws), "dropped_draws": dropped, **prec,
+                          "n_effective": sum(sizes.values()) / prec["deff"] if prec.get("deff") else None})
+            if len(draws) < iterations:
+                evaluable = False
+        else:
+            entry.update({"low": None, "high": None, "p": 1.0})
+            evaluable = False
+        if any(c < MIN_CLUSTERS for c in entry["clusters"].values()):
+            evaluable = False
+        per_def[definition] = entry
+    lows = [e["low"] for e in per_def.values()]
+    highs = [e["high"] for e in per_def.values()]
+    return {
+        "cells": sizes, "estimate": point, "definitions": per_def, "evaluable": evaluable,
+        "low_binding": min(lows) if evaluable and None not in lows else None,
+        "high_binding": max(highs) if evaluable and None not in highs else None,
+        "p_binding": max(e["p"] for e in per_def.values()) if evaluable else 1.0,
+        "mde_binding": max((e.get("mde") or 0.0) for e in per_def.values()) if evaluable else None,
+    }
+
+
+def balanced_cells(rows: pd.DataFrame, cls: pd.Series) -> list[tuple[str, float, list[pd.Timestamp], list[float]]]:
+    out = []
+    for name, klass, direction, weight in BALANCED_CELLS:
+        sub = rows.loc[(cls == klass) & (rows["direction"] == direction)]
+        out.append((name, weight, list(sub["opened_at"]), list(sub["r"]) if "r" in sub else []))
+    return out
 
 
 def contrast(a_stamps: Sequence[pd.Timestamp], a_values: Sequence[float],
@@ -596,8 +712,11 @@ def decide_price(results: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 def trade_unit(rows: pd.DataFrame, classes: pd.DataFrame, unit: Unit, *, seed_base: str,
                iterations: int, alpha: float) -> dict[str, Any]:
+    klass = DIRECTION_CLASS[unit.model]
     out: dict[str, Any] = {"source": unit.source, "period": unit.period, "model": unit.model,
-                           "role": unit.role, "label": unit.label, "n": int(len(rows)), "horizons": {}}
+                           "role": unit.role, "label": unit.label, "n": int(len(rows)),
+                           "direction_class": klass, "answers": ANSWERS[klass],
+                           "binding": "balanced" if klass == "both" else "contrast", "horizons": {}}
     for horizon in HORIZONS:
         cls = classes[horizon]
         seed = f"{seed_base}:btcveto:{unit.source}:{unit.period}:{unit.model}:{horizon}"
@@ -607,15 +726,25 @@ def trade_unit(rows: pd.DataFrame, classes: pd.DataFrame, unit: Unit, *, seed_ba
                                iterations=iterations, alpha=alpha, seed=f"{seed}:cell:{name}")
                  for name, sub in sel.items()}
         entry: dict[str, Any] = {"cells": cells, "undefined": int((cls == TANIMSIZ).sum())}
+        bcells = balanced_cells(rows, cls) if klass == "both" else None
         if unit.role == "descriptive":
             entry["contrast"] = {"estimate": (cells[KARSI]["mean"] - cells["YANINDA∪NÖTR"]["mean"])
                                  if cells[KARSI]["n"] and cells["YANINDA∪NÖTR"]["n"] else None,
                                  "note": "betimsel — aralık ve p hesaplanmaz (§6o > 5)"}
+            if bcells is not None:
+                entry["balanced"] = {
+                    "cells": {name: len(v) for name, _, _, v in bcells},
+                    "estimate": sum(w * float(np.mean(v)) for _, w, _, v in bcells) if all(v for *_, v in bcells) else None,
+                    "note": "betimsel — aralık ve p hesaplanmaz (§6o > 5)"}
         else:
             k, r = sel[KARSI], sel["YANINDA∪NÖTR"]
             entry["contrast"] = contrast(list(k["opened_at"]), list(k["r"]), list(r["opened_at"]), list(r["r"]),
                                          definitions=TRADE_DEFINITIONS, iterations=iterations, alpha=alpha,
                                          seed=seed)
+            if bcells is not None:
+                entry["balanced"] = combo_contrast(bcells, definitions=TRADE_DEFINITIONS, iterations=iterations,
+                                                   alpha=alpha, seed=f"{seed}:balanced")
+                entry["contrast"]["note"] = "betimsel — iki yönlü birimde bağlayıcı ölçü Δ⁼ (TADİLAT-3)"
         if unit.model in COINFLIP_MODELS and unit.role != "descriptive":
             y = sel[YANINDA]
             entry["karsi_minus_yaninda"] = contrast(
@@ -647,10 +776,11 @@ def decide_trades(units: Sequence[Mapping[str, Any]], confirmed: Mapping[str, bo
             if unit is None:
                 continue
             family = list(HORIZONS) if period == "A" else [h for h in HORIZONS if passed_a.get(h)]
-            pvals = {h: unit["horizons"][h]["contrast"]["p_binding"] for h in family}
+            binding = unit["binding"]           # TADİLAT-3: iki yönlüde Δ⁼, tek yönlüde Δ_X
+            pvals = {h: unit["horizons"][h][binding]["p_binding"] for h in family}
             rejected = bh_reject(pvals)
             for h in HORIZONS:
-                c = unit["horizons"][h]["contrast"]
+                c = unit["horizons"][h][binding]
                 in_family = h in family
                 passed = bool(in_family and c["evaluable"] and rejected.get(h)
                               and (c["estimate"] or 0) < 0 and c["high_binding"] is not None and c["high_binding"] < 0)
@@ -662,7 +792,7 @@ def decide_trades(units: Sequence[Mapping[str, Any]], confirmed: Mapping[str, bo
                 reading = ("koşullu — fiyat testi DOĞRULANDI" if confirmed.get(h)
                            else "betimsel (fiyat testi doğrulanmadı)")
                 unit["horizons"][h]["decision"] = {
-                    "in_family": in_family, "m": len(family), "bh_rejected": bool(rejected.get(h)),
+                    "measure": binding, "answers": unit["answers"], "in_family": in_family, "m": len(family), "bh_rejected": bool(rejected.get(h)),
                     "passed_own_rule": passed, "reverse_seen": reverse, "reading": reading,
                     "note": "" if in_family else "bilgi — doğrulama değil",
                 }
