@@ -5414,3 +5414,12 @@ A/B'yi geçmiş ve dondurulmuş bir tezin tek seferlik sınaması için açılı
 kasa verisidir. Canlı katmanların ön-kayıtlı kapıları kuralın dışında, canlı defterden tez
 türetmek içindedir. On iki onay noktası (§6p > 15) kullanıcı kararını bekler; kod onaydan önce
 yazılmaz.
+
+**TADİLAT-1 (2026-09-27, kullanıcı kararı, kod öncesi, veri görülmeden):** O2 önerinin TERSİNE
+kararlaştırıldı — **kapı hedge'lenmiş getiridedir.** Ham getiride IC'yi sabit sürüklenme ve
+piyasa kalıcılığı seçim becerisi olmadan pozitif yapabilir; sürüklenmeden arınmış ölçünün
+bağlayıcı olması projenin önceki kuralıdır. Hedge'li strateji `w_i − e/|E|` birleşik
+ağırlığını taşır (işlem yapılabilir, ileriye bakışsız); ham getiri betimseldir ve "yalnızca
+hamda kalıcılık" = *"seçici değil, piyasa zamanlaması"* — ayrı ve daha basit bir tez adayı.
+Hedge sembol betasını 1 varsayar; beta tahmin EDİLMEZ, sızıntı betimsel bir tanıyla ölçülür
+(§6p > TADİLAT-1 > 4–5). Öteki onay noktaları bekliyor.

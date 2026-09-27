@@ -402,7 +402,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
 | 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
-| 10 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6p, bu commit | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı: ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; artık getiri (piyasa bileşeni hedge'li) okuma etiketi | **KOŞULMADI** — ön-kayıt onay bekliyor (§6p > 15) |
+| 10 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6p, bu commit | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **KOŞULMADI** — O2 kararlaştırıldı (TADİLAT-1), öteki onay noktaları bekliyor (§6p > 15) |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -5879,6 +5879,94 @@ PENGU sonradan girer; `|E_T|` raporlanır). (5) Stop'suz ve kaldıraçsız: bah�
    `docs/data/model_momentum*`e sabitlenir (dönem çiftlerinin strateji × dönem getiri
    matrisi dâhil). Cron YOK. `tests/test_trigger_stage.py` workflow'u listeden kendisi bulur.
 5. `CLAUDE.md` tablosuna betik, workflow ve `vault.py` satırları; `docs/decisions.md`'ye sonuç kaydı.
+
+### TADİLAT-1 — O2: KAPI hedge'lenmiş getiride; ham getiri betimsel *(2026-09-27, kullanıcı kararı; kod yazılmadan, HİÇBİR veri görülmeden)*
+
+**Karar (kullanıcı, ön-kaydın 15 > O2'deki önerisinin TERSİ).** Ham getiride IC'yi iki şey
+seçim becerisi olmadan pozitif yapabilir: **sabit sürüklenme** (boğa döneminde net long
+stratejiler her ay üstte kalır) ve **piyasa kalıcılığı** (6). Projenin daha önce vardığı
+kural — sürüklenmeden arınmış ölçü bağlayıcıdır — burada da uygulanır. Ölçülen şey saf
+seçim becerisidir, yani bir seçicinin gerçek değeri. Bu TADİLAT 6, 7, 8, 9 ve 13'ün
+aşağıdaki noktalarının yerine geçer; geri kalan her şey (bahçe, ızgaralar, zamanlama,
+uygunluk, dönemler, bloklar, q, m) DEĞİŞMEZ.
+
+**1. Bağlayıcı büyüklük.** 7'nin sıralaması ve ölçümü, 8'in bootstrap'ı ve 9'un (a)–(c)
+koşulları **hedge'lenmiş brüt getiri** `G^art_{s,P} = Σ_{h∈P} R^art_{s,h}` ile yapılır: hem
+OLUŞTURMA (sıralama `G^art_{·,t−1}`'e göre) hem İZLEME (`IC_t = ρ(G^art_{·,t−1},
+G^art_{·,t})`, spread `G^art_{·,t}` üzerinden). Ham `G` ile aynı hesap BETİMSEL olarak
+yapılır. Tohumlar: bağlayıcı `f"{random_seed}:mmom:{ufuk}:{dönem}:{blok}"`, betimsel ham
+`…:ham` (8'deki `…:art` eki kalkar).
+
+**2. Hedge'in tanımı — kesinleştirilir (4'ün satırı).** Hedge'lenmiş strateji, sembol başına
+birleşik ağırlık `v_{i,h} = w_{i,h} − e_{s,h} / |E_h|` (i ∈ E_h) taşıyan, işlem yapılabilir
+bir portföydür; `e_{s,h} = Σ_i w_{i,h}` ağırlıkların kurulduğu anda bilinir (ileriye bakış
+yok). `R^art_{s,h} = Σ_i v_{i,h} · r_{i,h}`; sepet getirisi `m_h` aynı `E_h` üzerinden ve 4'ün
+aynı "eksik açılış → `r = 0`" kuralıyla kurulur, böylece `R^art = R − e · m` bir yaklaşıklık
+değil özdeşliktir (test). Net maruziyeti tanım gereği sıfır olan stratejilerde (F6 LS)
+`v = w`, yani hedge'li ve ham getiri aynıdır.
+
+**3. Simetri korunur.** Tersin net maruziyeti `−e`'dir, yani `v^ters = −v` ve `G^art` için
+de her dönemde bahçe ortalaması tam olarak 0'dır (6'nın özdeşliği, test).
+
+**4. Hedge neyi temizler, neyi TEMİZLEMEZ (önceden yazılır).**
+- Temizler: net maruziyetin ORTALAMA piyasa hareketiyle çarpımını — sabit sürüklenme ve
+  piyasanın kendi yön kalıcılığı sıralamaya bu kanaldan giremez. Bunun bedeli bilinçlidir:
+  bir stratejinin ORTAK piyasa yönünü zamanlama becerisi de silinir; o beceri "seçim"
+  değil "piyasa zamanlaması"dır ve ayrı bir tezdir (6).
+- Temizlemez: **beta dağılımı.** Hedge her sembolün sepete betasını 1 varsayar; net long
+  bir strateji yüksek betalı sembollerde yoğunlaşıyorsa `(β − 1) · e` kadar piyasa
+  maruziyeti kalır ve sürüklenme sıralamaya bu artıktan sızabilir. Sembol bazlı beta
+  TAHMİN EDİLMEZ — pencere, yöntem ve yenileme sıklığı serbest parametre açardı (`market_r`in
+  aynı gerekçesi, CLAUDE.md > Rapor Kolonları). Sızıntı bunun yerine ÖLÇÜLÜR (5).
+
+**5. Betimsel tanılar (kapı DEĞİL), bağlayıcı büyüklük için:**
+- **Piyasa tekrarı ayrımı** (6'daki tanı, artık `G^art` IC'si için): sepetin `t−1` ve `t`
+  dönem getirilerinin işareti aynı olan çiftlerde ↔ farklı olanlarda ortalama IC, yan yana.
+  Hedge işe yarıyorsa iki ortalama birbirine yakındır.
+- **Beta sızıntısı:** her çiftte, stratejilerin `t−1` dönemi ortalama net maruziyeti `ē_s`
+  ile `G^art_{s,t}` arasındaki Spearman korelasyonu, ve bunun `m_t`'nin işaretiyle çarpılmış
+  hâlinin dönem ortalaması. Sıfırdan belirgin uzaksa hedge'li IC'de piyasa kalıntısı vardır
+  ve bu, sonuç cümlesinin yanına yazılır.
+
+**6. Net rapor (7'nin betimsel kârlılığı).** Hedge'li stratejinin maliyeti BİRLEŞİK ağırlığın
+devrinden gelir: `c^art_{s,h} = 0.00105 · Σ_i |v_{i,h} − v_{i,h−1}|` (aynı semboldeki strateji
+ve hedge bacakları netleşir; iki bacağın maliyetini ayrı toplamak olmayan işlemleri
+fiyatlardı). Uygunluk kümesi değiştiğinde hedge'in yeniden dengelenmesi de bu devre girer.
+Ham stratejinin net raporu 4'teki gibi kalır; ikisi yan yana yazılır.
+
+**7. Okuma tablosu (9'un tablosunun yerine geçer).**
+
+| Hedge'li (KAPI) | Ham (betimsel) | Cümle |
+|---|---|---|
+| DOĞRULANDI | DOĞRULANDI | *"model momentumu var — seçim becerisi kalıcı"* |
+| DOĞRULANDI | DOĞRULANMADI | *"seçim becerisi kalıcı; ham testte piyasa hareketi örtüyor"* |
+| DOĞRULANMADI | DOĞRULANDI | *"seçici değil, piyasa zamanlaması"* — kalıcılık yalnızca net maruziyet × piyasa yönünden geliyor; ayrı ve daha basit bir tez ADAYI olarak kayda geçer, seçici tezine GEÇİRMEZ |
+| DOĞRULANMADI | DOĞRULANMADI | *"ayırt edilemedi"* — tezin reddi DEĞİL, güç sınırı (10) ile okunur |
+
+Ham sütunun "DOĞRULANDI"sı, hedge'li ile AYNI kurallarla (9'un (a)–(c)'si, A ∧ B, BH m = 2)
+ama ayrı bir ailede hesaplanır; betimseldir ve hiçbir hücrede kapıyı değiştirmez.
+
+**8. Seçici tezine geçiş ve kasa (9 ve 13'ün ilgili cümlelerinin yerine):** geçiş =
+**hedge'li DOĞRULANDI**; dondurma kaydı ve kasa sınaması (13, §7.8) hedge'li büyüklük ve
+A'da geçen ufuk(lar) içindir.
+
+**9. Güç (10) — tablo değişmez, okuması keskinleşir.** 10, `sd(IC_t)`'nin üst ucunu (0.5)
+piyasa kanalının IC'yi savurmasına bağlamıştı; hedge o kanalı keser, yani bağlayıcı büyüklük
+için `sd ≈ 0.3` sütunu daha olasıdır. Bu bir BEKLENTİDİR, kapıyı ya da tabloyu değiştirmez;
+gerçekleşen `sd` koşu sonrası projeksiyonla yan yana yazılır.
+
+**10. Tahminler (11) değişmez, yalnızca eşlenir.** Kullanıcının tahmini (aylık IC küçük
+pozitif, haftalık ~0; kalıcılık F1/F6'da) ham büyüklük için, bu karardan ÖNCE yazıldı ve öyle
+kayıtlıdır. Ön-kaydı yazanın tahmini zaten iki büyüklüğü ayırıyordu: ham aylık IC A'da
+pozitif ama anlamsız, **hedge'li IC sıfıra yakın**; beklenen hücre **"ayırt edilemedi"**
+(her iki ufukta, iki büyüklükte).
+
+**11. 16'ya ek (uygulama):** testler `R^art = R − e·m` özdeşliğini, `v^ters = −v`'yi, F6 LS'de
+`v = w`'yi, birleşik ağırlığın devrini (elle hesaplanmış örnek) ve beta sızıntısı tanısının
+ileriye bakmadığını (`ē_s` yalnızca `t−1`'den) sınar.
+
+**15'in durumu:** O2 kararlaştırıldı (yukarıda). O1, O3–O12 hâlâ onay bekler; kod onlar
+kararlaştırılmadan yazılmaz.
 
 ---
 
