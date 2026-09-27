@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-from decimal import ROUND_DOWN, Decimal
 import csv
 import gzip
 import hashlib
@@ -54,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
+from core.price_text import decimals_of, truncates_to  # noqa: E402,F401  (TADİLAT-4; tek kopya)
 from core.config import get_setting, load_config  # noqa: E402
 from core.data import fetch_ohlcv  # noqa: E402
 from scripts.backtest_dc import (  # noqa: E402
@@ -306,24 +306,6 @@ def coverage_gate(btc: pd.DataFrame, earliest_open: pd.Timestamp) -> dict[str, A
     first = _utc(btc.index[0]) if len(btc) else None
     return {"btc_first_bar": first.isoformat() if first else None, "required": need.isoformat(),
             "passed": first is not None and first <= need}
-
-
-def decimals_of(text: str) -> int:
-    """Ham metindeki ondalık hane sayısı — float'tan DEĞİL (sondaki sıfırlar korunur; TADİLAT-4)."""
-    text = text.strip()
-    if "e" in text.lower():
-        raise ValueError(f"üstel gösterim beklenmiyor: {text!r}")
-    return len(text.split(".", 1)[1]) if "." in text else 0
-
-
-def truncates_to(fine: float, coarse_text: str) -> bool:
-    """1H değeri, 4H değerinin ham metnindeki ondalık sayısına KESİLDİĞİNDE ona TAM eşit mi?
-
-    Yalnızca kesme (sıfıra doğru, ROUND_DOWN); yuvarlanmış eşitlik geçmez (TADİLAT-4 > i).
-    `repr(float)` en kısa kayıpsız ondalıktır, yani `Decimal` 1H değerini birebir taşır.
-    """
-    quantum = Decimal(1).scaleb(-decimals_of(coarse_text))
-    return Decimal(repr(float(fine))).quantize(quantum, rounding=ROUND_DOWN) == Decimal(coarse_text.strip())
 
 
 def parity_gate(frames: Mapping[str, pd.DataFrame], prices_csv: Path) -> dict[str, Any]:

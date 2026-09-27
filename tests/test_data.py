@@ -20,6 +20,7 @@ from core.data import (
     bar_duration,
     fetch_funding,
     fetch_ohlcv,
+    fetch_ohlcv_text,
     load_market_data,
     load_universe,
 )
@@ -655,3 +656,29 @@ def test_bar_duration_rejects_unsupported_timeframe() -> None:
     assert bar_duration("1D") == pd.Timedelta("1D")
     with pytest.raises(ValueError):
         bar_duration("1Y")
+
+
+# --------------------------------------------------------------------------- #
+# Ham metin çekimi (docs/backtest.md > 6q > TADİLAT-3)
+# --------------------------------------------------------------------------- #
+def test_fetch_ohlcv_text_keeps_raw_strings_and_never_touches_cache(tmp_path: Path) -> None:
+    open_bar_ms = int(NOW.timestamp() * 1000)
+    closed = _candles(3, end_ms=open_bar_ms - BAR_MS)
+    closed[0][4] = "100.10"            # sondaki sıfır: float'ta kaybolurdu
+    page = [_candle(open_bar_ms, 200.0, confirm="0"), *closed]
+    config = _config(tmp_path)
+    session = StubSession({"/market/candles": page, "/market/history-candles": []})
+    frame = fetch_ohlcv_text(config, "BTC-USDT-SWAP", client=_client(session, config), now=NOW)
+    assert len(frame) == 3                                   # kapanmamış bar yine atılır
+    assert frame["close"].iloc[-1] == "100.10"
+    assert all(isinstance(v, str) for v in frame["close"])
+    assert not (tmp_path / "cache").exists()                 # önbellek ne okunur ne yazılır
+
+
+def test_fetch_ohlcv_default_path_still_returns_floats(tmp_path: Path) -> None:
+    open_bar_ms = int(NOW.timestamp() * 1000)
+    page = _candles(3, end_ms=open_bar_ms - BAR_MS)
+    config = _config(tmp_path)
+    session = StubSession({"/market/candles": page, "/market/history-candles": []})
+    frame = fetch_ohlcv(config, "BTC-USDT-SWAP", client=_client(session, config), now=NOW)
+    assert frame["close"].dtype == float

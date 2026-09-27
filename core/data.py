@@ -474,6 +474,7 @@ def _download_candles(
     stop_at: pd.Timestamp | None,
     max_bars: int,
     before: pd.Timestamp | None = None,
+    keep_text: bool = False,
 ) -> tuple[pd.DataFrame, bool]:
     """Barları yeniden eskiye doğru sayfalayarak indirir; (barlar, borsa tükendi mi).
 
@@ -483,6 +484,8 @@ def _download_candles(
     Güncel uç /market/candles ile, daha derin geçmiş /market/history-candles ile gelir.
     `stop_at` verilirse (önbellekteki son bar) o barda durur — yalnızca eksik barlar çekilir.
     `before` verilirse yürüyüş o barın GERİSİNDEN başlar (önbelleği geriye tamamlamak).
+    `keep_text` True ise değerler borsanın HAM METNİ olarak döner (`fetch_ohlcv_text`);
+    sayfalama, kapanmamış bar kuralı ve uç sırası aynıdır — ikinci bir yürüyüş yazılmaz.
     İkinci değer True ise iki uç da daha eski kayıt vermedi: dönen en eski bar borsanın
     TABANIDIR (`stop_at`/`max_bars` ile kesilen bir yürüyüş taban hakkında bir şey söylemez).
     """
@@ -516,7 +519,7 @@ def _download_candles(
             ts, values = parsed
             if stop_at is not None and ts <= stop_at:
                 continue
-            rows[ts] = values
+            rows[ts] = tuple(str(raw[index]).strip() for index in range(1, 6)) if keep_text else values
 
         cursor_ms = oldest_ms
         oldest_ts = _to_utc(oldest_ms) if oldest_ms is not None else None
@@ -530,6 +533,38 @@ def _download_candles(
             endpoint_index += 1
 
     return _rows_to_frame(rows).tail(max_bars), True
+
+
+def fetch_ohlcv_text(
+    config: dict[str, Any],
+    symbol: str,
+    *,
+    client: OKXClient | None = None,
+    now: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """`now`dan önce kapanmış son `data.history_bars` barın HAM METNİ (str kolonlar).
+
+    Kesinlik kuralı (`core/price_text.py`) ondalık sayısını float'tan değil borsanın
+    yazdığı metinden okumak zorundadır; parquet önbelleği float tuttuğu için o metni
+    taşıyamaz. Bu yol önbelleği ne OKUR ne YAZAR: önbellek + pencere hata sınıfından
+    (karar 58, 59) uzak durur ve canlı turun önbelleğine bir ölçüm aracının derinliğini
+    bulaştırmaz. Sayfalama ve kapanmamış bar kuralı `fetch_ohlcv` ile aynı koddan gelir.
+    """
+    stamp = _utc_now(now)
+    bar = okx_bar(config)
+    active = client if client is not None else OKXClient.from_config(config)
+    frame, _ = _download_candles(
+        active,
+        config,
+        symbol,
+        bar=bar,
+        duration=bar_duration(bar),
+        now=stamp,
+        stop_at=None,
+        max_bars=int(get_setting(config, "data.history_bars")),
+        keep_text=True,
+    )
+    return frame
 
 
 def _parse_candle(
