@@ -1,4 +1,4 @@
-"""`scripts/measure_model_momentum.py`: ön-kayda (docs/backtest.md > 6p, TADİLAT-1, TADİLAT-2) MEKANİK sadakat.
+"""`scripts/measure_model_momentum.py`: ön-kayda (docs/backtest.md > 6q, TADİLAT-1, TADİLAT-2) MEKANİK sadakat.
 
 Sınanan: (1) sabitler ve dönemler girdi değildir, çift sayıları ön-kayıttaki gibidir; (2) kasa: hiçbir
 bar kasaya taşmaz; (3) bahçe 88 tabandır ve hiçbir aile İLERİYE BAKMAZ; (4) tersler: saatlik ve

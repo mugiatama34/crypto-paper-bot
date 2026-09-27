@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Model momentumu ölçümü (docs/backtest.md > 6p, TADİLAT-1, TADİLAT-2). Ölçümün parçası DEĞİL.
+"""Model momentumu ölçümü (docs/backtest.md > 6q, TADİLAT-1, TADİLAT-2). Ölçümün parçası DEĞİL.
 
 Ön-kayıt (`ec0d01a`, TADİLAT-1 `551fa67`, TADİLAT-2 `f56f269`) bu betikten ÖNCE, hiçbir veri
 görülmeden commit edildi. Betik o metni MEKANİK olarak uygular: 88 taban + tersleri (bahçe),
@@ -8,7 +8,7 @@ dönem çiftleri üzerinde Spearman IC ve üst − alt beşte bir spread, iki bl
 BH (q = 0.05, m = 2), A'da ölç B'de doğrula. KAPI hedge'li getiridedir (TADİLAT-1); ham getiri
 aynı kurallarla BETİMSEL hesaplanır. Hiçbir sayı burada SEÇİLMEZ.
 
-**Model DEĞİL, ikinci bir backtest DEĞİL** (§6p > 1): bahçe nakit durumlu, stop'suz, vektörel
+**Model DEĞİL, ikinci bir backtest DEĞİL** (§6q > 1): bahçe nakit durumlu, stop'suz, vektörel
 bir getiri serisi hesabıdır; kural 11'in boyutlandırması onu ifade edemez. Göstergeler
 `core/indicators.py`den, günlük kapanış `measure_regime.py::daily_closes`ten, yüzdelik
 `backtest_dc.py::_percentiles`ten, dönem A `backtest_ema.py`den, kesim `vault.py`den gelir.
@@ -17,7 +17,7 @@ bir getiri serisi hesabıdır; kural 11'in boyutlandırması onu ifade edemez. G
 
 İKİ AŞAMA: `preflight` HİÇBİR getiri, IC ya da sıralama üretmez — kapsam, tutarlılık kapısı,
 uygunluk ve çift kuralının sonucu (pozisyon serilerinden); tekrarlanabilir. `measure` tek
-seferliktir (§6p > 12).
+seferliktir (§6q > 12).
 
 Çıkış kodları: 0 = rapor yazıldı; 3 = veri kapısı (ölçülecek sembol ya da dönem çifti yok →
 rapor YAZILMAZ); 2 = kullanım hatası. Tetikleyicisi `.github/workflows/measure-model-momentum.yml`.
@@ -54,7 +54,7 @@ from scripts.vault import KASA_START, assert_before_vault, vault_now  # noqa: E4
 
 logger = logging.getLogger("measure_model_momentum")
 
-# --- Ön-kayıtlı sayılar (§6p > 3, 7, 8, 9). Hiçbiri CLI girdisi DEĞİLDİR. ---
+# --- Ön-kayıtlı sayılar (§6q > 3, 7, 8, 9). Hiçbiri CLI girdisi DEĞİLDİR. ---
 DATA_START = pd.Timestamp("2021-10-01T00:00:00Z")
 ELIGIBLE_AGE = pd.Timedelta(days=60)
 QUANTILE = 0.2
@@ -62,7 +62,7 @@ HORIZONS = ("month", "week")          # aylık BİRİNCİL (O12), haftalık ikin
 BLOCKS = {"month": (1, 2), "week": (1, 4)}
 BH_Q = 0.05
 MDE_Z = 2.802                         # §6j > 9
-CONSISTENCY_REL = 1e-9                # §6p > 3
+CONSISTENCY_REL = 1e-9                # §6q > 3
 CONSISTENCY_MAX_SHARE = 0.001
 HOUR = pd.Timedelta(hours=1)
 FOUR = pd.Timedelta(hours=4)
@@ -96,7 +96,7 @@ class Settings:
 
 
 # --------------------------------------------------------------------------- #
-# Piyasa bağlamı (§6p > 3, 4)
+# Piyasa bağlamı (§6q > 3, 4)
 # --------------------------------------------------------------------------- #
 @dataclass
 class Market:
@@ -167,7 +167,7 @@ def _sign(values: pd.Series) -> pd.Series:
 
 
 def _calendar(frame: pd.DataFrame, step: pd.Timedelta) -> pd.DataFrame:
-    """Zamana göre kaydırma için tam takvim (eksik bar NaN; §6p > TADİLAT-2 > 3)."""
+    """Zamana göre kaydırma için tam takvim (eksik bar NaN; §6q > TADİLAT-2 > 3)."""
     if frame.empty:
         return frame
     full = pd.date_range(frame.index[0], frame.index[-1], freq=step, tz="UTC")
@@ -175,7 +175,7 @@ def _calendar(frame: pd.DataFrame, step: pd.Timedelta) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
-# Aileler (§6p > 5). Her kurucu: (piyasa, sembol) -> saatlik durum s_i.
+# Aileler (§6q > 5). Her kurucu: (piyasa, sembol) -> saatlik durum s_i.
 # --------------------------------------------------------------------------- #
 def _lag(tau: str) -> pd.Timedelta:
     return {"1H": HOUR, "4H": FOUR, "1D": DAY}[tau]
@@ -298,7 +298,7 @@ class Base:
 
 
 def ts_weights(market: Market, state_fn: Callable[[Market, str], np.ndarray]) -> np.ndarray:
-    """`w_i = s_i / |E_h|` (§6p > 4); uygun olmayan sembol 0."""
+    """`w_i = s_i / |E_h|` (§6q > 4); uygun olmayan sembol 0."""
     states = np.column_stack([state_fn(market, s) for s in market.symbols]) if market.symbols else \
         np.zeros((len(market.hours), 0))
     count = market.count.astype(float)
@@ -307,7 +307,7 @@ def ts_weights(market: Market, state_fn: Callable[[Market, str], np.ndarray]) ->
 
 
 def xsec_weights(market: Market, *, days: int, k: int, long_only: bool) -> np.ndarray:
-    """F6: gün kapanışında L günlük getiriye göre sırala; ağırlık o günün 24 saati (§6p > 5)."""
+    """F6: gün kapanışında L günlük getiriye göre sırala; ağırlık o günün 24 saati (§6q > 5)."""
     daily = market.daily
     width = len(market.symbols)
     if daily.empty:
@@ -340,7 +340,7 @@ def xsec_weights(market: Market, *, days: int, k: int, long_only: bool) -> np.nd
 
 
 def zoo() -> list[Base]:
-    """88 taban, §6p > 5'in tablosu ve SIRASI (çift kuralı sıraya bakar)."""
+    """88 taban, §6q > 5'in tablosu ve SIRASI (çift kuralı sıraya bakar)."""
     bases: list[Base] = []
 
     def ts(bid: str, family: str, fn: Callable[[Market, str], np.ndarray]) -> None:
@@ -408,7 +408,7 @@ def deduplicate(digests: Sequence[tuple[str, str, str, bool]]) -> dict[str, Any]
 
 
 # --------------------------------------------------------------------------- #
-# Saatlik getiri ve dönemler (§6p > 4, 7, 10)
+# Saatlik getiri ve dönemler (§6q > 4, 7, 10)
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class Hourly:
@@ -468,7 +468,7 @@ def period_bounds() -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
 
 
 def period_table(hours: pd.DatetimeIndex, horizon: str) -> PeriodTable:
-    """Tam dönemler; ikisi de AYNI ölçüm döneminde olan ardışık çiftler (§6p > 7, 10)."""
+    """Tam dönemler; ikisi de AYNI ölçüm döneminde olan ardışık çiftler (§6q > 7, 10)."""
     naive = hours.tz_convert("UTC").tz_localize(None)
     if horizon == "month":
         starts = naive.to_period("M").start_time
@@ -530,7 +530,7 @@ def period_means(values: np.ndarray, table: PeriodTable) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------- #
-# İstatistik (§6p > 7, 8, 9)
+# İstatistik (§6q > 7, 8, 9)
 # --------------------------------------------------------------------------- #
 def spearman(x: np.ndarray, y: np.ndarray) -> float:
     if len(x) < 3:
@@ -572,7 +572,7 @@ def two_sided_p(draws: Sequence[float]) -> float:
 
 def block_bootstrap(ic: np.ndarray, spread: np.ndarray, *, block: int, iterations: int,
                     seed: str, alpha: float) -> dict[str, Any]:
-    """Ardışık sabit bloklar, yerine koyarak; IC ve spread AYNI çekilişten (§6p > 8)."""
+    """Ardışık sabit bloklar, yerine koyarak; IC ve spread AYNI çekilişten (§6q > 8)."""
     n = len(ic)
     groups = [np.arange(start, min(start + block, n)) for start in range(0, n, block)]
     entry: dict[str, Any] = {"block": block, "clusters": len(groups), "evaluable": len(groups) >= MIN_CLUSTERS}
@@ -650,7 +650,7 @@ def bh_accept(pvalues: Mapping[str, float], q: float = BH_Q) -> set[str]:
 
 
 def decide(results: Mapping[str, Mapping[str, Mapping[str, Any]]]) -> dict[str, Any]:
-    """§6p > 9: A'da (a)–(c), m = 2; B'de yalnızca A'da geçenler, m_B = sayıları.
+    """§6q > 9: A'da (a)–(c), m = 2; B'de yalnızca A'da geçenler, m_B = sayıları.
 
     `results[dönem][ufuk]` = `measure_series` çıktısı.
     """
@@ -800,7 +800,7 @@ def _family_mean(sums: ZooSums, values: Mapping[str, float]) -> dict[str, float]
 
 
 def family_breakdown(sums: ZooSums, *, settings: Settings) -> dict[str, Any]:
-    """BETİMSEL (§6p > 9): aile-içi IC ve spread; kapı yok, BH yok."""
+    """BETİMSEL (§6q > 9): aile-içi IC ve spread; kapı yok, BH yok."""
     out: dict[str, Any] = {"note": "betimsel — kapı değil"}
     for fam in sorted(set(sums.families)):
         rows = [i for i, f in enumerate(sums.families) if f == fam]
@@ -846,7 +846,7 @@ def composition(sums: ZooSums) -> dict[str, Any]:
 
 
 def net_report(sums: ZooSums) -> dict[str, Any]:
-    """Kârlılık — BETİMSEL (§6p > 7): üst/alt beşte birin NET sonraki dönem getirisi, bahçenin neti."""
+    """Kârlılık — BETİMSEL (§6q > 7): üst/alt beşte birin NET sonraki dönem getirisi, bahçenin neti."""
     out: dict[str, Any] = {}
     for name, rank_mats, net_mats in (("hedged", sums.hedged, sums.net_hedged), ("raw", sums.gross, sums.net)):
         per: dict[str, Any] = {}
@@ -894,7 +894,7 @@ def _mean(values: Sequence[float]) -> float | None:
 
 
 def period_matrix(sums: ZooSums) -> pd.DataFrame:
-    """Sabitlenen strateji × dönem tablosu (§6p > 16)."""
+    """Sabitlenen strateji × dönem tablosu (§6q > 16)."""
     rows = []
     for h in HORIZONS:
         table = sums.tables[h]
@@ -930,7 +930,7 @@ def fetch_all(config: Mapping[str, Any], symbols: Sequence[str], *, timeframe: s
 
 
 def consistency(h1: pd.DataFrame, h4: pd.DataFrame) -> dict[str, Any]:
-    """§6p > 3: 4H kapanışı = son 1H alt barının kapanışı (göreli ≤ 1e-9)."""
+    """§6q > 3: 4H kapanışı = son 1H alt barının kapanışı (göreli ≤ 1e-9)."""
     if h1.empty or h4.empty:
         return {"compared": 0, "mismatch": 0, "missing_sub_bar": 0, "share": None, "ok": False}
     sub = h1["close"].reindex(h4.index + pd.Timedelta(hours=3))
@@ -974,7 +974,7 @@ def prepare(config: Mapping[str, Any], symbols: Sequence[str], cache_dir: str) -
         if check["ok"]:
             accepted.append(symbol)
         else:
-            report["symbols"][symbol]["excluded"] = "1H ↔ 4H tutarlılık kapısı (§6p > 3)"
+            report["symbols"][symbol]["excluded"] = "1H ↔ 4H tutarlılık kapısı (§6q > 3)"
     report["universe"] = accepted
     if not accepted:
         raise DataGateError("tutarlılık kapısından geçen sembol yok")
@@ -1020,7 +1020,7 @@ def run(args: argparse.Namespace) -> int:
         raise DataGateError(f"dönem çifti yok: {', '.join(empty)}")
     result = evaluate(sums, settings=settings)
     payload = {
-        "preregistration": "docs/backtest.md > 6p (ec0d01a, TADİLAT-1 551fa67, TADİLAT-2 f56f269)",
+        "preregistration": "docs/backtest.md > 6q (ec0d01a, TADİLAT-1 551fa67, TADİLAT-2 f56f269)",
         "parameters": {"data_start": str(DATA_START), "kasa_start": str(KASA_START),
                        "eligible_age_days": ELIGIBLE_AGE.days, "quantile": QUANTILE,
                        "horizons": list(HORIZONS), "blocks": {h: list(v) for h, v in BLOCKS.items()},
@@ -1068,7 +1068,7 @@ def _json(value: Any) -> Any:
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Model momentumu ölçümü (docs/backtest.md > 6p).")
+    parser = argparse.ArgumentParser(description="Model momentumu ölçümü (docs/backtest.md > 6q).")
     parser.add_argument("--stage", choices=("preflight", "measure"), required=True,
                         help="preflight: kapsam + çift kuralı, getiri YOK (tekrarlanabilir); measure: TEK SEFER")
     parser.add_argument("--config", default=None)

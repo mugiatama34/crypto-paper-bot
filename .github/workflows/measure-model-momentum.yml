@@ -1,4 +1,4 @@
-# Model momentumu ölçümünün tetikleyicisi (docs/backtest.md > 6p, TADİLAT-1/2;
+# Model momentumu ölçümünün tetikleyicisi (docs/backtest.md > 6q, TADİLAT-1/2;
 # `scripts/measure_model_momentum.py`). Salt okunur; MODEL DEĞİL.
 #
 # İKİ AŞAMA, İKİ TETİKLEYİCİ DOSYA (`measure-vol-target.yml`in deseni). `workflow_dispatch`
@@ -8,7 +8,7 @@
 #   - `.github/triggers/mm-preflight*.run` → `--stage preflight`: 13 sembolün 1H/4H KAPSAMI,
 #     1H ↔ 4H tutarlılık kapısı, uygunluk ve çift kuralı. HİÇBİR getiri, IC ya da sıralama
 #     üretmez; tekrarlanabilir.
-#   - `.github/triggers/mm-measure*.run`   → `--stage measure`: TEK SEFER (§6p > 12).
+#   - `.github/triggers/mm-measure*.run`   → `--stage measure`: TEK SEFER (§6q > 12).
 #     Yeni bir dosya yalnızca önceki tetikleme HİÇBİR SAYI ÜRETMEDEN düştüyse eklenir ve
 #     gerekçesi dosyanın içinde yazılır (§7.6).
 # Dosyanın EKLENDİĞİ commit koşunun kendisidir ve dosya bir daha DEĞİŞTİRİLMEZ.
@@ -155,7 +155,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "değişiklik yok"; exit 0
           fi
-          git commit -m "model-momentum: 6p ölçüm sonuçları (#${GITHUB_RUN_ID})"
+          git commit -m "model-momentum: 6q ölçüm sonuçları (#${GITHUB_RUN_ID})"
           for attempt in 1 2 3 4; do
             if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
             echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"

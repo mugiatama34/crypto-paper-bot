@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""KASA kesimi (docs/backtest.md > 7.8, karar 67). Ölçümün parçası DEĞİL.
+"""KASA kesimi (docs/backtest.md > 7.8, karar 68). Ölçümün parçası DEĞİL.
 
 `KASA_START`tan sonra kapanan hiçbir bar, fonlama kaydı ya da defter satırı bir tezin
 GELİŞTİRİLMESİNDE kullanılmaz; bu tarihten sonra yazılan her ön-kaydın B dönemi en geç
