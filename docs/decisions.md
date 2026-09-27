@@ -5382,3 +5382,11 @@ O8: koşulur — kazanç betimsel sayılar ve tezin ÖNCÜLÜDÜR. Öncül ("oyn
 yüksek güçle ölçülebildiği için bilgi amaçlı bir mekanizma ölçümü eklendi: σ̂_t ile sonraki 30
 günün gerçekleşen oynaklığı arasında Spearman, aynı blok bootstrap'ı; kapı değildir ama
 sonucun hangi cümleyle okunacağını belirler (§6o > TADİLAT-1 > 4).
+
+**SONUÇ (2026-09-27, koşu #36291523493, kullanıcı onayıyla kayda geçti):** iki varlıkta da
+(BTC, sepet) iki dönemde GEÇMEDİ; öncül ön-kayıtlı kuralla TUTMADI → **"tez dayanaksız"**.
+ΔSR −0.03 … +0.06, aralıkların üst sınırları +0.07 … +0.21 — gerçekleşen kesinlik projeksiyondan
+çok daha iyiydi (ρ(S,U) ≈ 0.99, MDE 0.14–0.24), yani büyük bir iyileşme büyük ölçüde dışlandı.
+σ̂'ın sonraki 30 günü öngörüsü pozitif ama zayıf (Spearman 0.22–0.38). Aynı ortalama maruziyetle
+sabit ağırlık aynı oynaklık düşüşünü aynı Sharpe'la veriyor. Hiçbir modele ya da boyutlandırmaya
+bir şey eklenmez; tez sicilde (9. satır) kalır. Ayrıntı §6o > SONUÇ.

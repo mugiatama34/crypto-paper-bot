@@ -401,7 +401,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
-| 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **KOŞULMADI** — ön-kayıt açık, onaylandı (§6o > TADİLAT-1) |
+| 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -5475,6 +5475,69 @@ TADİLAT-1 > 4'ün dört durumlu tablosunda beklenen hücre **GEÇMEDİ ∧ ÖNC
 farkı güç sınırı yüzünden geçmez (10: iki dönemin birlikte geçme olasılığı gerçekçi bir etkide
 ≈ %1), öncül (oynaklık kümelenmesi) tutar. Sharpe ve drawdown tahminleri 11'de ve TADİLAT-1 >
 4'te zaten kayıtlıdır; bu satır onlara yalnızca hücreyi ekler, hiçbirini değiştirmez.
+
+### SONUÇ — koşuldu: iki varlıkta GEÇMEDİ, öncül TUTMADI → "tez dayanaksız" *(2026-09-27, `measure-vol-target` #36291523493, sonuçlar `ecc485fd`)*
+
+Koşu `b177ac86` üzerinde, tek sefer, çıkış 0. Tam yük, günlük ağırlıklar ve kapanışlar depoda:
+`docs/data/vol_target.json`, `vol_target_days.csv`, `vol_target_closes.csv`. **Bu bölüm sonucu
+KAYDEDER, kuralları değiştirmez** — hiçbir parametre, blok, eşik ya da okuma kuralı koşudan sonra
+dokunulmadı; koşu TEKRARLANMADI. Dönemler A 2022-01-01 → 2024-06-29, B 2024-06-30 → 2026-09-26.
+Tanımsız gün 0, eksik kapanış 0 (dört (varlık, dönem) de ölçüldü).
+
+**Birincil — ΔSR = SR(S) − SR(U), bağlayıcı alt sınır = min(hafta, 4 hafta):**
+
+| Varlık | Dönem | ΔSR | hafta | 4 hafta | bağlayıcı | Karar |
+|---|---|---|---|---|---|---|
+| (a) BTC | A | −0.025 | [−0.129, +0.093] | [−0.123, +0.074] | −0.129 | GEÇMEDİ |
+| (a) BTC | B | +0.030 | [−0.124, +0.180] | [−0.089, +0.148] | −0.124 | GEÇMEDİ |
+| (b) sepet | A | +0.055 | [−0.081, +0.205] | [−0.084, +0.204] | −0.084 | GEÇMEDİ |
+| (b) sepet | B | +0.014 | [−0.146, +0.188] | [−0.138, +0.191] | −0.146 | GEÇMEDİ |
+
+**Mekanizma (bilgi) — Spearman(σ̂_t, σ_ileri,t):**
+
+| Varlık | Dönem | ρ_S | hafta | 4 hafta | örtüşmeyen (n) | Öncül |
+|---|---|---|---|---|---|---|
+| (a) BTC | A | 0.235 | [0.057, 0.388] | [−0.084, 0.478] | 0.198 (30) | |
+| (a) BTC | B | 0.218 | [0.053, 0.364] | [−0.088, 0.484] | 0.100 (27) | **TUTMADI** |
+| (b) sepet | A | 0.383 | [0.225, 0.528] | [0.054, 0.611] | 0.398 (30) | |
+| (b) sepet | B | 0.304 | [0.135, 0.456] | [−0.022, 0.540] | 0.243 (27) | **TUTMADI** |
+
+**Mekanik okuma (TADİLAT-1 > 4): iki varlıkta da GEÇMEDİ ∧ ÖNCÜL TUTMADI → "tez dayanaksız".**
+Genel cümle ("oynaklık hedefleme işe yarıyor") YAZILAMAZ.
+
+**Beklentiyle karşılaştırma:** beklenen hücre (GEÇMEDİ ∧ ÖNCÜL TUTTU) tutmadı — Sharpe tarafı
+beklendiği gibi, öncül tarafı değil. ρ_S tahmini (+0.4 … +0.7) tutmadı: 0.22–0.38. Kullanıcının
+"drawdown sabit ağırlık kontrolüne göre belirgin düşük" tahmini tutmadı; ön-kaydı yazanın "birkaç
+puan, işareti belirsiz" tahmini tuttu.
+
+**Okumanın sınırı (kuralı değiştirmez):** ρ_S pozitiftir ve hafta aralıklarının hepsi sıfırın
+üstündedir; öncül 4 haftalık bloğun alt sınırıyla düşer (sepet B'de −0.022, kıl payı). Doğru
+okuma "öncülün kanıtı ZAYIF", "öncül yanlış" değil — ama ön-kayıtlı cümle "tez dayanaksız"dır ve
+öyle kalır. Önemli olan da zayıflığın kendisidir: bu kural altında σ̂'ın öngörü gücü, maruziyeti
+anlamlı biçimde değiştirecek kadar değildir.
+
+**İkincil (kapı değil; S − F, yüzde puan):**
+
+| Varlık | Dönem | ΔMDD | ΔGetiri | MDD S / U / F | Yıllık oynaklık S / U / F |
+|---|---|---|---|---|---|
+| (a) BTC | A | −1.8 | −4.0 | −65.3 / −66.9 / −63.5 | 50.9 / 55.0 / 50.8 |
+| (a) BTC | B | −2.0 | +3.7 | −51.7 / −53.0 / −49.7 | 41.3 / 45.6 / 41.9 |
+| (b) sepet | A | +0.6 | +8.3 | −74.4 / −78.1 / −75.1 | 65.4 / 71.4 / 66.5 |
+| (b) sepet | B | −1.9 | +2.6 | −69.4 / −71.6 / −67.5 | 67.3 / 73.3 / 67.4 |
+
+ΔMDD ve ΔGetiri aralıklarının hepsi sıfırı içerir. S'nin oynaklık düşüşünü (~%8–9) F aynı
+Sharpe'la verir: **"aynı ortalama maruziyetle daha iyi mi" sorusunun cevabı: ayırt edilemedi.**
+
+**Maruziyet ve maliyet:** w̄ 0.918–0.931; `w < 1` günlerin %37–48'i; w en düşük 0.45–0.59, p10
+0.69–0.77, medyan 1.0. Günlük devir %1–2, maliyet sürüklenmesi ~1e-5/gün (ihmal edilebilir).
+Sepet A'da 9–12 sembol (BNB OKX'te 2022-12-23'ten itibaren — A'nın ilk yılında sepette yok), B'de
+12–13.
+
+**Kesinlik — projeksiyon KARAMSARDI:** gerçekleşen ρ(S, U) 0.987–0.993 (projeksiyon 0.80–0.95),
+çünkü ağırlık dar bir bantta kaldı. Gerçekleşen MDE (2.802 × bootstrap SE) 0.14–0.24 (projeksiyon
+0.56–1.1); DEFF (hafta SE'si / Jobson–Korkie SE'si, kare) BTC'de 0.32–0.49, sepette 0.61–1.19.
+Sonuç: tasarım 10'un söylediğinden güçlüydü ve aralıkların üst sınırları (+0.07 … +0.21) bu kuralla
+**ΔSR > ~0.2'lik bir iyileşmeyi büyük ölçüde DIŞLAR.** "Ayırt edilemedi"den fazlasıdır.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
