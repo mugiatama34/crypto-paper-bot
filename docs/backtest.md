@@ -401,6 +401,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
+| 9 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketine (mutlak z > 1) KARŞI açılan altcoin pozisyonlarının ort. R'si daha düşük — **model DEĞİL, yönü rastgele kontrollerde ölçüm** | §6o, bu commit | karar 59 koşularının A/B pencereleri (dc, xsec); canlı yalnızca betimsel | karşıtlık KARŞI − (YANINDA ∪ NÖTR) < 0, küme-eşleştirilmiş bootstrap (ay ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 ÜS < 0; A'da ölç, B'de doğrula; kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -427,6 +428,10 @@ görselidir, ev içi arama uzayından seçilmedi. **Dış kökenli payda bugün 
 
 **Sicildeki 8. satır (rejim koşullu performans) ev içi BH paydasına GİRER** — dış kökenli
 değildir. Satırın kendi ailesi (m = 3) §6l > 6'da düzeltilir; sicile tek satır olarak girer.
+
+**Sicildeki 9. satır (BTC momentum vetosu) ev içi BH paydasına GİRER** — tez kullanıcının
+kendi tezidir, dış bir sistemden gelmedi. Kendi aileleri (birim × dönem başına m = 3 ufuk)
+§6o > 7'de düzeltilir; sicile tek satır olarak girer.
 
 **Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
 hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
@@ -5142,6 +5147,264 @@ projede boşlukların nasıl kullanıldığını gördüğümüz biçimdir (kull
 - Kural 13'ün bu geometrideki bedeli ihmal edilebilir (≤ 0.0006R); §9 > 2'nin okuma kuralı
   gerçek veri için AYNEN kalır.
 - Süre: ~6 dakika, her CI koşusunda.
+
+## 6o. ÖN-KAYIT — BTC MOMENTUM VETOSU: BTC'nin kısa vadeli güçlü hareketine KARŞI açılan altcoin işlemleri daha mı kötü sonuçlanıyor? *(2026-09-27)*
+
+**Bu belge veri görülmeden yazıldı ve AYRI bir commit'tir.** Ölçüm betiği, testler,
+workflow ve tetikleyici dosyalar SONRAKİ commit'lerdedir ve bu metni değiştiremez. §7'nin
+tamamı uygulanır. Bu commit'ten sonra iş DURUR; bir sonraki adım kullanıcının onayıyla
+başlar (CLAUDE.md > PR Birleştirme Kuralı: ön-kayıt içeren PR yalnızca kullanıcı onayıyla
+birleştirilir).
+
+### 1. Statü: ÖLÇÜM, yeni model YOK
+
+Tez: *BTC'nin kısa vadeli güçlü hareketi sürüyorsa, ona KARŞI açılan altcoin işlemleri kötü
+sonuçlanır.* Aday kural (VETO): "BTC son X'te güçlü yükseliyorsa altcoin short açma, güçlü
+düşüyorsa altcoin long açma." **Bu ön-kayıt vetoyu UYGULAMAZ.** Hiçbir model, filtre,
+parametre, kapı, `config.yaml`, `strategies/`, `core/` ya da defter bu ölçümün sonucuyla
+DEĞİŞMEZ. Veto ileride bir kural olacaksa YENİ BİR MODEL olarak, kendi ön-kaydı ve TAZE bir
+OOS penceresiyle gelir (CLAUDE.md > Kırılımlar > seans: "mevcut bir modele filtre eklemek o
+modelin ölçtüğü ekseni değiştirirdi"; karar 27, 28).
+
+Hipotez bir `p` değeri üretir → **§6c siciline 9. satır olarak girer, ev içi paydaya
+aittir** (tez dış bir sistemden gelmedi). Kendi ailesi 7'de düzeltilir.
+
+### 2. Körlük beyanı
+
+- **GÖRÜLDÜ:** modellerin genel dönem A/B sonuçları (karar 57, 59; §6d, §6g, §6j > SONUÇ);
+  §6l'nin rejim kırılımları (günlük SMA200 yönü × 30g oynaklık — üç birim de ayırt
+  edilemedi); §6m'nin sonuçları (TUTUŞ penceresindeki BTC hizası, β, α — karar 62);
+  §6k'nin TimesFM ölçümünde BTC'nin 48 saatlik momentum kuralının isabeti (%50.1
+  [47.4, 52.9], §6k > 17).
+- **GÖRÜLMEDİ:** hiçbir işlemin GİRİŞ ANINDAKİ BTC 1h/4h/1d getirisi, z'si ya da
+  KARŞI/YANINDA/NÖTR sınıfı; hiçbir hücrenin n'i ya da ort. R'si. §6m'nin `btc_ret`
+  alanı TUTUŞ penceresinin getirisidir (giriş → çıkış), bu ön-kaydın ölçtüğü girişten
+  ÖNCEKİ getiri değildir; ikisi farklı sorulardır ve §6m'nin sonucu bu tezin sonucunu
+  belirlemez.
+- **Bu commit için okunan:** `docs/data/market_direction_trades.csv`den YALNIZCA
+  (kaynak, dönem, model, yön) başına SATIR SAYILARI ve sembolü BTC olan satır sayıları
+  (tablo 3); `r`, `pnl`, `coin_ret`, `btc_ret`, `aligned_*` kolonlarının hiçbir değeri
+  okunmadı. Dosyanın SHA256'sı (sıkıştırılmamış): `3147e7499128edfa888431ad056659826478ed6a36f59fbcd4e23b58fa16632c`
+  (6705 satır + başlık).
+- Genel bilgi gizlenmez: 2022 ayı, 2023–24 büyük ölçüde boğa. Bu, KARŞI hücresinin
+  dönem A'da yönlere dengesiz dağılacağını önceden söyler — tam da bu yüzden birincil test
+  yönü rastgele atanmış kontrollerdedir (4).
+
+### 3. Veri — yeniden koşu YOK
+
+**İşlem satırları** yalnızca `docs/data/market_direction_trades.csv`den okunur (§6m'nin
+sabitlediği, `merge_fills` sonrası POZİSYON satırları; R oradan gelir, burada yeniden
+tanımlanmaz). Okumadan önce SHA256 yukarıdaki değerle karşılaştırılır; tutmazsa çıkış 3.
+Kaynak–dönemleri §6m'nin kurduğu gibidir (ema/dc: karar 59 koşularının sabitlenmiş
+defterleri `docs/data/pins/decision59/`; xsec: §6m içinde determinizm kapısıyla bir kez
+yeniden üretilmiş; canlı: §6m'nin `measure` commit'indeki defterler). **Hiçbir backtest
+yeniden koşulmaz** ve canlı satırlar GÜNCELLENMEZ (dondurulmuş kesit; canlı tekrar ayrı
+bir TADİLAT'la gelir).
+
+| Kaynak | Dönem | Model | long | short | BTC satırı |
+|---|---|---|---|---|---|
+| dc | A | `dc_coinflip` | 231 | 176 | 39 |
+| dc | B | `dc_coinflip` | 150 | 141 | 26 |
+| xsec | A | `xsec_random` | 314 | — | 31 |
+| xsec | B | `xsec_random` | 264 | — | 21 |
+| canlı scalp | — | `scalp_coinflip` | 8 | 5 | 1 |
+| dc | A / B | `dc_short` | — | 336 / 246 | 31 / 20 |
+| xsec | A / B | `xsec_mom` | 183 / 168 | — | 27 / 18 |
+| ema | A / B | `ema_trend` | 369 / 389 | — | 41 / 33 |
+| ema | A / B | `trend` | 680 / 715 | 566 / 543 | 136 / 109 |
+| canlı base | — | `trend` | 68 | 7 | 1 |
+| canlı scalp | — | `scalp_fixed`, `scalp_patient`, `scalp_bandit`, `scalp_managed`, `vwap_managed`, `vwap_clone` (kopya) | 67, 26, 17, 14, 1, 277 | 60, 17, 15, 14, 17, 434 | 20, 8, 1, 1, 0, 127 |
+
+**Dışarıda kalan:** `random_ctrl` (ema ve canlı base) — ölçü çubuğu bozuk, kapanmış R'si
+sansürlü (karar 60, 63). Canlı base'in öteki satırları (`avwap`, `confluence`,
+`ensemble`, `meanrev`: 1–18 pozisyon) kullanıcının listesinde yok. `trend_random` ve
+`meanrev_random` (karar 65) CSV'nin kesitinden SONRA açıldı; CSV'de yoklar.
+
+**BTC serisi:** OKX `BTC-USDT-SWAP` **1H** mumları, 2021-10-01 00:00 UTC → CSV'deki son
+`opened_at`. Tek bir `snapshot` aşamasında çekilir ve hiçbir şey hesaplanmadan
+`docs/data/btc_veto_btc_1h.csv`ye sabitlenir (SHA256 yüke yazılır); sonraki aşamalar
+YALNIZCA bu sabitlenmiş kopyayı okur (§6m'nin "ölçülen seri koşunun gördüğü seri" ilkesi).
+**İki veri kapısı** (ikisi de preflight'ta, R okunmadan):
+- **Kapsam:** ilk 1H bar ≤ en erken `opened_at` − 90 gün − 1 gün; değilse çıkış 3.
+- **Parite:** `docs/data/market_direction_prices.csv`deki her 4H BTC barı (açılış T) için
+  1H(T).open = 4H.open ve 1H(T+3h).close = 4H.close, göreli fark ≤ 1e-6. Tutmayan pay %1'i
+  aşarsa çıkış 3. Gerekçe: 4H serisi koşuların gördüğü seridir; 1H seri ona sınır
+  noktalarında birebir inmelidir.
+
+### 4. BTC durumu — girişteki anda, yalnızca kapanmış barlar
+
+- **Karar anı `t = opened_at`**: dolum barının açılışı = sinyal barının kapanışı (kural 13).
+  Çapa **T = t'ye eşit ya da ondan önceki son TAM SAAT** — kapanış zamanı ≤ t olan son 1H
+  barının kapanışı. 4H katmanlarında T = t'dir; 15m katmanında T, t'den en çok 45 dakika
+  geridedir (kabul edilen sapma 9-a: bayat ama asla ileriye bakmaz). `C(T)` o barın
+  kapanışıdır.
+- **Ufuklar X ∈ {1h, 4h, 1d}**, hepsi AYNI 1H serisinden, kayan pencere:
+  `g_X(T) = ln(C(T) / C(T − X))`, X = 1, 4, 24 saat. 1d takvim günü DEĞİLDİR (OKX `1D`
+  UTC+8 hizasını ve gün içi konumu dışarıda bırakır, §6l'nin dersi). Log getiri, yukarı ve
+  aşağı hareketi simetrik ölçtüğü için.
+- **Ölçek:** `σ_X(T)` = `{g_X(τ) : τ saatlik ızgarada, T − 90g ≤ τ < T}` kümesinin örneklem
+  standart sapması (ddof = 1). Cari getiri `g_X(T)` kendi ölçeğine GİRMEZ (girerse güçlü bir
+  hareket kendi eşiğini büyütürdü; `measure_funding.py`nin `shift(1)` kuralı). Örtüşen
+  getiriler (4h, 1d) bilinçli olarak kullanılır — σ bir ölçek tahminidir, bağımsızlık
+  gerektirmez.
+- `z_X = g_X(T) / σ_X(T)` (ortalama çıkarılmaz: soru "BTC son X'te ne kadar hareket etti"dir,
+  "olağandan ne kadar saptı" değil).
+- **Tanımsız durum:** `C(T)` ya da `C(T − X)` yoksa, ya da ölçek penceresinde beklenen
+  getirilerin %90'ından azı hesaplanabiliyorsa işlem o ufukta TANIMSIZ'dır: SAYILIR,
+  raporlanır, hiçbir gruba girmez.
+- **Sınıf (ufuk başına ayrı):**
+  - `|z| ≤ 1` → **NÖTR** (tam 1 dâhil);
+  - `z > 1` → BTC güçlü yukarı: short = **KARŞI**, long = **YANINDA**;
+  - `z < −1` → BTC güçlü aşağı: long = **KARŞI**, short = **YANINDA**.
+- **BTC'nin kendi işlemleri** (`symbol == BTC-USDT-SWAP`) birincil ve ikincil analizin
+  DIŞINDADIR — tez altcoinler hakkındadır ve BTC'nin kendi momentumu ayrı bir sorudur. Aynı
+  tablolarla "BTC — bilgi" başlığı altında AYRICA raporlanır; hiçbir kararda sayılmaz.
+
+### 5. BİRİNCİL test — yönü rastgele atanmış kontroller
+
+**Gerekçe (doğal deney):** bu modellerde yön ya bir yazı-turadır ya da sabittir ve giriş
+zamanı BTC'nin kısa vadeli durumundan bağımsız bir mekanizmayla belirlenir; modelin sinyal
+seçimi etkiyi KARIŞTIRAMAZ.
+
+| Birim | Kaynak / dönem | Yön mekanizması | Statü |
+|---|---|---|---|
+| `dc_coinflip` | dc A, dc B | kurulum `dc_short`unki, yön adil yazı-tura, stop/hedef mesafeleri yansıtılır | **bağlayıcı** |
+| `xsec_random` | xsec A, xsec B | yalnızca long; giriş = takvim (Pazartesi 00:00 UTC rebalance), sembol rastgele. KARŞI = BTC güçlü DÜŞERKEN long; YANINDA = güçlü yükselirken long | **bağlayıcı** |
+| `scalp_coinflip` | canlı scalp | yön yazı-tura | **betimsel** — n = 12 altcoin pozisyonu; aralık ve p hesaplanmaz, yalnızca hücre tablosu |
+
+⚠ `xsec_random`de rastgele olan YÖN değil SEMBOLDÜR; bu birimde karşıtlık "aynı modelin
+BTC güçlü düşerken açılan long'ları ↔ diğerleri"dir ve BTC durumu kendisi değişkendir. Giriş
+zamanı takvimden geldiği için model BTC durumunu SEÇEMEZ; ama BTC'nin durumu altcoinlerin
+sonraki getirisinden bağımsız olmayabilir — tezin tam olarak iddia ettiği şey budur.
+
+**Karşıtlık (ufuk başına):**
+
+```
+Δ_X = ort.R(KARŞI) − ort.R(YANINDA ∪ NÖTR)
+```
+
+Beklenen işaret NEGATİF. İkinci grup iki hücrenin POZİSYON düzeyinde birleşimidir
+(hücre ortalamalarının ortalaması değil).
+
+**Ek karşıtlık — bilgi, KAPI DEĞİL (yalnızca yazı-turalı birimlerde):**
+`Δ'_X = ort.R(KARŞI) − ort.R(YANINDA)` (yalnızca güçlü durumlar). Gerekçe: yazı-turada
+KARŞI ile YANINDA aynı durumlarda, yalnızca YÖN ile ayrışır — saf rastgeleleştirilmiş kıyas
+budur; ana karşıtlığın ikinci grubundaki NÖTR ise başka bir BTC durumudur ve oynaklık/maliyet
+ölçeği farkını taşıyabilir. Ana karşıtlık kullanıcının tanımıdır ve bağlayıcı kalır; ek
+karşıtlık aynı istatistikle raporlanır, BH'ye ve geçme kararına girmez.
+
+### 6. İstatistik
+
+- **Kümeler — İKİ tanım:** (a) `opened_at`in takvim ayı (UTC; `scripts/backtest_dc.py::
+  cluster_key(…, "month")`), (b) `opened_at`in ISO haftası (Pazartesi 00:00 UTC; §6m'nin
+  kümesi). ⚠ YORUM: kullanıcı "küme = takvim ayı, alt sınır kuralı dc'deki gibi (iki blok
+  tanımının küçüğü)" dedi; dc'nin ikinci tanımı (sembol + kesişim barı) yalnızca dc'ye özgü
+  olduğu için ikinci blok her birimde ortak olan ISO hafta seçildi.
+- **Aralık — küme-EŞLEŞTİRİLMİŞ bootstrap:** iki grup aynı kümeleri paylaşır; her
+  iterasyonda küme etiketleri BİR KEZ iki grubun kümelerinin birleşiminden iadeli çekilir
+  ve Δ hesaplanır (`scripts/backtest_dc.py::cluster_diff_draws`; birinci argüman KARŞI,
+  ikinci argüman öteki grup). Bir tarafı boş kalan çekiliş atılır ve SAYILIR; atılan
+  çekiliş 4 × tekrar tavanına ulaşırsa birim değerlendirilemez. `acceptance.bootstrap_samples`
+  (2000) tekrar, yüzdelik aralık, α = `acceptance.edge_ci_alpha` (0.05). Tohum
+  `f"{random_seed}:btcveto:{kaynak}:{dönem}:{model}:{ufuk}:{küme_tanımı}"`.
+- **p (BH için), aynı çekilişlerden:** iki yönlü yüzdelik bootstrap p'si
+  `p = min(1, 2 · min(#(Δ* ≤ 0)+1, #(Δ* ≥ 0)+1) / (B+1))` (§6l > 6'nın aynısı).
+- **Bağlayıcı okuma — muhafazakâr taraf:** test ÜST sınıra bakar, bu yüzden dc'nin
+  "alt sınırların küçüğü" kuralının karşılığı **üst sınırların BÜYÜĞÜ**dür:
+  `ÜS_bağ = max(ÜS_ay, ÜS_hafta)`, `p_bağ = max(p_ay, p_hafta)`.
+- **Hassasiyet — her hücrede (KARŞI, YANINDA, NÖTR, YANINDA ∪ NÖTR) ve her karşıtlıkta:**
+  n, küme sayısı (iki tanım), ort. R, küme aralığı, DEFF, `n_etkin = n / DEFF`,
+  `MDE = 2.802 · SE_küme` (`scripts/backtest_dc.py::precision` / `precision_diff`);
+  bağlayıcı MDE iki tanımın BÜYÜĞÜdür.
+- **Asgari örneklem (mekanik, yalnızca DÜŞÜRÜR):** karşıtlığın İKİ tarafından biri
+  **< 30 pozisyon** ya da iki küme tanımından birinde **< 10 küme** taşıyorsa o (birim,
+  dönem, ufuk) **DEĞERLENDİRİLEMEZ = GEÇMEDİ**; p'si BH'ye 1 olarak girer, m küçültülmez
+  (§6l > 6'nın aynı gerekçesi: paydanın veriye göre daralması geçmeyi kolaylaştırırdı).
+
+### 7. Geçme kuralı, aile, A → B
+
+- **Aile = bir (birim, dönem) içindeki üç ufuk, m = 3.** Kaynak–dönemler TOPLANMAZ:
+  `dc_coinflip` ile `xsec_random`in aileleri ayrıdır. ⚠ Bunun bedeli yazılır: dönem A'da
+  iki bağımsız aile vardır, yani "en az bir birimde bir ufuk geçti" olasılığı tek aileninkinden
+  büyüktür. Bu çokluğun koruması B doğrulamasıdır (aşağıda); A'daki tek bir geçiş "tez
+  destekleniyor" olarak OKUNMAZ.
+- **Dönem A — GEÇTİ** (birim × ufuk): `Δ_X < 0` **∧** üç ufkun `p_bağ`'ları üzerinde BH,
+  q = 0.05: `p₍ᵢ₎ ≤ (i/3) · 0.05` **∧** `ÜS_bağ < 0` (%95 aralık). Son koşul BH'den
+  türetilebilir ama AYRICA sınanır ve yazılır — kullanıcının ifadesi odur.
+- **Dönem B — yalnızca A'da GEÇEN (birim, ufuk) çiftleri doğrulanır;** `m_B` = o birimde
+  A'da geçen ufuk sayısı; kurallar ve karşıtlık AYNIDIR (yeni ufuk, yeni eşik, yeni hücre
+  YOK).
+- **DOĞRULANDI** = A'da geçti ∧ B'de geçti. A'da geçip B'de geçmeyen: **DOĞRULANMADI.**
+  A'da geçmeyenlerin B sayıları yazılır ama "bilgi — doğrulama değil" etiketiyle.
+- **Tezin okunması:** bir ufukta tez ancak **en az bir bağlayıcı birimde DOĞRULANDI** ise
+  "destekleniyor" okunur, ve bu okuma bile vetoyu bir kural yapmaz (1).
+- **İşaret TERSİNE anlamlıysa** (`Δ > 0` ve muhafazakâr alt sınır `min(AS_ay, AS_hafta) > 0`): tezin TERSİ görüldü olarak yazılır;
+  bu bir "geçme" değildir ve ondan yeni bir tez (ör. "BTC'ye karşı işlem iyidir") BU veride
+  kurulmaz (§7.1).
+
+### 8. İKİNCİL — modellerde, bilgi amaçlı
+
+Birimler: `dc_short` (dc A/B), `xsec_mom` (xsec A/B), `ema_trend` ve `trend` (ema A/B),
+canlı base `trend`, canlı scalp modelleri (tablo 3; `vwap_clone` "kopya" etiketiyle).
+Modelin girişleri BTC durumuyla İLİŞKİLİ olabilir (ör. `ema_trend` kesişimi, BTC yükselirken
+daha sık tetikler; `dc_short` ölüm kesişimi rejiminde açar) — bu yüzden ikincil karşıtlık bir
+karar üretmez, BH'ye girmez, `passed` alanı YOKTUR.
+
+Her birim × ufuk için: üç hücrenin tablosu (6'daki hassasiyet alanları), `Δ_X` ve iki küme
+tanımlı aralığı, ayrıca **"vetolu alt küme"**: KARŞI pozisyonları çıkarıldıktan sonra kalan
+pozisyonların ort. R'si (n, aralık) ve tüm pozisyonların ort. R'si, yan yana, çıkarılan pay
+ile birlikte. ⚠ Kabul edilen sapma 9-b: bu bir veto SİMÜLASYONU DEĞİLDİR — vetolanan
+işlemin boşalttığı kota ve nakit gerçekte başka bir işleme gidebilirdi; alan adı bu yüzden
+`vetolu_alt_kume`dir, `vetolu_model` değil. Canlı birimlerde aralık hesaplanabilirse
+yazılır; hücre < 30 ise "değerlendirilemez".
+
+### 9. Kabul edilen sapmalar
+
+- **(a) 15m bayatlığı:** 1H çapası 15m işlemlerde durumu en çok 45 dakika geriden okur. Daha
+  ince bir seri (15m BTC, 2021'den) yalnızca canlı scalp satırları için gerekir; o satırlar
+  zaten betimsel/bilgi statüsündedir.
+- **(b) Vetolu alt küme bir simülasyon değil** (8).
+- **(c) Çıkış tarafı:** R, projenin tanımıdır (ilk stop, `merge_fills`); kural 13'ün "aynı
+  barda stop" varsayımı KARŞI ve öteki grup için aynı uygulanır.
+- **(d) xsec'in giriş kümelenmesi:** her rebalance'ta üç pozisyon aynı barda, aynı BTC
+  durumuyla açılır; kümeli aralık bunu taşır, n_etkin bunu yazar.
+
+### 10. Tahmin — kullanıcının, sonuçtan ÖNCE *(2026-09-27)*
+
+- **1d:** etki YOK (dayanak: §6k'de BTC'nin 48 saatlik momentum kuralının isabeti %50.1).
+- **1h ve 4h:** belirsiz; **en olası sonuç "ayırt edilemedi".**
+
+**Güç projeksiyonu (sonuç değil, kaba hesap):** |z| > 1 normal dağılımda pozisyonların
+~%32'si, kalın kuyrukla daha azı; KARŞI bunun ~yarısı. dc A'da ~368 altcoin pozisyonundan
+KARŞI ~45–60, xsec A'da ~283'ten (yalnızca güçlü düşüş) ~35–50. R'nin sd'si ~1.5–1.9, ay
+kümesi ~30 → **karşıtlık MDE'si kabaca 0.6–1.0R.** xsec'te KARŞI pozisyonları az sayıda
+rebalance haftasında toplanacağı için < 10 küme kuralına takılma olasılığı yüksektir.
+"Ayırt edilemedi" beklenen sonuçlardan biridir ve **tezin reddi olarak okunmaz**; yalnızca
+bu verinin bu büyüklükte bir etkiyi dışlayamadığını söyler.
+
+### 11. Uygulama planı — sonraki commit'ler (bu metni DEĞİŞTİREMEZ)
+
+1. `scripts/measure_btc_veto.py`: aşamalar `snapshot` (BTC 1H çek → CSV; hiçbir hesap
+   yok), `preflight` (SHA256'lar, iki veri kapısı, ufuk başına TANIMSIZ sayısı ve HÜCRE
+   BAŞINA n / küme sayısı — **R okunmaz**; tekrarlanabilir), `measure` (tek sefer; yük
+   `docs/data/btc_veto_results.json`). Sınıflandırma, bootstrap ve BH burada; küme
+   fonksiyonları `scripts/backtest_dc.py`den İTHAL edilir, İKİNCİ KEZ YAZILMAZ.
+   `strategies/*`, `core/portfolio.py`, `core/engine.py`, `core/ledger.py` import EDİLMEZ
+   (test). Çıkış kodları karar 51: veri kapısı 3, kullanım 2.
+2. Testler: ileriye bakış yok (T'den sonra kapanan hiçbir bar z'ye giremez — sentetik
+   seride T+1h'ye bir sıçrama eklemek z'yi değiştirmemeli); ölçek penceresi cari getiriyi
+   dışlar; sınıf tablosu (4) ve |z| = 1 sınırı; BTC satırlarının dışlanması; `random_ctrl`in
+   hiçbir yolda okunmaması; BH ve "değerlendirilemez → p = 1"; CSV SHA kapısı.
+3. `.github/workflows/measure-btc-veto.yml`: `measure-market-direction.yml`in deseni —
+   `claude/**` dallarında tetikleyici dosyalar `.github/triggers/btcveto-snapshot*.run` /
+   `btcveto-preflight*.run` / `btcveto-measure*.run`; aşama AYRI bir `stage` işinde
+   **`scripts/trigger_stage.py`den** çözülür (karar 64) ve ölçüm işleri `needs: stage`.
+   Ağ ve artifact okuyan işler `contents: read`; sabitleme (`pin`, `pin-results`) ayrı
+   işlerde yalnızca aynı koşunun artifact'ini commit eder. Cron YOK.
+   `tests/test_trigger_stage.py` yeni workflow'u listeden kendiliğinden yakalar.
+4. CLAUDE.md'ye betik ve workflow satırları; §6c sicil satırının SONUÇ hücresi ve bir
+   karar kaydı yalnızca `measure`'dan SONRA.
+
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
