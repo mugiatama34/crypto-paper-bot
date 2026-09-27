@@ -401,7 +401,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 6 | `dc_short`: ölüm kesişimi (EMA50 < EMA200) rejiminde EMA50'ye geri çekilmenin reddi, short bir edge taşır (dış kaynaktan: eğitim görseli) | §6j (ön-kayıt commit'lerinde §6i olarak yazıldı; birleştirmede yeniden numaralandı), commit `03e9e2e` (TADİLAT-1 `5ad7653`, TADİLAT-2 `cd8fb54`); uygulama `54dd3aa` | A: 2022-01-01 → 2024-06-30 (sinyal kesimi), B: A+embargo → koşu günü | P1: dönem A ort. R > 0 | **P1 DÜŞTÜ** (A −0.035) ve **hipotez DÜŞTÜ** → **BLOKE** (`backtest-dc` #35839008498; B tek başına küme CI, E, K-3, K-1'den kalıyor), §6j > SONUÇ. ⚠ Dönem A'nın penceresi 2026-09'a taştı (karar 58): işlemler etkilenmedi, çıpa +18.87% değil **+43.39%**. ⚠ **DÜZELTİLDİ (karar 59, 2026-09-24):** "işlemler etkilenmedi" yanlıştı — yeniden koşu (#35981639682) A'da 336 pozisyon, ort. R −0.049 (kirli önbellek EMA200'ü farklı tohumladı; ön-kayıt eksiği, karar 59); **karar DEĞİŞMEDİ: BLOKE, aynı 10 kapı** |
 | 7 | TimesFM 2.5 (zero-shot, `klonnist/hemstir`) 48 saatlik yön tahmini üç basit kuraldan (hep yukarı, momentum, yazı-tura) daha isabetli — **model DEĞİL, salt okunur araştırma** | §6k, bu commit | A: 2022-01-01 → 2024-06-30, B: 2024-07-02 → koşu günü, **C: checkpoint yayını (2025-09-15) → koşu günü, bağlayıcı** | tahmin yazılmadı; kapı: üç kurala karşı ayrı ayrı Δ > 0 ve küme CI alt sınırı > 0, A ∧ B ∧ C | **DÜŞTÜ — dönem A'da** (koşu #35867807908): TimesFM %50.8; Δ hep yukarı +0.8 pp [−2.9, +4.5], momentum +0.6 pp [−3.4, +4.6], yazı-tura +1.9 pp [−0.8, +4.6]; B ve C koşulmadı — §6k > 17 |
 | 8 | Rejim koşullu performans: `ema_trend`, `xsec_mom` BTC yön-yukarı rejiminde (H1), `dc_short` yön-aşağı rejiminde (H2) daha yüksek ort. R; dönüş modelleri yüksek oynaklıkta daha düşük (H3) — **model DEĞİL, mevcut modellerin koşullu ölçümü** | §6l, bu commit | karar 59 koşularının A/B pencereleri (kaynak başına, §6l > 3) | karşıtlık (lehte − aleyhte) > 0, ay-küme CI + BH (q = 0.05, m = 3) ∧ lehte marjinal CI alt sınırı > 0; A'da ölç, B'de doğrula; H3 bugün değerlendirilemez | **DÜŞTÜ — dönem A'da, üç birimde de** (koşu #35995280008): karşıtlıklar H1a −0.133 [−0.473, +0.233], H1b −0.048 [−0.915, +0.711], H2 +0.211 [−0.326, +0.757]; BH p 0.486 / 0.916 / 0.457; hiçbiri MODELDEN değil (üçü de AYIRT EDİLEMEDİ); B'de doğrulanacak birim yok. Okuma: mevcut modeller rejim mekanizmasına aday değil — §6l > SONUÇ |
-| 9 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6o, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2: bağlayıcı ölçü D) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde KARŞI − (YANINDA ∪ NÖTR) < 0. Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 9 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6o, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3: işlem düzeyinde durum içi karşıtlık) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -5176,6 +5176,17 @@ bağlayıcı yapılmamıştı; TADİLAT-2 bu sırayı düzeltir. Güven aralığ
 tanımlarıyla bu ölçü için kurulur; bağlayıcı alt sınır yine gün/hafta alt sınırlarının
 küçüğüdür.
 
+**TADİLAT-3 (2026-09-27, veri görülmeden, hiçbir aşama koşmadan; kullanıcı kararı):** aynı
+sürüklenme sorunu İŞLEM düzeyinde de vardır — boğa bir dönemde güçlü-yukarı durumlar
+daha sıksa KARŞI hücresi çoğunlukla "yukarı durumda short"tur ve sürüklenmeye kaybeder;
+`Δ_X = KARŞI − (YANINDA ∪ NÖTR)` momentum olmadan da negatif çıkabilir. İki yönlü
+birimlerde bağlayıcı ölçü DURUM İÇİ ve eşit ağırlıklı karşıtlık `Δ⁼` oldu (5'e bakın);
+tek yönlü birimlerde mevcut `Δ_X` zaten sürüklenmeden arınmıştır ve bağlayıcı kalır, ama
+yalnızca soruların BİR tarafını cevaplar. Eski `Δ_X` iki yönlülerde BETİMSEL olarak yanında
+durur. Kayıt: kullanıcı `dc_short`u iki yönlüler arasında saymıştı; model yalnızca short
+açar (`strategies/dc_short.py::allowed_directions`) ve tek yönlüdür — sınıf modelin
+BİLDİRİMİNDEN okunur, veriden değil.
+
 ### 1. Statü: ÖLÇÜM, yeni model YOK
 
 Tez: *BTC'nin kısa vadeli güçlü hareketi sürüyorsa, ona KARŞI açılan altcoin işlemleri kötü
@@ -5398,7 +5409,46 @@ Beklenen işaret NEGATİF. İkinci grup iki hücrenin POZİSYON düzeyinde birle
 KARŞI ile YANINDA aynı durumlarda, yalnızca YÖN ile ayrışır — saf rastgeleleştirilmiş kıyas
 budur; ana karşıtlığın ikinci grubundaki NÖTR ise başka bir BTC durumudur ve oynaklık/maliyet
 ölçeği farkını taşıyabilir. Ana karşıtlık kullanıcının tanımıdır ve bağlayıcı kalır; ek
-karşıtlık aynı istatistikle raporlanır, BH'ye ve geçme kararına girmez.
+karşıtlık aynı istatistikle raporlanır, BH'ye ve geçme kararına girmez. ⚠ TADİLAT-3'ten
+sonra iki yönlü birimlerde bağlayıcı olan `Δ⁼`dır (aşağıda); `Δ'_X` bilgi olarak kalır.
+
+**TADİLAT-3 — sürüklenmeden arınmış karşıtlık (bağlayıcı ölçünün seçimi).** Birimin YÖN
+SINIFI modelin `allowed_directions` bildiriminden okunur ve betikte sabittir:
+
+| Sınıf | Modeller | Bağlayıcı ölçü | Cevaplanabilen soru |
+|---|---|---|---|
+| **iki yönlü** | `dc_coinflip`, `scalp_coinflip`, `trend`, `scalp_fixed`, `scalp_patient`, `scalp_bandit`, `scalp_managed`, `vwap_managed`, `vwap_clone` | `Δ⁼` | iki taraf da |
+| **yalnızca long** | `xsec_random`, `xsec_mom`, `ema_trend` | `Δ_X` | yalnızca "BTC güçlü DÜŞERKEN long" (yukarı durumda KARŞI oluşmaz) |
+| **yalnızca short** | `dc_short` | `Δ_X` | yalnızca "BTC güçlü YÜKSELİRKEN short" (aşağı durumda KARŞI oluşmaz) |
+
+```
+Δ⁼_X = ½ · [ (ort.R(short | yukarı) − ort.R(long | yukarı))      # yukarı durumda KARŞI − YANINDA
+           + (ort.R(long | aşağı)  − ort.R(short | aşağı)) ]     # aşağı durumda KARŞI − YANINDA
+```
+
+- **Neden sürüklenmeden arınmış:** sabit bir sürüklenme `d`, bir durumun içinde long'a `+d`,
+  short'a `−d` ekler; yukarı terimde `−2d`, aşağı terimde `+2d` olarak girer ve eşit
+  ağırlıklı ortalamada sıfırlanır. İki durumun dönemdeki sıklığı sonucu etkilemez. D'nin
+  (4b) işlem düzeyindeki karşılığıdır. NÖTR bu ölçüye girmez.
+- **Tek yönlü birimlerde** bütün işlemler aynı yönde olduğu için sürüklenme hepsini eşit
+  etkiler; `Δ_X` sürüklenmeden arınmıştır ve bağlayıcıdır. Sonuç tek tarafın cevabıdır ve
+  raporda sınıfıyla birlikte yazılır — iki tarafa GENELLENMEZ.
+- **İstatistik:** 6'nın kuralları `Δ⁼`a aynen uygulanır — iki küme tanımı (ay, ISO hafta),
+  küme-EŞLEŞTİRİLMİŞ bootstrap (her iterasyonda küme etiketleri BİR KEZ dört hücrenin
+  kümelerinin birleşiminden çekilir), aynı p formülü, muhafazakâr okuma (`ÜS_bağ` üst
+  sınırların büyüğü, `p_bağ` p'lerin büyüğü). Çekiliş `scripts/backtest_dc.py::
+  cluster_diff_draws`in AYNI algoritmasıyla (aynı tohumda iki hücreli hâli ona birebir
+  eşittir — test) dört hücreye genelleştirilir; hassasiyet `precision_diff`in aynı
+  formülünün dört terimli hâlidir (iki terimde ona birebir eşittir — test). Tohum
+  `f"{random_seed}:btcveto:{kaynak}:{dönem}:{model}:{ufuk}:balanced:{küme_tanımı}"`.
+- **Asgari örneklem:** dört hücrenin (short|yukarı, long|yukarı, long|aşağı, short|aşağı)
+  HER BİRİ ≥ 30 pozisyon ve her iki küme tanımında ≥ 10 küme taşımıyorsa
+  DEĞERLENDİRİLEMEZ = GEÇMEDİ, p = 1 (m küçülmez). ⚠ Bu, iki taraflı karşıtlıktan daha
+  sıkıdır ve güç projeksiyonunu (10) düşürür: dc_coinflip A'da her hücre kabaca 20–35
+  pozisyon beklenir, yani "değerlendirilemez" olasılığı yüksektir. Kural veri görülmeden
+  yazıldı ve gevşetilmez.
+- **Eski `Δ_X` iki yönlülerde BETİMSEL** olarak aynı istatistikle yanında durur (BH'ye ve
+  geçme kararına girmez).
 
 ### 6. İstatistik
 
@@ -5436,7 +5486,9 @@ karşıtlık aynı istatistikle raporlanır, BH'ye ve geçme kararına girmez.
   iki bağımsız aile vardır, yani "en az bir birimde bir ufuk geçti" olasılığı tek aileninkinden
   büyüktür. Bu çokluğun koruması B doğrulamasıdır (aşağıda); A'daki tek bir geçiş "tez
   destekleniyor" olarak OKUNMAZ.
-- **Dönem A — GEÇTİ** (birim × ufuk): `Δ_X < 0` **∧** üç ufkun `p_bağ`'ları üzerinde BH,
+- **Bağlayıcı ölçü (TADİLAT-3):** iki yönlü birimde `Δ⁼`, tek yönlü birimde `Δ_X`; aşağıda
+  "Δ" bu bağlayıcı ölçüdür.
+- **Dönem A — GEÇTİ** (birim × ufuk): `Δ < 0` **∧** üç ufkun `p_bağ`'ları üzerinde BH,
   q = 0.05: `p₍ᵢ₎ ≤ (i/3) · 0.05` **∧** `ÜS_bağ < 0` (%95 aralık). Son koşul BH'den
   türetilebilir ama AYRICA sınanır ve yazılır — kullanıcının ifadesi odur.
 - **Dönem B — yalnızca A'da GEÇEN (birim, ufuk) çiftleri doğrulanır;** `m_B` = o birimde
@@ -5463,8 +5515,9 @@ Modelin girişleri BTC durumuyla İLİŞKİLİ olabilir (ör. `ema_trend` kesiş
 daha sık tetikler; `dc_short` ölüm kesişimi rejiminde açar) — bu yüzden ikincil karşıtlık bir
 karar üretmez, BH'ye girmez, `passed` alanı YOKTUR.
 
-Her birim × ufuk için: üç hücrenin tablosu (6'daki hassasiyet alanları), `Δ_X` ve iki küme
-tanımlı aralığı, ayrıca **"vetolu alt küme"**: KARŞI pozisyonları çıkarıldıktan sonra kalan
+Her birim × ufuk için: üç hücrenin tablosu (6'daki hassasiyet alanları), sınıfının
+bağlayıcı karşıtlığı (TADİLAT-3: iki yönlüde `Δ⁼` ve betimsel `Δ_X`, tek yönlüde `Δ_X`,
+sınıfının cevaplayabildiği soruyla) ve iki küme tanımlı aralıkları, ayrıca **"vetolu alt küme"**: KARŞI pozisyonları çıkarıldıktan sonra kalan
 pozisyonların ort. R'si (n, aralık) ve tüm pozisyonların ort. R'si, yan yana, çıkarılan pay
 ile birlikte. ⚠ Kabul edilen sapma 9-b: bu bir veto SİMÜLASYONU DEĞİLDİR — vetolanan
 işlemin boşalttığı kota ve nakit gerçekte başka bir işleme gidebilirdi; alan adı bu yüzden
