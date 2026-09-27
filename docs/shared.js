@@ -197,6 +197,48 @@ function fetchPayload(path) {
     .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
 }
 
+/* ------------------------------------------------------------------ *
+ * DURUM ETİKETİ — TEK tanım (docs/backtest.md > 7.8, karar 68).
+ *
+ * Paper trading'de koşan her TEZ üç durumdan birini taşır ve durum
+ * kapılardan AYRIDIR: canlı Ö/E kapılarını geçmek bir modeli
+ * "doğrulandı" yapmaz, çünkü A/B dönemleri geliştirmede görülmüş
+ * veridir. Kaynak elle tutulan `data/model_status.json`dur ve her
+ * kayıt bir karar numarası taşır (test: tests/test_model_status.py).
+ * Dosyada YAZILMAYAN model — ya da dosya okunamazsa HER model —
+ * "doğrulanmamış"tır: hata yönü muhafazakârdır, bir okuma hatası hiçbir
+ * modeli doğrulanmış göstermez. Sayfa durumu HESAPLAMAZ (kural 7).
+ * ------------------------------------------------------------------ */
+const MODEL_STATUS_FILE = "data/model_status.json";
+const MODEL_STATUS_DEFS = {
+  dogrulanmamis: { label: "DOĞRULANMAMIŞ",
+    title: "Ön-kayıtlı A/B kapılarından geçmemiş; deney olarak koşuyor (docs/backtest.md > 7.8)." },
+  deneme: { label: "DENEME — KASA TESTİ BEKLENİYOR",
+    title: "A ve B'yi geçmiş; geliştirmede kullanılmamış veride (kasa) tek sınamasını bekliyor." },
+  dogrulandi: { label: "DOĞRULANDI",
+    title: "Kasa sınamasını geçmiş (docs/backtest.md > 7.8)." },
+};
+let MODEL_STATUS = {};
+
+function loadModelStatus() {
+  return fetchPayload(MODEL_STATUS_FILE)
+    .then((d) => { MODEL_STATUS = (d && d.models) || {}; })
+    .catch(() => { MODEL_STATUS = {}; });
+}
+
+function modelStatusKey(model) {
+  const entry = MODEL_STATUS[model];
+  return entry && MODEL_STATUS_DEFS[entry.status] ? entry.status : "dogrulanmamis";
+}
+
+function statusBadge(model) {
+  const key = modelStatusKey(model);
+  const def = MODEL_STATUS_DEFS[key];
+  const record = (MODEL_STATUS[model] || {}).record;
+  return '<span class="tag status-' + key + '" title="' +
+    esc(def.title + (record ? " Kayıt: " + record + "." : "")) + '">' + esc(def.label) + "</span>";
+}
+
 /* Yön rozeti — iki sayfada da aynı görünür. */
 const dirBadge = (direction) =>
   '<span class="dir ' + esc(direction) + '">' + esc(String(direction || "").toUpperCase()) + "</span>";

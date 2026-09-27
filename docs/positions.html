@@ -201,6 +201,8 @@ let MISSING = [];         // okunamayan katmanlar
 let POSITIONS = [];       // tüm açık pozisyonlar (katman etiketli)
 let TRADES = [];          // tüm kapanmış işlem satırları (katman etiketli)
 let MODEL_INDEX = [];     // {layer, model, is_replica, is_benchmark}
+// Durum etiketi yalnızca TEZLERE (docs/backtest.md > 7.8): çıpa, kopya ve kontrol bir tez değildir.
+const THESES = new Set();
 let TRADE_WINDOW = [];    // {layer, model, total, shown} — yükün penceresi
 let STYLE = {};           // model -> {color, ...}; docs/shared.js::assignStyles
 
@@ -213,11 +215,11 @@ renderSiteNav("positions");
 /* ------------------------------------------------------------------ *
  * Yükleme — iki yük paralel okunur, biri düşerse diğeri çizilir.
  * ------------------------------------------------------------------ */
-Promise.all(LAYERS.map((layer) =>
+Promise.all([loadModelStatus()].concat(LAYERS.map((layer) =>
   fetchPayload(layer.file)
     .then((d) => ({ layer, data: d }))
     .catch(() => ({ layer, data: null }))
-)).then((results) => {
+))).then(([, ...results]) => {
   for (const { layer, data } of results) {
     if (data) PAYLOADS[layer.key] = data; else MISSING.push(layer);
   }
@@ -270,6 +272,9 @@ function collect() {
       styleModels.push(name);
       if (benchNames.includes(name)) benchmarks.push(name);
       if (control.includes(name)) controls.push(name);
+      const thesis = !(m.is_replica || replicaNames.includes(name) || m.is_benchmark ||
+        benchNames.includes(name) || control.includes(name));
+      if (thesis) THESES.add(layer.key + "::" + name);
     }
 
     for (const p of (d.open_positions || [])) POSITIONS.push({ ...p, layer: layer.key });
@@ -738,7 +743,8 @@ function stateHtml(position) {
 
 const modelCell = (row) =>
   '<span class="swatch" style="background:' + esc((STYLE[row.model] || {}).color || "#898781") + '"></span>' +
-  esc(row.model) + '<span class="tag">' + esc(layerLabel(row.layer)) + "</span>";
+  esc(row.model) + '<span class="tag">' + esc(layerLabel(row.layer)) + "</span>" +
+  (THESES.has(row.layer + "::" + row.model) ? statusBadge(row.model) : "");
 
 function renderOpen() {
   const rows = POSITIONS.filter(matchesScope);
