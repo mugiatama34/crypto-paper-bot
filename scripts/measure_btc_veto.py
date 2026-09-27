@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""BTC momentum vetosu ölçümü (docs/backtest.md > 6o). ÖLÇÜM, yeni model YOK.
+"""BTC momentum vetosu ölçümü (docs/backtest.md > 6p). ÖLÇÜM, yeni model YOK.
 
 Ön-kayıt (`1522e44`, TADİLAT-1 `ebd6007`, TADİLAT-2 `5bd4da4`) bu betikten ÖNCE, hiçbir veri
 görülmeden commit edildi. Betik o metni MEKANİK uygular; hiçbir sayı burada SEÇİLMEZ ve
 hiçbir sabit CLI girdisi değildir.
 
-- **BİRİNCİL (§6o > 4b):** güçlü BTC durumlarında (|z| > 1) 12 altcoinin sonraki H saatteki
+- **BİRİNCİL (§6p > 4b):** güçlü BTC durumlarında (|z| > 1) 12 altcoinin sonraki H saatteki
   getirisi; bağlayıcı ölçü `D = ½(ȳ₊ + ȳ₋)` (TADİLAT-2), havuzlanmış ortalama betimsel.
-- **İKİNCİL-1 (§6o > 5–7):** yönü rastgele kontrollerde KARŞI − (YANINDA ∪ NÖTR) ort. R;
+- **İKİNCİL-1 (§6p > 5–7):** yönü rastgele kontrollerde KARŞI − (YANINDA ∪ NÖTR) ort. R;
   okunuşu fiyat testine KOŞULLU.
-- **İKİNCİL-2 (§6o > 8):** modellerde aynı karşıtlık + vetolu alt küme; bilgi.
+- **İKİNCİL-2 (§6p > 8):** modellerde aynı karşıtlık + vetolu alt küme; bilgi.
 
 **İkinci bir uygulama YOK:** küme çekilişleri, yüzdelik aralık ve hassasiyet
 `scripts/backtest_dc.py`den (`cluster_diff_draws`, `cluster_mean_draws`, `_percentiles`,
@@ -69,34 +69,34 @@ from scripts.backtest_ema import PERIOD_A_CUTOFF, PERIOD_A_START  # noqa: E402
 
 logger = logging.getLogger("measure_btc_veto")
 
-# --- Ön-kayıtlı sayılar (§6o). Hiçbiri CLI girdisi DEĞİLDİR. ------------------------------
+# --- Ön-kayıtlı sayılar (§6p). Hiçbiri CLI girdisi DEĞİLDİR. ------------------------------
 TRADES_CSV = Path("docs/data/market_direction_trades.csv")
-TRADES_SHA256 = "3147e7499128edfa888431ad056659826478ed6a36f59fbcd4e23b58fa16632c"   # §6o > 2
+TRADES_SHA256 = "3147e7499128edfa888431ad056659826478ed6a36f59fbcd4e23b58fa16632c"   # §6p > 2
 PRICES_CSV = Path("docs/data/market_direction_prices.csv")
 PINS_DIR = Path("docs/data/pins/btc_veto")
 BTC = "BTC-USDT-SWAP"
-ALTCOINS = (   # §6o > 3: layers.ema.universe, BTC hariç — sıra sabit
+ALTCOINS = (   # §6p > 3: layers.ema.universe, BTC hariç — sıra sabit
     "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP", "DOGE-USDT-SWAP", "BNB-USDT-SWAP",
     "AVAX-USDT-SWAP", "LINK-USDT-SWAP", "ADA-USDT-SWAP", "SUI-USDT-SWAP", "NEAR-USDT-SWAP",
     "PENGU-USDT-SWAP", "ETHFI-USDT-SWAP",
 )
 SYMBOLS = (BTC, *ALTCOINS)
-SNAPSHOT_START = pd.Timestamp("2021-10-01T00:00:00Z")          # §6o > 3
+SNAPSHOT_START = pd.Timestamp("2021-10-01T00:00:00Z")          # §6p > 3
 HOUR = pd.Timedelta(hours=1)
-HORIZONS = {"1h": 1, "4h": 4, "1d": 24}                        # §6o > 4: saat
-SCALE_HOURS = 90 * 24                                          # §6o > 4: 90 gün
-SCALE_MIN_SHARE = 0.90                                         # §6o > 4: %90 kapsam
-STRONG_Z = 1.0                                                 # §6o > 4: |z| > 1
-PARITY_TOL = 1e-6                                              # §6o > 3
-PARITY_MAX_FAIL = 0.01                                         # §6o > 3
-MIN_N = 30                                                     # §6o > 6, 4b
-BH_Q = 0.05                                                    # §6o > 7, 4b
-PRICE_PERIODS = {                                              # §6o > 4b (TADİLAT-1)
+HORIZONS = {"1h": 1, "4h": 4, "1d": 24}                        # §6p > 4: saat
+SCALE_HOURS = 90 * 24                                          # §6p > 4: 90 gün
+SCALE_MIN_SHARE = 0.90                                         # §6p > 4: %90 kapsam
+STRONG_Z = 1.0                                                 # §6p > 4: |z| > 1
+PARITY_TOL = 1e-6                                              # §6p > 3
+PARITY_MAX_FAIL = 0.01                                         # §6p > 3
+MIN_N = 30                                                     # §6p > 6, 4b
+BH_Q = 0.05                                                    # §6p > 7, 4b
+PRICE_PERIODS = {                                              # §6p > 4b (TADİLAT-1)
     "A": (pd.Timestamp(PERIOD_A_START), pd.Timestamp(PERIOD_A_CUTOFF)),
     "B": (pd.Timestamp("2024-07-01T00:00:00Z"), pd.Timestamp("2026-09-18T12:00:00Z")),
 }
-PRICE_DEFINITIONS = ("day", "week")        # §6o > 4b
-TRADE_DEFINITIONS = ("month", "week")      # §6o > 6
+PRICE_DEFINITIONS = ("day", "week")        # §6p > 4b
+TRADE_DEFINITIONS = ("month", "week")      # §6p > 6
 
 KARSI, YANINDA, NOTR, TANIMSIZ = "KARŞI", "YANINDA", "NÖTR", "TANIMSIZ"
 
@@ -110,7 +110,7 @@ class Unit:
     label: str = ""
 
 
-# §6o > 5 (İKİNCİL-1) ve 8 (İKİNCİL-2). random_ctrl hiçbir yolda yok (karar 60, 63).
+# §6p > 5 (İKİNCİL-1) ve 8 (İKİNCİL-2). random_ctrl hiçbir yolda yok (karar 60, 63).
 CONTROL_UNITS = (
     Unit(source="dc", period="A", model="dc_coinflip", role="primary"),
     Unit(source="dc", period="B", model="dc_coinflip", role="primary"),
@@ -128,9 +128,9 @@ MODEL_UNITS = tuple(
        for m in ("scalp_fixed", "scalp_patient", "scalp_bandit", "scalp_managed",
                  "vwap_managed", "vwap_clone")]
 )
-COINFLIP_MODELS = {"dc_coinflip", "scalp_coinflip"}   # §6o > 5: ek karşıtlık yalnızca bunlarda
+COINFLIP_MODELS = {"dc_coinflip", "scalp_coinflip"}   # §6p > 5: ek karşıtlık yalnızca bunlarda
 
-# §6o > 5 (TADİLAT-3): YÖN SINIFI modelin `allowed_directions` bildiriminden — veriden DEĞİL.
+# §6p > 5 (TADİLAT-3): YÖN SINIFI modelin `allowed_directions` bildiriminden — veriden DEĞİL.
 DIRECTION_CLASS = {
     "dc_coinflip": "both", "scalp_coinflip": "both", "trend": "both",
     "scalp_fixed": "both", "scalp_patient": "both", "scalp_bandit": "both",
@@ -184,7 +184,7 @@ def cluster_of(stamp: pd.Timestamp, definition: str) -> str:
 
 
 def bootstrap_p(draws: Sequence[float]) -> float:
-    """İki yönlü yüzdelik bootstrap p'si (§6l > 6'nın formülü, §6o > 4b/6)."""
+    """İki yönlü yüzdelik bootstrap p'si (§6l > 6'nın formülü, §6p > 4b/6)."""
     b = len(draws)
     le = sum(1 for d in draws if d <= 0.0)
     ge = sum(1 for d in draws if d >= 0.0)
@@ -245,7 +245,7 @@ def write_pins(frames: Mapping[str, pd.DataFrame], out: Path, *, end: pd.Timesta
             "sha256": hashlib.sha256(raw).hexdigest(),
         })
     manifest = {
-        "purpose": "OKX 1H mumları, 13 sembol — docs/backtest.md > 6o > 3; hiçbir şey hesaplanmadı",
+        "purpose": "OKX 1H mumları, 13 sembol — docs/backtest.md > 6p > 3; hiçbir şey hesaplanmadı",
         "start": SNAPSHOT_START.isoformat(), "now": end.isoformat(), "snapshot_run": run,
         "note": "ts = bar AÇILIŞI (UTC); sha256 SIKIŞTIRILMAMIŞ içeriğe aittir",
         "files": files,
@@ -299,7 +299,7 @@ def open_series(frame: pd.DataFrame) -> pd.Series:
 
 
 # --------------------------------------------------------------------------- #
-# Veri kapıları (§6o > 3)
+# Veri kapıları (§6p > 3)
 # --------------------------------------------------------------------------- #
 def coverage_gate(btc: pd.DataFrame, earliest_open: pd.Timestamp) -> dict[str, Any]:
     need = min(earliest_open - pd.Timedelta(days=91), PRICE_PERIODS["A"][0] - pd.Timedelta(days=91))
@@ -327,7 +327,7 @@ def truncates_to(fine: float, coarse_text: str) -> bool:
 
 
 def parity_gate(frames: Mapping[str, pd.DataFrame], prices_csv: Path) -> dict[str, Any]:
-    """Pinlenmiş 4H barları 1H seriye sınır noktalarında birebir inmeli (§6o > 3).
+    """Pinlenmiş 4H barları 1H seriye sınır noktalarında birebir inmeli (§6p > 3).
 
     TADİLAT-4: tolerans dışı ama yalnızca KESME kaynaklı fark "kesinlik farkı"dır, %1 kuralına
     girmez ve sembol/pencereyle ayrı raporlanır; öteki her uyuşmazlık sayılır.
@@ -371,7 +371,7 @@ def parity_gate(frames: Mapping[str, pd.DataFrame], prices_csv: Path) -> dict[st
 
 
 # --------------------------------------------------------------------------- #
-# BTC durumu (§6o > 4)
+# BTC durumu (§6p > 4)
 # --------------------------------------------------------------------------- #
 def btc_states(btc_close: pd.Series) -> dict[str, pd.DataFrame]:
     """Ufuk başına saatlik ızgarada g, σ, z. Satır T'nin değerleri yalnızca ≤ T kapananlardan."""
@@ -404,7 +404,7 @@ def classify(z: float | None, direction: str) -> str:
 
 
 def state_at(states: pd.DataFrame, opened_at: pd.Timestamp) -> float | None:
-    """Çapa T = opened_at'e eşit ya da ondan önceki son TAM SAAT (§6o > 4)."""
+    """Çapa T = opened_at'e eşit ya da ondan önceki son TAM SAAT (§6p > 4)."""
     anchor = _utc(opened_at).floor("h")
     if anchor not in states.index:
         return None
@@ -622,7 +622,7 @@ def mean_ci(stamps: Sequence[pd.Timestamp], values: Sequence[float], *, definiti
 
 
 # --------------------------------------------------------------------------- #
-# BİRİNCİL — fiyat düzeyi testi (§6o > 4b)
+# BİRİNCİL — fiyat düzeyi testi (§6p > 4b)
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, kw_only=True)
 class PriceObs:
@@ -704,7 +704,7 @@ def price_test(obs: Sequence[PriceObs], *, period: str, horizon: str, seed_base:
 
 def drift_values(hours: int, period: str, closes: Mapping[str, pd.Series],
                  opens: Mapping[str, pd.Series], grid: pd.DatetimeIndex) -> list[float]:
-    """Dönemin bütün saatlerinin (güçlü ya da değil) ileri getirisi — bilgi (§6o > 4b)."""
+    """Dönemin bütün saatlerinin (güçlü ya da değil) ileri getirisi — bilgi (§6p > 4b)."""
     start, end = PRICE_PERIODS[period]
     horizon = pd.Timedelta(hours=hours)
     anchors = grid[(grid >= start) & (grid + horizon <= end)]
@@ -744,7 +744,7 @@ def decide_price(results: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# İKİNCİL — işlem düzeyi (§6o > 5–8)
+# İKİNCİL — işlem düzeyi (§6p > 5–8)
 # --------------------------------------------------------------------------- #
 def trade_unit(rows: pd.DataFrame, classes: pd.DataFrame, unit: Unit, *, seed_base: str,
                iterations: int, alpha: float) -> dict[str, Any]:
@@ -766,12 +766,12 @@ def trade_unit(rows: pd.DataFrame, classes: pd.DataFrame, unit: Unit, *, seed_ba
         if unit.role == "descriptive":
             entry["contrast"] = {"estimate": (cells[KARSI]["mean"] - cells["YANINDA∪NÖTR"]["mean"])
                                  if cells[KARSI]["n"] and cells["YANINDA∪NÖTR"]["n"] else None,
-                                 "note": "betimsel — aralık ve p hesaplanmaz (§6o > 5)"}
+                                 "note": "betimsel — aralık ve p hesaplanmaz (§6p > 5)"}
             if bcells is not None:
                 entry["balanced"] = {
                     "cells": {name: len(v) for name, _, _, v in bcells},
                     "estimate": sum(w * float(np.mean(v)) for _, w, _, v in bcells) if all(v for *_, v in bcells) else None,
-                    "note": "betimsel — aralık ve p hesaplanmaz (§6o > 5)"}
+                    "note": "betimsel — aralık ve p hesaplanmaz (§6p > 5)"}
         else:
             k, r = sel[KARSI], sel["YANINDA∪NÖTR"]
             entry["contrast"] = contrast(list(k["opened_at"]), list(k["r"]), list(r["opened_at"]), list(r["r"]),
@@ -786,7 +786,7 @@ def trade_unit(rows: pd.DataFrame, classes: pd.DataFrame, unit: Unit, *, seed_ba
             entry["karsi_minus_yaninda"] = contrast(
                 list(k["opened_at"]), list(k["r"]), list(y["opened_at"]), list(y["r"]),
                 definitions=TRADE_DEFINITIONS, iterations=iterations, alpha=alpha, seed=f"{seed}:karsi_yaninda")
-            entry["karsi_minus_yaninda"]["note"] = "bilgi — BH'ye ve geçme kararına girmez (§6o > 5)"
+            entry["karsi_minus_yaninda"]["note"] = "bilgi — BH'ye ve geçme kararına girmez (§6p > 5)"
         if unit.role == "model":
             defined = rows.loc[cls != TANIMSIZ]
             kept = rows.loc[cls.isin([YANINDA, NOTR])]
@@ -796,14 +796,14 @@ def trade_unit(rows: pd.DataFrame, classes: pd.DataFrame, unit: Unit, *, seed_ba
                 "without_karsi": mean_ci(list(kept["opened_at"]), list(kept["r"]), definitions=TRADE_DEFINITIONS,
                                          iterations=iterations, alpha=alpha, seed=f"{seed}:vetolu"),
                 "removed_share": (len(sel[KARSI]) / len(defined)) if len(defined) else None,
-                "note": "veto SİMÜLASYONU DEĞİLDİR — boşalan kota/nakit başka işleme gidebilirdi (§6o > 9-b)",
+                "note": "veto SİMÜLASYONU DEĞİLDİR — boşalan kota/nakit başka işleme gidebilirdi (§6p > 9-b)",
             }
         out["horizons"][horizon] = entry
     return out
 
 
 def decide_trades(units: Sequence[Mapping[str, Any]], confirmed: Mapping[str, bool]) -> None:
-    """İKİNCİL-1'in A → B kuralı (§6o > 7), okunuşu fiyat testine KOŞULLU — yerinde yazar."""
+    """İKİNCİL-1'in A → B kuralı (§6p > 7), okunuşu fiyat testine KOŞULLU — yerinde yazar."""
     by_key = {(u["source"], u["period"], u["model"]): u for u in units}
     for source, model in (("dc", "dc_coinflip"), ("xsec", "xsec_random")):
         passed_a: dict[str, bool] = {}
@@ -820,7 +820,7 @@ def decide_trades(units: Sequence[Mapping[str, Any]], confirmed: Mapping[str, bo
                 in_family = h in family
                 passed = bool(in_family and c["evaluable"] and rejected.get(h)
                               and (c["estimate"] or 0) < 0 and c["high_binding"] is not None and c["high_binding"] < 0)
-                # §6o > 7: Δ > 0 ve muhafazakâr alt sınır min(AS_ay, AS_hafta) > 0.
+                # §6p > 7: Δ > 0 ve muhafazakâr alt sınır min(AS_ay, AS_hafta) > 0.
                 reverse = bool(c["evaluable"] and (c["estimate"] or 0) > 0
                                and c["low_binding"] is not None and c["low_binding"] > 0)
                 if period == "A":
@@ -908,7 +908,7 @@ def run_analysis(args: argparse.Namespace, config: Mapping[str, Any], *, measure
     opens = {s: open_series(frames[s]) for s in ALTCOINS}
     report: dict[str, Any] = {
         "stage": "measure" if measure else "preflight",
-        "preregistration": "docs/backtest.md > 6o (1522e44, TADİLAT-1 ebd6007, TADİLAT-2 5bd4da4)",
+        "preregistration": "docs/backtest.md > 6p (1522e44, TADİLAT-1 ebd6007, TADİLAT-2 5bd4da4)",
         "gates": gates,
         "state_undefined": {h: int(states[h]["z"].isna().sum()) for h in HORIZONS},
     }

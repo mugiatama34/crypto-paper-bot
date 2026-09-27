@@ -1,4 +1,4 @@
-"""`scripts/measure_btc_veto.py` (docs/backtest.md > 6o).
+"""`scripts/measure_btc_veto.py` (docs/backtest.md > 6p).
 
 Sınananlar: (1) BTC durumu ileriye bakmaz ve cari getiri kendi ölçeğine girmez; (2) sınıf
 tablosu ve |z| = 1 sınırı; (3) 15m işlemin çapası son tam saattir; (4) ileri pencere T'de

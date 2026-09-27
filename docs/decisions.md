@@ -5362,3 +5362,85 @@ birini yiyebilecek bir önyargıyı kaçırırdı. Sentetik veri 8 × 5000 bara 
 **TADİLAT-1 (2026-09-26, sonuç görüldükten sonra, kullanıcı onayı):** sıfır-beklenti testinin
 sentetiği 15.000 bar × 256 alt adıma büyütüldü; eşiklerin hiçbiri gevşemedi. Sebepler, görülen
 sayılar ve testin fiili çözünürlüğü (≈ ±0.035R) §6n > TADİLAT-1'dedir.
+
+## 66. Oynaklık hedefleme: yön tahmini YOK, pasif maruziyetin ters oynaklıkla ölçeklenmesi — ön-kayıt §6o *(2026-09-26)*
+
+Tez (kullanıcı): oynaklık kümelenir, yön öngörülemez; `w = min(1, σ_hedef/σ̂)` ile ölçeklenmiş
+maruziyet aynı getiriyi daha düşük oynaklıkla verir. Ölçülen iki maruziyet BTC al-tut ve `ema`
+evreninin eşit ağırlıklı sepetidir; birincil metrik ölçeklenmiş − ölçeklenmemiş Sharpe farkı,
+kontrol aynı ORTALAMA ağırlıkla sabit maruziyettir. **Model DEĞİL:** motorun boyutlandırması
+(kural 11) stop ister ve stop'suz kesirli maruziyet yalnızca çıpa/kopyaya açıktır — tezi motora
+sokmak kural 3/11'i delerdi; ölçüm bu yüzden `measure_*` desenli bir getiri serisi hesabıdır.
+Güç dürüstçe yazıldı: gerçekçi bir etkide (ΔSR ≈ 0.2) iki dönemin birlikte geçme olasılığı ≈ %1,
+yani "ayırt edilemedi" beklenen sonuçtur ve tezin reddi değildir. Ön-kaydın kullanıcı tanımına
+eklediği sekiz nokta (maliyete kayma, funding hariç, sepet düzeyinde ölçekleme, uygunluk,
+uygulama fiyatı, bağlayıcı blok, B sınırı, güç) §6o > 14'te onay bekler; kod onaydan önce yazılmaz.
+
+**TADİLAT-1 (2026-09-26, kod öncesi, kullanıcı onayı):** O1–O5 ve O7 onaylandı. O6 değişti:
+bağlayıcı aralık hafta ve 4 haftalık blokların alt sınırlarının MİNİMUMUDUR (§6j'nin kuralı).
+O8: koşulur — kazanç betimsel sayılar ve tezin ÖNCÜLÜDÜR. Öncül ("oynaklık öngörülebilir")
+yüksek güçle ölçülebildiği için bilgi amaçlı bir mekanizma ölçümü eklendi: σ̂_t ile sonraki 30
+günün gerçekleşen oynaklığı arasında Spearman, aynı blok bootstrap'ı; kapı değildir ama
+sonucun hangi cümleyle okunacağını belirler (§6o > TADİLAT-1 > 4).
+
+**SONUÇ (2026-09-27, koşu #36291523493, kullanıcı onayıyla kayda geçti):** iki varlıkta da
+(BTC, sepet) iki dönemde GEÇMEDİ; öncül ön-kayıtlı kuralla TUTMADI → **"tez dayanaksız"**.
+ΔSR −0.03 … +0.06, aralıkların üst sınırları +0.07 … +0.21 — gerçekleşen kesinlik projeksiyondan
+çok daha iyiydi (ρ(S,U) ≈ 0.99, MDE 0.14–0.24), yani büyük bir iyileşme büyük ölçüde dışlandı.
+σ̂'ın sonraki 30 günü öngörüsü pozitif ama zayıf (Spearman 0.22–0.38). Aynı ortalama maruziyetle
+sabit ağırlık aynı oynaklık düşüşünü aynı Sharpe'la veriyor. Hiçbir modele ya da boyutlandırmaya
+bir şey eklenmez; tez sicilde (9. satır) kalır. Ayrıntı §6o > SONUÇ.
+
+## 67. BTC momentum vetosu: BTC'nin kısa vadeli güçlü hareketi altcoinlerde DEVAM ETMİYOR — ölçüm, yeni model YOK; ön-kayıt §6p *(2026-09-27)*
+
+**Ne.** Tez (kullanıcı): BTC'nin kısa vadeli güçlü hareketi sürüyorsa ona KARŞI açılan altcoin
+işlemi kötü sonuçlanır; aday kural "BTC son X'te güçlü yükseliyorsa altcoin short açma" (ve
+simetriği). Veto hiçbir modele UYGULANMADI; ölçüldü. Ön-kayıt veri görülmeden commit edildi
+(`1522e44`) ve dört TADİLAT'ın hepsi hiçbir sonuç görülmeden yapıldı:
+
+- **TADİLAT-1** (`ebd6007`): birincil test işlemlerden FİYAT düzeyine taşındı — güçlü BTC
+  saatlerinde (1h/4h/24h log getirisi, önceki 90 günün std'sine göre |z| > 1, yalnızca kapanmış
+  1H barlar) 12 altcoinin sonraki H saatteki getirisi; işlem düzeyi ikincil ve fiyat testine
+  KOŞULLU.
+- **TADİLAT-2** (`5bd4da4`): bağlayıcı ölçü havuzlanmış ortalama değil `D = ½(ȳ₊ + ȳ₋)` —
+  havuz, yön durumlarının dönemdeki dengesizliği yüzünden sabit sürüklenmeyi taşır. Havuzlanmış
+  tanım kullanıcının TADİLAT-1 talebindeydi; kusur aynı TADİLAT'ta bir bilgi satırı olarak
+  işaretlenmişti.
+- **TADİLAT-3** (`99ba314`): işlem düzeyinde aynı düzeltme — iki yönlü birimlerde durum içi,
+  eşit ağırlıklı `Δ⁼`; tek yönlülerde (xsec long, `ema_trend` long, `dc_short` short) mevcut
+  karşıtlık zaten arınmış ama sorunun yalnızca bir tarafını cevaplar. Yön sınıfı
+  `allowed_directions`tan okunur.
+- **TADİLAT-4** (`413c60c`): parite kapısı SOL/DOGE/AVAX'ta 2022-04/06 penceresinde durdu;
+  102 uyuşmazlığın 102'si 1H değerinin 4H'nin ondalık sayısına KESİLMİŞ hâliydi. Kural: yalnızca
+  kesme (yuvarlama değil), ondalık sayısı ham metinden, `Decimal` ile tam eşitlik; öteki her
+  uyuşmazlıkta %1 ve çıkış 3 aynen.
+
+**Veri.** `docs/data/market_direction_trades.csv` (§6m, SHA256 sabit) ve 13 sembolün OKX 1H
+mumları (snapshot #36302030950, `docs/data/pins/btc_veto/`). Preflight #36305320230.
+
+**SONUÇ** (#36305667820, `docs/data/btc_veto_results.json`). Dönem A'da D (bp): 1h −3.73
+[−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; BH'de hiçbiri anlamlı
+değil; B'de doğrulanacak ufuk yok. **Tez hiçbir ufukta geçmedi ve üç tahmin de devamın tersi
+işaretli.** A 1h ön-kayıtlı "tersine dönüş görüldü" bayrağını (%95) taşıyor ama BH'de
+(p 0.026 > 0.0167) ve B'de (−1.01, sıfırı içeriyor) tutmuyor; ondan yeni tez kurulmaz, büyüklüğü
+de bir tam turun maliyetinin altında. İşlem düzeyi betimsel: `xsec_random` 1h/4h'de BTC güçlü
+düşerken açılan long'lar DAHA İYİ (tezin tersi), ayırt edilemiyor. Kayıttaki tahmin (§6p > 10:
+1d etki yok, 1h/4h en olası "ayırt edilemedi") 1d ve 4h'de tuttu; 1h'de tez yönünde etki yok.
+
+**Yapısal bulgu (sonuçtan bağımsız).** `dc_coinflip` doğal deney DEĞİLDİR: yön rastgele ama
+giriş anı değil — kurulum barı EMA50 altında kırmızı bir mum olduğu için girişte BTC'nin kısa
+vadeli hareketi neredeyse hep aşağı (A 1h dört hücre [4, 9, 46, 42]). "Rastgele yönlü kontrol =
+doğal deney" varsayımı zamanlama seçimi yüzünden kırık; birincil testin fiyat düzeyine
+taşınmasının gerekçesi budur ve kontrol modellerini ileride doğal deney olarak kullanmak isteyen
+her ön-kayıt, giriş anının seçimini ayrıca sınamalıdır.
+
+**Karar:** veto için dayanak YOK. Hiçbir model, filtre, parametre ya da kapı değişmez.
+
+**Açık iş.** Sabit evrenin geç listelenen coinlerinin ilk-bar tarihleri tek bir yerde kayıtlı
+değil (BNB 2022-12-23 — §6d ve §6j'de görülmüştü, §6p'de yine öngörülmedi); öneri
+`layers.ema.universe` yanında bir bildirim ve onu okuyan bir test (§6p > 11 > 4).
+
+**Numara.** Ön-kayıt, TADİLAT, tetikleyici ve sonuç commit'lerinde §6o / sicil 9 olarak geçer;
+`main`deki oynaklık hedefleme ön-kaydı §6o, sicil 9 ve karar 66'yı önce aldığı için birleştirmede
+§6p ve sicil 10 oldu, bu kayıt 67 olarak yazıldı. Tetikleyici dosyalar ve sabitlenmiş yük eski adı
+taşır ve değiştirilmez.

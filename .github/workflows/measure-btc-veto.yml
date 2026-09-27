@@ -1,4 +1,4 @@
-# BTC momentum vetosu ölçümünün tetikleyicisi (ÖLÇÜM, yeni model YOK — docs/backtest.md > 6o).
+# BTC momentum vetosu ölçümünün tetikleyicisi (ÖLÇÜM, yeni model YOK — docs/backtest.md > 6p).
 # Hiçbir model, kapı ya da karar bu işin çıktısıyla değişmez.
 #
 # ÜÇ aşama, üç tetikleyici dosya:
@@ -9,7 +9,7 @@
 #   - `btcveto-preflight*.run` → `preflight`: SHA256'lar (işlem CSV'si + pins), kapsam ve
 #     parite kapıları, tanımsız durum sayıları, hücre/küme SAYILARI. Ne R ne ileri getiri
 #     okunur; tekrarlanabilir.
-#   - `btcveto-measure*.run`   → `measure`: TEK SEFER (§6o, §7). Sonuç ayrı bir işte
+#   - `btcveto-measure*.run`   → `measure`: TEK SEFER (§6p, §7). Sonuç ayrı bir işte
 #     `docs/data/btc_veto_results.json`a commit edilir.
 #
 # preflight/measure AĞA ÇIKMAZ: yalnızca depodaki sabitlenmiş kopyaları okur.
@@ -121,7 +121,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "değişiklik yok"; exit 0
           fi
-          git commit -m "pins: 13 sembol 1H mumları (6o snapshot, #${GITHUB_RUN_ID})"
+          git commit -m "pins: 13 sembol 1H mumları (6p snapshot, #${GITHUB_RUN_ID})"
           for attempt in 1 2 3 4; do
             if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
             echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
@@ -214,7 +214,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "değişiklik yok"; exit 0
           fi
-          git commit -m "btc-veto: 6o ölçüm sonuçları (#${GITHUB_RUN_ID})"
+          git commit -m "btc-veto: 6p ölçüm sonuçları (#${GITHUB_RUN_ID})"
           for attempt in 1 2 3 4; do
             if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
             echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"
