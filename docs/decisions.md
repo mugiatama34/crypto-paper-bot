@@ -5390,3 +5390,57 @@ sonucun hangi cümleyle okunacağını belirler (§6o > TADİLAT-1 > 4).
 σ̂'ın sonraki 30 günü öngörüsü pozitif ama zayıf (Spearman 0.22–0.38). Aynı ortalama maruziyetle
 sabit ağırlık aynı oynaklık düşüşünü aynı Sharpe'la veriyor. Hiçbir modele ya da boyutlandırmaya
 bir şey eklenmez; tez sicilde (9. satır) kalır. Ayrıntı §6o > SONUÇ.
+
+## 67. BTC momentum vetosu: BTC'nin kısa vadeli güçlü hareketi altcoinlerde DEVAM ETMİYOR — ölçüm, yeni model YOK; ön-kayıt §6p *(2026-09-27)*
+
+**Ne.** Tez (kullanıcı): BTC'nin kısa vadeli güçlü hareketi sürüyorsa ona KARŞI açılan altcoin
+işlemi kötü sonuçlanır; aday kural "BTC son X'te güçlü yükseliyorsa altcoin short açma" (ve
+simetriği). Veto hiçbir modele UYGULANMADI; ölçüldü. Ön-kayıt veri görülmeden commit edildi
+(`1522e44`) ve dört TADİLAT'ın hepsi hiçbir sonuç görülmeden yapıldı:
+
+- **TADİLAT-1** (`ebd6007`): birincil test işlemlerden FİYAT düzeyine taşındı — güçlü BTC
+  saatlerinde (1h/4h/24h log getirisi, önceki 90 günün std'sine göre |z| > 1, yalnızca kapanmış
+  1H barlar) 12 altcoinin sonraki H saatteki getirisi; işlem düzeyi ikincil ve fiyat testine
+  KOŞULLU.
+- **TADİLAT-2** (`5bd4da4`): bağlayıcı ölçü havuzlanmış ortalama değil `D = ½(ȳ₊ + ȳ₋)` —
+  havuz, yön durumlarının dönemdeki dengesizliği yüzünden sabit sürüklenmeyi taşır. Havuzlanmış
+  tanım kullanıcının TADİLAT-1 talebindeydi; kusur aynı TADİLAT'ta bir bilgi satırı olarak
+  işaretlenmişti.
+- **TADİLAT-3** (`99ba314`): işlem düzeyinde aynı düzeltme — iki yönlü birimlerde durum içi,
+  eşit ağırlıklı `Δ⁼`; tek yönlülerde (xsec long, `ema_trend` long, `dc_short` short) mevcut
+  karşıtlık zaten arınmış ama sorunun yalnızca bir tarafını cevaplar. Yön sınıfı
+  `allowed_directions`tan okunur.
+- **TADİLAT-4** (`413c60c`): parite kapısı SOL/DOGE/AVAX'ta 2022-04/06 penceresinde durdu;
+  102 uyuşmazlığın 102'si 1H değerinin 4H'nin ondalık sayısına KESİLMİŞ hâliydi. Kural: yalnızca
+  kesme (yuvarlama değil), ondalık sayısı ham metinden, `Decimal` ile tam eşitlik; öteki her
+  uyuşmazlıkta %1 ve çıkış 3 aynen.
+
+**Veri.** `docs/data/market_direction_trades.csv` (§6m, SHA256 sabit) ve 13 sembolün OKX 1H
+mumları (snapshot #36302030950, `docs/data/pins/btc_veto/`). Preflight #36305320230.
+
+**SONUÇ** (#36305667820, `docs/data/btc_veto_results.json`). Dönem A'da D (bp): 1h −3.73
+[−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; BH'de hiçbiri anlamlı
+değil; B'de doğrulanacak ufuk yok. **Tez hiçbir ufukta geçmedi ve üç tahmin de devamın tersi
+işaretli.** A 1h ön-kayıtlı "tersine dönüş görüldü" bayrağını (%95) taşıyor ama BH'de
+(p 0.026 > 0.0167) ve B'de (−1.01, sıfırı içeriyor) tutmuyor; ondan yeni tez kurulmaz, büyüklüğü
+de bir tam turun maliyetinin altında. İşlem düzeyi betimsel: `xsec_random` 1h/4h'de BTC güçlü
+düşerken açılan long'lar DAHA İYİ (tezin tersi), ayırt edilemiyor. Kayıttaki tahmin (§6p > 10:
+1d etki yok, 1h/4h en olası "ayırt edilemedi") 1d ve 4h'de tuttu; 1h'de tez yönünde etki yok.
+
+**Yapısal bulgu (sonuçtan bağımsız).** `dc_coinflip` doğal deney DEĞİLDİR: yön rastgele ama
+giriş anı değil — kurulum barı EMA50 altında kırmızı bir mum olduğu için girişte BTC'nin kısa
+vadeli hareketi neredeyse hep aşağı (A 1h dört hücre [4, 9, 46, 42]). "Rastgele yönlü kontrol =
+doğal deney" varsayımı zamanlama seçimi yüzünden kırık; birincil testin fiyat düzeyine
+taşınmasının gerekçesi budur ve kontrol modellerini ileride doğal deney olarak kullanmak isteyen
+her ön-kayıt, giriş anının seçimini ayrıca sınamalıdır.
+
+**Karar:** veto için dayanak YOK. Hiçbir model, filtre, parametre ya da kapı değişmez.
+
+**Açık iş.** Sabit evrenin geç listelenen coinlerinin ilk-bar tarihleri tek bir yerde kayıtlı
+değil (BNB 2022-12-23 — §6d ve §6j'de görülmüştü, §6p'de yine öngörülmedi); öneri
+`layers.ema.universe` yanında bir bildirim ve onu okuyan bir test (§6p > 11 > 4).
+
+**Numara.** Ön-kayıt, TADİLAT, tetikleyici ve sonuç commit'lerinde §6o / sicil 9 olarak geçer;
+`main`deki oynaklık hedefleme ön-kaydı §6o, sicil 9 ve karar 66'yı önce aldığı için birleştirmede
+§6p ve sicil 10 oldu, bu kayıt 67 olarak yazıldı. Tetikleyici dosyalar ve sabitlenmiş yük eski adı
+taşır ve değiştirilmez.
