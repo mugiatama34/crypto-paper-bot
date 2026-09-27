@@ -15,7 +15,12 @@ __pycache__/
 # Başındaki "/" ŞART: desensiz "data/" her düzeydeki data klasörünü tutar ve yayımlanan
 # docs/data/metrics.json'ı da sessizce yok sayardı — cron her turda commit edecek bir şey
 # bulamaz, rapor hiç güncellenmezdi.
-/data/
+#
+# `/data/*` (klasörün kendisi değil İÇERİĞİ): git, dışlanmış bir klasörün altını geri
+# alamaz. Tek istisna fonlama ARŞİVİdir (scripts/archive_funding.py): önbelleğin aksine
+# yeniden ÜRETİLEMEZ — OKX kayıtları ~3 aylık kayan pencereden düşünce bir daha gelmez.
+/data/*
+!/data/funding_archive/
 
 # Backtest çıktıları: bir backtest ÖLÇÜMÜN KENDİSİ değil, ölçüm hakkında bir denemedir
 # (docs/backtest.md). Defterin aksine (kural 1, denetim izi) geçmişi tutulmaz — aynı
