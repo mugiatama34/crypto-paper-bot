@@ -368,3 +368,48 @@ def test_consistency_reports_where_mismatches_are():
     out = mm.consistency(h1, h4)
     assert out["mismatch"] == 1 and out["mismatch_bars"] == [str(h4.index[2])]
     assert out["first_mismatch"] == out["last_mismatch"] and out["max_rel_diff"] > 0
+
+
+# (13) TADİLAT-3: kesinlik farkı istisnası ve pencere raporu --------------------------
+def _pair(close4: str, when: str):
+    idx = pd.date_range(when, periods=8, freq="h", tz="UTC")
+    h1 = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 100.101, "volume": 1.0}, index=idx)
+    h4 = to_4h(h1)
+    text = h4.astype(str)
+    h4.loc[h4.index[0], "close"] = float(close4)
+    text.loc[text.index[0], "close"] = close4
+    return h1, h4, text
+
+
+def test_truncation_is_precision_difference_not_mismatch():
+    h1, h4, text = _pair("100.1", "2022-05-01")
+    out = mm.consistency(h1, h4, text)
+    assert out["mismatch"] == 0 and out["precision_differences"]["n"] == 1
+    assert out["precision_differences"]["outside_known_window"] == []
+
+
+def test_rounding_or_missing_text_stays_a_mismatch():
+    h1, h4, text = _pair("100.11", "2022-05-01")        # yuvarlama ≠ kesme
+    assert mm.consistency(h1, h4, text)["mismatch"] == 1
+    h1, h4, _ = _pair("100.1", "2022-05-01")
+    out = mm.consistency(h1, h4, None)                   # ham metin yoksa sınıflandırılamaz
+    assert out["mismatch"] == 1 and out["unclassified_no_text"] == 1
+
+
+def test_precision_outside_known_window_is_listed():
+    h1, h4, text = _pair("100.1", "2023-03-01")
+    out = mm.consistency(h1, h4, text)
+    assert out["precision_differences"]["outside_known_window"] == [str(h4.index[0])]
+
+
+def test_text_fetch_uses_vault_now(monkeypatch):
+    seen = []
+
+    def fake(config, symbol, *, now):
+        seen.append((config["timeframe"], now))
+        idx = pd.date_range(mm.DATA_START, periods=3, freq="4h", tz="UTC")
+        return pd.DataFrame({"close": ["1.0"] * 3}, index=idx)
+
+    monkeypatch.setattr(mm, "fetch_ohlcv_text", fake)
+    mm.fetch_all_text({"timeframe": "1H", "data": {"history_bars": 1}}, ["A"], timeframe="4H")
+    assert seen == [("4H", vault.KASA_START)]

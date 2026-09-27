@@ -44,9 +44,10 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from core.config import get_setting, load_config  # noqa: E402
-from core.data import fetch_ohlcv  # noqa: E402
+from core.data import fetch_ohlcv, fetch_ohlcv_text  # noqa: E402
 from core.indicators import ema_series, rsi_series  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
+from core.price_text import truncates_to  # noqa: E402
 from scripts.backtest_dc import MIN_CLUSTERS, _percentiles  # noqa: E402
 from scripts.backtest_ema import PERIOD_A_CUTOFF, PERIOD_A_START  # noqa: E402
 from scripts.measure_regime import daily_closes  # noqa: E402
@@ -64,6 +65,9 @@ BH_Q = 0.05
 MDE_Z = 2.802                         # §6j > 9
 CONSISTENCY_REL = 1e-9                # §6q > 3
 CONSISTENCY_MAX_SHARE = 0.001
+# TADİLAT-3: OKX 4H geçmişinin bilinen eksik-ondalık penceresi (§6p > TADİLAT-4). Kapı DEĞİL:
+# dışında kalan kesinlik farkı başka bir veri özelliği demektir ve ayrı satırda listelenir.
+KNOWN_PRECISION_WINDOW = (pd.Timestamp("2022-04-23T00:00:00Z"), pd.Timestamp("2022-06-02T00:00:00Z"))
 HOUR = pd.Timedelta(hours=1)
 FOUR = pd.Timedelta(hours=4)
 DAY = pd.Timedelta(days=1)
@@ -958,27 +962,73 @@ def fetch_all(config: Mapping[str, Any], symbols: Sequence[str], *, timeframe: s
     return out
 
 
-def consistency(h1: pd.DataFrame, h4: pd.DataFrame) -> dict[str, Any]:
-    """§6q > 3: 4H kapanışı = son 1H alt barının kapanışı (göreli ≤ 1e-9)."""
+def fetch_all_text(config: Mapping[str, Any], symbols: Sequence[str], *, timeframe: str) -> dict[str, pd.DataFrame]:
+    """Ham METİN mumlar (TADİLAT-3); önbelleğe dokunmaz, kasaya ait bar çekmez (§7.8)."""
+    now = vault_now()
+    step = HOUR if timeframe == "1H" else FOUR
+    run_config = copy.deepcopy(dict(config))
+    run_config["timeframe"] = timeframe
+    run_config["data"] = {**run_config["data"],
+                          "history_bars": int(math.ceil((now - DATA_START) / step)) + 12}
+    out: dict[str, pd.DataFrame] = {}
+    for symbol in symbols:
+        frame = fetch_ohlcv_text(run_config, symbol, now=now)
+        frame = frame[frame.index >= DATA_START] if not frame.empty else frame
+        if not frame.empty:
+            assert_before_vault(frame.index[-1] + step, what=f"{symbol} {timeframe} ham metin son bar kapanışı")
+        out[symbol] = frame
+    return out
+
+
+def consistency(h1: pd.DataFrame, h4: pd.DataFrame, h4_text: pd.DataFrame | None = None) -> dict[str, Any]:
+    """§6q > 3 + TADİLAT-3: 4H kapanışı = son 1H alt barının kapanışı (göreli ≤ 1e-9).
+
+    Tolerans dışı bir bar, 1H kapanışı 4H kapanışının HAM METNİNDEKİ ondalık sayısına
+    KESİLDİĞİNDE ona tam eşitse "kesinlik farkı"dır (`core/price_text.py`): %0.1 payına
+    girmez, ayrı raporlanır. Ham metni olmayan ya da metni float değerle tutmayan bar
+    sınıflandırılamaz ve UYUŞMAZLIK sayılır (muhafazakâr taraf).
+    """
     if h1.empty or h4.empty:
         return {"compared": 0, "mismatch": 0, "missing_sub_bar": 0, "share": None, "ok": False}
     sub = h1["close"].reindex(h4.index + pd.Timedelta(hours=3))
     both = sub.notna().to_numpy()
+    index = h4.index[both]
     c4 = h4["close"].to_numpy(dtype=float)[both]
     c1 = sub.to_numpy(dtype=float)[both]
     rel = np.abs(c4 - c1) / np.abs(c4)
-    bad = rel > CONSISTENCY_REL
+    off = rel > CONSISTENCY_REL
+    texts = h4_text["close"] if h4_text is not None and not h4_text.empty else pd.Series(dtype=object)
+    precision = np.zeros(len(index), dtype=bool)
+    unclassified = 0
+    for k in np.flatnonzero(off):
+        text = texts.get(index[k])
+        if text is None or float(text) != c4[k]:
+            unclassified += 1
+            continue
+        precision[k] = truncates_to(c1[k], text)
+    bad = off & ~precision
     mismatch = int(bad.sum())
     compared = int(both.sum())
     share = mismatch / compared if compared else None
     # Nerede ve ne büyüklükte: bir kapı kararının (sembol dışlama) nedenini okunur kılar.
-    stamps = h4.index[both][bad]
+    stamps = index[bad]
+    p_stamps = index[precision]
+    lo, hi = KNOWN_PRECISION_WINDOW
+    outside = [str(t) for t in p_stamps if not (lo <= t < hi)]
     return {"compared": compared, "mismatch": mismatch, "missing_sub_bar": int((~both).sum()),
             "share": share, "ok": bool(compared and share is not None and share <= CONSISTENCY_MAX_SHARE),
             "first_mismatch": str(stamps[0]) if mismatch else None,
             "last_mismatch": str(stamps[-1]) if mismatch else None,
             "max_rel_diff": float(rel[bad].max()) if mismatch else None,
-            "mismatch_bars": [str(t) for t in stamps] if mismatch <= 10 else None}
+            "mismatch_bars": [str(t) for t in stamps] if mismatch <= 10 else None,
+            "unclassified_no_text": unclassified,
+            "precision_differences": {
+                "n": int(precision.sum()),
+                "first": str(p_stamps[0]) if len(p_stamps) else None,
+                "last": str(p_stamps[-1]) if len(p_stamps) else None,
+                "max_rel_diff": float(rel[precision].max()) if len(p_stamps) else None,
+                "outside_known_window": outside,
+            }}
 
 
 def coverage(frame: pd.DataFrame, step: pd.Timedelta) -> dict[str, Any]:
@@ -1002,10 +1052,11 @@ def settings_from(config: Mapping[str, Any]) -> Settings:
 def prepare(config: Mapping[str, Any], symbols: Sequence[str], cache_dir: str) -> tuple[Market, dict[str, Any]]:
     h1 = fetch_all(config, symbols, timeframe="1H", cache_dir=cache_dir)
     h4 = fetch_all(config, symbols, timeframe="4H", cache_dir=cache_dir)
+    h4_text = fetch_all_text(config, symbols, timeframe="4H")
     report: dict[str, Any] = {"symbols": {}}
     accepted = []
     for symbol in symbols:
-        check = consistency(h1[symbol], h4[symbol])
+        check = consistency(h1[symbol], h4[symbol], h4_text.get(symbol))
         report["symbols"][symbol] = {"1H": coverage(h1[symbol], HOUR), "4H": coverage(h4[symbol], FOUR),
                                      "consistency": check}
         if check["ok"]:

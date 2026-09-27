@@ -5494,3 +5494,14 @@ bekleniyor" (A ve B'yi geçmiş), "doğrulandı" (kasayı geçmiş). Tek etiket,
 modelleri bir aşamayı geçmiş gibi gösterirdi. Arayüz uygulaması ayrı bir PR'dır (ön-kayıt
 içermez; CI yeşilse Claude birleştirebilir). Numara notu: bu karar dalında 67 olarak yazıldı;
 BTC momentum vetosu (PR #62) önce birleştiği için 68 oldu.
+
+**TADİLAT-3 (§6q, 2026-09-27, kullanıcı kararı; ilk preflight'tan sonra, getiri görülmeden):**
+1H ↔ 4H tutarlılık kapısı SOL, DOGE ve AVAX'ı (OKX'in 2022-04-23 → 06-01 eksik-ondalık
+penceresi) evrenden çıkarıyordu; bu, uygun sembol sayısını A'nın ilk ~15 ayında 6'ya indirip
+F6'nın k = 4 kolunu A'nın ~18 ayında fiilen NAKDE bırakıyordu — bir veri kalitesi kuralı
+ölçümün kapsamını sessizce değiştiriyordu. Onarım toleransı gevşetmez (1e-9, %0.1 kalır):
+yalnızca BTC vetosunun dar kesme istisnası eklenir (ham metinden okunan ondalığa kesilmiş 1H =
+4H ise "kesinlik farkı", ayrı raporlanır); bilinen pencere dışındaki kesinlik farkları ayrı
+satırda listelenir. Kesme kuralı `core/price_text.py`de tek kopya; ham metin önbelleğe
+dokunmayan `core/data.py::fetch_ohlcv_text` ile gelir. Preflight-2 aynı koşuda aylık
+uygunluğu ve taban başına nakit payını raporlar; `measure` onaysız başlamaz.

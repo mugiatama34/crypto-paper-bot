@@ -6601,6 +6601,60 @@ Bu atıf bu yüzden commit hash'iyle yazılır; numara birleştirmede düzeltili
   tanımsız kalır ve hiçbir tam döneme girmez (B'nin son tam haftası 09-20'de, son tam ayı
   Ağustos'ta biter).
 
+### TADİLAT-3 — 1H ↔ 4H tutarlılık kapısına dar kesme istisnası; preflight-2 raporu *(2026-09-27, kullanıcı kararı; ilk preflight'tan SONRA, HİÇBİR getiri görülmeden)*
+
+**1. Olgu (preflight #36325547177; yalnızca kapsam, getiri yok).** Kapı 13 sembolün 3'ünü
+evrenden çıkardı: SOL 209/10 932, DOGE 207/10 932, AVAX 205/10 932 4H barı tutmadı (~%1.9 >
+%0.1). BTC 2, ETH/XRP/LINK/ADA/NEAR 1'er tekil uyuşmazlık taşıyor (sınırın altında); BNB, SUI,
+PENGU, ETHFI sıfır. Çift kuralı hiçbir tabanı ELEMEDİ (N = 176). Çift sayıları ön-kayıtla
+birebir (28/25/128/115). Sayılar, BTC vetosunun TADİLAT-4'te teşhis ettiği olguyla uyumlu:
+OKX'in 2022-04-23 → 06-01 penceresindeki 4H geçmişi bir ondalık eksik kayıtlıdır.
+
+**2. Neden bir veri kalitesi kuralı burada ölçümün KAPSAMINI değiştiriyordu.** Üç sembol
+dışlanınca 2021-11-30 → 2023-02-20 arasında yalnızca 6 sembol uygundur (BNB 2023-02-21, SUI
+2023-07-04'te 7 ve 8'e çıkar). F6'nın k = 4 kolu en az 8 sembol ister: 10 taban ve tersleri
+(20 strateji) dönem A'nın 29 ayının ~18'inde FİİLEN NAKİTTE kalırdı. Yani bir veri
+tutarlılık kuralı, sessizce bir aileyi A'nın çoğunda boşaltıyor ve aile kırılımını
+çarpıtıyordu. TADİLAT'ın gerekçesi budur: kuralı gevşetmek değil, bilinen tek kusuru dar
+biçimde ayırmak — o kusur kesme kaynaklıdır, fiyat uyuşmazlığı değil.
+
+**3. Kural (3'ün tutarlılık kapısına eklenir).** Tolerans (göreli 1e-9) ve pay sınırı (%0.1)
+DEĞİŞMEZ; BTC vetosunun 1e-6 / %1 değerleri ALINMAZ. Tek ek, 6p > TADİLAT-4'ün dar
+istisnasıdır: tolerans dışı bir 4H barında 1H kapanışı, 4H kapanışının **ham metnindeki**
+ondalık sayısına **kesildiğinde** (sıfıra doğru, `Decimal`, `ROUND_DOWN`) 4H kapanışına TAM
+eşitse bar "kesinlik farkı"dır: %0.1 payına girmez, sembol başına sayısı, ilk/son damgası ve
+en büyük göreli farkıyla ayrı raporlanır. Yuvarlanmış eşitlik geçmez; ondalık sayısı
+float'tan türetilmez. Ham metni olmayan ya da metni float değerle tutmayan bar
+sınıflandırılamaz ve uyuşmazlık sayılır (muhafazakâr taraf). Geri kalan her uyuşmazlık aynı
+sıkılıkla sayılır.
+
+**4. Pencere raporu — kapı DEĞİL, görünür.** Kesinlik farkı sayılan barlardan
+**2022-04-23 → 2022-06-01 penceresi DIŞINDA** kalanlar sembol ve damgalarıyla ayrı bir
+satırda (`outside_known_window`) listelenir. Bilinen sorun o pencereye aittir; dışarıda
+çıkan bir kesinlik farkı başka bir veri özelliği demektir ve istisnanın içinde sessizce
+erimemelidir.
+
+**5. Ham metin yolu — paylaşılan yardımcılar.**
+- Kesme kuralı (`decimals_of`, `truncates_to`) `scripts/measure_btc_veto.py`den
+  `core/price_text.py`ye TAŞINDI; BTC vetosu onu oradan import eder (salt taşıma; testleri
+  değişmedi ve aynı nesneyi kullandığı bir testle sabit). Kural tek kopyadır.
+- `core/data.py::fetch_ohlcv_text`: mumların ham METNİNİ döner, önbelleği ne okur ne yazar
+  (önbellek + pencere hata sınıfı, karar 58, 59). Sayfalama ve kapanmamış bar kuralı
+  `_download_candles`in kendisinden gelir (varsayılanı kapalı `keep_text` bayrağı); ikinci bir
+  yürüyüş yazılmadı, canlı turun yolu değişmedi (test).
+- Bu ölçüm 13 sembolün 4H ham metnini `vault_now()` ile çeker; kasaya ait bar çekilmez.
+
+**6. Kabul edilen sapma.** Kesinlik penceresindeki barlarda 4H ailelerinin sinyalleri bir
+hanesi eksik 4H kapanışından hesaplanır (göreli fark ≤ ~3e-4). 4H sinyallerini 1H'den yeniden
+örneklemek yeni bir tasarım seçimi açar ve canlı katmanların kullandığı 4H serisinden
+ayrışır; reddedildi. Getiriler 1H açılışlarından geldiği için etkilenmez.
+
+**7. Preflight-2 (kullanıcı onayı; yalnızca pozisyon ve kapsam, getiri yok).** Preflight
+ayrıca raporlar: UTC ayı başına uygun sembol sayısı (en az / medyan / en çok), taban başına
+A ve B'de evren doluyken HİÇ pozisyon taşınmayan saat payı, sembol başına uyuşmazlıkların ve
+kesinlik farklarının konumu. Çift kuralı, aile tablosu ve F6'nın nakit payı nihai evrende
+bu koşudan okunur. `measure` yine yalnızca kullanıcı onayıyla tetiklenir.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
