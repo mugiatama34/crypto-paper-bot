@@ -302,3 +302,41 @@ def test_direction_class_is_the_models_own_declaration():
         declared = set(REGISTRY[model].allowed_directions)
         assert declared == ({"long", "short"} if klass == "both" else {klass}), model
     assert {u.model for u in (*bv.CONTROL_UNITS, *bv.MODEL_UNITS)} <= set(bv.DIRECTION_CLASS)
+
+
+# (12) TADİLAT-4 --------------------------------------------------------------------------
+def test_truncation_only_not_rounding():
+    assert bv.truncates_to(95.096, "95.09")
+    assert not bv.truncates_to(95.096, "95.10")          # yuvarlama geçmez
+    assert bv.truncates_to(100.101, "100.1")
+    assert bv.truncates_to(0.133058, "0.13305")
+    assert not bv.truncates_to(0.133058, "0.13306")
+
+
+def test_decimals_come_from_raw_text_not_float():
+    assert bv.decimals_of("100.10") == 2 and bv.decimals_of("100.1") == 1 and bv.decimals_of("98") == 0
+    # 100.105 iki haneye kesilince 100.10 olur; ham metin "100.10" ise EŞİT. Float'tan türetilse
+    # hane sayısı 1 olurdu ve karşılaştırma farklı bir kurala dönerdi.
+    assert bv.truncates_to(100.105, "100.10")
+    assert not bv.truncates_to(100.115, "100.10")
+
+
+def test_parity_gate_separates_precision_differences(tmp_path):
+    frame = _hourly("2022-01-01", [100.101 + i for i in range(12)])
+    o0, c0 = frame["open"].iloc[0], frame["close"].iloc[3]
+    o1, c1 = frame["open"].iloc[4], frame["close"].iloc[7]
+    trunc = lambda v: f"{math.floor(v * 100) / 100:.2f}"      # noqa: E731
+    rows = ["bar,symbol,ts,open,close",
+            f"4H,{bv.BTC},2022-01-01T00:00:00+00:00,{trunc(o0)},{trunc(c0)}",
+            f"4H,{bv.BTC},2022-01-01T04:00:00+00:00,{float(o1)!r},{float(c1)!r}"]
+    path = tmp_path / "prices.csv"
+    path.write_text("\n".join(rows) + "\n")
+    gate = bv.parity_gate({s: frame for s in bv.SYMBOLS}, path)
+    btc = gate["per_symbol"][bv.BTC]
+    assert gate["passed"] and btc["failed"] == 0 and btc["precision_differences"]["n"] == 1
+    # yuvarlanmış değer kesinlik farkı DEĞİLDİR → uyuşmazlık
+    rounded = lambda v: f"{math.floor(v * 100 + 1) / 100:.2f}"   # noqa: E731
+    rows[1] = f"4H,{bv.BTC},2022-01-01T00:00:00+00:00,{rounded(o0)},{rounded(c0)}"
+    path.write_text("\n".join(rows) + "\n")
+    btc = bv.parity_gate({s: frame for s in bv.SYMBOLS}, path)["per_symbol"][bv.BTC]
+    assert btc["failed"] == 1 and btc["precision_differences"]["n"] == 0

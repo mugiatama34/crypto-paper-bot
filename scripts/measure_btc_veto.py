@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from decimal import ROUND_DOWN, Decimal
 import csv
 import gzip
 import hashlib
@@ -307,10 +308,33 @@ def coverage_gate(btc: pd.DataFrame, earliest_open: pd.Timestamp) -> dict[str, A
             "passed": first is not None and first <= need}
 
 
+def decimals_of(text: str) -> int:
+    """Ham metindeki ondalık hane sayısı — float'tan DEĞİL (sondaki sıfırlar korunur; TADİLAT-4)."""
+    text = text.strip()
+    if "e" in text.lower():
+        raise ValueError(f"üstel gösterim beklenmiyor: {text!r}")
+    return len(text.split(".", 1)[1]) if "." in text else 0
+
+
+def truncates_to(fine: float, coarse_text: str) -> bool:
+    """1H değeri, 4H değerinin ham metnindeki ondalık sayısına KESİLDİĞİNDE ona TAM eşit mi?
+
+    Yalnızca kesme (sıfıra doğru, ROUND_DOWN); yuvarlanmış eşitlik geçmez (TADİLAT-4 > i).
+    `repr(float)` en kısa kayıpsız ondalıktır, yani `Decimal` 1H değerini birebir taşır.
+    """
+    quantum = Decimal(1).scaleb(-decimals_of(coarse_text))
+    return Decimal(repr(float(fine))).quantize(quantum, rounding=ROUND_DOWN) == Decimal(coarse_text.strip())
+
+
 def parity_gate(frames: Mapping[str, pd.DataFrame], prices_csv: Path) -> dict[str, Any]:
-    """Pinlenmiş 4H barları 1H seriye sınır noktalarında birebir inmeli (§6o > 3)."""
+    """Pinlenmiş 4H barları 1H seriye sınır noktalarında birebir inmeli (§6o > 3).
+
+    TADİLAT-4: tolerans dışı ama yalnızca KESME kaynaklı fark "kesinlik farkı"dır, %1 kuralına
+    girmez ve sembol/pencereyle ayrı raporlanır; öteki her uyuşmazlık sayılır.
+    """
     checked: dict[str, int] = {s: 0 for s in SYMBOLS}
     failed: dict[str, int] = {s: 0 for s in SYMBOLS}
+    precision: dict[str, list[pd.Timestamp]] = {s: [] for s in SYMBOLS}
     with prices_csv.open(encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             if row["bar"] != "4H" or row["symbol"] not in checked:
@@ -318,19 +342,31 @@ def parity_gate(frames: Mapping[str, pd.DataFrame], prices_csv: Path) -> dict[st
             symbol, start = row["symbol"], _utc(row["ts"])
             frame = frames.get(symbol)
             checked[symbol] += 1
-            ok = False
-            if frame is not None and start in frame.index and (start + 3 * HOUR) in frame.index:
-                o1 = float(frame.at[start, "open"])
-                c1 = float(frame.at[start + 3 * HOUR, "close"])
-                o4, c4 = float(row["open"]), float(row["close"])
-                ok = abs(o1 - o4) <= PARITY_TOL * abs(o4) and abs(c1 - c4) <= PARITY_TOL * abs(c4)
-            if not ok:
+            if frame is None or start not in frame.index or (start + 3 * HOUR) not in frame.index:
                 failed[symbol] += 1
-    per_symbol = {
-        s: {"checked": checked[s], "failed": failed[s],
-            "passed": checked[s] == 0 or failed[s] / checked[s] <= PARITY_MAX_FAIL}
-        for s in SYMBOLS
-    }
+                continue
+            pairs = ((float(frame.at[start, "open"]), row["open"]),
+                     (float(frame.at[start + 3 * HOUR, "close"]), row["close"]))
+            exact = all(abs(fine - float(text)) <= PARITY_TOL * abs(float(text)) for fine, text in pairs)
+            if exact:
+                continue
+            if all(abs(fine - float(text)) <= PARITY_TOL * abs(float(text)) or truncates_to(fine, text)
+                   for fine, text in pairs):
+                precision[symbol].append(start)
+            else:
+                failed[symbol] += 1
+    per_symbol = {}
+    for s in SYMBOLS:
+        stamps = precision[s]
+        per_symbol[s] = {
+            "checked": checked[s], "failed": failed[s],
+            "passed": checked[s] == 0 or failed[s] / checked[s] <= PARITY_MAX_FAIL,
+            "precision_differences": {
+                "n": len(stamps),
+                "first": min(stamps).isoformat() if stamps else None,
+                "last": max(stamps).isoformat() if stamps else None,
+            },
+        }
     return {"per_symbol": per_symbol, "passed": all(v["passed"] for v in per_symbol.values())}
 
 
