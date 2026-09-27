@@ -5362,3 +5362,31 @@ birini yiyebilecek bir önyargıyı kaçırırdı. Sentetik veri 8 × 5000 bara 
 **TADİLAT-1 (2026-09-26, sonuç görüldükten sonra, kullanıcı onayı):** sıfır-beklenti testinin
 sentetiği 15.000 bar × 256 alt adıma büyütüldü; eşiklerin hiçbiri gevşemedi. Sebepler, görülen
 sayılar ve testin fiili çözünürlüğü (≈ ±0.035R) §6n > TADİLAT-1'dedir.
+
+## 66. Oynaklık hedefleme: yön tahmini YOK, pasif maruziyetin ters oynaklıkla ölçeklenmesi — ön-kayıt §6o *(2026-09-26)*
+
+Tez (kullanıcı): oynaklık kümelenir, yön öngörülemez; `w = min(1, σ_hedef/σ̂)` ile ölçeklenmiş
+maruziyet aynı getiriyi daha düşük oynaklıkla verir. Ölçülen iki maruziyet BTC al-tut ve `ema`
+evreninin eşit ağırlıklı sepetidir; birincil metrik ölçeklenmiş − ölçeklenmemiş Sharpe farkı,
+kontrol aynı ORTALAMA ağırlıkla sabit maruziyettir. **Model DEĞİL:** motorun boyutlandırması
+(kural 11) stop ister ve stop'suz kesirli maruziyet yalnızca çıpa/kopyaya açıktır — tezi motora
+sokmak kural 3/11'i delerdi; ölçüm bu yüzden `measure_*` desenli bir getiri serisi hesabıdır.
+Güç dürüstçe yazıldı: gerçekçi bir etkide (ΔSR ≈ 0.2) iki dönemin birlikte geçme olasılığı ≈ %1,
+yani "ayırt edilemedi" beklenen sonuçtur ve tezin reddi değildir. Ön-kaydın kullanıcı tanımına
+eklediği sekiz nokta (maliyete kayma, funding hariç, sepet düzeyinde ölçekleme, uygunluk,
+uygulama fiyatı, bağlayıcı blok, B sınırı, güç) §6o > 14'te onay bekler; kod onaydan önce yazılmaz.
+
+**TADİLAT-1 (2026-09-26, kod öncesi, kullanıcı onayı):** O1–O5 ve O7 onaylandı. O6 değişti:
+bağlayıcı aralık hafta ve 4 haftalık blokların alt sınırlarının MİNİMUMUDUR (§6j'nin kuralı).
+O8: koşulur — kazanç betimsel sayılar ve tezin ÖNCÜLÜDÜR. Öncül ("oynaklık öngörülebilir")
+yüksek güçle ölçülebildiği için bilgi amaçlı bir mekanizma ölçümü eklendi: σ̂_t ile sonraki 30
+günün gerçekleşen oynaklığı arasında Spearman, aynı blok bootstrap'ı; kapı değildir ama
+sonucun hangi cümleyle okunacağını belirler (§6o > TADİLAT-1 > 4).
+
+**SONUÇ (2026-09-27, koşu #36291523493, kullanıcı onayıyla kayda geçti):** iki varlıkta da
+(BTC, sepet) iki dönemde GEÇMEDİ; öncül ön-kayıtlı kuralla TUTMADI → **"tez dayanaksız"**.
+ΔSR −0.03 … +0.06, aralıkların üst sınırları +0.07 … +0.21 — gerçekleşen kesinlik projeksiyondan
+çok daha iyiydi (ρ(S,U) ≈ 0.99, MDE 0.14–0.24), yani büyük bir iyileşme büyük ölçüde dışlandı.
+σ̂'ın sonraki 30 günü öngörüsü pozitif ama zayıf (Spearman 0.22–0.38). Aynı ortalama maruziyetle
+sabit ağırlık aynı oynaklık düşüşünü aynı Sharpe'la veriyor. Hiçbir modele ya da boyutlandırmaya
+bir şey eklenmez; tez sicilde (9. satır) kalır. Ayrıntı §6o > SONUÇ.
