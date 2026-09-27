@@ -5591,6 +5591,33 @@ rebalance haftasında toplanacağı için < 10 küme kuralına takılma olasıl�
 "Ayırt edilemedi" beklenen sonuçlardan biridir ve **tezin reddi olarak okunmaz**; yalnızca
 bu verinin bu büyüklükte bir etkiyi dışlayamadığını söyler.
 
+### 10b. PREFLIGHT KAYDI — sonuç görülmeden *(2026-09-27, #36305320230, çıkış 0)*
+
+Kapılar geçti (SHA, pins, kapsam, parite — TADİLAT-4 ile SOL 37 / DOGE 27 / AVAX 38 kesinlik
+farkı, başka uyuşmazlık yok). Hiçbir R ya da ileri getiri okunmadı.
+
+- **Fiyat testi:** güçlü saatlerin payı ~%17'dir (kalın kuyruk; 10'daki %32 projeksiyonu
+  normal dağılımdandı). Hafta kümesi sayısı A'da 1h 131/131, 4h 130/129, 24h 112/108
+  (yukarı/aşağı); B'de 116/116, 115/116, 111/101 — bütün hücreler değerlendirilebilir ve
+  bağlayıcı aralık genişliğini ~100–130 bağımsız hafta belirler. A 4h ve 24h'de yukarı
+  saatler fazladır (2108/1972, 2522/2290): TADİLAT-2'nin nötrleştirdiği dengesizlik.
+- **YAPISAL BULGU — `dc_coinflip` doğal deney DEĞİLDİR (sonuçtan bağımsız):** yön
+  rastgeledir ama giriş ANI değildir. Kurulum barı EMA50'nin altında kapanan kırmızı bir mumdur
+  (§6j), yani girişte BTC'nin kısa vadeli hareketi neredeyse hep aşağıdır: dört hücre
+  (short|yukarı, long|yukarı, long|aşağı, short|aşağı) A 1h [4, 9, 46, 42], A 4h [4, 4, 63, 37],
+  B 4h [1, 0, 37, 35]; 24h'de A [25, 23, 32, 16], B [23, 26, 19, 21]. `Δ⁼` hiçbir ufukta, hiçbir
+  dönemde değerlendirilemez. Kullanıcının ilk tasarımındaki "rastgele yönlü kontrol = doğal
+  deney" varsayımı zamanlama seçimi yüzünden kırıktır; birincil testin fiyat düzeyine
+  taşınmasının (TADİLAT-1) gerekçesi budur. Bu bulgu SONUÇ kaydına da aynen girer.
+- **İşlem düzeyinde okunabilen tek birim `xsec_random`, 1h ve 4h:** KARŞI A 39/45, B 38/39
+  pozisyon, ≥ 13 ay / ≥ 15 hafta kümesi; 24h'de KARŞI 16/18 < 30. Yalnızca "BTC güçlü
+  DÜŞERKEN long" sorusunu cevaplar. Modellerde KARŞI çoğunlukla incedir (`dc_short` 1h/4h
+  2–9; `ema_trend` 24h 4–5 — kesişim BTC yükselirken tetikler, YANINDA 114–141).
+- **Kullanıcının okuma notu (tahmin DEĞİŞMEDİ, 10 olduğu gibi):** "O tahmini sürüklenme
+  sorununu görmeden yaptım; sürüklenmeden arınmış D ile 1h'deki etkinin daha küçük çıkmasını
+  bekliyorum." Okuma sırası: D (A, üç ufuk, BH) → ȳ₊ ve ȳ₋ yan yana → geçenler için B →
+  işlem düzeyi (yalnızca `xsec_random` 1h ve 4h).
+
 ### 11. Uygulama planı — sonraki commit'ler (bu metni DEĞİŞTİREMEZ)
 
 1. `scripts/measure_btc_veto.py`: aşamalar `snapshot` (13 sembolün 1H mumlarını çek →
