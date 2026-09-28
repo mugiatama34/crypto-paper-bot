@@ -404,7 +404,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
 | 10 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6p, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **DÜŞTÜ — dönem A'da, üç ufukta da** (koşu #36305667820): D (bp) 1h −3.73 [−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; `p_bağ` 0.026 / 0.356 / 0.224, BH'de hiçbiri anlamlı değil; B'de doğrulanacak ufuk yok. A 1h işareti TERS (%95 düzeyinde "tersine dönüş görüldü" bayrağı; BH'de ve B'de tutmuyor — yeni tez kurulmaz). İşlem düzeyi betimsel: `xsec_random` 1h/4h'de işaret tezin tersi, ayırt edilemedi; `dc_coinflip` yapısal olarak değerlendirilemez — §6p > SONUÇ |
 | 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
-| 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **KOŞULMADI** — ön-kayıt açık |
+| 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1 `79167b3`: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **DÜŞTÜ — dönem A'da, üç kolda** (koşu #36381144532, `8bba500`): hedge'li net Δ dairesel kaydırma plasebosuna karşı 1D −%17.4 (p 0.960), 4H −%6.0 (p 0.815), 15m +%201 (p 0.185; plasebo ort. +%194); B'de doğrulanacak kol yok; ham da üç kolda geçmedi → okuma 1D/4H *"ayırt edilemedi"*, 15m *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* (kazanç yalnızca devir azalması, plasebo birebir taşıyor). Rejimler kısa ömürlü (medyan 2 gün); blok permütasyonu ~%19 fazla geçiş üretti ama sonucu değiştirmedi. Betimsel: 1D A sol kuyruk p 0.041 (eşleme ters yönde) — yeni tez, kasada sınanamaz — §6r > SONUÇ, karar 69 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -7214,6 +7214,98 @@ elle hesaplanmış bir örneğini sınar.
   365 günlük eşiğin ısınması A'dan önce doluyor.
 - **Hafta/kaydırma:** A 129 hafta / 844 kaydırma, B 116 hafta / 753 kaydırma — ön-kayıtla birebir.
   59 taban/kol.
+
+### SONUÇ — koşuldu, üç kolda da GEÇMEDİ: doku rejimi DOĞRULANMADI *(2026-09-28, `measure-texture-regime` #36381144532, tetikleyici `54c06bd`, sonuçlar `8bba500`; kullanıcı onayı 2026-09-28)*
+
+Tek koşu, çıkış 0. Yük `docs/data/texture_regime.json`, günlük doku serisi
+`docs/data/texture_regime_days.csv`, plasebo Δ* tablosu `docs/data/texture_regime_placebo.csv`.
+Okuma sırası kullanıcı tarafından SONUÇ görülmeden verildi ve bu bölüm o sırayı izler. Veri
+PREFLIGHT'taki gibidir; tanımsız etiketli gün 0; tahminler (11, TADİLAT-1 > 5) değişmedi.
+
+⚠ **Birim:** bütün yüzdeler dönem içi bar net getirilerinin ARİTMETİK TOPLAMIDIR (6), hesap
+getirisi değildir. 15m'nin −%600 … −%800 mertebesindeki netleri günde 6–8 birim devir × %0.105 ×
+903 günün maliyetidir.
+
+**1. KAPI — hedge'li net Δ, dönem A, dairesel kaydırma plasebosu (844 kaydırma).**
+
+| Kol | Δ (eşlemeli − her zaman açık) | plasebo ort. / std | %95 dilimi | p | Karar |
+|---|---|---|---|---|---|
+| 1D | −%17.39 | −%9.21 / %4.71 | −%1.67 | 0.960 | GEÇMEDİ |
+| 4H | −%6.02 | −%1.24 / %5.18 | +%6.87 | 0.815 | GEÇMEDİ |
+| 15m | +%201.06 | +%194.21 / %7.49 | +%206.60 | 0.185 | GEÇMEDİ |
+
+Hiçbir kol %95 diliminin üstünde değil; BH (m = 3) devreye girmedi.
+
+**2. B doğrulaması.** A'da geçen kol yok → `m_B = 0`; **DOĞRULANDI: hiçbiri.** B sayıları "bilgi
+— doğrulama değil" (753 kaydırma): 1D Δ −%8.09 (p 0.330), 4H Δ +%1.11 (p 0.733), 15m Δ +%190.38
+(p 0.535).
+
+**3. Okuma tablosu (TADİLAT-1 > 3; mekanik).** Hedge'li ve ham, üç kolda da DOĞRULANMADI (ham p,
+A: 1D 0.463, 4H 0.478, 15m 0.599).
+
+| Kol | Hedge'li | Ham | `Δ^h > 0` (A ve B) | Cümle |
+|---|---|---|---|---|
+| 1D | DOĞRULANMADI | DOĞRULANMADI | hayır | *ayırt edilemedi* |
+| 4H | DOĞRULANMADI | DOĞRULANMADI | hayır | *ayırt edilemedi* |
+| 15m | DOĞRULANMADI | DOĞRULANMADI | evet | *eşleme mekanik olarak iyi, rejim bir şey bilmiyor* |
+
+Ne "yönden bağımsız öngörüyor" ne "doku yönü öngörüyor" çıktı.
+
+**4. Her zaman açık etiketi — 15m.** Eşlemeli portföy her zaman açıktan iki dönemde de iyi
+(A +%201, B +%190) ve kazancın tamamı maliyettir: eşleme günlük hedge'li devri 8.32'den 6.33'e
+indirir (maliyet %0.87 → %0.67/gün). Plasebo aynısını yapar (devir 6.35/gün, Δ* ort. +%194);
+gerçek etiketler plasebo ortalamasının 0.9 std üstünde. Brüt (maliyetsiz) Δ A'da +%13.15,
+p 0.219.
+
+**5. Tanılar (betimsel) — dairesel kaydırmayla aynı yere çıkıyor.**
+- **Geçiş sayısı (A / B):** gerçek 305 / 280, dairesel ort. 305.7 / 280.7, haftalık blok ort.
+  362.5 / 332.8. TADİLAT-1'in öngördüğü sapma VAR (blok plasebosu ~%19 fazla geçiş) ama sonucu
+  değiştirmedi: blok p'leri dairesel p'lerle aynı mertebede (hedge'li A: 1D 0.950, 4H 0.822,
+  15m 0.124).
+- **Brüt p (hedge'li, A):** 1D 0.955, 4H 0.880, 15m 0.219 — net p ile aynı yerde.
+- **Rejim yapısı:** ön-kaydın varsaydığından çok daha kısa ömürlü — medyan epizot 2 gün, p90 6–7,
+  en uzun 20; A'da 306, B'de 281 epizot. Rejim payları A: DV-DD %30.5, DV-YD %19.8, YV-DD %25.2,
+  YV-YD %24.5 (B benzer). 9'daki "birkaç düzine epizot" güç endişesi gerçekleşmedi; plasebo
+  dağılımı dar (hedge'li std 1D %4.7, 4H %5.2, 15m %7.5).
+- **Sol kuyruk (betimsel, kapı DEĞİL):** 1D A hedge'li `p_ters` = **0.041** — gerçek eşleme
+  plaseboların %96'sından KÖTÜ. Bu bir geçiş değildir; ters eşleme YENİ bir tezdir ve bu pencerede
+  sınanamaz (8, §7.1). Öteki hücrelerde `p_ters` ≥ 0.19.
+
+**6. Rejim başına aile getirileri (betimsel; brüt, bar başına ortalama × günlük bar).** "Açık"
+rejimlerindeki hedge'li getirisi "kapalı" rejimlerindekinden yüksek olan aile sayısı:
+
+| Kol | A | B |
+|---|---|---|
+| 1D | 1/7 | 4/7 |
+| 4H | 2/7 | 3/7 |
+| 15m | 3/7 | 6/7 |
+
+Tutarlı bir yön yok. 1D A'da trend aileleri (F1, F2, F3, F5) hedge'den sonra yüksek verimlilik
+günlerinde DAHA KÖTÜ — sol kuyruğun kaynağı budur. Ham getiride F1, F3, F5 çoğunlukla eşleme
+yönünde duruyor, ama bu yön sızıntısıdır ve o da dönemden döneme tutarsızdır (ör. 15m A ham
+F1/F3/F5 tersine).
+
+**7. Kol başına devir ve maliyet (hedge'li, günlük, A; B benzer).**
+
+| Kol | eşlemeli | her zaman açık | plasebo ort. | aç/kapa payı | maliyet/gün (eşlemeli) |
+|---|---|---|---|---|---|
+| 1D | 0.095 | 0.082 | 0.093 | %59 | ~%0.01 |
+| 4H | 0.40 | 0.50 | 0.41 | %13 | ~%0.04 |
+| 15m | 6.33 | 8.32 | 6.35 | %0.7 | %0.67 (her zaman açık %0.87) |
+
+**Tahminle karşılaştırma (11 ve TADİLAT-1 > 5, olduğu gibi).**
+- *Kullanıcı:* 1D'de küçük pozitif — TUTMADI (hedge'li Δ A −%17.4, B −%8.1); 4H ve 15m plasebodan
+  ayırt edilemez — TUTTU; 15m'de eşlemeli portföy her zaman açıktan iyi, plasebo da aynı kadar —
+  TUTTU (tahminin hücresi birebir).
+- *Ön-kaydı yazan:* üç kolda da GEÇMEZ — TUTTU; 1D nokta pozitif — TUTMADI; 15m'de `Δ > 0` büyük ve
+  plasebo aynısı — TUTTU; 4H'de `Δ` küçük — TUTTU; brüt plasebo testi sıfır civarı — TUTTU; sol
+  kuyruk hiçbir kolda küçük değil — TUTMADI (1D A 0.041); ham `Δ` 1D ve 4H'de hedge'liden büyük —
+  TUTMADI (ham daha negatif: 1D A −%25.7 ↔ −%17.4, 4H A −%25.4 ↔ −%6.0).
+
+**Karar:** doku rejimi bu bahçede ve bu pencerelerde DOĞRULANMADI. 15m'deki tek kazanç eşlemenin
+devri azaltmasıdır ve plasebo onu birebir taşır. Hiçbir şey dondurulmaz, kasa açılmaz (13);
+hiçbir model, filtre, parametre ya da kapı değişmez. 1D'deki ters yönlü sol kuyruk betimseldir;
+ters eşlemeyi sınamak yeni bir tezdir ve §7.8 gereği penceresi kasa olamaz.
 
 ---
 
