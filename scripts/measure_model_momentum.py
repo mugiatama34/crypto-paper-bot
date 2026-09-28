@@ -45,13 +45,15 @@ import pandas as pd  # noqa: E402
 
 from core.config import get_setting, load_config  # noqa: E402
 from core.data import fetch_ohlcv, fetch_ohlcv_text  # noqa: E402
-from core.indicators import ema_series, rsi_series  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
-from core.price_text import truncates_to  # noqa: E402
 from scripts.backtest_dc import MIN_CLUSTERS, _percentiles  # noqa: E402
 from scripts.backtest_ema import PERIOD_A_CUTOFF, PERIOD_A_START  # noqa: E402
 from scripts.measure_regime import daily_closes  # noqa: E402
 from scripts.vault import KASA_START, assert_before_vault, vault_now  # noqa: E402
+from scripts import zoo_families as zf  # noqa: E402
+from scripts.zoo_families import (  # noqa: E402,F401  (tek kopya; testler ve çağıranlar buradan da okur)
+    CONSISTENCY_MAX_SHARE, CONSISTENCY_REL, KNOWN_PRECISION_WINDOW, bollinger_bands, donchian_bands, extreme_machine,
+)
 
 logger = logging.getLogger("measure_model_momentum")
 
@@ -63,11 +65,6 @@ HORIZONS = ("month", "week")          # aylık BİRİNCİL (O12), haftalık ikin
 BLOCKS = {"month": (1, 2), "week": (1, 4)}
 BH_Q = 0.05
 MDE_Z = 2.802                         # §6j > 9
-CONSISTENCY_REL = 1e-9                # §6q > 3
-CONSISTENCY_MAX_SHARE = 0.001
-# TADİLAT-3: OKX 4H geçmişinin bilinen eksik-ondalık penceresi (§6p > TADİLAT-4). Kapı DEĞİL:
-# dışında kalan kesinlik farkı başka bir veri özelliği demektir ve ayrı satırda listelenir.
-KNOWN_PRECISION_WINDOW = (pd.Timestamp("2022-04-23T00:00:00Z"), pd.Timestamp("2022-06-02T00:00:00Z"))
 HOUR = pd.Timedelta(hours=1)
 FOUR = pd.Timedelta(hours=4)
 DAY = pd.Timedelta(days=1)
@@ -155,27 +152,8 @@ def build_market(h1: Mapping[str, pd.DataFrame], h4: Mapping[str, pd.DataFrame],
 
 
 def to_hours(state: pd.Series, *, effective_lag: pd.Timedelta, hours: pd.DatetimeIndex) -> np.ndarray:
-    """Bar açılışına göre dizili durum → açılışı `≥ kapanış` olan saatler; yeni sinyale kadar korunur.
-
-    Kural 12/13: `bar açılışı + lag` (= kapanış) anından itibaren geçerli. Değer hiç yoksa 0.
-    """
-    if state.empty:
-        return np.zeros(len(hours))
-    shifted = pd.Series(state.to_numpy(dtype=float), index=state.index + effective_lag).sort_index()
-    shifted = shifted[~shifted.index.duplicated(keep="last")]
-    return shifted.reindex(hours, method="ffill").fillna(0.0).to_numpy(dtype=float)
-
-
-def _sign(values: pd.Series) -> pd.Series:
-    return np.sign(values).fillna(0.0)
-
-
-def _calendar(frame: pd.DataFrame, step: pd.Timedelta) -> pd.DataFrame:
-    """Zamana göre kaydırma için tam takvim (eksik bar NaN; §6q > TADİLAT-2 > 3)."""
-    if frame.empty:
-        return frame
-    full = pd.date_range(frame.index[0], frame.index[-1], freq=step, tz="UTC")
-    return frame.reindex(full)
+    """Bar durumunu 1H ızgarasına eşler (`zoo_families.to_grid`, kural 12/13)."""
+    return zf.to_grid(state, effective_lag=effective_lag, grid=hours)
 
 
 # --------------------------------------------------------------------------- #
@@ -189,106 +167,49 @@ def _frame(market: Market, symbol: str, tau: str) -> pd.DataFrame:
     return market.h1[symbol] if tau == "1H" else market.h4[symbol]
 
 
+# Kurallar `scripts/zoo_families.py`de tek kopyadır (§6r > 16.1); burada yalnızca hangi barın
+# okunduğu ve 1H ızgarasına eşleme durur.
 def tsmom_state(market: Market, symbol: str, *, days: int, long_only: bool) -> np.ndarray:
-    closes = _calendar(market.h4[symbol][["close"]], FOUR)["close"]
-    ret = closes / closes.shift(6 * days) - 1.0
-    state = (ret > 0).astype(float).where(ret.notna(), 0.0) if long_only else _sign(ret)
-    return to_hours(state, effective_lag=FOUR, hours=market.hours)
+    closes = zf.calendar(market.h4[symbol][["close"]], FOUR)["close"]
+    return to_hours(zf.tsmom_rule(closes, 6 * days, long_only=long_only), effective_lag=FOUR, hours=market.hours)
 
 
 def ema_stack_state(market: Market, symbol: str, *, periods: tuple[int, int, int], tau: str) -> np.ndarray:
     close = _frame(market, symbol, tau)["close"]
-    a, b, c = (ema_series(close, p) for p in periods)
-    state = pd.Series(0.0, index=close.index)
-    state[(a > b) & (b > c)] = 1.0
-    state[(a < b) & (b < c)] = -1.0
-    return to_hours(state, effective_lag=_lag(tau), hours=market.hours)
+    return to_hours(zf.ema_stack_rule(close, periods), effective_lag=_lag(tau), hours=market.hours)
 
 
 def ma_cross_state(market: Market, symbol: str, *, fast: int, slow: int, tau: str, long_only: bool) -> np.ndarray:
     close = _frame(market, symbol, tau)["close"]
-    f, s = ema_series(close, fast), ema_series(close, slow)
-    defined = f.notna() & s.notna()
-    above = (f > s).astype(float)
-    state = above if long_only else above * 2.0 - 1.0
-    state = state.where(defined, 0.0)
-    return to_hours(state, effective_lag=_lag(tau), hours=market.hours)
+    return to_hours(zf.ma_cross_rule(close, fast, slow, long_only=long_only), effective_lag=_lag(tau),
+                    hours=market.hours)
 
 
 def st_rev_state(market: Market, symbol: str, *, horizon: str, tau: str, long_only: bool) -> np.ndarray:
     if tau == "1D":
         closes = market.daily[symbol] if symbol in market.daily else pd.Series(dtype=float)
-        ret = closes / closes.shift(1) - 1.0
+        bars = 1
     else:
         step = HOUR if tau == "1H" else FOUR
-        closes = _calendar(_frame(market, symbol, tau)[["close"]], step)["close"]
+        closes = zf.calendar(_frame(market, symbol, tau)[["close"]], step)["close"]
         bars = int(pd.Timedelta(horizon) / step)
-        ret = closes / closes.shift(bars) - 1.0
-    state = (ret < 0).astype(float).where(ret.notna(), 0.0) if long_only else -_sign(ret)
-    return to_hours(state, effective_lag=_lag(tau), hours=market.hours)
-
-
-def donchian_bands(frame: pd.DataFrame, period: int) -> tuple[pd.Series, pd.Series]:
-    """Mevcut barı HARİÇ tutan `period` barlık kanal (`core/indicators.py::donchian`in seri hâli)."""
-    upper = frame["high"].astype(float).rolling(period, min_periods=period).max().shift(1)
-    lower = frame["low"].astype(float).rolling(period, min_periods=period).min().shift(1)
-    return upper, lower
+    return to_hours(zf.st_rev_rule(closes, bars, long_only=long_only), effective_lag=_lag(tau), hours=market.hours)
 
 
 def donchian_state(market: Market, symbol: str, *, period: int, tau: str, long_only: bool) -> np.ndarray:
     frame = _frame(market, symbol, tau)
-    upper, lower = donchian_bands(frame, period)
-    close = frame["close"].astype(float)
-    event = pd.Series(np.nan, index=frame.index)
-    event[close > upper] = 1.0
-    event[close < lower] = 0.0 if long_only else -1.0
-    state = event.ffill().fillna(0.0)
-    return to_hours(state, effective_lag=_lag(tau), hours=market.hours)
-
-
-def bollinger_bands(close: pd.Series, period: int, num_std: float) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """`core/indicators.py::bollinger`in seri hâli: SMA ± k × popülasyon sapması (ddof=0)."""
-    values = close.astype(float)
-    middle = values.rolling(period, min_periods=period).mean()
-    deviation = values.rolling(period, min_periods=period).std(ddof=0) * num_std
-    return middle + deviation, middle, middle - deviation
-
-
-def extreme_machine(value: np.ndarray, *, long_entry: np.ndarray, short_entry: np.ndarray,
-                    long_exit: np.ndarray, short_exit: np.ndarray) -> np.ndarray:
-    """F7 durum makinesi (TADİLAT-2 > 3): giriş > çıkış > koru."""
-    out = np.zeros(len(value))
-    state = 0.0
-    for t in range(len(value)):
-        if long_entry[t]:
-            state = 1.0
-        elif short_entry[t]:
-            state = -1.0
-        elif state > 0 and long_exit[t]:
-            state = 0.0
-        elif state < 0 and short_exit[t]:
-            state = 0.0
-        out[t] = state
-    return out
+    return to_hours(zf.donchian_rule(frame, period, long_only=long_only), effective_lag=_lag(tau),
+                    hours=market.hours)
 
 
 def rsi_extreme_state(market: Market, symbol: str, *, period: int, low: float, high: float, tau: str) -> np.ndarray:
     close = _frame(market, symbol, tau)["close"]
-    rsi = rsi_series(close, period).to_numpy(dtype=float)
-    ok = np.isfinite(rsi)
-    state = extreme_machine(rsi, long_entry=ok & (rsi < low), short_entry=ok & (rsi > high),
-                            long_exit=ok & (rsi >= 50.0), short_exit=ok & (rsi <= 50.0))
-    return to_hours(pd.Series(state, index=close.index), effective_lag=_lag(tau), hours=market.hours)
+    return to_hours(zf.rsi_extreme_rule(close, period, low, high), effective_lag=_lag(tau), hours=market.hours)
 
 
 def bollinger_extreme_state(market: Market, symbol: str, *, num_std: float, tau: str) -> np.ndarray:
-    close = _frame(market, symbol, tau)["close"].astype(float)
-    upper, middle, lower = bollinger_bands(close, 20, num_std)
-    c, u, m, lo = (x.to_numpy(dtype=float) for x in (close, upper, middle, lower))
-    ok = np.isfinite(m)
-    state = extreme_machine(c, long_entry=ok & (c < lo), short_entry=ok & (c > u),
-                            long_exit=ok & (c >= m), short_exit=ok & (c <= m))
-    return to_hours(pd.Series(state, index=close.index), effective_lag=_lag(tau), hours=market.hours)
+    close = _frame(market, symbol, tau)["close"]
+    return to_hours(zf.bollinger_extreme_rule(close, num_std), effective_lag=_lag(tau), hours=market.hours)
 
 
 # --------------------------------------------------------------------------- #
@@ -305,42 +226,13 @@ def ts_weights(market: Market, state_fn: Callable[[Market, str], np.ndarray]) ->
     """`w_i = s_i / |E_h|` (§6q > 4); uygun olmayan sembol 0."""
     states = np.column_stack([state_fn(market, s) for s in market.symbols]) if market.symbols else \
         np.zeros((len(market.hours), 0))
-    count = market.count.astype(float)
-    scale = np.divide(1.0, count, out=np.zeros_like(count), where=count > 0)
-    return np.where(market.eligible, states, 0.0) * scale[:, None]
+    return zf.ts_weights(states, market.eligible)
 
 
 def xsec_weights(market: Market, *, days: int, k: int, long_only: bool) -> np.ndarray:
     """F6: gün kapanışında L günlük getiriye göre sırala; ağırlık o günün 24 saati (§6q > 5)."""
-    daily = market.daily
-    width = len(market.symbols)
-    if daily.empty:
-        return np.zeros((len(market.hours), width))
-    ret = daily / daily.shift(days) - 1.0
-    effective = daily.index + DAY
-    hour_pos = pd.Index(market.hours)
-    rows = {}
-    for day, when in zip(daily.index, effective):
-        pos = hour_pos.get_indexer([when])[0]
-        if pos < 0:
-            continue
-        row = ret.loc[day].to_numpy(dtype=float)
-        ok = market.eligible[pos] & np.isfinite(row)
-        members = [j for j in range(width) if ok[j]]
-        target = np.zeros(width)
-        if len(members) >= 2 * k:
-            ordered = sorted(members, key=lambda j: (-row[j], market.symbols[j]))
-            if long_only:
-                target[ordered[:k]] = 1.0 / k
-            else:
-                target[ordered[:k]] = 1.0 / (2 * k)
-                target[ordered[-k:]] = -1.0 / (2 * k)
-        rows[when] = target
-    if not rows:
-        return np.zeros((len(market.hours), width))
-    table = pd.DataFrame.from_dict(rows, orient="index").sort_index()
-    held = table.reindex(market.hours, method="ffill").fillna(0.0).to_numpy(dtype=float)
-    return np.where(market.eligible, held, 0.0)
+    return zf.xsec_weights(market.daily, bars=days, k=k, long_only=long_only, effective_lag=DAY,
+                           grid=market.hours, eligible=market.eligible, symbols=market.symbols)
 
 
 def zoo() -> list[Base]:
@@ -981,54 +873,8 @@ def fetch_all_text(config: Mapping[str, Any], symbols: Sequence[str], *, timefra
 
 
 def consistency(h1: pd.DataFrame, h4: pd.DataFrame, h4_text: pd.DataFrame | None = None) -> dict[str, Any]:
-    """§6q > 3 + TADİLAT-3: 4H kapanışı = son 1H alt barının kapanışı (göreli ≤ 1e-9).
-
-    Tolerans dışı bir bar, 1H kapanışı 4H kapanışının HAM METNİNDEKİ ondalık sayısına
-    KESİLDİĞİNDE ona tam eşitse "kesinlik farkı"dır (`core/price_text.py`): %0.1 payına
-    girmez, ayrı raporlanır. Ham metni olmayan ya da metni float değerle tutmayan bar
-    sınıflandırılamaz ve UYUŞMAZLIK sayılır (muhafazakâr taraf).
-    """
-    if h1.empty or h4.empty:
-        return {"compared": 0, "mismatch": 0, "missing_sub_bar": 0, "share": None, "ok": False}
-    sub = h1["close"].reindex(h4.index + pd.Timedelta(hours=3))
-    both = sub.notna().to_numpy()
-    index = h4.index[both]
-    c4 = h4["close"].to_numpy(dtype=float)[both]
-    c1 = sub.to_numpy(dtype=float)[both]
-    rel = np.abs(c4 - c1) / np.abs(c4)
-    off = rel > CONSISTENCY_REL
-    texts = h4_text["close"] if h4_text is not None and not h4_text.empty else pd.Series(dtype=object)
-    precision = np.zeros(len(index), dtype=bool)
-    unclassified = 0
-    for k in np.flatnonzero(off):
-        text = texts.get(index[k])
-        if text is None or float(text) != c4[k]:
-            unclassified += 1
-            continue
-        precision[k] = truncates_to(c1[k], text)
-    bad = off & ~precision
-    mismatch = int(bad.sum())
-    compared = int(both.sum())
-    share = mismatch / compared if compared else None
-    # Nerede ve ne büyüklükte: bir kapı kararının (sembol dışlama) nedenini okunur kılar.
-    stamps = index[bad]
-    p_stamps = index[precision]
-    lo, hi = KNOWN_PRECISION_WINDOW
-    outside = [str(t) for t in p_stamps if not (lo <= t < hi)]
-    return {"compared": compared, "mismatch": mismatch, "missing_sub_bar": int((~both).sum()),
-            "share": share, "ok": bool(compared and share is not None and share <= CONSISTENCY_MAX_SHARE),
-            "first_mismatch": str(stamps[0]) if mismatch else None,
-            "last_mismatch": str(stamps[-1]) if mismatch else None,
-            "max_rel_diff": float(rel[bad].max()) if mismatch else None,
-            "mismatch_bars": [str(t) for t in stamps] if mismatch <= 10 else None,
-            "unclassified_no_text": unclassified,
-            "precision_differences": {
-                "n": int(precision.sum()),
-                "first": str(p_stamps[0]) if len(p_stamps) else None,
-                "last": str(p_stamps[-1]) if len(p_stamps) else None,
-                "max_rel_diff": float(rel[precision].max()) if len(p_stamps) else None,
-                "outside_known_window": outside,
-            }}
+    """§6q > 3 + TADİLAT-3: 4H kapanışı = son 1H alt barının kapanışı (`zoo_families.consistency`)."""
+    return zf.consistency(h1, h4, h4_text, last_sub_offset=pd.Timedelta(hours=3))
 
 
 def coverage(frame: pd.DataFrame, step: pd.Timedelta) -> dict[str, Any]:
