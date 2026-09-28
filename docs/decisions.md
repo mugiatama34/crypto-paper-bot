@@ -5573,3 +5573,35 @@ hedge'den sonra yüksek verimlilik günlerinde daha kötü.
 **Karar:** doku rejimi DOĞRULANMADI. Hiçbir şey dondurulmaz, kasa açılmaz; hiçbir model, filtre,
 parametre ya da kapı değişmez. Ters eşleme (1D sol kuyruğu) yeni bir tezdir ve §7.8 gereği
 sınamasının penceresi kasa olamaz. Sicil satırı 12.
+
+## 70. Maker yürütme: limit emir aynı sinyallerde maliyeti düşürüyor ama hiçbir aileyi kârlı yapmıyor — ölçüm, yeni model YOK, motor DEĞİŞMEZ; ön-kayıt §6s *(2026-09-28; TASLAK — kullanıcı onayı bekliyor)*
+
+Tez (kullanıcı): §6r'nin kol bahçesi (59 taban × 1D/4H/15m, ters yok) taker yerine limit (maker)
+emirle yürütülürse net sonuç iyileşir mi, ve maliyetten sonra kârlı hâle gelen aile var mı?
+Sinyaller değişmez. OKX maliyetleri: taker %0.05 + `slippage_base`, maker %0.02 kaymasız
+(`fee_rate` kullanılmadı). Dolum: limit = sinyal barının kapanışı, sonraki barın KENDİ H/L'si
+limiti kesin geçerse limitten, ya hep ya hiç; (a) melez — N bar (1D 1, 4H 2, 15m 4) içinde
+dolmazsa taker (birincil), (b) saf maker — iptal (betimsel). **Model DEĞİL.**
+
+TADİLAT-1 (kullanıcı kararı, veri görülmeden): O1–O12 önerildiği gibi — emir yalnızca hedef
+değişince doğar, (2)'nin kapısı HEDGE'Lİ net (hedge bacağı taker, netleşmesiz), (1) kol başına
+düzeltmesiz, bahçe ortalaması taban eşit ağırlık. TADİLAT-2: kesinlik penceresi hariç betimsel
+duyarlılık satırı (her zaman hesaplanır). Preflight (#36410493938): tutarlılık §6r ile birebir;
+doğan emir A'da 1D 81 bin, 4H 496 bin, 15m 8.19 milyon (%55–56'sı F6).
+
+**SONUÇ** (#36435759788, `45fde50`; §6s > SONUÇ). (1) üç kolda A ve B'de DOĞRULANDI: A haftalık
+melez − taker 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60,
++14.05]; ayrışma: ücret tasarrufu, kaçırma bedeli tasarrufun %19 / %14 / %9'u, artık %6–10.
+Dolum oranı %96–99.6 ve dolan emir taker'la aynı fiyattan girer — kazanç büyük ölçüde ücret
+farkının aritmetiğidir; bu, dolum modelinin (kitap sırası yok, fiyat iyileştirmesi yok) bir
+sonucudur, gerçek kitapta dolum olasılığının kanıtı değildir. (2) DOĞRULANMADI: hedge'li melez
+net hiçbir hücrede BH'yi (m = 21) geçmedi — en yakın 1D/F6 p 0.029, CI alt −%1.8; 15m ve 4H'nin
+yüksek devirli aileleri (F4, F6, F7) maker'la bile derin negatif. Ters seçim ~2 bp; saf maker 1D
+ve 4H'de melezden kötü (kaçan trend işlemleri), 15m'de biraz iyi. Kesinlik penceresi hariç satır
+hiçbir kararı değiştirmedi. Ön-kaydı yazanın 1D tahmini ("ayırt edilemez") TUTMADI — kaçırma
+OLASILIĞI tahmin edilenden çok küçük; kullanıcının tahmini (üç kolda geçer) tuttu.
+
+**Karar:** hiçbir model, motor, defter ya da kapı değişmez. Motora limit emri eklemek ayrı bir
+karar ve ayrı bir ön-kayıttır; o ön-kayıt bu ölçümün dolum modelinin iyimserliğini (kitap
+sırası, post-only reddi, aralık) ele almak zorundadır. Kârlı aile olmadığı için hiçbir şey
+dondurulmaz, kasa açılmaz. Sicil satırı 13.
