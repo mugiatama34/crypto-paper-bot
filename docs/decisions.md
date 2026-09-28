@@ -5574,7 +5574,7 @@ hedge'den sonra yüksek verimlilik günlerinde daha kötü.
 parametre ya da kapı değişmez. Ters eşleme (1D sol kuyruğu) yeni bir tezdir ve §7.8 gereği
 sınamasının penceresi kasa olamaz. Sicil satırı 12.
 
-## 70. Maker yürütme: limit emir aynı sinyallerde maliyeti düşürüyor ama hiçbir aileyi kârlı yapmıyor — ölçüm, yeni model YOK, motor DEĞİŞMEZ; ön-kayıt §6s *(2026-09-28; TASLAK — kullanıcı onayı bekliyor)*
+## 70. Maker yürütme: limit emir aynı sinyallerde maliyeti düşürüyor ama hiçbir aileyi kârlı yapmıyor — ölçüm, yeni model YOK, motor DEĞİŞMEZ; ön-kayıt §6s *(2026-09-28, kullanıcı onayı)*
 
 Tez (kullanıcı): §6r'nin kol bahçesi (59 taban × 1D/4H/15m, ters yok) taker yerine limit (maker)
 emirle yürütülürse net sonuç iyileşir mi, ve maliyetten sonra kârlı hâle gelen aile var mı?
