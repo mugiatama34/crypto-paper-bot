@@ -7692,6 +7692,25 @@ iki tahminden birini düzeltecektir ve SONUÇ bölümü bunu hücre hücre yazar
 birleştikten sonra** yazılır (14); o birleşme olmadan bahçenin kuralları ve kol kurulumu
 bu dalda yoktur ve ikinci kez yazılmaz.
 
+### TADİLAT-2 — kesinlik penceresi hariç BETİMSEL duyarlılık satırı *(2026-09-28, kullanıcı kararı; preflight koşarken, HİÇBİR dolum/getiri görülmeden)*
+
+**Gerekçe (kullanıcı).** OKX 4H geçmişinin eksik ondalığı (2022-04-23 → 06-01, §6q > TADİLAT-3;
+ayrıca 2022-12-18) H/L'yi aşağı KESER: o barlarda alış limitinin kesin geçişi kolaylaşır, satışınki
+zorlaşır — dolum testine ASİMETRİK bir etki. Pencere kısadır ve emirleri preflight'ta ayrıca
+sayılır (13'ün 9. sapması), yani kapıyı etkilemesi beklenmez.
+
+**Eklenen (yalnızca betimsel; kapı, BH, m, geçme kuralı DEĞİŞMEZ):** dönem A'da pencereye ya da
+2022-12-18'e değen ISO haftaları (8 hafta) dışarıda bırakılarak (1)'in `D_w` istatistiği ve
+(2)'nin 21 hücresinin hedge'li melez neti AYNI bootstrap'la yeniden hesaplanır
+(`excluding_precision_weeks`, dışarıda bırakılan hafta sayısıyla). B bu haftaları içermez.
+
+**Tek sapma kullanıcının cümlesinden:** satır "pencerenin emir payı büyük çıkarsa" değil HER
+ZAMAN hesaplanır — koşullu bir satır, eklenip eklenmeyeceğini veriye bakarak seçmek olurdu.
+Okunuşu koşuldur: pencerenin emir payı (preflight'ta `orders_in_known_precision_window`)
+küçükse satır bir kayıttır; büyükse SONUÇ'ta kapının yanında yazılır ve iki sayı ayrışıyorsa
+bu bir bulgu olarak kayda geçer — kapı yine hedge'li/ham tanımıyla, tüm haftalar üzerinden
+kalır.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR

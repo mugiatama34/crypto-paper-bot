@@ -299,3 +299,15 @@ def test_end_to_end_1d_and_4h(synthetic_data):
         melez = d["families"]["bahçe"]["melez"]
         assert 0.0 < melez["fill_rate"] <= 1.0
         assert melez["orders"] > 0
+
+
+def test_precision_weeks_cover_known_window_and_day_only_in_a():
+    a = mx.precision_weeks("A")
+    b = mx.precision_weeks("B")
+    assert not b.any()
+    lo, _ = tx.measurement_weeks()["A"]
+    starts = pd.date_range(lo, periods=len(a), freq="7D", tz="UTC")
+    hit = set(starts[a].strftime("%Y-%m-%d"))
+    # 2022-04-23 (Cmt) → 06-02: 04-18 haftasından 05-30 haftasına 7 hafta; 2022-12-18 (Paz) → 12-12 haftası
+    assert hit == {"2022-04-18", "2022-04-25", "2022-05-02", "2022-05-09", "2022-05-16", "2022-05-23",
+                   "2022-05-30", "2022-12-12"}

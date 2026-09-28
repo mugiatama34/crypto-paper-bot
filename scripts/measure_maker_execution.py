@@ -141,6 +141,21 @@ def week_index(grid: pd.DatetimeIndex) -> tuple[np.ndarray, dict[str, slice]]:
     return out, slices
 
 
+def precision_weeks(period: str) -> np.ndarray:
+    """Dönemin haftalarından bilinen kesinlik penceresine ya da 2022-12-18'e değenler (TADİLAT-2).
+
+    Kesme 4H H/L'sini aşağı çeker: pencerede alış dolumu kolaylaşır, satış zorlaşır. Bu
+    haftaları dışarıda bırakan satır yalnızca BETİMSELDİR ve kapıyı değiştirmez.
+    """
+    lo, hi = measurement_weeks()[period]
+    starts = pd.date_range(lo, hi - pd.Timedelta(weeks=1), freq="7D", tz="UTC")
+    ends = starts + pd.Timedelta(weeks=1)
+    out = np.zeros(len(starts), dtype=bool)
+    for a, b in (PRECISION_WINDOW, KNOWN_DAY):
+        out |= (starts < b) & (ends > a)
+    return out
+
+
 def start_row(grid: pd.DatetimeIndex) -> int:
     lo = measurement_weeks()["A"][0] - WARMUP
     pos = int(grid.searchsorted(lo))
@@ -582,6 +597,12 @@ def measure(data: Data, settings: Settings) -> tuple[dict[str, Any], pd.DataFram
                 "hedged": bootstrap((res.hedged["melez"][sl] - res.hedged["taker"][sl]).mean(axis=1),
                                     seed=f"{settings.seed}:maker:iyilesme-h:{name}:{p}"),
             }
+            keep = ~precision_weeks(p)
+            if not keep.all():
+                improvement_desc[name][p]["excluding_precision_weeks"] = {
+                    "weeks_excluded": int((~keep).sum()),
+                    **bootstrap(d.mean(axis=1)[keep], seed=f"{settings.seed}:maker:iyilesme-kesinlik:{name}:{p}"),
+                }
             for f in FAMILIES:
                 cell = f"{name}/{f}"
                 cols = fam == f
@@ -594,6 +615,10 @@ def measure(data: Data, settings: Settings) -> tuple[dict[str, Any], pd.DataFram
                     "maker_hedged": bootstrap(res.hedged["maker"][sl][:, cols].mean(axis=1),
                                               seed=f"{settings.seed}:maker:karlilik-b:{name}:{f}:{p}"),
                 }
+                if not keep.all():
+                    profit_raw[cell][p]["excluding_precision_weeks"] = bootstrap(
+                        res.hedged["melez"][sl][:, cols].mean(axis=1)[keep],
+                        seed=f"{settings.seed}:maker:karlilik-kesinlik:{name}:{f}:{p}")
             describe_out[name][p] = describe(o, p)
         lo_weeks = {p: measurement_weeks()[p][0] for p in PERIODS}
         for p in PERIODS:
