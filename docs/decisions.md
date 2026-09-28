@@ -5531,3 +5531,45 @@ hiçbir model, filtre, parametre ya da kapı değişmez. F1'i yeniden sınamak y
 **Numara.** Ön-kayıt ve ilk iki TADİLAT commit'leri (`ec0d01a`, `551fa67`, `f56f269`) §6p /
 karar 67 adını taşır; BTC momentum vetosu önce birleştiği için §6q / karar 68 oldu. Sicil
 satırı 11 değişmedi.
+
+## 69. Doku rejimi: verimlilik × dağılım rejimine göre aile aç/kapa, aynı oranda rastgele kapatmaktan iyi DEĞİL — ölçüm, yeni model YOK; ön-kayıt §6r *(2026-09-28)*
+
+Tez (kullanıcı): piyasanın yönü değil DOKUSU ölçülür — 14 günlük Kaufman verimlilik oranının 13
+sembol medyanı (V) ve 7 günlük getirilerin kesitsel std'si (D), eşikler önceki 365 günün medyanı
+(yalnızca geçmiş), 2×2 rejim. §6q bahçesinin aileleri veri görülmeden yazılmış bir eşlemeyle
+açılıp kapanır (yüksek V: F1/F2/F3/F5; düşük V: F4/F7; yüksek D: F6), üç kolda (1D, 4H, 15m)
+kolun kendi barlarında. Soru: eşleme, AYNI ORANDA rastgele kapatmaktan iyi mi? **Model DEĞİL:**
+geçse bile hiçbir modele rejim kapısı eklenmezdi.
+
+Ön-kaydın tanıma eklediği dört içerik noktası kullanıcı tarafından kabul edildi: (1) ters
+strateji yok — tersiyle tutulan portföy tanım gereği sıfırdır; (2) ölçüde "her zaman açık"
+portföy testte ELENİR (gerçek − plasebo farkında sadeleşir), bu yüzden plasebo KAPI, `Δ > 0`
+yalnızca okuma etiketidir; (3) 15m derinliği preflight'ta ölçülür; (4) aile eşit ağırlıklı sabit
+slot, kapalı aile nakit. **TADİLAT-1 (kullanıcı kararı, kod öncesi):** kullanıcının haftalık blok
+permütasyonu hafta sınırında rejim kalıcılığını kırar, plaseboya fazladan aç/kapa maliyeti
+ödetir ve gerçek etiketleri haksız biçimde iyi gösterir (tezin LEHİNE sapma) — bağlayıcı
+plasebo **dairesel kaydırma** oldu (her iki yönde ≥ 30 gün, TÜM kaydırmalar: A 844, B 753;
+deterministik); blok permütasyonu betimsel kaldı. Kapı, §6q'daki gerekçeyle **hedge'li net
+getiride**; ham net betimsel. Aile kuralları `scripts/zoo_families.py`de tek kopyaya taşındı ve
+§6q'nun ağırlıkları altın değer testiyle bit düzeyinde sabit kaldı; rejim başına ön hesaplanan
+muhasebenin etiketlerden doğrudan kurulan portföyle birebir olduğu testle sabitlendi.
+
+**Preflight** (#36338015986): 15m ↔ 4H tutarlılık 13 sembolde geçti (kesinlik farkları yalnızca
+bilinen pencerede, tekil uyuşmazlıklar yalnızca 2022-12-18); üç kolda A başında 9, B başında 12
+uygun sembol; tanımsız etiketli gün 0.
+
+**SONUÇ** (#36381144532, tetikleyici `54c06bd`, yük `8bba500`; §6r > SONUÇ). Hedge'li kapı dönem
+A'da üç kolda da GEÇMEDİ: 1D Δ −%17.4 (p 0.960), 4H −%6.0 (p 0.815), 15m +%201 (p 0.185; plasebo
+ort. +%194, %95 dilimi +%207). B'de doğrulanacak kol yok; ham da üç kolda geçmedi. Okuma: 1D ve
+4H *"ayırt edilemedi"*, 15m *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* — 15m'de eşleme
+günlük devri 8.3'ten 6.3'e indirip maliyetten kazanıyor ve plasebo aynı kazancı birebir taşıyor
+(kullanıcının ön-kayıtlı tahmininin hücresi). Rejimler ön-kaydın varsaydığından çok kısa ömürlü
+(medyan epizot 2 gün, A'da 306 epizot); blok permütasyonu öngörüldüğü gibi ~%19 fazla geçiş
+üretti ama p'ler dairesel kaydırmayla aynı yerde çıktı; brüt p'ler net p'lerle aynı. Rejim başına
+aile getirilerinde (betimsel) tutarlı bir yön yok (açık > kapalı sayısı 1/7 … 6/7). Betimsel sol
+kuyruk: 1D A'da gerçek eşleme plaseboların %96'sından kötü (p_ters 0.041) — trend aileleri
+hedge'den sonra yüksek verimlilik günlerinde daha kötü.
+
+**Karar:** doku rejimi DOĞRULANMADI. Hiçbir şey dondurulmaz, kasa açılmaz; hiçbir model, filtre,
+parametre ya da kapı değişmez. Ters eşleme (1D sol kuyruğu) yeni bir tezdir ve §7.8 gereği
+sınamasının penceresi kasa olamaz. Sicil satırı 12.
