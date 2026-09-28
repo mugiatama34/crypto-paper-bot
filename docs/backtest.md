@@ -7711,6 +7711,33 @@ küçükse satır bir kayıttır; büyükse SONUÇ'ta kapının yanında yazıl�
 bu bir bulgu olarak kayda geçer — kapı yine hedge'li/ham tanımıyla, tüm haftalar üzerinden
 kalır.
 
+### PREFLIGHT — kapsam ve doğan emir sayısı *(2026-09-28, `measure-maker-execution` #36410493938, tetikleyici `8ac6551`, çıkış 0; yalnızca kapsam ve sayım — dolum oranı, getiri, kaçırma bedeli YOK)*
+
+- **Çıktının içeriği:** log'daki PREFLIGHT yükünde dolum, getiri, net, kaçırma ya da ters
+  seçim alanı yoktur (aranıp bulunmadı); yalnızca kapsam, tutarlılık, uygunluk ve emir sayısı.
+- **Tutarlılık (15m ↔ 4H):** 13 sembolün 13'ü geçti. Kesinlik farkı yalnızca üç sembolde,
+  208 / 206 / 204 bar, hepsi bilinen pencerenin içinde; `outside_known_window` 13 sembolde BOŞ.
+  Kalan uyuşmazlıklar yalnızca 2022-12-18 00:00 ve/veya 08:00: bir sembolde 2, sekizinde 1,
+  dördünde 0. §6r > PREFLIGHT ile birebir aynı; yeni bir olay yok.
+- **Uygunluk:** üç kolda da A'nın ilk barında 9, B'nin ilk barında 12 uygun sembol (asgari 5);
+  13 sembolün hepsi bir noktada uygun. Üç kol iki dönemde de değerlendirilebilir.
+- **Strateji:** 59 taban/kol, 177 strateji.
+- **Doğan emir sayısı** (hedefin değiştiği (satır, taban, sembol) sayısı):
+
+| Kol | N | A emir | A gün başına | A taban × gün başına | B emir | B taban × gün başına |
+|---|---|---|---|---|---|---|
+| 1D | 1 | 81 067 | 89.8 | 1.52 | 88 303 | 1.84 |
+| 4H | 2 | 495 510 | 548.7 | 9.30 | 537 875 | 11.23 |
+| 15m | 4 | 8 189 420 | 9 069 | 153.7 | 8 802 795 | 183.7 |
+
+  Aile dağılımı A'da F6 ağırlıklıdır (her barda yeniden sıralanır): 1D %55, 4H %56, 15m %56;
+  ardından F4 (%17), F7 (%11), F1 (%10–11); F5 en azdır (%1 civarı).
+- **Kesinlik penceresi ve 2022-12-18 (TADİLAT-2):** pencereye düşen emir 1D 3 009, 4H 19 827,
+  15m 326 611; A emirlerinin ~%3.7 / %4.0 / %4.0'ı — pencerenin A'daki gün payıyla (~%4.4)
+  orantılı, yani pencere emir bakımından olağan dışı değil. 2022-12-18'de 74 / 490 / 6 377.
+  15m kolu dolum testinde kendi 15m mumlarını okuduğu için 4H kesmesinden etkilenmez; etki
+  yalnızca 1D ve 4H'de mümkündür. TADİLAT-2'nin satırı bu yüzden bir KAYITTIR.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
