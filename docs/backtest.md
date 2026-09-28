@@ -404,7 +404,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 9 | Oynaklık hedefleme: maruziyeti son 30 günün oynaklığına göre ters ölçeklemek (w = min(1, σ_hedef/σ̂), kaldıraçsız) Sharpe'ı artırır — (a) BTC al-tut, (b) 13 sembollük eşit ağırlıklı sepet — **model DEĞİL, pasif maruziyetin ölçümü** | §6o, bu commit | A: 2022-01-01 → 2024-06-29, B: 2024-06-30 → koşu günü (günlük) | kullanıcı: ΔSR küçük pozitif, MDD sabit ağırlık kontrolünden belirgin düşük; kapı: ΔSR'nin hafta ve 4-hafta blok CI alt sınırlarının MİNİMUMU > 0, A ∧ B, varlık başına (TADİLAT-1); mekanizma (σ̂ → sonraki 30 günün oynaklığı, Spearman) bilgi amaçlı | **DÜŞTÜ — iki varlıkta, iki dönemde** (koşu #36291523493): ΔSR BTC A −0.025 / B +0.030, sepet A +0.055 / B +0.014; bağlayıcı alt sınırların hepsi < 0; öncül TUTMADI (ρ_S 0.22–0.38, 4 haftalık alt sınır sıfırın altında) → "tez dayanaksız"; ΔSR > ~0.2 büyük ölçüde dışlandı — §6o > SONUÇ |
 | 10 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6p, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **DÜŞTÜ — dönem A'da, üç ufukta da** (koşu #36305667820): D (bp) 1h −3.73 [−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; `p_bağ` 0.026 / 0.356 / 0.224, BH'de hiçbiri anlamlı değil; B'de doğrulanacak ufuk yok. A 1h işareti TERS (%95 düzeyinde "tersine dönüş görüldü" bayrağı; BH'de ve B'de tutmuyor — yeni tez kurulmaz). İşlem düzeyi betimsel: `xsec_random` 1h/4h'de işaret tezin tersi, ayırt edilemedi; `dc_coinflip` yapısal olarak değerlendirilemez — §6p > SONUÇ |
 | 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
-| 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, bu commit (§6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **KOŞULMADI** — ön-kayıt açık, onay noktaları (§6s > 13) bekliyor |
+| 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **KOŞULMADI** — ön-kayıt ve TADİLAT-1 kayıtlı; uygulama PR #65'in birleşmesini bekliyor |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -7130,6 +7130,41 @@ geçiş testi orada ondalık kesmesine duyarlıdır (pencere içi emirler ayrıc
    `pin-results` yalnızca aynı koşunun artifact'ini `docs/data/maker_execution*`e commit eder
    (strateji × varyant × hafta net matrisi ve emir düzeyi özetleri dâhil). Cron YOK.
 5. `CLAUDE.md` tablosuna betik ve workflow satırları; `docs/decisions.md`'ye sonuç kaydı.
+
+### TADİLAT-1 — onay noktalarının tamamı KABUL; bağlayıcı hâl *(2026-09-28, kullanıcı kararı; kod yazılmadan, HİÇBİR veri görülmeden)*
+
+Bu TADİLAT 13'ün O1–O12'sini karara bağlar. **Hiçbir nokta değiştirilmedi:** her biri bu
+ön-kaydın önerdiği hâliyle kabul edildi; 1–12'nin metni ve kabul edilen sapmalar olduğu gibi
+bağlayıcıdır. Kararın gerekçeleri (kullanıcı) kayda geçer:
+
+- **O1 — kabul.** Emir yalnızca hedef DEĞİŞTİĞİNDE doğar; saf maker'da (b) dolmayan emir
+  YENİLENMEZ. Her barda yeniden limit koymak "fiyatı kovalayan maker"dır — o başka bir
+  yürütme biçimidir ve bu tezin kapsamında değildir.
+- **O6 — kabul: (2)'nin KAPISI HEDGE'Lİ net getiridir, ham net BETİMSEL.** §6q ve §6r ile
+  tutarlı; B'nin yükseliş eğilimi long tabanları ham kapıdan geçirebilirdi. Hedge'in tanımı
+  6 > (2)'dekidir (tutulan net maruziyet, eşit ağırlıklı sepet, hedge bacağı her zaman
+  taker, netleşmesiz). 10'un okuma tablosundaki "(2) kârlılık" sütunu hedge'li kapının
+  sonucudur.
+- **O7 — kabul.** (1) kol başına DÜZELTMESİZ: A ∧ B şartı yanlış pozitif riskini zaten
+  düşürür ve (1)'in asıl değeri teşhistir. BH (m = 3) betimsel kalır.
+- **O5 — kabul.** (1)'in bahçe ortalaması 59 tabanın EŞİT ağırlığıdır; aile eşit ağırlığı
+  (1/7) betimsel olarak yazılır.
+- **O2, O3, O4, O8, O9, O10, O11, O12 — kabul**, 13'teki hâliyle: bekleyen emir aynı limitle
+  N bar yaşar; (b)'nin penceresi (a) ile aynı N; ya hep ya hiç dolum; hafta kümeli bootstrap
+  (10 000 çekiliş, %95 iki yönlü yüzdelik); OKX sabitleri (τ = %0.05 + `slippage_base`,
+  μ = %0.02, `fee_rate` kullanılmaz, funding HARİÇ); strateji başına ayrı hesap; tek,
+  kesintisiz simülasyon (A'dan 4 hafta önce `P = T`); pencere içinde hedef değişirse eski
+  emir iptal, taker düşüşü yok.
+
+**Tahminler (8) DEĞİŞMEZ ve AYRI kalır.** Kullanıcının tahmini ile ön-kaydı yazanınki iki
+ayrı kayıttır; birleştirilmez, uzlaştırılmaz. İkisinin açıkça ayrıştığı hücre **(1) 1D**'dir
+(kullanıcı: geçer; ön-kaydı yazan: ayırt edilemez, işaret belirsiz — emir başına %0.08'lik
+tasarrufa karşı kaçan bir emrin bedeli bir günlük hareket mertebesinde). Sonuç bu hücrede
+iki tahminden birini düzeltecektir ve SONUÇ bölümü bunu hücre hücre yazar.
+
+**13'ün durumu:** O1–O12 kararlaştırıldı. Kod bu TADİLAT'tan SONRA ve **PR #65 (§6r)
+birleştikten sonra** yazılır (14); o birleşme olmadan bahçenin kuralları ve kol kurulumu
+bu dalda yoktur ve ikinci kez yazılmaz.
 
 ---
 
