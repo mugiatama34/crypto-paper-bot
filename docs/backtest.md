@@ -405,6 +405,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 10 | BTC momentum vetosu: BTC'nin kısa vadeli (1h/4h/1d) güçlü hareketi (mutlak z > 1) altcoinlerde sonraki aynı uzunluktaki pencerede DEVAM ediyor, yani ona KARŞI açılan işlem aleyhe başlar — **model DEĞİL, ölçüm** | §6p, commit `1522e44` (TADİLAT-1 `ebd6007`: birincil = fiyat testi; TADİLAT-2 `5bd4da4`: bağlayıcı ölçü D; TADİLAT-3 `99ba314`: işlem düzeyinde durum içi karşıtlık; TADİLAT-4: parite kapısında kesinlik farkı) | fiyat testi A: 2022-01-01 → 2024-06-30, B: 2024-07-01 → 2026-09-18T12:00Z; işlem düzeyi: karar 59 koşularının A/B pencereleri | BİRİNCİL (TADİLAT-2): `D = ½(ȳ₊ + ȳ₋) > 0` — yukarı ve aşağı güçlü durumları eşit ağırlıklayan işaretli ileri getiri (havuzlanmış ortalama betimsel), küme bootstrap (gün ∧ ISO hafta, muhafazakâr) + BH (q = 0.05, m = 3 ufuk) ∧ %95 AS > 0; A'da ölç, B'de doğrula. İKİNCİL (koşullu): yönü rastgele kontrollerde karşıtlık < 0 — iki yönlüde durum içi eşit ağırlıklı `Δ⁼`, tek yönlüde KARŞI − (YANINDA ∪ NÖTR) (TADİLAT-3). Kullanıcı tahmini: 1d etki yok, 1h/4h en olası "ayırt edilemedi" | **DÜŞTÜ — dönem A'da, üç ufukta da** (koşu #36305667820): D (bp) 1h −3.73 [−6.89, −0.53], 4h −4.02 [−12.92, +4.27], 24h −24.81 [−62.46, +15.28]; `p_bağ` 0.026 / 0.356 / 0.224, BH'de hiçbiri anlamlı değil; B'de doğrulanacak ufuk yok. A 1h işareti TERS (%95 düzeyinde "tersine dönüş görüldü" bayrağı; BH'de ve B'de tutmuyor — yeni tez kurulmaz). İşlem düzeyi betimsel: `xsec_random` 1h/4h'de işaret tezin tersi, ayırt edilemedi; `dc_coinflip` yapısal olarak değerlendirilemez — §6p > SONUÇ |
 | 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
 | 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1 `79167b3`: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **DÜŞTÜ — dönem A'da, üç kolda** (koşu #36381144532, `8bba500`): hedge'li net Δ dairesel kaydırma plasebosuna karşı 1D −%17.4 (p 0.960), 4H −%6.0 (p 0.815), 15m +%201 (p 0.185; plasebo ort. +%194); B'de doğrulanacak kol yok; ham da üç kolda geçmedi → okuma 1D/4H *"ayırt edilemedi"*, 15m *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* (kazanç yalnızca devir azalması, plasebo birebir taşıyor). Rejimler kısa ömürlü (medyan 2 gün); blok permütasyonu ~%19 fazla geçiş üretti ama sonucu değiştirmedi. Betimsel: 1D A sol kuyruk p 0.041 (eşleme ters yönde) — yeni tez, kasada sınanamaz — §6r > SONUÇ, karar 69 |
+| 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **(1) TUTTU, (2) DÜŞTÜ — dönem A'da, 21 hücrede** (koşu #36435759788, `45fde50`; kullanıcı onayı 2026-09-28): (1) melez − taker bahçe ortalaması üç kolda A ve B'de pozitif, CI sıfırın üstünde — A haftalık 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60, +14.05]; kazanç ücret farkının aritmetiği (dolum oranı %96–99.6, dolan emir taker fiyatından girer), kaçırma bedeli tasarrufun %9–19'u. (2) hedge'li melez net hiçbir hücrede BH'yi geçmedi (en yakın 1D/F6 p 0.029, CI alt −1.8); B'de doğrulanacak hücre yok → kârlı aile yok. Kesinlik penceresi hariç satır sonucu değiştirmiyor. Dolum modelinin iyimserliği (kitap sırası yok) kayıtlı — §6s > SONUÇ |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -7306,6 +7307,548 @@ F1/F3/F5 tersine).
 devri azaltmasıdır ve plasebo onu birebir taşır. Hiçbir şey dondurulmaz, kasa açılmaz (13);
 hiçbir model, filtre, parametre ya da kapı değişmez. 1D'deki ters yönlü sol kuyruk betimseldir;
 ters eşlemeyi sınamak yeni bir tezdir ve §7.8 gereği penceresi kasa olamaz.
+
+---
+
+## 6s. ÖN-KAYIT — MAKER YÜRÜTME: aynı sinyaller taker yerine limit (maker) emirle yürütülürse net sonuç iyileşir mi, ve maliyetten sonra kârlı hâle gelen aile var mı? *(2026-09-28)*
+
+**Bu belge veri görülmeden yazıldı ve AYRI bir commit olarak işlendi** — ölçüm betiği,
+workflow ve testler SONRAKİ commit'lerdedir ve **kullanıcı onayından (bkz. 13) ÖNCE
+yazılmaz.** §7'nin tamamı bu bölüme uygulanır; §7.8 (KASA) tam olarak uygulanır: B, kasa
+başlangıcında biter.
+
+⚠ **Bağımlılık ve numara.** Sinyal kümesi §6r'nin (doku rejimi) kol bahçesidir. §6r bu
+yazının yapıldığı an `main`de DEĞİLDİR: PR #65'tedir (dal `claude/doku-rejimi-stratejisi-omw9i9`;
+ön-kayıt `456ce51`, TADİLAT-1 `79167b3`, SONUÇ `2f41d2a`). Bu yüzden bu bölüm **§6s**'dir (§6r
+adı alınmış) ve sicil satırı **13**'tür (12, §6r'nindir). Uygulama (14) PR #65 birleşmeden
+BAŞLAMAZ: bahçenin kuralları (`scripts/zoo_families.py`) ve kol kurulumu
+(`scripts/measure_texture_regime.py`) oradadır ve ikinci kez yazılmaz. İki PR aynı yere (§7'nin
+önü, sicil tablosunun sonu) metin eklediği için birleştirmede sıra: önce #65, sonra bu.
+
+### 1. Köken, statü, kapsam
+
+**Tez (kullanıcı, değiştirilmeden):** aynı sinyaller taker yerine limit (maker) emirle
+yürütülürse net sonuç iyileşir mi, ve maliyetten sonra kârlı hâle gelen aile var mı?
+**Sinyaller DEĞİŞMEZ — değişen yalnızca yürütmedir.**
+
+**Statü: MODEL DEĞİL, salt okunur bir ölçüm** (§6q > 1, §6r > 1'in statüsü). `REGISTRY`,
+katmanların `models` listesi, defterler, `config.yaml`, `strategies/` ve `core/` DEĞİŞMEZ.
+Motor bugün limit emri İŞLEMEZ (`core/validate.py`: `entry_type="limit"` →
+`NotImplementedError`; CLAUDE.md > Strateji Arayüz Sözleşmesi) ve bu ölçüm geçse bile
+bunu değiştirmez: motora limit emri eklemek bekleyen emir, geçerlilik süresi ve mum içi
+dokunma kontrolü demektir — yani yeni bir look-ahead kapısı ve defteri tarihli bölen bir
+kural değişikliği (karar 25'in `fee_rate` hatası). O yol, bu ölçüm geçerse, kendi
+ön-kaydıyla gelen ayrı bir karardır.
+
+**Neden §6r'nin bahçesi.** Kullanıcı sinyal kümesini §6r'nin üç kolu olarak verdi (1D, 4H,
+15m; ters strateji yok). Bahçe aileleri bir kez daha tanımlamak ikinci bir uygulama olurdu.
+**Bedeli** §6q/§6r'ninkiyle aynıdır: sonuç evin modelleri HAKKINDA değil, "basit, stop'suz,
+vektörel kural ailelerinde yürütme biçimi net sonucu değiştirir mi" sorusunun cevabıdır.
+
+### 2. Körlük beyanı (sonuç görülmeden yazıldı)
+
+- Ön-kaydı yazan taraf bu ön-kayıt için hiçbir mumun high/low'unu, hiçbir dolum oranını,
+  hiçbir stratejinin getirisini ya da ağırlık serisini hesaplamadı ya da görmedi.
+- **Bilinen ve gizlenmeyen (bu tezin yönünü etkileyebilir):**
+  - §6q > SONUÇ > 6: bahçe taker maliyetiyle (`fee_rate + slippage_base` = %0.105) NET
+    zararda (aylık dönem başına ~−%5.3, haftalık ~−%1.2; tersler dâhil); 1H ızgarasında aile
+    başına günlük devir medyanı ~0.5×, F4 ~8.3× (en yüksek taban ~25×), F7 ~3.3×; F4'ün günlük
+    maliyet sürüklenmesi ~%0.87.
+  - §6r > SONUÇ (PR #65): aile eşit ağırlıklı, NETLEŞMİŞ portföyün hedge'li günlük devri
+    her zaman açıkken 1D 0.082, 4H 0.50, 15m 8.32; 15m'nin dönem neti −%600 … −%800 mertebesinde
+    (aritmetik toplam) ve tamamen maliyettir. Bunlar portföy düzeyindedir; strateji başına
+    devir (bu ölçümün birimi) görülmedi. `docs/data/texture_regime*` ve
+    `docs/data/model_momentum*` dosyaları bu ön-kayıt için açılmadı ve uygulama onları
+    OKUMAZ (test).
+  - Genel bilgi: limit emir literatüründe dolan pasif emirlerin koşullu olarak aleyhe
+    seçildiği (ters seçim) ve kaçan emirlerin fiyatın emirden uzaklaştığı durumlar olduğu
+    bilinir. OKX'in standart kademe perpetual ücretleri maker %0.02 / taker %0.05'tir.
+- **Tez, kollar, maliyetler, dolum modeli (limit = sinyal barının kapanışı, KESİN geçiş,
+  dolum fiyatı = limit), iki varyant ve N değerleri, ölçüler (1)–(3), geçme koşulları
+  (hafta kümeli bootstrap CI alt sınırı > 0; BH q = 0.05, m = 21), ileriye bakış kuralı,
+  kasa ve tahmin kullanıcı tarafından veri görülmeden verildi ve değiştirilmeden kayda
+  girer.** Bu bölümün eklediği her şey (emir yaşam döngüsünün ayrıntısı, getiri muhasebesi,
+  bahçe ortalamasının ağırlığı, (2)'nin hedge sorusu, bootstrap ayrıntısı, betimsel
+  tanımlar) 13'te AYRICA listelenir ve onay bekler.
+
+### 3. Veri, evren, sinyaller — §6r'den, DEĞİŞMEDEN
+
+- **Evren, kaynak, çekim, tutarlılık kapısı, uygunluk:** §6r > 3 aynen (13 sembol
+  `layers.ema.universe`; OKX 15m + 4H, koşuya özel geçici önbellek; 1D barı 4H'den, 00:00 UTC
+  hizalı — H/L altı 4H barının maks/min'i; 15m ↔ 4H kapısı §6q > TADİLAT-3'ün dar kesme
+  istisnasıyla; uygunluk `T − 60 gün` yaş + kolun son kapanmış barı; çekim sonu
+  `scripts/vault.py::vault_now()` — kasaya ait bar çekilmez).
+- **Kollar ve tabanlar:** §6r > 5'in tablosu — üç kol (1D, 4H, 15m), kol başına **59 taban**
+  (F1 10, F2 3, F3 10, F4 4, F5 6, F6 20, F7 6), ters YOK, parametreler kolun barı
+  cinsinden; kurallar, durum makineleri ve TADİLAT-2'nin dar okumaları §6q'dakiyle
+  birebir. **177 strateji.**
+- **Hedef ağırlık:** §6r > 6'nın strateji ağırlığı — zaman serisi aileleri `w_i = s_i / |E_b|`,
+  kesitsel LS ±1/(2k), LO +1/k. Stratejinin sembol `i` için bar `b` kapanışındaki HEDEFİ
+  `T_{s,i,b}` yalnızca `b` ve öncesinin kapanmış barlarıyla kurulur (kural 12).
+- **Sinyaller değişmez — test edilebilir hâli:** `T` serisi üç yürütme varyantında BİREBİR
+  aynıdır ve §6r'nin taban ağırlık serisiyle aynı özeti verir (altın değer testi); `T`
+  hiçbir yolda tutulan pozisyona ya da bir dolumun sonucuna bağlı DEĞİLDİR.
+- **Birim: strateji başına AYRI hesap.** §6r'nin portföyünden farkı budur: orada aileler ve
+  stratejiler aynı sembolde netleşiyordu; burada her strateji kendi emirlerini verir,
+  netleşme YOKTUR (kullanıcının ölçüsü "strateji başına"dır). Emirler (strateji, sembol)
+  çiftinde bağımsızdır.
+
+### 4. Maliyetler (kullanıcı; OKX perpetual, standart kademe)
+
+| Dolum | Oran (tek yön, `|ΔW|` başına) |
+|---|---|
+| **taker** | `τ = 0.0005 + slippage_base` = 0.0005 + 0.0005 = **%0.10** (`slippage_base` `config.yaml`dan okunur, tek kaynak) |
+| **maker** | `μ = 0.0002` = **%0.02**, kayma YOK |
+
+- **Stop çıkışları her zaman taker** (kullanıcı) — ⚠ **bu bahçede uygulanacak bir şey YOKTUR:**
+  bahçe stratejileri stop'suzdur (§6r > 15'in 5. sapması); her pozisyon değişikliği bir
+  sinyal değişikliğidir ve limit yoluna girer. Kural boşuna değil, **kayda** yazılır: evin
+  stop'lu modellerinde çıkışların bir kısmı zorunlu taker olurdu, yani bu ölçümün maker
+  kazancı onlara taşınırsa İYİMSERDİR (kabul edilen sapma 6).
+- **`fee_rate` (0.00055, Bybit taker) KULLANILMAZ:** yürütme mekanı kullanıcının tanımında
+  OKX'tir ve fiyat verisi de OKX'tir; sabitler betikte ön-kayıtlı olarak durur, `config.yaml`
+  DEĞİŞMEZ. Bedeli: buradaki taker referansı (%0.10) §6q/§6r'nin maliyetinden (%0.105)
+  küçüktür; iki ölçümün taker netleri birebir kıyaslanmaz.
+- Funding HARİÇ (§6o > O2, §6q, §6r ile aynı). Ağırlıkların fiyatla sürüklenmesi
+  modellenmez (§6q > O6).
+
+### 5. Yürütme — emrin yaşam döngüsü (her strateji × sembol için)
+
+**Gösterim.** Kolun barı `b`; `O_b, H_b, L_b, C_b` o barın açılış/yüksek/düşük/kapanışı.
+`P` = o anda TUTULAN ağırlık. Getiri ızgarası §6r > 6'nınkidir: `r_b = O_{b+1}/O_b − 1`.
+**N** (kullanıcı): **1D'de 1, 4H'de 2, 15m'de 4 bar** (≈ 1 gün, 8 saat, 1 saat).
+
+1. **Emrin doğumu (yalnızca HEDEF DEĞİŞTİĞİNDE; O1).** `b` kapanışında `T_b ≠ T_{b−1}` ise:
+   bekleyen emir varsa İPTAL edilir; yeni emir `Q = T_b − P` (P = `b` barının dolumlarından
+   sonra tutulan), **limit `ℓ = C_b`**, yaş 0. `Q = 0` ise emir yoktur. `T` değişmediyse
+   bekleyen emir AYNI limitle yaşamaya devam eder (O2) — her barda yeniden fiyatlanmaz.
+2. **Dolum testi (iki maker varyantı).** Emir `b+1, …, b+N` barlarında sırayla sınanır:
+   alış (`Q > 0`) bar `j`'de **`L_j < ℓ`** ise, satış (`Q < 0`) **`H_j > ℓ`** ise dolar —
+   **kesin eşitsizlik** (kullanıcı: kuyruk sırası bilinmediği için fiyatın limitin İÇİNDEN
+   geçmesi şart; `L_j = ℓ` DOLMAZ). **Dolum fiyatı = ℓ**, maliyet `μ·|Q|`. Dolum **ya hep ya
+   hiç**tir (O4): kısmi dolum yoktur, "kalan kısım" dolmamış emrin tamamıdır.
+3. **(a) MELEZ — BİRİNCİL.** `b+N` barının sonunda dolmamışsa kalan emir **taker** ile
+   `O_{b+N+1}`'de dolar (maliyet `τ·|Q|`).
+4. **(b) SAF MAKER — BETİMSEL.** `b+N` barının sonunda dolmamışsa emir iptal edilir, pozisyon
+   DEĞİŞMEZ ve **hedef bir sonraki kez değişene kadar yeni emir verilmez** (O1, O3). Pencere
+   (a) ile aynıdır: iki varyant YALNIZCA dolmayan emrin kaderinde ayrışır.
+5. **Öncelik (O12).** `T`, bekleyen bir emrin penceresi içinde (`b+k` kapanışında, `k ≤ N`,
+   `k = N` dâhil) yeniden değişirse eski emir iptal edilir ve (a)'nın taker'a düşüşü
+   UYGULANMAZ — artık geçerli olmayan bir hedefe piyasa emriyle gitmek, tam olarak
+   ölçülmek istenmeyen bir yürütme hatası olurdu. Yeni emir 1. adımdan doğar.
+6. **Taker — REFERANS (T).** Her `Q` `O_{b+1}`'de, `τ·|Q|` maliyetle dolar; yani `P ≡ T`
+   gecikmeli olarak — §6r'nin mekaniğinin strateji başına, bu maliyetle hâli.
+7. **Getiri muhasebesi (kesin, mum içi zamanlama GEREKMEZ).** Bar `j`'nin katkısı
+   `P_{açılış}·r_j + Q_dolan·(O_{j+1}/ℓ − 1) − maliyet`; `P_{açılış}` barın açılışında
+   tutulan, `Q_dolan` bar içinde limitle dolan emir. Pozisyon bir sonraki açılışta
+   değerlendiğinden, dolumun bar içinde NE ZAMAN olduğu sonucu değiştirmez; OHLC'den
+   bilinmeyen tek şey "dolum OLDU MU"dur ve o 2. adımın kuralıdır. Taker'a düşen emir
+   `O_{b+N+1}`'den itibaren olağan `r` ile işler.
+8. **İleriye bakış (kullanıcı).** Dolum kararı yalnızca dolum barının KENDİ H/L'sini kullanır;
+   sinyal (`T_b`) hiçbir zaman `b+1` ve sonrasını görmez. Test: `b+1 … ` barları bozulduğunda
+   `T_b` değişmez; `b+N+1` ve sonrası bozulduğunda `b`'de doğan emrin dolum kararı değişmez.
+
+**Dolum modelinin bir SONUCU (türetme; veri görülmeden, okumanın anahtarı).** 7/24 piyasada
+`O_{b+1} ≈ C_b = ℓ` (§6q > 4'ün kabulü). Yani **limitle dolan emir taker'la AYNI fiyattan
+girer** ve dolum barının sonundaki değeri taker'ınkiyle aynıdır (7): bu modelde FİYAT
+İYİLEŞTİRMESİ YOKTUR. Melezin taker'a karşı farkı üç parçaya ayrışır:
+
+`Δ_melez = Σ_dolan (τ − μ)·|Q|  −  Σ_düşen Q·(O_{b+N+1}/O_{b+1} − 1)  +  ε`
+
+— ücret tasarrufu (limitle dolanlarda, emir başına %0.08), **kaçırma bedeli** (taker'a düşen
+emirlerin N bar boyunca KAÇIRDIĞI işaretli hareket; düşenler taker ücretini zaten öder) ve
+`ε` (açılış boşluğu `O_{b+1} − C_b`, iptal/yenileme etkileri). Dolan emirlerin ters seçimi
+bu ölçüde DOLUM FİYATINDAN girmez; yalnızca **hangi emirlerin kaçtığı** üzerinden girer
+(fiyatın limitin içinden hiç geçmediği bar, fiyatın emirden uzaklaştığı bardır). Betik bu
+ayrışmayı yazar ve toplamının Δ ile tutarlılığını (artık `ε` dâhil) raporlar (6 > 3).
+Saf maker'da kaçırma bedeli N bar değil, **pozisyonun hedefle yeniden buluşmasına kadar**
+sürer — kaçan emrin getirisi o sürenin tamamında kaybedilir, taker maliyeti de ödenmez.
+
+### 6. Ölçüler ve istatistik
+
+**Dönem getirisi (strateji `s`, varyant `v ∈ {T, a, b}`, ISO hafta `w`):** `N^v_{s,w}` = hafta
+`w`'nin barlarında 5 > 7'nin katkılarının ARİTMETİK toplamı (§6q > O3; bileşik değil).
+Haftalar §6r > 9'un TAM ISO haftalarıdır (A 129, B 116).
+
+**(1) İYİLEŞME — BİRİNCİL (kullanıcı), varyant (a).**
+- Strateji başına eşleştirilmiş fark `d_{s,w} = N^a_{s,w} − N^T_{s,w}`; **kol başına bahçe
+  ortalaması** `D_w = (1/59) Σ_s d_{s,w}` — taban eşit ağırlık (O5).
+- İstatistik `D̄` = haftalık ortalama (dönem toplamı `D̄ × hafta` ayrıca yazılır).
+- **Aralık: hafta kümeli bootstrap** — haftalar YERİNE KOYARAK çekilir
+  (`scripts/backtest_dc.py::cluster_mean_draws`, hafta başına tek değer `D_w`); **10 000
+  çekiliş**, tohum `f"{random_seed}:maker:iyilesme:{kol}:{dönem}"`, %95 iki yönlü yüzdelik
+  aralık (`backtest_dc.py::_percentiles(çekilişler, 0.05)`) (O8). Eşleştirme hafta içinde
+  kurulur: iki varyant aynı stratejilerin aynı haftasıdır.
+- **GEÇME (kullanıcı): CI alt sınırı > 0, A'da; B yalnızca A'da geçen kolda aynı kuralla.
+  DOĞRULANDI = A ∧ B.** Çoklu düzeltme YOK (kullanıcının koşulu kol başınadır; O7) — ama
+  tek yönlü bootstrap p'si ve m = 3'lük BH düzeltmesi betimsel olarak yazılır.
+- Mekanik okuma: A ∧ B → *"melez maker yürütme bu bahçede taker'dan iyi"*; A'da alt ≤ 0 ≤ üst
+  → *"ayırt edilemedi"*; A'da **üst sınır < 0** → *"melez maker KÖTÜ — kaçırma bedeli ücret
+  tasarrufunu aşıyor"* (bir bulgu olarak yazılır, bir geçiş değildir); A geçip B geçmezse →
+  *"doğrulanamadı"*.
+
+**(2) KÂRLILIK (kullanıcı), varyant (a) — 7 aile × 3 kol = 21 hücre.**
+- Hücre `(F, kol)`: `Ñ_{F,w} = ortalama_{s∈F} N^a_{s,w}` (aile içinde taban eşit ağırlık —
+  ailenin stratejilerinden eşit ağırlıklı, netleşmesiz bir sepet).
+- **p (tek yönlü):** aynı hafta kümeli bootstrap'ın çekilişlerinden
+  `p = (1 + #{çekiliş ≤ 0}) / (10 000 + 1)`; tohum `f"{random_seed}:maker:karlilik:{kol}:{F}:{dönem}"`.
+- **GEÇME: A'da BH q = 0.05, m = 21 VE %95 CI alt sınırı > 0**; B yalnızca A'da geçen
+  hücrelerde, `m_B` = A'da geçen hücre sayısı, aynı kural. **DOĞRULANDI = A ∧ B.**
+- ⚠ **Kullanıcının notu, bağlayıcı:** §6q bahçenin taker ile net zararda olduğunu gösterdi ve
+  bu biliniyordu; bu yüzden **(2)'de DOĞRULANAN bir hücre bile KABUL EDİLMEZ — kasada ayrıca
+  sınanır** (11). Durumu en fazla "deneme — kasa testi bekleniyor"dur.
+- **KAPI hedge'li mi ham mı (O6; bu ön-kaydın önerisi: HEDGE'Lİ).** §6q ve §6r'nin
+  TADİLAT-1'lerinin gerekçesi burada daha da güçlüdür: B dönemi büyük ölçüde yükselişti ve
+  LO tabanlar (F1, F3, F4, F5, F6'nın yarısı) net long taşır — ham bir "net > 0" ailenin
+  becerisini değil piyasanın yönünü ölçebilir; o soruyu zaten çıpa (`buyhold`) cevaplar.
+  Hedge'li net: stratejinin **tutulan** net maruziyeti `e_{s,j} = Σ_i P_{s,i,j}` (bar açılışında
+  bilinir) eşit ağırlıklı sepetle hedge'lenir — katkıya `−e_{s,j}·m_j` eklenir (`m_j` = uygun
+  sembollerin `r_j` ortalaması) ve hedge bacağı **her zaman taker**, netleşmesiz:
+  maliyet `τ·|e_{s,j} − e_{s,j−1}|` (muhafazakâr). Bar içinde limitle dolan emrin o barın
+  kalanındaki maruziyeti hedge'siz kalır (kabul edilen sapma 7). Seçilmeyen hâl aynı
+  kurallarla BETİMSEL yazılır.
+
+**(3) BETİMSEL (kapı yok, BH yok) — kol × aile, (a) ve (b) için ayrı:**
+- **Dolum oranı:** doğan emirlerin limitle dolan payı (sayı ve `|Q|` ağırlıklı), ilk barda
+  dolan payı, (a)'da taker'a düşen payı, iptal edilip yenilenen (5 > 5) payı.
+- **Kaçırmanın bedeli:** (a) taker'a düşen emirlerde `sign(Q)·(O_{b+N+1}/O_{b+1} − 1)`, `|Q|`
+  ağırlıklı ortalama (bp); (b) iptal edilen emirlerde, taker varyantının o `Q` ile hedef bir
+  sonraki kez değişene kadar kazandığı işaretli getiri.
+- **Ters seçim bedeli:** dolan emirlerde dolum sonrası kısa vadeli işaretli getiri
+  `sign(Q)·(O_{f+1+N}/ℓ − 1)` (`f` dolum barı) ile AYNI ufukta TÜM doğan emirlerin
+  `sign(Q)·(O_{b+1+N}/O_{b+1} − 1)` ortalaması yan yana; fark = dolumun koşullu seçimi.
+- **Δ ayrıştırması** (5'in özdeşliği): ücret tasarrufu, kaçırma bedeli, artık `ε`; toplamın
+  Δ ile tutarlılığı.
+- **Referans netler:** taker, (a), (b) aile başına net (ham ve hedge'li); günlük devir
+  varyant başına; (1) ve (2)'nin (b) varyantıyla ve ham/hedge'li seçilmeyen hâliyle
+  hesaplanmış aynı istatistikleri — hepsi "betimsel" etiketiyle.
+- **Değerlendirilemez = GEÇMEDİ** (p = 1, m küçültülmez): kolun veri kapısı düştüyse (§6r > 3)
+  ya da dönemde `< 10` hafta varsa (§7.6'nın "sıfır gözlem" ayrımı aynen).
+
+### 7. Dönemler ve simülasyon
+
+- Haftalar §6r > 9 ile birebir: **A** 2022-01-03 → 2024-06-23 (129 hafta), **B** 2024-07-01 →
+  2026-09-20 (116 hafta; kasa başlangıcı 2026-09-27T00:00'dan önceki son tam hafta).
+  Sınırlar `scripts/backtest_ema.py`den ve `scripts/vault.py`den gelir; girdi DEĞİLDİR.
+- **Tek, kesintisiz simülasyon (O11):** her strateji × varyant A'nın ilk haftasından 4 hafta
+  önce (2021-12-06) `P = T` ile başlar (üç varyant eşit) ve kasa başlangıcına kadar koşar.
+  Dönem sınırında pozisyon ve bekleyen emir SIFIRLANMAZ — maker ve taker hesaplarının A
+  başında farklı yerde durması ölçümün parçasıdır. Kasa başlangıcında bekleyen emirler
+  hiçbir haftaya girmez. Embargo YOK (§6r > 9'un gerekçesi).
+- **Tek `measure` koşusu** A ve B'yi birlikte hesaplar; hiçbir seçim A'nın sonucuna bağlı
+  değildir (§6o > 9).
+- **Güç (sonuç görülmeden, dürüst).** (1)'in hassasiyeti kolun emir sayısıyla ölçeklenir:
+  15m'de emir sayısı çok yüksektir ve `D_w` dar olmalıdır; 1D'de strateji başına haftada
+  birkaç emir düşer ve kaçırma bedeli günlük hareketin mertebesindedir — 1D'de geniş bir
+  aralık ve "ayırt edilemedi" olağan sonuçtur ve bir ret olarak OKUNMAZ. Rapor her kol için
+  emir sayısını ve `D_w`'nin std'sini yazar (kesinlik beyanı, post-hoc güç değil).
+
+### 8. TAHMİNLER (sonucu görmeden)
+
+- **Kullanıcının (kayıt, bağlayıcı değil):** (1) üç kolda da geçer, en büyük iyileşme 15m'de.
+  (2) hiçbir hücre A ve B'de birlikte geçmez; en yakın olanlar 15m ve 4H'de F4/F7 (geri
+  dönüş). Trend ailelerinde melez yürütmenin kaçan işlem bedeli, ücret tasarrufunun büyük
+  kısmını yer.
+- **Ön-kaydı yazanın (ayrı, kayıt):** (1) 15m'de GEÇER ve en büyük iyileşme oradadır — ücret
+  tasarrufu devirle doğrusal büyür, kaçırma bedeli ise kaçırma oranı × N barlık hareketle;
+  4H'de nokta pozitif ama geçmesi belirsiz; **1D'de ayırt edilemez ve nokta işareti
+  belirsiz** — emir başına %0.08'lik tasarrufa karşı, kaçan bir emrin bedeli bir günlük
+  tek yönlü hareket mertebesindedir; yani kullanıcının "üç kolda da geçer" tahminiyle 1D'de
+  ayrışıyorum. (2) hiçbir hücre A ∧ B'de geçmez (kullanıcıyla aynı); hedge'li netin en
+  yükseği 15m'de değil 4H ya da 1D'dedir, çünkü maker 15m'de bile yalnızca maliyeti
+  küçültür, işaretini çevirmez. Kaçırma bedeli trend/kırılım ailelerinde (F1, F5) geri dönüş
+  ailelerinden (F4, F7) büyüktür (kullanıcıyla aynı yön); dolan emirlerin dolum sonrası
+  işaretli getirisi her kolda TÜM emirlerinkinden düşüktür (ters seçim görünür). (b) saf
+  maker 1D ve 4H'nin trend ailelerinde (a)'dan kötüdür.
+
+### 9. Sonucu gördükten sonra (ek; §7'ye ek olarak)
+
+- N, limit fiyatı (`C_b`), kesin geçiş kuralı, ya-hep-ya-hiç dolum, emir yaşam döngüsü (5),
+  maliyetler, bahçe ve ağırlıklar, dönemler, bootstrap (çekiliş, tohum, alfa), BH ve m
+  DEĞİŞMEZ. "Limit `C_b ± x`'te", "N = 8", "yalnızca şu aileler maker" varyantı koşulmaz.
+- (b) sonradan birincil yapılmaz; (3)'ün aile/kol kırılımından bir aile seçip "maker'la
+  kârlı" demek §7.2'nin post-hoc filtresidir.
+- Tek sefer: sayı üretmiş `measure` koşusu tekrarlanmaz; hiçbir sayı üretmeden düşen koşu
+  §7.6 gereği tekrarlanır ve kayda geçer.
+
+### 10. Okuma — (1) ve (2) birlikte (MEKANİK)
+
+| (1) iyileşme | (2) kârlılık | Cümle |
+|---|---|---|
+| DOĞRULANDI | hiçbir hücre | *"maker yürütme maliyeti düşürüyor ama hiçbir aileyi kârlı yapmıyor"* |
+| DOĞRULANDI | ≥ 1 hücre | *"maker yürütmeyle net pozitif aile(ler) var — KASA TESTİ BEKLENİYOR, kabul edilmedi"* |
+| DOĞRULANMADI | ≥ 1 hücre | *"aile maker'la net pozitif, ama iyileşme bahçe genelinde ayırt edilemedi"* — o hücrenin (1) farkı ayrıca yazılır; kasa yine şarttır |
+| DOĞRULANMADI | hiçbir hücre | *"ayırt edilemedi"* (ya da (1)'in üst sınırı < 0 ise *"melez maker kötü"*) |
+
+### 11. Kasa bağlantısı (§7.8)
+
+- A ve B'nin tamamı kasa başlangıcından ÖNCEDİR; kasaya ait tek bar çekilmez (test).
+- **(2)'de bir hücre DOĞRULANDI ise** bahçe, yürütme kuralları (5), maliyetler ve betik
+  DONDURULUR (commit hash'leri bir dondurma kaydında) ve hücrenin kasa sınaması, kasaya
+  dokunmadan önce, aynı kurallarla ayrı bir ön-kayıtla gelir. **Asgari kasa uzunluğu
+  (yapısal):** hafta kümeli bootstrap'ın ve `< 10` hafta kuralının anlamlı olması için
+  ≥ 26 tam hafta (en erken 2027-03-29); gerçek eşik o ön-kayıtta, sonuç görülmeden yazılır.
+- **(1) DOĞRULANDI ise** hiçbir model, motor ya da defter değişmez (1). Motora limit emri
+  eklemek ayrı bir karar ve ayrı bir ön-kayıttır; o ön-kayıt kasa sınamasını içerir.
+- Kasa sonucu da kasa verisidir (§7.8): sınaması görülen hücre değiştirilemez.
+
+### 12. Sicil
+
+§6c'de **13. satır** (12, PR #65'teki §6r'nindir; iki PR birleşince tablo 12 → 13 sırasıyla
+durur). Tez kullanıcının kendi tezidir → **ev içi BH paydasına GİRER.** İki ölçünün kendi
+aileleri (1: kol başına, düzeltmesiz — O7; 2: m = 21) 6'da düzeltilir; sicile tek satır
+olarak girer.
+
+### 13. ONAY BEKLEYEN noktalar — kullanıcının tanımına bu bölümün EKLEDİKLERİ
+
+Kod bunlar onaylanmadan yazılmaz. Her biri bir öneridir; değişiklik bir TADİLAT'la kayda girer.
+
+| # | Nokta | Bu ön-kaydın seçimi | Alternatif |
+|---|---|---|---|
+| **O1** | Emrin doğumu | yalnızca hedef DEĞİŞTİĞİNDE; (b)'de iptal edilen emir hedef tekrar değişene kadar yenilenmez | her bar kapanışında `P ≠ T` ise yeni limit — (b)'yi "fiyatı kovalayan maker"a çevirir ve kaçırmayı neredeyse yok eder; kullanıcının "dolmazsa iptal, pozisyon değişmez" cümlesine ters |
+| **O2** | Bekleyen emir, hedef değişmediyse | AYNI limit (`C_b`) N bar boyunca | her bar son kapanışa yeniden fiyatlamak |
+| **O3** | (b)'nin penceresi | (a) ile aynı N | yalnızca 1 bar |
+| **O4** | Dolum | ya hep ya hiç (OHLC'de hacim-fiyat dağılımı yok) | kısmi dolum modeli (uydurma bir parametre açar) |
+| **O5** | (1)'in bahçe ortalaması | taban eşit ağırlık (59; "bahçe ortalaması"nın harfiyen hâli) | aile eşit ağırlık (1/7; F6'nın 20/59 payını dengeler) — betimsel olarak yazılır |
+| **O6** | (2)'nin kapısı | **hedge'li** net (§6q/§6r TADİLAT-1'in emsali; hedge bacağı taker, netleşmesiz); ham betimsel | kullanıcının harfiyen "net getiri > 0"ı (ham) kapı; hedge'li betimsel |
+| **O7** | (1)'de çoklu düzeltme | yok (kullanıcının koşulu kol başına CI); BH m = 3 betimsel | BH q = 0.05, m = 3 bağlayıcı |
+| **O8** | Bootstrap | hafta kümeli, 10 000 çekiliş, %95 iki yönlü yüzdelik | §6q'nun iki bloklu muhafazakâr hâli (hafta ∧ 4 hafta, alt sınırların minimumu) |
+| **O9** | Maliyet sabitleri | OKX: τ = %0.05 + `slippage_base`, μ = %0.02, kaymasız; `fee_rate` kullanılmaz; funding HARİÇ | taker'da `fee_rate` (%0.055, Bybit) — mekânı veriyle ayrıştırır |
+| **O10** | Hesap birimi | strateji başına ayrı hesap, stratejiler arası netleşme yok | §6r gibi aile/bahçe portföyünde netleşme (ölçünün "strateji başına" tanımından çıkar) |
+| **O11** | Simülasyon | tek, kesintisiz; A'dan 4 hafta önce `P = T` ile başlar; dönem sınırında sıfırlama yok | her dönemi `P = T` ile ayrı başlatmak |
+| **O12** | Öncelik | pencere içinde hedef değişirse eski emir iptal, taker düşüşü yok | eski emir önce taker'la kapanır, sonra yeni emir |
+
+**Kabul edilen sapmalar (onaydan bağımsız, kayıt):** (1) kuyruk sırası, post-only reddi ve
+alış-satış aralığı modellenmez — `C_b`'deki limitin kitapta beklediği varsayılır; (2) kesin
+geçiş kuralı muhafazakârdır (limit fiyatına DOKUNAN barların bir kısmı gerçekte dolardı);
+(3) fiyat iyileştirmesi yok (açılışta limitin altında açılan barda da dolum `ℓ`'den) —
+muhafazakâr; (4) hayatta kalan yanlılığı, perp fiyatı, nakit getirisi 0, evren dönem içinde
+büyür (§6r > 15); (5) stop'suz, kaldıraçsız vektörel stratejiler — sonuç evin modellerine
+doğrudan taşınmaz; (6) stop'lu modellerde zorunlu taker çıkış payı yok — maker kazancı onlar
+için İYİMSER; (7) (2) hedge'li ise bar içi dolumun o barın kalanındaki maruziyeti
+hedge'siz; (8) 1D barının H/L'si 4H'den; (9) §6q > TADİLAT-3 > 6'nın kesinlik penceresi
+sapması 4H/1D kollarında aynen — o pencerede 4H H/L'si de eksik ondalık taşıyabilir ve kesin
+geçiş testi orada ondalık kesmesine duyarlıdır (pencere içi emirler ayrıca sayılır).
+
+### 14. Uygulama planı (onaydan ve PR #65'in birleşmesinden SONRA, ayrı commit'ler)
+
+1. **Tek kopya:** kol kurulumu ve taban listesi `scripts/measure_texture_regime.py`den
+   (`build_arm`, `bases`) İTHAL edilir; ortak bir modüle taşınmaları gerekirse §6r'nin
+   ağırlıkları taşımadan önceki hâliyle birebir kalır (altın değer testi, `weight_digest`
+   deseni). Aile kuralları `scripts/zoo_families.py`den. İkinci bir uygulama yazılmaz.
+2. `scripts/measure_maker_execution.py` — iki aşama. **`preflight`:** kapsam, tutarlılık
+   kapısı, uygunluk, kol başına strateji sayısı ve **doğan emir sayısı** (yalnızca `T`'nin
+   değişimlerinden — pozisyon tabanlı, fiyat sonrası bilgi yok). Dolum oranı, getiri, kaçırma
+   bedeli ÜRETİLMEZ (test). **`measure`:** 5–6'nın tamamı, tek sefer. `strategies/*`,
+   `core/portfolio|engine|ledger|metrics` import EDİLMEZ; `texture_regime*` ve
+   `model_momentum*` çıktıları OKUNMAZ (test). Pencereler `backtest_ema`den, kesim
+   `vault.py`den, bootstrap ve yüzdelikler `backtest_dc.py`den.
+3. **Testler:** `T` serisinin üç varyantta birebir aynı olması ve §6r ağırlıklarıyla altın
+   değer eşliği; kesin geçiş (`L_j = ℓ` alışta dolmaz, `L_j < ℓ` dolar; satış simetrik);
+   dolum fiyatı `ℓ` ve 5 > 7'nin muhasebesi (elle hesaplanmış örnek); melezin `O_{b+N+1}`
+   düşüşü ve N'nin kol başına değeri; öncelik kuralı (5 > 5); saf maker'ın yenilemediği;
+   taker varyantının `τ·|ΔT|` formülüne eşitliği; ileriye bakış (5 > 8'in iki bozma testi);
+   5'in ayrışma özdeşliği (açılış boşluğu sıfırken `ε = 0`); hedge özdeşliği; p, BH ve
+   bootstrap determinizmi; kasaya ait bar çekilmemesi; çıkış kodları (3 = veri kapısı).
+4. `.github/workflows/measure-maker-execution.yml` — `measure-texture-regime.yml` deseni:
+   aşama `scripts/trigger_stage.py`den (`.github/triggers/mx-preflight*.run`,
+   `mx-measure*.run`), ölçüm işi `contents: read`, zaman aşımı 15m çekimine göre;
+   `pin-results` yalnızca aynı koşunun artifact'ini `docs/data/maker_execution*`e commit eder
+   (strateji × varyant × hafta net matrisi ve emir düzeyi özetleri dâhil). Cron YOK.
+5. `CLAUDE.md` tablosuna betik ve workflow satırları; `docs/decisions.md`'ye sonuç kaydı.
+
+### TADİLAT-1 — onay noktalarının tamamı KABUL; bağlayıcı hâl *(2026-09-28, kullanıcı kararı; kod yazılmadan, HİÇBİR veri görülmeden)*
+
+Bu TADİLAT 13'ün O1–O12'sini karara bağlar. **Hiçbir nokta değiştirilmedi:** her biri bu
+ön-kaydın önerdiği hâliyle kabul edildi; 1–12'nin metni ve kabul edilen sapmalar olduğu gibi
+bağlayıcıdır. Kararın gerekçeleri (kullanıcı) kayda geçer:
+
+- **O1 — kabul.** Emir yalnızca hedef DEĞİŞTİĞİNDE doğar; saf maker'da (b) dolmayan emir
+  YENİLENMEZ. Her barda yeniden limit koymak "fiyatı kovalayan maker"dır — o başka bir
+  yürütme biçimidir ve bu tezin kapsamında değildir.
+- **O6 — kabul: (2)'nin KAPISI HEDGE'Lİ net getiridir, ham net BETİMSEL.** §6q ve §6r ile
+  tutarlı; B'nin yükseliş eğilimi long tabanları ham kapıdan geçirebilirdi. Hedge'in tanımı
+  6 > (2)'dekidir (tutulan net maruziyet, eşit ağırlıklı sepet, hedge bacağı her zaman
+  taker, netleşmesiz). 10'un okuma tablosundaki "(2) kârlılık" sütunu hedge'li kapının
+  sonucudur.
+- **O7 — kabul.** (1) kol başına DÜZELTMESİZ: A ∧ B şartı yanlış pozitif riskini zaten
+  düşürür ve (1)'in asıl değeri teşhistir. BH (m = 3) betimsel kalır.
+- **O5 — kabul.** (1)'in bahçe ortalaması 59 tabanın EŞİT ağırlığıdır; aile eşit ağırlığı
+  (1/7) betimsel olarak yazılır.
+- **O2, O3, O4, O8, O9, O10, O11, O12 — kabul**, 13'teki hâliyle: bekleyen emir aynı limitle
+  N bar yaşar; (b)'nin penceresi (a) ile aynı N; ya hep ya hiç dolum; hafta kümeli bootstrap
+  (10 000 çekiliş, %95 iki yönlü yüzdelik); OKX sabitleri (τ = %0.05 + `slippage_base`,
+  μ = %0.02, `fee_rate` kullanılmaz, funding HARİÇ); strateji başına ayrı hesap; tek,
+  kesintisiz simülasyon (A'dan 4 hafta önce `P = T`); pencere içinde hedef değişirse eski
+  emir iptal, taker düşüşü yok.
+
+**Tahminler (8) DEĞİŞMEZ ve AYRI kalır.** Kullanıcının tahmini ile ön-kaydı yazanınki iki
+ayrı kayıttır; birleştirilmez, uzlaştırılmaz. İkisinin açıkça ayrıştığı hücre **(1) 1D**'dir
+(kullanıcı: geçer; ön-kaydı yazan: ayırt edilemez, işaret belirsiz — emir başına %0.08'lik
+tasarrufa karşı kaçan bir emrin bedeli bir günlük hareket mertebesinde). Sonuç bu hücrede
+iki tahminden birini düzeltecektir ve SONUÇ bölümü bunu hücre hücre yazar.
+
+**13'ün durumu:** O1–O12 kararlaştırıldı. Kod bu TADİLAT'tan SONRA ve **PR #65 (§6r)
+birleştikten sonra** yazılır (14); o birleşme olmadan bahçenin kuralları ve kol kurulumu
+bu dalda yoktur ve ikinci kez yazılmaz.
+
+### TADİLAT-2 — kesinlik penceresi hariç BETİMSEL duyarlılık satırı *(2026-09-28, kullanıcı kararı; preflight koşarken, HİÇBİR dolum/getiri görülmeden)*
+
+**Gerekçe (kullanıcı).** OKX 4H geçmişinin eksik ondalığı (2022-04-23 → 06-01, §6q > TADİLAT-3;
+ayrıca 2022-12-18) H/L'yi aşağı KESER: o barlarda alış limitinin kesin geçişi kolaylaşır, satışınki
+zorlaşır — dolum testine ASİMETRİK bir etki. Pencere kısadır ve emirleri preflight'ta ayrıca
+sayılır (13'ün 9. sapması), yani kapıyı etkilemesi beklenmez.
+
+**Eklenen (yalnızca betimsel; kapı, BH, m, geçme kuralı DEĞİŞMEZ):** dönem A'da pencereye ya da
+2022-12-18'e değen ISO haftaları (8 hafta) dışarıda bırakılarak (1)'in `D_w` istatistiği ve
+(2)'nin 21 hücresinin hedge'li melez neti AYNI bootstrap'la yeniden hesaplanır
+(`excluding_precision_weeks`, dışarıda bırakılan hafta sayısıyla). B bu haftaları içermez.
+
+**Tek sapma kullanıcının cümlesinden:** satır "pencerenin emir payı büyük çıkarsa" değil HER
+ZAMAN hesaplanır — koşullu bir satır, eklenip eklenmeyeceğini veriye bakarak seçmek olurdu.
+Okunuşu koşuldur: pencerenin emir payı (preflight'ta `orders_in_known_precision_window`)
+küçükse satır bir kayıttır; büyükse SONUÇ'ta kapının yanında yazılır ve iki sayı ayrışıyorsa
+bu bir bulgu olarak kayda geçer — kapı yine hedge'li/ham tanımıyla, tüm haftalar üzerinden
+kalır.
+
+### PREFLIGHT — kapsam ve doğan emir sayısı *(2026-09-28, `measure-maker-execution` #36410493938, tetikleyici `8ac6551`, çıkış 0; yalnızca kapsam ve sayım — dolum oranı, getiri, kaçırma bedeli YOK)*
+
+- **Çıktının içeriği:** log'daki PREFLIGHT yükünde dolum, getiri, net, kaçırma ya da ters
+  seçim alanı yoktur (aranıp bulunmadı); yalnızca kapsam, tutarlılık, uygunluk ve emir sayısı.
+- **Tutarlılık (15m ↔ 4H):** 13 sembolün 13'ü geçti. Kesinlik farkı yalnızca üç sembolde,
+  208 / 206 / 204 bar, hepsi bilinen pencerenin içinde; `outside_known_window` 13 sembolde BOŞ.
+  Kalan uyuşmazlıklar yalnızca 2022-12-18 00:00 ve/veya 08:00: bir sembolde 2, sekizinde 1,
+  dördünde 0. §6r > PREFLIGHT ile birebir aynı; yeni bir olay yok.
+- **Uygunluk:** üç kolda da A'nın ilk barında 9, B'nin ilk barında 12 uygun sembol (asgari 5);
+  13 sembolün hepsi bir noktada uygun. Üç kol iki dönemde de değerlendirilebilir.
+- **Strateji:** 59 taban/kol, 177 strateji.
+- **Doğan emir sayısı** (hedefin değiştiği (satır, taban, sembol) sayısı):
+
+| Kol | N | A emir | A gün başına | A taban × gün başına | B emir | B taban × gün başına |
+|---|---|---|---|---|---|---|
+| 1D | 1 | 81 067 | 89.8 | 1.52 | 88 303 | 1.84 |
+| 4H | 2 | 495 510 | 548.7 | 9.30 | 537 875 | 11.23 |
+| 15m | 4 | 8 189 420 | 9 069 | 153.7 | 8 802 795 | 183.7 |
+
+  Aile dağılımı A'da F6 ağırlıklıdır (her barda yeniden sıralanır): 1D %55, 4H %56, 15m %56;
+  ardından F4 (%17), F7 (%11), F1 (%10–11); F5 en azdır (%1 civarı).
+- **Kesinlik penceresi ve 2022-12-18 (TADİLAT-2):** pencereye düşen emir 1D 3 009, 4H 19 827,
+  15m 326 611; A emirlerinin ~%3.7 / %4.0 / %4.0'ı — pencerenin A'daki gün payıyla (~%4.4)
+  orantılı, yani pencere emir bakımından olağan dışı değil. 2022-12-18'de 74 / 490 / 6 377.
+  15m kolu dolum testinde kendi 15m mumlarını okuduğu için 4H kesmesinden etkilenmez; etki
+  yalnızca 1D ve 4H'de mümkündür. TADİLAT-2'nin satırı bu yüzden bir KAYITTIR.
+
+### SONUÇ — (1) üç kolda DOĞRULANDI, (2) hiçbir hücrede GEÇMEDİ: maker yürütme maliyeti düşürüyor ama hiçbir aileyi kârlı yapmıyor *(2026-09-28, `measure-maker-execution` #36435759788, tetikleyici `e22d439`, sonuçlar `45fde50`; kullanıcı onayı 2026-09-28)*
+
+Tek koşu, çıkış 0. Yük `docs/data/maker_execution.json`, strateji × varyant × hafta net matrisi
+`docs/data/maker_execution_weeks.csv`. Okuma sırası kullanıcı tarafından SONUÇ görülmeden verildi
+ve bu bölüm o sırayı izler. Veri PREFLIGHT'taki gibidir.
+
+⚠ **Birim:** yüzdeler dönem içi bar net getirilerinin ARİTMETİK TOPLAMIDIR (§6r > SONUÇ ile aynı),
+hesap getirisi değildir; strateji başına ağırlık toplamı ≤ 1. 15m'nin binlerce yüzdelik
+mertebeleri günde ~30 birim devir × maliyet × 903 günün toplamıdır.
+
+**1. (1) İYİLEŞME — melez − taker, bahçe ortalaması (59 taban eşit), dönem A (129 hafta).**
+
+| Kol | Δ (dönem toplamı) | haftalık ort. [%95 CI] | Karar A | ücret tasarrufu | kaçırma bedeli | artık |
+|---|---|---|---|---|---|---|
+| 1D | +%17.2 | +%0.134 [+0.112, +0.152] | GEÇTİ | +%22.9 | −%4.3 | −%1.4 |
+| 4H | +%109.6 | +%0.850 [+0.801, +0.894] | GEÇTİ | +%140.5 | −%19.4 | −%11.4 |
+| 15m | +%1783 | +%13.82 [+13.60, +14.05] | GEÇTİ | +%2216 | −%204 | −%228 |
+
+Kaçırma bedeli tasarrufun 1D'de %19'unu, 4H'de %14'ünü, 15m'de %9'unu yiyor; artık (açılış
+boşluğu `O_{b+1} − C_b` ve iptal/yenileme etkileri) %6 / %8 / %10. BH (m = 3, betimsel) üç kolu da
+kabul ediyor (p = 1/10 001).
+
+**2. B doğrulaması (116 hafta).** Üç kol da geçti: 1D +%0.147/hf [+0.122, +0.167] (toplam +%17.0),
+4H +%0.854 [+0.804, +0.901] (+%99.1), 15m +%14.63 [+14.47, +14.79] (+%1697). Ayrışma A ile aynı
+yapıda (1D: tasarruf +%22.1, kaçırma −%3.6, artık −%1.5). **(1) üç kolda DOĞRULANDI.**
+
+**3. (2) KÂRLILIK — melez, HEDGE'Lİ net, 21 hücre, A (BH q = 0.05, m = 21 ∧ CI alt > 0).**
+Hiçbir hücre geçmedi → `m_B = 0`, **DOĞRULANAN hücre yok.** A'da en yakınlar:
+
+| Hücre | hedge'li net A [%95 CI, dönem] | p | B (bilgi — doğrulama değil) |
+|---|---|---|---|
+| 1D/F6 | +%62.4 [−1.8, +131.1] | 0.029 | +%67.1, p 0.040 |
+| 1D/F2 | +%14.1 [−19.8, +51.2] | 0.218 | +%27.3 [+0.3, +55.7], p 0.024 |
+| 1D/F5 | +%6.1 | 0.319 | +%15.6, p 0.109 |
+| 1D/F3 | +%4.2 | 0.369 | +%19.4 [+0.5, +38.8], p 0.022 |
+| 4H/F5 | +%2.3 | 0.439 | −%0.04 |
+
+BH'nin birinci eşiği 0.0024; 1D/F6'nın p'si onun on katından büyük. 15m'de yedi hücrenin hepsi ve
+4H'de F1, F4, F6, F7 net negatif ve CI'ları tamamen sıfırın altında. ⚠ **15m'de hedge'li net ham
+netten çok daha negatiftir** (ör. F4 −%5835 ↔ ham −%1704): hedge bacağı ön-kayıt gereği her zaman
+taker ve netleşmesizdir (O6) ve net maruziyet her emirde değiştiği için 15m'de hedge devri strateji
+devrine yakın, üstelik %0.10'dan fiyatlanıyor. Bu, kapıyı 15m'de muhafazakâr yapan bilinçli bir
+seçimdir; ham net de 15m'de yedi ailede negatif olduğu için karar değişmez. Ham (betimsel) 1D'de
+F1–F3, F5, F6 pozitif (+%50 … +%79, A) — hedge'le birlikte küçülüyor ya da işaret değiştiriyor,
+yani yön (beta) taşıyor.
+
+**4. Dolum, kaçırma, ters seçim (betimsel; A, melez).**
+
+| Kol | dolum oranı | ilk barda | taker'a düşen | iptal/yenilenen | kaçırma bedeli (bp/kaçan emir) | seçim (dolan − tümü, bp) |
+|---|---|---|---|---|---|---|
+| 1D | %99.6 | %99.6 | %0.3 | %0.1 | 480 | −2.7 (B: +0.6) |
+| 4H | %99.2 | %99.0 | %0.4 | %0.5 | 298 | −2.2 |
+| 15m | %96.1 | %94.8 | %0.8 | %3.1 | 90 | −2.2 |
+
+- **Dolum oranı neredeyse mekanik olarak ~1'dir** — kuralın bir sonucu, bulgusu değil: limit
+  `C_b`'dedir ve 7/24 piyasada `O_{b+1} ≈ C_b`; sonraki barın dibinin açılışın KESİN altına
+  inmemesi yalnızca açılıştan tek yönlü yükselen (satışta düşen) barlarda olur. Kaçan emir az
+  ama pahalı: kaçan emir, fiyatın emirden hemen uzaklaştığı emirdir (1D'de bir günlük hareket,
+  ~%4.8). Bu yüzden (1)'in kazancı büyük ölçüde ücret farkının aritmetiğidir: dolan emir taker'la
+  aynı fiyattan girer (5 > sonuç) ve %0.08 tasarruf eder.
+- **Trend aileleri:** kaçırma bedeli 4H ve 15m'de trend ailelerinde (F1/F2/F3/F5) geri dönüş
+  ailelerinden (F4/F7) büyük (4H: 194–264 ↔ 116/204 bp; 15m: 78–114 ↔ 0.2/63 bp); 1D'de
+  karışık (en yüksek F4, 561 bp). Ama kaçan emir PAYI her ailede %0.1–2.3 olduğu için trend
+  ailelerinde de kaçırma tasarrufun "büyük kısmını" yemiyor.
+- **Devrin payı:** aile netlerinde taker → melez kazancının çoğu yüksek devirli ailelerden: 4H'de
+  F6 (+%229) ve F4 (+%209), 15m'de F6 (+%3705) ve F4 (+%3167). 1D'de devir düşük (bahçe 0.32/gün),
+  kazanç en çok F6 (+%34.6) ve F4 (+%32.8). Aile eşit ağırlıklı bahçe ortalaması (betimsel) da üç
+  kolda A ve B'de pozitif ve CI'lı (1D +%13.6, 4H +%84.0, 15m +%1352, A).
+- **Ters seçim:** dolan emirlerin dolum sonrası N barlık işaretli getirisi tüm emirlerinkinden
+  ~2 bp düşük (4H, 15m; 1D A) — ölçülebilir ama ücret farkının (8 bp) dörtte biri. 1D B'de işaret
+  döndü (+0.6 bp).
+
+**5. Saf maker (betimsel).** Bahçe ortalaması, A: 1D +%16.6 (melez +%17.2), 4H +%103.5 (melez
++%109.6), 15m +%1810 (melez +%1783). 1D ve 4H'de kaçan işlemleri HİÇ ALMAMAK melezden kötüdür —
+en çok trend ailelerinde (4H F1 +%44.9 ↔ melez +%53.2, F2 +%103.7 ↔ +%111.7); 15m'de biraz
+iyidir (kaçan emrin sonraki bedeli ~92 bp, melezin kaçırma bedeline ~90 bp neredeyse eşit, ama saf
+maker o emrin taker ücretini de ödemez). B aynı yönde.
+
+**6. Kesinlik penceresi hariç (TADİLAT-2, kayıt).** 8 A haftası dışarıda: (1) haftalık ortalama
+1D %0.138 (tüm: %0.134), 4H %0.852 (%0.850), 15m %13.88 (%13.82); (2) 1D/F6 p 0.037 (tüm: 0.029).
+Kapı bakımından hiçbir hücre değişmiyor; pencere sonucu taşımıyor.
+
+**Okuma tablosu (10; mekanik):** üç kolda da *"maker yürütme maliyeti düşürüyor ama hiçbir
+aileyi kârlı yapmıyor."*
+
+**Tahminle karşılaştırma (8, olduğu gibi).**
+- *Kullanıcı:* (1) üç kolda geçer — TUTTU; en büyük iyileşme 15m'de — TUTTU. (2) hiçbir hücre A ∧
+  B'de geçmez — TUTTU; en yakınlar 15m ve 4H'de F4/F7 — TUTMADI (bu hücreler en kötüleri; en yakın
+  1D/F6, ardından 1D'nin trend aileleri). Trend ailelerinde kaçırma bedeli tasarrufun büyük kısmını
+  yer — TUTMADI (kaçırma bedeli bahçe genelinde tasarrufun %9–19'u; trend ailelerinde bp başına
+  daha yüksek ama kaçan emir payı küçük).
+- *Ön-kaydı yazan:* (1) 15m'de geçer ve en büyük iyileşme orada — TUTTU; 4H'de geçmesi belirsiz —
+  TUTMADI (geçti); **1D'de ayırt edilemez — TUTMADI** (1D A ve B'de geçti; kaçan emrin bedeli
+  gerçekten bir günlük hareket mertebesinde (~480 bp) ama kaçan emir payı %0.3–0.5, yani beklenen
+  bedel emir başına ~2 bp — tahmin kaçırma OLASILIĞINI büyük tuttu). Ayrıştığımız hücrede sonuç
+  kullanıcıyı doğruladı. (2) hiçbir hücre geçmez — TUTTU; hedge'li netin en yükseği 4H ya da
+  1D'de — TUTTU (1D/F6). Trend ailelerinde kaçırma bedeli geri dönüşten büyük — 4H ve 15m'de TUTTU,
+  1D'de TUTMADI. Ters seçim her kolda görünür — A'da TUTTU, 1D B'de TUTMADI. Saf maker 1D ve 4H'nin
+  trend ailelerinde melezden kötü — TUTTU.
+
+**Ne öğrenildi (bir kural değil, bir kayıt).** (1)'in geçmesi büyük ölçüde dolum modelinin
+yapısından gelir: kitap sırası ve fiyat iyileştirmesi yok, limit `C_b`'de ve bir tik aşağı inmek
+dolum için yeter — kabul edilen sapmalar 1–3 (13). Bu modelde maker = taker fiyatı + ücret farkı −
+küçük bir kaçırma bedeli; ölçüm o bedelin ücret farkından küçük olduğunu doğruladı, gerçek kitapta
+dolum olasılığının bu kadar yüksek olduğunu DEĞİL. Asıl soru olan (2)'nin cevabı ise modelden
+bağımsızdır: en iyimser dolum varsayımıyla bile hiçbir aile hedge'li net pozitif değil.
+
+**Karar:** (1) DOĞRULANDI (üç kol) ama hiçbir model, motor ya da defter değişmez (1, 11): motora
+limit emri eklemek ayrı bir karar ve ayrı bir ön-kayıttır; o ön-kayıt bu dolum modelinin
+iyimserliğini (kitap sırası) ele almak zorundadır. (2) DOĞRULANMADI: kârlı aile yok, hiçbir şey
+dondurulmaz, kasa açılmaz.
 
 ---
 
