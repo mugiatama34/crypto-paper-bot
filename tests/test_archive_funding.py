@@ -210,3 +210,48 @@ def test_report_prints_no_rates(tmp_path: Path) -> None:
 @pytest.mark.parametrize("left,right,same", [("0.1", "0.10", True), ("", "", True), ("", "0", False)])
 def test_same_rate(left: str, right: str, same: bool) -> None:
     assert af.same_rate(left, right) is same
+
+
+class InstrumentsClient:
+    def __init__(self, rows: list[dict] | None = None, fail: bool = False) -> None:
+        self.rows, self.fail = rows or [], fail
+
+    def get(self, path: str, params: dict[str, str]) -> list[dict[str, Any]]:
+        assert path == af.INSTRUMENTS_ENDPOINT and params == {"instType": "SWAP"}
+        if self.fail:
+            raise RuntimeError("ağ yok")
+        return self.rows
+
+
+def test_all_usdt_linear_swaps_are_listed() -> None:
+    rows = [
+        {"instId": "ZZZ-USDT-SWAP", "settleCcy": "USDT", "ctType": "linear"},
+        {"instId": "AAA-USDT-SWAP", "settleCcy": "USDT", "ctType": "linear"},
+        {"instId": "BTC-USD-SWAP", "settleCcy": "BTC", "ctType": "inverse"},
+        {"instId": "AAA-USDC-SWAP", "settleCcy": "USDC", "ctType": "linear"},
+    ]
+    assert af.list_usdt_swaps(InstrumentsClient(rows), "USDT") == ["AAA-USDT-SWAP", "ZZZ-USDT-SWAP"]
+    with pytest.raises(ValueError):
+        af.list_usdt_swaps(InstrumentsClient([]), "USDT")
+
+
+def test_universe_is_all_swaps_union_layers_union_archive(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(af, "load_universe", lambda config: ["BASE-USDT-SWAP"])
+    (tmp_path / "OLD-USDT-SWAP.csv").write_text(",".join(af.COLUMNS) + "\n", encoding="utf-8")
+    config = af.load_config()
+    listed = [{"instId": "NEW-USDT-SWAP", "settleCcy": "USDT", "ctType": "linear"}]
+    symbols, error = af.resolve_symbols(config, tmp_path, client=InstrumentsClient(listed))
+    assert error == ""
+    assert {"NEW-USDT-SWAP", "BASE-USDT-SWAP", "OLD-USDT-SWAP", "BTC-USDT-SWAP"} <= set(symbols)
+    assert symbols == sorted(set(symbols))
+
+
+def test_instrument_list_failure_keeps_other_sets_and_is_loud(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(af, "load_universe", lambda config: ["BASE-USDT-SWAP"])
+    config = af.load_config()
+    symbols, error = af.resolve_symbols(config, tmp_path, client=InstrumentsClient(fail=True))
+    assert "USDT perp listesi çekilemedi" in error
+    assert "BASE-USDT-SWAP" in symbols and "BTC-USDT-SWAP" in symbols
+    report = af.RunReport(universe_error=error)
+    assert report.exit_code() == 1
+    assert any(line.startswith("::error") for line in af.annotations(report))

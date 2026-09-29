@@ -27,9 +27,15 @@ Dosya sözleşmesi (`data/funding_archive/<SYMBOL>.csv`):
   bir gidiş-dönüş, "aynı oran" sorusunu temsil hatasına bağlardı. Karşılaştırma
   `Decimal` iledir, yani `0.0001` ile `0.00010` çakışma DEĞİLDİR.
 
-Evren: `ema` katmanının SABİT 13 sembolü ∪ `base` evreninin güncel sembolleri ∪ arşivde
-zaten dosyası olan semboller. Sonuncusu, base'in hacim sıralamasından düşen bir sembolün
-arşivinin o gün sessizce durmasını engeller.
+Evren: OKX'in BÜTÜN USDT lineer perpetual'ları (`/public/instruments`, her koşuda) ∪ `ema`
+katmanının SABİT 13 sembolü ∪ `base` evreninin güncel sembolleri ∪ arşivde zaten dosyası
+olan semboller. Hepsinin tutulmasının gerekçesi ölçülmüş bir boşluktur (docs/backtest.md >
+6t > TADİLAT-1 > T1): bir ölçümün evren kuralı hacme göre sıralanmış bir aday kümesinden
+seçtiğinde, arşivde olmayan aday ÖLÇÜLEMEZ ve pencereden düşen kaydı bir daha gelmez.
+Evreni tahmin etmek yerine hepsini tutmak, "arşivde yok" sorusunu gelecekteki her kural için
+baştan kapatır. Enstrüman listesi çekilemezse koşu düşmez: kalan üç küme arşivlenir ve
+hata `::error` ile söylenir. Son küme, listeden çıkan (kaldırılan) bir sembolün arşivinin
+sessizce durmasını engeller.
 
 Çıkış kodları: 0 = koşu tamam (hiç yeni satır yoksa da 0, ama `::warning` ile İŞARETLİ —
 boş bir koşu sessizce yeşil geçmez); 1 = bütünlük hatası (başlık uyuşmazlığı, yanlış
@@ -62,6 +68,7 @@ from core.layers import resolve_layer  # noqa: E402
 logger = logging.getLogger("archive_funding")
 
 FUNDING_ENDPOINT = "/api/v5/public/funding-rate-history"
+INSTRUMENTS_ENDPOINT = "/api/v5/public/instruments"
 DEFAULT_ARCHIVE_DIR = PROJECT_ROOT / "data" / "funding_archive"
 CONFLICTS_FILE = "_conflicts.csv"
 
@@ -349,17 +356,37 @@ def archived_symbols(archive_dir: Path) -> list[str]:
     return sorted(p.stem for p in archive_dir.glob("*.csv") if not p.name.startswith("_"))
 
 
-def resolve_symbols(config: dict[str, Any], archive_dir: Path) -> tuple[list[str], str]:
-    """ema'nın sabit evreni ∪ base'in güncel evreni ∪ arşivdekiler; sıralı, tekil."""
+def list_usdt_swaps(client: Any, quote_ccy: str) -> list[str]:
+    """OKX'in bugün listelediği BÜTÜN `quote_ccy` ile takas edilen lineer perpetual'lar."""
+    rows = client.get(INSTRUMENTS_ENDPOINT, {"instType": "SWAP"})
+    ids = {
+        str(row["instId"])
+        for row in rows
+        if row.get("settleCcy") == quote_ccy and row.get("ctType", "linear") == "linear"
+    }
+    if not ids:
+        raise ValueError(f"enstrüman listesinde {quote_ccy} perp yok")
+    return sorted(ids)
+
+
+def resolve_symbols(
+    config: dict[str, Any], archive_dir: Path, *, client: Any | None = None
+) -> tuple[list[str], str]:
+    """bütün USDT perp'ler ∪ ema'nın sabit evreni ∪ base'in güncel evreni ∪ arşivdekiler."""
     symbols: set[str] = set(resolve_layer(config, "ema").symbols or [])
-    error = ""
+    errors: list[str] = []
     base = resolve_layer(config, "base")
     try:
         symbols.update(base.symbols or load_universe(base.config))
-    except Exception as exc:  # base çözülemese de ema sembolleri arşivlenir
-        error = f"base evreni çözülemedi: {exc}"
+    except Exception as exc:  # base çözülemese de öteki kümeler arşivlenir
+        errors.append(f"base evreni çözülemedi: {exc}")
+    if client is not None:
+        try:
+            symbols.update(list_usdt_swaps(client, str(get_setting(base.config, "exchange.quote_ccy"))))
+        except Exception as exc:  # liste çekilemese de öteki kümeler arşivlenir
+            errors.append(f"USDT perp listesi çekilemedi: {exc}")
     symbols.update(archived_symbols(archive_dir))
-    return sorted(symbols), error
+    return sorted(symbols), "; ".join(errors)
 
 
 def _cell(text: str, width: int = 160) -> str:
@@ -440,16 +467,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     config = load_config(args.config)
     archive_dir = Path(args.archive_dir)
+    base_config = resolve_layer(config, "base").config
+    client = OKXClient.from_config(base_config)
     if args.symbols:
         symbols, universe_error = sorted(set(args.symbols)), ""
     else:
-        symbols, universe_error = resolve_symbols(config, archive_dir)
+        symbols, universe_error = resolve_symbols(config, archive_dir, client=client)
     if not symbols:
         logger.error("arşivlenecek sembol yok")
         return 1
 
-    base_config = resolve_layer(config, "base").config
-    client = OKXClient.from_config(base_config)
     limit = int(get_setting(base_config, "exchange.funding_limit"))
     report = run(
         client,
@@ -478,7 +505,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--config", default=None, help="config.yaml yolu (varsayılan: depo kökü)")
     parser.add_argument("--archive-dir", default=str(DEFAULT_ARCHIVE_DIR))
     parser.add_argument(
-        "--symbols", nargs="*", default=None, help="evreni ez (varsayılan: ema ∪ base ∪ arşiv)"
+        "--symbols", nargs="*", default=None, help="evreni ez (varsayılan: bütün USDT perp ∪ ema ∪ base ∪ arşiv)"
     )
     return parser.parse_args(argv)
 
