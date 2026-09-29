@@ -406,7 +406,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
 | 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1 `79167b3`: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **DÜŞTÜ — dönem A'da, üç kolda** (koşu #36381144532, `8bba500`): hedge'li net Δ dairesel kaydırma plasebosuna karşı 1D −%17.4 (p 0.960), 4H −%6.0 (p 0.815), 15m +%201 (p 0.185; plasebo ort. +%194); B'de doğrulanacak kol yok; ham da üç kolda geçmedi → okuma 1D/4H *"ayırt edilemedi"*, 15m *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* (kazanç yalnızca devir azalması, plasebo birebir taşıyor). Rejimler kısa ömürlü (medyan 2 gün); blok permütasyonu ~%19 fazla geçiş üretti ama sonucu değiştirmedi. Betimsel: 1D A sol kuyruk p 0.041 (eşleme ters yönde) — yeni tez, kasada sınanamaz — §6r > SONUÇ, karar 69 |
 | 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **(1) TUTTU, (2) DÜŞTÜ — dönem A'da, 21 hücrede** (koşu #36435759788, `45fde50`; kullanıcı onayı 2026-09-28): (1) melez − taker bahçe ortalaması üç kolda A ve B'de pozitif, CI sıfırın üstünde — A haftalık 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60, +14.05]; kazanç ücret farkının aritmetiği (dolum oranı %96–99.6, dolan emir taker fiyatından girer), kaçırma bedeli tasarrufun %9–19'u. (2) hedge'li melez net hiçbir hücrede BH'yi geçmedi (en yakın 1D/F6 p 0.029, CI alt −1.8); B'de doğrulanacak hücre yok → kârlı aile yok. Kesinlik penceresi hariç satır sonucu değiştirmiyor. Dolum modelinin iyimserliği (kitap sırası yok) kayıtlı — §6s > SONUÇ |
-| 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | BEKLİYOR |
+| 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | **DEĞERLENDİRİLEMEZ** (koşu #36577992025, `b8fd615`): taker kuralı 90 günde 0 pozisyon açtı (eşik %0.0714/gün hiç aşılmadı) → < 70 pozisyon-gün ∧ < 10 giriş; M1 KALICI (ρ̄ +0.196, CI [+0.099, +0.292]). Maker betimsel +%1.66 ama baz +%1.49, fonlama +%0.38, 1 likidasyon. Kural DONDURULDU, kasada ilk ölçüm — §6t > SONUÇ, karar 71 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -8210,6 +8210,64 @@ yerinde kalır.
 - DEĞERLENDİRİLEMEZ → kasa ≥ 13 tam hafta VE T2'nin asgari eşiği; sonuç "kasada ilk ölçüm".
 - ⚠ Kasa ölçülebilirliği için not (kayıt, karar değil): arşiv bugün kasa başlangıcındaki
   birincil evrenin tamamını taşımıyor olabilir; kasa sınamasının ölçülen payı da raporlanır.
+
+### SONUÇ *(2026-09-29; koşu #36577992025, `b8fd615`; yük `docs/data/funding_carry.json`)*
+
+**Okuma: M2 DEĞERLENDİRİLEMEZ — taker kuralı 90 günde TEK pozisyon açmadı. M1 KALICI.**
+Tablo 12'nin satırı yok (M2 ne geçti ne geçmedi); TADİLAT-1 > T2 uygulanır: kural olduğu gibi
+DONDURULUR, kasada tek seferlik İLK ÖLÇÜM.
+
+| Ölçü | Sonuç |
+|---|---|
+| **M1 mekanizma** (birincil evrenin ölçülen 17 sembolü, 84 çapa günü, 12 hafta) | ρ̄ **+0.196**, hafta kümeli %95 CI **[+0.099, +0.292]**, p 0.0004 → **kalıcı**. Havuzlanmış Spearman +0.137 (1420 çift). Koşullu satır (`x > θ_taker`) **n = 0**: taker eşiğini aşan tek (sembol, gün) gözlemi yok. |
+| **Değerlendirilebilirlik** (taker) | **0 pozisyon-gün < 70, 0 giriş < 10** → DEĞERLENDİRİLEMEZ. |
+| **M2** (taker net günlük getiri) | tanım gereği 0; aralık [0, 0]. Okunmaz. |
+| P&L ayrıştırması (taker) | yok (pozisyon yok). |
+| **Maker (m1) — kendi eşiğiyle** (betimsel) | 6 pozisyon, 185.4 pozisyon-gün, slot doluluğu %41. C üzerinden net **+%1.66** / 90 gün = **fonlama +%0.38 + baz +%1.49 − maliyet %0.20**. Çıkışlar: 5 dönem sonu, **1 likidasyon**, 0 sinyal çıkışı. |
+| Maker (m2) — taker işlemlerinin maker maliyeti | taker işlemi olmadığı için boş. |
+| En kötü baz olayları, sembol katkısı | taker'da pozisyon olmadığı için boş (yük yalnızca taker satırlarını taşıyordu). |
+| **(d1) bugünkü evren** (taker, betimsel) | 2 pozisyon, 46.5 pozisyon-gün; net +%1.01 = fonlama +%0.46 + baz +%0.66 − maliyet %0.11. |
+| **(d2) `ema`-13** (taker, betimsel) | 0 pozisyon. |
+
+**Ne söylüyor.**
+1. **Öncül tutuyor ama eşik gerçekleşmiyor.** Fonlama kesitsel olarak kalıcı (bu hafta yüksek olan
+   önümüzdeki hafta da görece yüksek), ama pencerede birincil evrenin hiçbir sembolünde 7 günlük
+   ortalama taker eşiğine (%0.0714/gün ≈ yıllık %26) ulaşmadı. Kural, maliyeti 14 günde iki kez
+   karşılamayan taşımayı reddetti; tasarlandığı şeyi yaptı. §6t > 11'deki not ("pencere sakin bir
+   rejime denk geldiyse taker hiç pozisyon açmayabilir") gerçekleşti.
+2. **Taker eşiğini yalnızca sıcak kuyruk aştı.** Bugünkü evrende (d1) 2 pozisyon açıldı, büyük
+   coinlerde (d2) hiç açılmadı. Taker eşiğini aşan fonlama arşivin kasa sonrası seçilmiş kuyruğundaydı —
+   T1'in kapatmak için var olduğu yanlılık tam orada.
+3. **⚠ Maker satırının pozitifliği fonlamadan değil BAZDAN geliyor ve bir likidasyon içeriyor.**
+   +%1.66'nın +%1.49'u baz, yalnızca +%0.38'i fonlama. 6 pozisyonun biri 1x perp likidasyonuyla
+   kapandı. Ön-kayıtlı likidasyon modeli (§6t > 5) perp'i `P_liq`de kapatır, spot'u barın
+   KAPANIŞINDAN satar; fiyat bar içinde `P_liq`i aşıp daha yukarıda kapanırsa bu, pozitif bir baz
+   kalemi üretir. Bu yüzden maker satırı "maker'la açık pozitif" diye OKUNAMAZ: fonlama bileşeni
+   maliyeti karşılıyor (+%0.38 ↔ %0.20), toplam sonuç ise tek bir fiyat olayının modellenme
+   biçimine bağlı. Hangi pozisyonun ne kadar katkı yaptığı yükte yok (pozisyon satırları yalnızca
+   taker için yazılıyordu). Ayrıntıyı çıkarmak aynı dondurulmuş kodu aynı veride yeniden koşmayı
+   gerektirir; bu, bir SONUÇ değil betimsel bir açıklama olur ve ancak kullanıcı kararıyla yapılır.
+4. **Kasa için gerçekçi beklenti.** Kasa okunması ≥ 13 tam hafta VE ≥ 70 pozisyon-gün VE ≥ 10 giriş
+   ister (T2). Bu pencerede birincil evrende sıfır giriş olduysa, kasa ancak fonlama rejimi
+   belirgin biçimde ısınırsa okunur; eşik gevşetilmez. Kasa evreni aynı kuralla (kasa başlangıcından
+   önceki 30 günün cirosu) kurulur ve bütün USDT perp'ler 2026-09-30'dan beri arşivleniyor
+   (PR #67), yani ölçülen pay kasada %85'in altına düşmez.
+
+**Tahminler (kullanıcı, veri görülmeden):**
+- *M1: mekanizma güçlü tutar* → **TUTTU** (ρ̄ +0.20, CI sıfırın belirgin üstünde; "güçlü" için
+  orta büyüklükte bir etki).
+- *M2: küçük pozitif; taker'la sınırda* → **SINANAMADI** (taker hiç pozisyon açmadı).
+- *Maker ile açık pozitif* → betimsel satır pozitif, ama **fonlamadan değil bazdan** ve bir
+  likidasyon olayı içeriyor; tahminin mekanizması (fonlama maliyeti yener) desteklenmedi, yalnızca
+  işareti tuttu.
+- *Asıl risk baz* → büyüklük olarak **TUTTU** (baz, maker satırının baskın bileşeni); yönü bu
+  pencerede lehteydi.
+
+**Karar (karar 71):** hiçbir model, motor, defter ya da kapı değişmez. Kural (betik `d64eb9d`,
+ön-kayıt `bfd46b0`, TADİLAT-1 `b12c957`) DONDURULUR; kasa sınaması kendi ön-kaydıyla, kasaya
+dokunmadan önce gelir ve yukarıdaki üç koşul sağlandığında TEK sefer okunur; sonucu "kasada ilk
+ölçümde geçti/geçmedi" diye yazılır. Maker'lı bir tez YENİ bir ön-kayıttır ve bu pencere ona
+kapalıdır (§6t > 12).
 
 ---
 
