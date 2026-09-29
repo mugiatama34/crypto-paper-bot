@@ -4037,6 +4037,21 @@ gereken yeni bir serbestliktir). Ayrıntı ve yeniden açılma koşulu docs/back
 "fonlama tezi ASKIYA ALINDI".
 
 
+### KAPANDI (2026-09-29): portal yolu KESİN kapatıldı
+
+Askının şartı doğrudan bir gözlemle sınandı (kullanıcı, tarayıcıdan): **tek sembol**
+(BTC-USDT), **aylık**, 03/2022 → 08/2022 talebi yine **yalnızca son ayı (2022-08)** döndürdü.
+Önceki gözlemin (4 sembol × 6 ay → tek dosya) sembol limitinden ya da çok sembollü talepten
+gelme ihtimali böylece düştü: **portal bir ARALIK istendiğinde yalnızca son ayı teslim ediyor.**
+Kapsam ancak sembol-ay başına ayrı bir istekle (~360) alınabilir; bu, "talep edilen teslim
+edilmiyor" engelini aşmaz, yalnızca onun etrafından dolanmaya çalışır — ve her dosyanın ayrı
+ayrı doğrulanması gereken, elle yürütülen bir çekime dönüşür.
+
+**Sonuç: A-2'nin portal dalı KAPANDI.** Tez (§6f, fonlama ekstremi) ölçülmedi, ölçülemedi;
+düşmedi. Fonlama tarihi için tek yol bundan sonra kendi arşivimizdir
+(`scripts/archive_funding.py`, 2026-06-22'den itibaren). İlk tüketicisi §6t'dir (fonlama
+taşıması; TADİLAT-1 bu kapanışa dayanarak "yalnızca arşiv" dalını seçti).
+
 ---
 
 ## 39-DOĞRULAMA: tahmin kıl payı tuttu, ama onarımın DAYANDIĞI MEKANİZMA çürüdü

@@ -406,7 +406,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
 | 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1 `79167b3`: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **DÜŞTÜ — dönem A'da, üç kolda** (koşu #36381144532, `8bba500`): hedge'li net Δ dairesel kaydırma plasebosuna karşı 1D −%17.4 (p 0.960), 4H −%6.0 (p 0.815), 15m +%201 (p 0.185; plasebo ort. +%194); B'de doğrulanacak kol yok; ham da üç kolda geçmedi → okuma 1D/4H *"ayırt edilemedi"*, 15m *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* (kazanç yalnızca devir azalması, plasebo birebir taşıyor). Rejimler kısa ömürlü (medyan 2 gün); blok permütasyonu ~%19 fazla geçiş üretti ama sonucu değiştirmedi. Betimsel: 1D A sol kuyruk p 0.041 (eşleme ters yönde) — yeni tez, kasada sınanamaz — §6r > SONUÇ, karar 69 |
 | 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **(1) TUTTU, (2) DÜŞTÜ — dönem A'da, 21 hücrede** (koşu #36435759788, `45fde50`; kullanıcı onayı 2026-09-28): (1) melez − taker bahçe ortalaması üç kolda A ve B'de pozitif, CI sıfırın üstünde — A haftalık 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60, +14.05]; kazanç ücret farkının aritmetiği (dolum oranı %96–99.6, dolan emir taker fiyatından girer), kaçırma bedeli tasarrufun %9–19'u. (2) hedge'li melez net hiçbir hücrede BH'yi geçmedi (en yakın 1D/F6 p 0.029, CI alt −1.8); B'de doğrulanacak hücre yok → kârlı aile yok. Kesinlik penceresi hariç satır sonucu değiştirmiyor. Dolum modelinin iyimserliği (kitap sırası yok) kayıtlı — §6s > SONUÇ |
-| 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit (bu ön-kayıt) | tek geliştirme dönemi 2026-06-22 → **kasa başlangıcı** (2026-09-27; A/B yok — arşiv kapsamı, §6t > 10); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | BEKLİYOR — onay (§6t > 14) |
+| 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | BEKLİYOR |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -8125,6 +8125,91 @@ Kod bunlar onaylanmadan yazılmaz. Değişiklik bir TADİLAT'la kayda girer.
 ### 15. Sicil
 
 §6c'de **14. satır.** Tez kullanıcının kendi tezidir → ev içi BH paydasına GİRER.
+
+### TADİLAT-1 — portal kesin kapandı, birincil evren kasa öncesi bilgiyle, değerlendirilemezlik eşiği *(2026-09-29, kullanıcı kararı; kod yazılmadan önce, HİÇBİR fonlama oranı görülmeden)*
+
+**Portal testi (kullanıcı, doğrudan gözlem):** tek sembol (BTC-USDT), aylık, 03/2022 → 08/2022
+talebi yine YALNIZCA son ayı (2022-08) döndürdü. Portal aralık istendiğinde son ayı veriyor;
+kapsam sembol-ay başına ayrı istekle (~360) alınabilirdi. **Portal yolu KESİN kapatıldı**
+(karar 50 > KAPANDI). Bu ön-kaydın 1. bölümündeki dal ayrımı böylece kapanır: **"yalnızca
+arşiv" dalı, tek geliştirme dönemi, A/B YOK** (10 ve O1 değişmeden geçerli).
+
+**O1–O10 önerildiği gibi KABUL.** Aşağıdakiler 2, 4, 8, 10 ve 11'i DEĞİŞTİRİR; değiştirmedikleri
+yerinde kalır.
+
+#### T1. Birincil evren — kasa ÖNCESİ bilgiyle (2'nin "Evren" maddesinin yerine)
+
+- **Aday kümesi: OKX'in BÜTÜN USDT perpetual'ları** — `/api/v5/public/instruments`
+  (`instType=SWAP`, `settleCcy=USDT`, `ctType=linear`), snapshot anındaki liste. Arşivle
+  SINIRLANMAZ (kullanıcının (b)'si).
+- **Sıralama: 2026-05-23T00:00Z → 2026-06-22T00:00Z (30 UTC günü) perp hacmi**, `1Dutc`
+  mumlarının `volCcyQuote` (USDT cinsinden ciro) toplamı. Pencerede mumu olmayan gün 0 sayılır
+  (penceresinin ortasında listelenen sembol eksik günlerle sıralanır — o gün ciro yoktu).
+  Eşitlikte sembol adı. Pencere dev döneminin başlangıcından (2026-06-22) ÖNCE biter: sıralama
+  geliştirme verisini de kasayı da görmez.
+- **Uygunluk (sırayla):** U1 — OKX'te `<BASE>-USDT` spot enstrümanı var ve 1H mumu dönüyor;
+  U2 — kimlik kapısı: iki bacağın ORTAK 1H barlarının İLK 168'inde (2026-06-15'ten itibaren;
+  168 ortak bar yoksa eldekilerin tamamı, < 24 ise KALDI) `|perp_close / spot_close − 1|`
+  medyanı ≤ %2. Rapor yalnızca GEÇTİ/KALDI yazar, değeri yazmaz.
+- **Birincil evren = sıralamada U1 ∧ U2'yi geçen İLK N = 20 sembol.** N sabittir, süpürülmez.
+- **Ölçülebilirlik:** birincil evrendeki bir sembolün arşivde fonlama kaydı yoksa (arşiv kasa
+  SONRASI kuruldu, 51 sembol; OKX'in REST penceresi ~3 aylık KAYAN bir penceredir ve o kayıtlar
+  artık alınamaz) sembol **evrende SAYILIR ama ölçülemez**: hiç sinyal üretmez, slot tutmaz.
+  Rapor **ölçülen payı** (ölçülen / 20) ve ölçülemeyenlerin adlarını yazar, ve yanına şu cümleyi
+  AYNEN taşır: *"Ölçülen semboller, kasa sonrası kurulan arşivle kesişimdir; evren seçim
+  yanlılığının bu kısmı tamamen KAPANMIYOR — (b) onu görünür kılıyor."*
+- **Kaldırılmış semboller:** enstrüman listesi yalnızca BUGÜN işlem gören sözleşmeleri
+  döndürür. 2026-06-22 ile snapshot arasında kaldırılmış bir perp sıralamaya giremez; bu
+  düzeltilemez (listesi yok) ve raporda bir sınır olarak yazılır (kabul edilen sapma 6).
+- **Betimsel evrenler** (yalnızca taker, bağlayıcı değil): (d1) **bugünkü evren** — arşivdeki
+  bütün `*-USDT-SWAP` dosyaları ∩ U1 ∧ U2 (§6t'nin eski birincili); (d2) **`ema`-13** —
+  `layers.ema.universe` ∩ U1 ∧ U2.
+
+#### T2. Değerlendirilemezlik eşiği (8'in M2'sine ek; §7.6'dan SAPMA)
+
+- Birincil evren, taker senaryosunda: **Σ pozisyon-gün ≥ 70** (pozisyon başına giriş dolumundan
+  çıkış dolumuna geçen süre, gün cinsinden; `K × 14` — her slot eşiğin hesaplandığı 14 günlük
+  ufku en az bir kez doldurmuş olmalı) **VE farklı giriş sayısı ≥ 10.** Biri sağlanmazsa M2'nin
+  sonucu **"DEĞERLENDİRİLEMEZ"**dir — **GEÇMEDİ DEĞİL.** Eşik gevşetilmez.
+- **Bu, §7.6'dan bir SAPMADIR** (kullanıcı kararı): §7.6 veri azlığından eşik altında kalmayı
+  "değerlendirilemez = GEÇMEDİ" sayar. Burada ayrılır, çünkü kural veriye bakmadan maliyetten
+  türedi ve pencere arşivin kapsamıyla (dışarıdan) sınırlı: az pozisyon "kural maliyeti
+  karşılamayan taşımayı reddetti" demektir, tezin sınandığı ve düştüğü DEĞİL. §6t > 11'deki
+  "sıfır pozisyon = GEÇMEDİ" notu bu yüzden GEÇERSİZDİR.
+- `< 10` hafta kuralı (§6t > 8) ayrıca geçerlidir ve o da değerlendirilemezlik üretir (yapısal
+  olarak 13 hafta var).
+- **Değerlendirilemez çıkarsa:** kural (betik, bu ön-kayıt, TADİLAT'lar) **olduğu gibi
+  DONDURULUR** ve kasada **tek seferlik** sınanır. Kasa, ≥ 13 tam hafta (O10) **VE** aynı asgari
+  eşik (≥ 70 pozisyon-gün, ≥ 10 giriş) sağlandığında okunur. Eşiğin sağlanıp sağlanmadığı YALNIZCA
+  SAYIMLA sınanır (preflight'ın statüsü: pozisyon-gün ve giriş sayısı, hiçbir getiri/fonlama/baz
+  değeri görülmeden). **Bu durumda kasa sınaması geliştirme sonucunun DOĞRULAMASI DEĞİL, tezin
+  İLK ÖLÇÜMÜDÜR** — kural veri görülmeden dondurulduğu için geçerlidir, ama sonucu "doğrulandı"
+  diye değil **"kasada ilk ölçümde geçti / geçmedi"** diye yazılır ve sicile öyle girer. Kasa
+  sınamasının evreni aynı kuralla (kasa başlangıcından önceki 30 günün perp hacmi) kurulur.
+
+#### T3. 8'in M1'i ve M3'ü için netleştirmeler (veri görülmeden)
+
+- M1'in gözlem kümesi birincil evrenin ÖLÇÜLEN sembolleridir; günlük çapa `D` (00:00 UTC),
+  `x = s_D`, `y = s_{D+7g}`; kesitsel ρ ≥ 5 sembolde tanımlı olan günde hesaplanır, aksi hâlde o
+  gün atlanır ve sayılır.
+- Ölçüm günleri **2026-06-29 → 2026-09-27** (90 gün, tam 13 ISO haftası; ilk gün, arşivin ilk
+  gününe 7 günlük sinyal penceresi eklenerek yapısal olarak gelir). Günlük getiri
+  `(E_{D+1} − E_D) / C` (bileşiklenmesiz; N sabit).
+- Maker satırları (m1, m2) ve dönem sonu maliyetsiz varyant yalnızca birincil evrende; (d1) ve
+  (d2) yalnızca taker.
+
+#### T4. Kabul edilen sapmalar (13'e ek)
+
+6. **Kaldırılmış semboller** aday kümesine giremez (T1).
+7. **Ölçülemeyen birincil semboller** (arşivde yok): evren küçülmez, ama ölçülen kısım arşivin
+   kasa sonrası seçimine bağlıdır (T1'in zorunlu cümlesi).
+
+#### T5. Kasa uzunluğu (10 ve O10'un güncellenmiş hâli)
+
+- GEÇTİ → "kasaya aday"; kasa ≥ 13 tam hafta (en erken 2026-12-27 sonu).
+- DEĞERLENDİRİLEMEZ → kasa ≥ 13 tam hafta VE T2'nin asgari eşiği; sonuç "kasada ilk ölçüm".
+- ⚠ Kasa ölçülebilirliği için not (kayıt, karar değil): arşiv bugün kasa başlangıcındaki
+  birincil evrenin tamamını taşımıyor olabilir; kasa sınamasının ölçülen payı da raporlanır.
 
 ---
 
