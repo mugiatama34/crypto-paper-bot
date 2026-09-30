@@ -72,6 +72,22 @@ Birincil kurulum ≥ 300 **VE** ≥ 150 farklı takvim günü **VE** medyan mali
 Üçü de sağlanmazsa model kurulmaz. Kapı MEKANİK uygulanır (`evaluate_gate`) ve sonucu
 log'a basılır.
 
+## VARYANT A — "yalnızca geniş süpürmeler" (`--variant A`; 2026-09-30, kullanıcı kararı)
+
+İlk sayım (#36709304143) maliyet koşulundan KALDI (medyan stop %0.5, maliyet/R 0.42). Varyant A
+tanımı DEĞİŞTİRMEZ; birincil kümeyi yalnızca doğal stop'u (süpürme ucu) TAM maliyeti taşıyacak
+kadar geniş kurulumlara daraltır. Filtre yalnızca GİRİŞ ANINDA bilinen geometriye bakar ve hiçbir
+getiri görülmeden yazıldı. Eşik, stop'ta kapanan işlemin yön başına gidiş-dönüşünün 0.15R'ye
+bölümüdür (stop kaymalı satırın maliyeti):
+
+- long: stop mesafesi ≥ %1.40 (0.21 / 0.15)
+- short: stop mesafesi ≥ %2.07 (0.31 / 0.15, yukarı yuvarlanmış)
+
+Sabitler (`VARIANT_A_MIN_STOP`) ön-kayıttır; config'ten türeyen değerle ayrışırlarsa betik
+durur (çıkış 2). Varyant A'nın kapısı: birincil ≥ 300 **VE** ≥ 150 farklı takvim günü; maliyet
+koşulu tanım gereği sağlanır ve yalnızca bir SAĞLAMA olarak basılır (azami stop kaymalı
+maliyet/R ≤ 0.15). Filtrenin elediği geçerli kurulumlar yön bazında ayrıca sayılır.
+
 ## Çıkış kodları (karar 51: boş rapor yeşil dönmez)
 
 - `0` — sayım yapıldı (kapının sonucu ne olursa olsun).
@@ -127,6 +143,12 @@ GATE_MAX_MEDIAN_COST_PER_R = 0.15
 
 # Ön-kayıttaki gidiş-dönüş maliyeti; config'ten türeyenle eşleşmezse betik durur.
 PREREGISTERED_ROUND_TRIP = 0.0021
+
+# VARYANT A — ön-kayıtlı, getiri görülmeden yazıldı. Girdi DEĞİLDİR.
+VARIANT_A_MAX_COST_PER_R = 0.15
+VARIANT_A_MIN_STOP: Mapping[str, float] = {"long": 0.0140, "short": 0.0207}
+VARIANT_A_MIN_SETUPS = 300
+VARIANT_A_MIN_DAYS = 150
 
 
 # --------------------------------------------------------------------------- #
@@ -216,6 +238,8 @@ class SymbolScan:
     last_bar: pd.Timestamp | None = None
     days: tuple[DayResult, ...] = ()
     skipped: str | None = None
+    # Varyant A: yön -> asgari stop mesafesi. None = filtre yok (ilk sayımın birincili).
+    min_stop: Mapping[str, float] | None = None
 
     def count(self, kind: str) -> int:
         return sum(1 for day in self.days if day.kind == kind)
@@ -229,8 +253,21 @@ class SymbolScan:
         return [day.setup for day in self.days if day.setup is not None]
 
     @property
-    def primary(self) -> list[Setup]:
+    def valid_setups(self) -> list[Setup]:
         return [setup for setup in self.setups if setup.valid]
+
+    @property
+    def primary(self) -> list[Setup]:
+        return [setup for setup in self.valid_setups if wide_enough(setup, self.min_stop)]
+
+    @property
+    def narrow(self) -> list[Setup]:
+        """Geometrisi kurulabilen ama varyant filtresine takılan kurulumlar."""
+        return [setup for setup in self.valid_setups if not wide_enough(setup, self.min_stop)]
+
+
+def wide_enough(setup: Setup, min_stop: Mapping[str, float] | None) -> bool:
+    return min_stop is None or setup.stop_distance >= min_stop[setup.direction]
 
 
 # --------------------------------------------------------------------------- #
@@ -315,18 +352,20 @@ def period_days(start: pd.Timestamp, end: pd.Timestamp) -> list[pd.Timestamp]:
     return days
 
 
-def scan_symbol(symbol: str, frame: pd.DataFrame, *, start: pd.Timestamp, end: pd.Timestamp) -> SymbolScan:
+def scan_symbol(symbol: str, frame: pd.DataFrame, *, start: pd.Timestamp, end: pd.Timestamp,
+                min_stop: Mapping[str, float] | None = None) -> SymbolScan:
     if frame.empty:
-        return SymbolScan(symbol=symbol, skipped="hiç bar yok")
+        return SymbolScan(symbol=symbol, skipped="hiç bar yok", min_stop=min_stop)
     frame = frame.loc[(frame.index >= start) & (frame.index < end)]
     if frame.empty:
-        return SymbolScan(symbol=symbol, skipped="dönem A'da bar yok")
+        return SymbolScan(symbol=symbol, skipped="dönem A'da bar yok", min_stop=min_stop)
     listed = frame.index[0].normalize()
     days = tuple(
         classify_day(symbol, day, frame) for day in period_days(start, end) if day >= listed
     )
     return SymbolScan(
         symbol=symbol, bars=len(frame), first_bar=frame.index[0], last_bar=frame.index[-1], days=days,
+        min_stop=min_stop,
     )
 
 
@@ -382,6 +421,37 @@ def evaluate_gate(primary: Sequence[Setup], *, round_trip: float) -> GateResult:
     )
 
 
+def evaluate_gate_variant_a(primary: Sequence[Setup], *, costs: "StopCosts") -> GateResult:
+    """Varyant A kapısı. Maliyet satırı tanım gereği sağlanır; bir SAĞLAMADIR, eşik değil."""
+    days = len({setup.day for setup in primary})
+    per_r = [setup.stop_cost_per_r(costs) for setup in primary]
+    worst = max(per_r) if per_r else None
+    return GateResult(
+        setups=len(primary),
+        days=days,
+        median_cost_per_r=dist(per_r).median,
+        checks={
+            f"birincil kurulum >= {VARIANT_A_MIN_SETUPS}": len(primary) >= VARIANT_A_MIN_SETUPS,
+            f"farklı takvim günü >= {VARIANT_A_MIN_DAYS}": days >= VARIANT_A_MIN_DAYS,
+            f"sağlama: azami stop kaymalı maliyet/R <= {VARIANT_A_MAX_COST_PER_R}": (
+                worst is not None and worst <= VARIANT_A_MAX_COST_PER_R + 1e-12
+            ),
+        },
+    )
+
+
+def variant_a_thresholds_match(costs: "StopCosts") -> bool:
+    """Ön-kayıtlı eşik, config'ten türeyeni %0.01 hassasiyetle karşılamalı ve ondan DAR olmamalı.
+
+    Eşiğin türeyenden küçük olması maliyet koşulunu delerdi; yukarı yuvarlama yalnızca sıkılaştırır.
+    """
+    for direction, threshold in VARIANT_A_MIN_STOP.items():
+        derived = costs.for_direction(direction) / VARIANT_A_MAX_COST_PER_R
+        if threshold < derived - 1e-12 or threshold - derived >= 1e-4:
+            return False
+    return True
+
+
 def round_trip_cost(config: Mapping[str, Any]) -> float:
     return 2.0 * (float(get_setting(config, "fee_rate")) + float(get_setting(config, "slippage_base")))
 
@@ -433,7 +503,7 @@ def _day_row(label: str, scans: Sequence[SymbolScan]) -> str:
     up = sum(1 for day in days if day.side == "up" and day.kind != "ambiguous")
     down = sum(1 for day in days if day.side == "down" and day.kind != "ambiguous")
     setups = [setup for scan in scans for setup in scan.setups]
-    primary = [setup for setup in setups if setup.valid]
+    primary = [setup for scan in scans for setup in scan.primary]
     return (
         f"{label:<18}{len(days):>7}{sum(1 for d in days if d.kind == 'none'):>7}{up:>6}{down:>6}"
         f"{sum(1 for d in days if d.kind == 'ambiguous'):>9}"
@@ -462,7 +532,7 @@ def format_counts(scans: Sequence[SymbolScan]) -> str:
 def format_diagnostics(scans: Sequence[SymbolScan]) -> str:
     days = [day for scan in scans for day in scan.days]
     setups = [setup for scan in scans for setup in scan.setups]
-    primary = [setup for setup in setups if setup.valid]
+    primary = [setup for scan in scans for setup in scan.primary]
     one_sided = [day for day in days if day.kind in ("continuation", "setup", "no_entry_bar")]
     continuation = [day for day in days if day.kind == "continuation"]
     return "\n".join([
@@ -480,7 +550,20 @@ def format_diagnostics(scans: Sequence[SymbolScan]) -> str:
         f"kurulum ama geometri kurulamaz: {sum(1 for s in setups if not s.valid)}"
         f"  (giriş stop'un ötesinde {sum(1 for s in setups if s.stop_distance <= 0)},"
         f" hedef girişte geçilmiş {sum(1 for s in setups if s.stop_distance > 0 and s.target_distance <= 0)})",
-    ])
+    ] + ([format_filter(scans)] if any(scan.min_stop for scan in scans) else []))
+
+
+def format_filter(scans: Sequence[SymbolScan]) -> str:
+    valid = [setup for scan in scans for setup in scan.valid_setups]
+    primary = [setup for scan in scans for setup in scan.primary]
+    min_stop = next(scan.min_stop for scan in scans if scan.min_stop)
+    parts = []
+    for direction in ("short", "long"):
+        before = sum(1 for s in valid if s.direction == direction)
+        after = sum(1 for s in primary if s.direction == direction)
+        share = f"{100.0 * after / before:.1f}%" if before else "—"
+        parts.append(f"{direction} (stop ≥ {100 * min_stop[direction]:.2f}%) {before} → {after} ({share})")
+    return "VARYANT A filtresi (geometrisi kurulabilen → BİRİNCİL): " + "; ".join(parts)
 
 
 def format_years(scans: Sequence[SymbolScan]) -> str:
@@ -564,7 +647,8 @@ def format_gate(gate: GateResult) -> str:
 
 
 def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timestamp,
-            round_trip: float, costs: StopCosts, gate: GateResult) -> dict[str, Any]:
+            round_trip: float, costs: StopCosts, gate: GateResult,
+            variant: str | None = None) -> dict[str, Any]:
     """Makine okunur sayım. Getiri/R/PnL alanı YOKTUR (test)."""
     primary = [setup for scan in scans for setup in scan.primary]
 
@@ -577,6 +661,8 @@ def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timesta
             "start": start.isoformat(), "end": end.isoformat(),
             "asia_utc": "00:00-08:00", "window_utc": "08:00-13:00",
             "reversal": "süpürme barı DÂHİL ilk içeride kapanış (tanım düzeltmesi 2026-09-30)",
+            "variant": variant,
+            "min_stop": None if variant is None else dict(VARIANT_A_MIN_STOP),
             "round_trip_cost": round_trip,
             "stop_round_trip_cost": {"short": costs.short, "long": costs.long},
         },
@@ -587,11 +673,19 @@ def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timesta
                 "skipped": scan.skipped,
                 "days": {kind: scan.count(kind) for kind in DAY_KINDS},
                 "primary": len(scan.primary),
+                "primary_short": sum(1 for s in scan.primary if s.direction == "short"),
+                "primary_long": sum(1 for s in scan.primary if s.direction == "long"),
+                "filtered_out": len(scan.narrow),
             }
             for scan in scans
         ],
         "primary_by_year": dict(sorted(Counter(s.day.year for s in primary).items())),
         "calendar_days": len({s.day for s in primary}),
+        "primary_by_direction": {
+            "short": sum(1 for s in primary if s.direction == "short"),
+            "long": sum(1 for s in primary if s.direction == "long"),
+        },
+        "setups_per_calendar_day": dict(sorted(Counter(Counter(s.day for s in primary).values()).items())),
         "primary_reversal": {
             "same_bar": sum(1 for s in primary if s.reversal_bar == s.sweep_bar),
             "later_bar": sum(1 for s in primary if s.reversal_bar != s.sweep_bar),
@@ -653,6 +747,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not math.isclose(round_trip, PREREGISTERED_ROUND_TRIP, rel_tol=1e-9):
         logger.error("gidiş-dönüş maliyeti ön-kayıttan ayrıştı: %s != %s", round_trip, PREREGISTERED_ROUND_TRIP)
         return 2
+    costs = stop_costs(layer.config)
+    min_stop: Mapping[str, float] | None = None
+    if args.variant == "A":
+        if not variant_a_thresholds_match(costs):
+            logger.error("varyant A eşikleri config'ten türeyenle ayrıştı: %s ↔ short %s / long %s",
+                         dict(VARIANT_A_MIN_STOP), costs.short / VARIANT_A_MAX_COST_PER_R,
+                         costs.long / VARIANT_A_MAX_COST_PER_R)
+            return 2
+        min_stop = VARIANT_A_MIN_STOP
 
     cache_dir = args.cache_dir or tempfile.mkdtemp(prefix="po3-")
     run_config = copy.deepcopy(dict(layer.config))
@@ -667,9 +770,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     frames = load_frames(run_config, symbols, start=start, end=end)
     scans = [
-        SymbolScan(symbol=symbol, skipped=f"veri çekilemedi: {frames[symbol]}")
+        SymbolScan(symbol=symbol, skipped=f"veri çekilemedi: {frames[symbol]}", min_stop=min_stop)
         if isinstance(frames[symbol], Exception)
-        else scan_symbol(symbol, frames[symbol], start=start, end=end)
+        else scan_symbol(symbol, frames[symbol], start=start, end=end, min_stop=min_stop)
         for symbol in symbols
     ]
 
@@ -679,7 +782,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 3
 
     primary = [setup for scan in scans for setup in scan.primary]
-    gate = evaluate_gate(primary, round_trip=round_trip)
+    gate = (
+        evaluate_gate_variant_a(primary, costs=costs) if min_stop is not None
+        else evaluate_gate(primary, round_trip=round_trip)
+    )
+    if min_stop is not None:
+        print()
+        print(f"*** VARYANT A — yalnızca geniş süpürmeler: short stop ≥ {100 * min_stop['short']:.2f}%,"
+              f" long stop ≥ {100 * min_stop['long']:.2f}% ***")
 
     print()
     print("=== 0. KAPSAM ===")
@@ -697,9 +807,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(format_clustering(primary))
     print()
     print("=== 4. GEOMETRİ (giriş anında bilinen; getiri DEĞİL) — BİRİNCİL kurulumlar ===")
-    print(format_geometry(scans, round_trip=round_trip, costs=stop_costs(layer.config)))
+    print(format_geometry(scans, round_trip=round_trip, costs=costs))
     print()
-    print("=== KARAR KAPISI (ön-kayıtlı) ===")
+    print(f"=== KARAR KAPISI (ön-kayıtlı{', VARYANT A' if min_stop is not None else ''}) ===")
     print(format_gate(gate))
 
     if args.results_json:
@@ -707,7 +817,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(payload(scans, start=start, end=end, round_trip=round_trip,
-                               costs=stop_costs(layer.config), gate=gate),
+                               costs=costs, gate=gate, variant=args.variant),
                        indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -723,6 +833,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--symbols", nargs="*", default=None, help=f"varsayılan: {LAYER} evreninin tamamı")
     parser.add_argument("--start", default=PERIOD_A_START, help="dönem A başlangıcı (ithal)")
     parser.add_argument("--end", default=PERIOD_A_CUTOFF, help="dönem A kesimi — AŞILAMAZ (çıkış 2)")
+    parser.add_argument("--variant", choices=["A"], default=None,
+                        help="A: yalnızca geniş süpürmeler (ön-kayıtlı yön başına asgari stop; sabit, girdi değil)")
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--results-json", default=None)
     return parser.parse_args(argv)

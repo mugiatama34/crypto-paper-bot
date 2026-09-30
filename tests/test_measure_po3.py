@@ -20,9 +20,17 @@ from scripts.measure_po3 import (
     GATE_MIN_DAYS,
     GATE_MIN_SETUPS,
     PREREGISTERED_ROUND_TRIP,
+    VARIANT_A_MIN_DAYS,
+    VARIANT_A_MIN_SETUPS,
+    VARIANT_A_MIN_STOP,
     Setup,
+    SymbolScan,
+    DayResult,
     classify_day,
     evaluate_gate,
+    evaluate_gate_variant_a,
+    variant_a_thresholds_match,
+    wide_enough,
     main,
     period_days,
     round_trip_cost,
@@ -128,11 +136,13 @@ def test_period_days_never_reach_past_the_end():
     assert days[-1] == pd.Timestamp("2024-06-29T00:00:00Z")
 
 
-def _setup(day: str, stop: float) -> Setup:
+def _setup(day: str, stop: float, side: str = "up") -> Setup:
+    sign = 1 if side == "up" else -1
     return Setup(
-        symbol="X", day=pd.Timestamp(day), side="up", sweep_bar=pd.Timestamp(day),
+        symbol="X", day=pd.Timestamp(day), side=side, sweep_bar=pd.Timestamp(day),
         reversal_bar=pd.Timestamp(day), entry_bar=pd.Timestamp(day), entry=100.0,
-        extreme=100.0 * (1 + stop), target=90.0, high_a=101.0, low_a=90.0, asia_close=100.0,
+        extreme=100.0 * (1 + sign * stop), target=100.0 - sign * 10.0,
+        high_a=101.0, low_a=90.0, asia_close=100.0,
     )
 
 
@@ -166,3 +176,45 @@ def test_does_not_import_measurement_modules():
     forbidden = {"core.metrics", "core.portfolio", "core.ledger", "core.engine"}
     assert not names & forbidden
     assert not any(name.startswith("strategies") for name in names)
+
+
+# --------------------------------------------------------------------------- #
+# VARYANT A — yalnızca geniş süpürmeler
+# --------------------------------------------------------------------------- #
+def test_variant_a_thresholds_are_preregistered_and_match_config():
+    assert VARIANT_A_MIN_STOP == {"long": 0.0140, "short": 0.0207}
+    assert (VARIANT_A_MIN_SETUPS, VARIANT_A_MIN_DAYS) == (300, 150)
+    costs = stop_costs(load_config(None))
+    assert variant_a_thresholds_match(costs)
+    # Eşik türeyenden DAR olsaydı maliyet koşulu delinirdi.
+    for direction, threshold in VARIANT_A_MIN_STOP.items():
+        assert costs.for_direction(direction) / threshold <= 0.15 + 1e-12
+
+
+def test_variant_a_filter_is_direction_aware():
+    assert wide_enough(_setup("2022-01-01", 0.0208, side="up"), VARIANT_A_MIN_STOP)
+    assert not wide_enough(_setup("2022-01-01", 0.0180, side="up"), VARIANT_A_MIN_STOP)
+    assert wide_enough(_setup("2022-01-01", 0.0180, side="down"), VARIANT_A_MIN_STOP)
+    assert not wide_enough(_setup("2022-01-01", 0.0139, side="down"), VARIANT_A_MIN_STOP)
+    assert wide_enough(_setup("2022-01-01", 0.001), None)
+
+
+def test_variant_a_primary_excludes_narrow_but_keeps_them_countable():
+    setups = [_setup("2022-01-01", 0.03), _setup("2022-01-02", 0.01), _setup("2022-01-03", 0.015, side="down")]
+    days = tuple(DayResult(symbol="X", day=s.day, kind="setup", side=s.side, setup=s) for s in setups)
+    plain = SymbolScan(symbol="X", days=days)
+    wide = SymbolScan(symbol="X", days=days, min_stop=VARIANT_A_MIN_STOP)
+    assert len(plain.primary) == 3 and plain.narrow == []
+    assert [s.day for s in wide.primary] == [setups[0].day, setups[2].day]
+    assert wide.narrow == [setups[1]]
+
+
+def test_variant_a_gate_needs_count_and_days_cost_is_a_sanity_check():
+    days = pd.date_range("2022-01-01", periods=VARIANT_A_MIN_DAYS, freq="D", tz="UTC")
+    costs = stop_costs(load_config(None))
+    ok = [_setup(str(days[i % len(days)]), 0.0207) for i in range(VARIANT_A_MIN_SETUPS)]
+    assert evaluate_gate_variant_a(ok, costs=costs).passed
+    assert not evaluate_gate_variant_a(ok[:-1], costs=costs).passed
+    few_days = [_setup("2022-01-01", 0.03) for _ in range(VARIANT_A_MIN_SETUPS)]
+    assert not evaluate_gate_variant_a(few_days, costs=costs).passed
+    assert not evaluate_gate_variant_a([], costs=costs).passed
