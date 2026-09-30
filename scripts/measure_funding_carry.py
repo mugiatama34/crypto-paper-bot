@@ -593,7 +593,10 @@ def simulate(symbols: Sequence[str], funding: Mapping[str, FundingSeries], perp:
             liq = pos.p0 * (2.0 - mm)
             if float(bar["high"]) >= liq:
                 sbar = S[sym].bar(prev)
-                s1 = float(sbar["close"]) if sbar is not None else S[sym].mark(h)
+                s_bar = float(sbar["close"]) if sbar is not None else S[sym].mark(h)
+                # TADİLAT-2: spot, perp ile aynı an ve aynı baz varsayımıyla kapanır — bar içinde P_liq'i
+                # aşıp yukarıda kapanan fiyat, likidasyonda lehte bir baz kalemi ÜRETEMEZ.
+                s1 = min(s_bar, liq * pos.s0 / pos.p0)
                 remaining = mm * pos.q_perp * pos.p0          # teminatın kalan kısmı da kaybedilir
                 cost = pos.q_spot * s1 * (taker.spot_fee + taker.slippage) + remaining
                 close(pos, h, s1, liq, cost, "liquidation")
@@ -922,7 +925,7 @@ def run_analysis(args: argparse.Namespace, config: Mapping[str, Any], *, measure
     universes = universe_report(inputs)
     report: dict[str, Any] = {
         "stage": "measure" if measure else "preflight",
-        "preregistration": "docs/backtest.md > 6t (bfd46b0, TADİLAT-1 b12c957)",
+        "preregistration": "docs/backtest.md > 6t (bfd46b0, TADİLAT-1 b12c957, TADİLAT-2)",
         "window": {"dev_start": DEV_START.isoformat(), "measure_start": MEASURE_START.isoformat(),
                    "dev_end": DEV_END.isoformat(), "weeks": len({iso_week_key(d) for d in measurement_days()[:-1]})},
         "universe": universes,

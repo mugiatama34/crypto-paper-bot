@@ -5650,3 +5650,14 @@ bir tez yeni bir ön-kayıttır ve bu pencere ona kapalıdır. Sicil satırı 14
 büyük coinlerde taşımayı tamamen kapatır; kalıcılık tek başına yetmez, SEVİYE de gerekir. Bu,
 ön-kayıttaki notun (§6t > 11) doğrulanmasıdır, eşiği gevşetmenin gerekçesi değil.
 
+
+**EK (2026-09-30) — TADİLAT-2, sonuç sonrası sıkılaştırma (kullanıcı kararı).** Dondurulmuş
+betiğin sabitlenmiş veride yeniden koşusu (sonradan eklenen betimsel ayrıntı; deterministik,
+yayımlanmış özetlerle birebir) likidasyonun katkısını ölçtü: tek olay (TRUMP) **+%1.503'lük baz
+kalemi** üretti — maker bazının tamamı, netinin %86'sı; likidasyonsuz beş pozisyonun neti +%0.23.
+Sebep modelin yapısal önyargısıydı: perp `P_liq`de kapanırken spot barın (daha yüksek)
+kapanışından satılıyordu. **Kural sıkılaştırıldı:** likidasyonda spot çıkış fiyatı
+`min(bar kapanışı, P_liq × S₀/P₀)`; likidasyon hiçbir durumda lehte baz üretemez (§6t > TADİLAT-2).
+§7'nin yasağı gevşetmeye yöneliktir; bu sıkılaştırma kayıtla yapıldı ve DEĞERLENDİRİLEMEZ sonucunu
+değiştirmez (taker'da likidasyon yok). TADİLAT-2 altında maker betimsel neti +%0.16. **Kasaya
+giden kural:** `bfd46b0` + TADİLAT-1 `b12c957` + TADİLAT-2.

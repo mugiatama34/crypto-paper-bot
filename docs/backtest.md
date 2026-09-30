@@ -406,7 +406,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 11 | Model momentumu: bir stratejinin geçen dönem BRÜT getirisi sonraki dönemi öngörür — 176 stratejilik simetrik bir bahçede (7 aile + tersleri, `ema` evreni, vektörel) aylık (birincil) ve haftalık ufuk — **model DEĞİL, ölçüm** | §6q, commit `ec0d01a` (TADİLAT-1 `551fa67`: kapı hedge'li getiride; TADİLAT-2 `f56f269`; TADİLAT-3 `185d887`: tutarlılık kapısında dar kesme istisnası) | A: aylık 2022-01 → 2024-05, haftalık 2022-01-03 → 2024-06-23; B: 2024-07 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı: aylık IC küçük pozitif, haftalık ~0, kalıcılık F1/F6'da; kapı (TADİLAT-1): net maruziyeti eşit ağırlıklı sepetle HEDGE'LENMİŞ getiride ĪC ve spread'in bağlayıcı CI alt sınırı > 0, BH q = 0.05 m = 2, A ∧ B; ham getiri betimsel etiket | **DÜŞTÜ — dönem A'da, iki ufukta** (koşu #36330724536, `6f35da2`): hedge'li ĪC aylık +0.097 (bağlayıcı alt −0.077, p 0.264), haftalık −0.003 (alt −0.054, p 0.976); B'de doğrulanacak ufuk yok; ham ĪC dört hücrede de negatif → okuma **"ayırt edilemedi"** (ne seçim becerisi ne piyasa zamanlaması). Aylık +0.10 piyasanın iki ay aynı yönde gittiği çiftlerden geliyor (sızıntı tanısı); haftalıkta ~0.07 üzeri kalıcılık dışlandı; geçen dönemin kazananları net hiçbir hücrede pozitif değil. F1 aylık A betimsel olarak pozitif, B'de tekrarlanmıyor — §6q > SONUÇ, karar 68 |
 | 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1 `79167b3`: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **DÜŞTÜ — dönem A'da, üç kolda** (koşu #36381144532, `8bba500`): hedge'li net Δ dairesel kaydırma plasebosuna karşı 1D −%17.4 (p 0.960), 4H −%6.0 (p 0.815), 15m +%201 (p 0.185; plasebo ort. +%194); B'de doğrulanacak kol yok; ham da üç kolda geçmedi → okuma 1D/4H *"ayırt edilemedi"*, 15m *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* (kazanç yalnızca devir azalması, plasebo birebir taşıyor). Rejimler kısa ömürlü (medyan 2 gün); blok permütasyonu ~%19 fazla geçiş üretti ama sonucu değiştirmedi. Betimsel: 1D A sol kuyruk p 0.041 (eşleme ters yönde) — yeni tez, kasada sınanamaz — §6r > SONUÇ, karar 69 |
 | 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **(1) TUTTU, (2) DÜŞTÜ — dönem A'da, 21 hücrede** (koşu #36435759788, `45fde50`; kullanıcı onayı 2026-09-28): (1) melez − taker bahçe ortalaması üç kolda A ve B'de pozitif, CI sıfırın üstünde — A haftalık 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60, +14.05]; kazanç ücret farkının aritmetiği (dolum oranı %96–99.6, dolan emir taker fiyatından girer), kaçırma bedeli tasarrufun %9–19'u. (2) hedge'li melez net hiçbir hücrede BH'yi geçmedi (en yakın 1D/F6 p 0.029, CI alt −1.8); B'de doğrulanacak hücre yok → kârlı aile yok. Kesinlik penceresi hariç satır sonucu değiştirmiyor. Dolum modelinin iyimserliği (kitap sırası yok) kayıtlı — §6s > SONUÇ |
-| 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | **DEĞERLENDİRİLEMEZ** (koşu #36577992025, `b8fd615`): taker kuralı 90 günde 0 pozisyon açtı (eşik %0.0714/gün hiç aşılmadı) → < 70 pozisyon-gün ∧ < 10 giriş; M1 KALICI (ρ̄ +0.196, CI [+0.099, +0.292]). Maker betimsel +%1.66 ama baz +%1.49, fonlama +%0.38, 1 likidasyon. Kural DONDURULDU, kasada ilk ölçüm — §6t > SONUÇ, karar 71 |
+| 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | **DEĞERLENDİRİLEMEZ** (koşu #36577992025, `b8fd615`): taker kuralı 90 günde 0 pozisyon açtı (eşik %0.0714/gün hiç aşılmadı) → < 70 pozisyon-gün ∧ < 10 giriş; M1 KALICI (ρ̄ +0.196, CI [+0.099, +0.292]). Maker betimsel +%1.66 ama baz +%1.49, fonlama +%0.38, 1 likidasyon (yeniden koşu: likidasyon bazın tamamı, +%1.50). **TADİLAT-2** (sonuç sonrası sıkılaştırma): likidasyonda spot çıkışı `min(kapanış, P_liq × S₀/P₀)`, lehte baz yok — maker betimsel +%0.16. Kural (TADİLAT-2 dâhil) DONDURULDU, kasada ilk ölçüm — §6t > SONUÇ, karar 71 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -8264,7 +8264,8 @@ DONDURULUR, kasada tek seferlik İLK ÖLÇÜM.
   pencerede lehteydi.
 
 **Karar (karar 71):** hiçbir model, motor, defter ya da kapı değişmez. Kural (betik `d64eb9d`,
-ön-kayıt `bfd46b0`, TADİLAT-1 `b12c957`) DONDURULUR; kasa sınaması kendi ön-kaydıyla, kasaya
+ön-kayıt `bfd46b0`, TADİLAT-1 `b12c957`; likidasyon maddesi sonradan TADİLAT-2 ile sıkılaştırıldı,
+aşağıda) DONDURULUR; kasa sınaması kendi ön-kaydıyla, kasaya
 dokunmadan önce gelir ve yukarıdaki üç koşul sağlandığında TEK sefer okunur; sonucu "kasada ilk
 ölçümde geçti/geçmedi" diye yazılır. Maker'lı bir tez YENİ bir ön-kayıttır ve bu pencere ona
 kapalıdır (§6t > 12).
@@ -8299,6 +8300,45 @@ netinin %86'sı (+%1.433 / +%1.66) bu tek olaydan. Likidasyonsuz beş pozisyonun
 maker satırının pozitifliği fonlamadan değil, likidasyonun modellenme biçiminden geliyordu.
 (d1)'in bazı (+%0.62) ise bir sinyal çıkışından (ONE: spot +%36.0 ↔ perp +%29.8) — likidasyon
 değil, gerçek bir spot/perp ayrışması.
+
+### TADİLAT-2 — likidasyonda spot çıkışı: lehte baz yok *(2026-09-30, kullanıcı kararı; SONUÇ SONRASI, SIKILAŞTIRMA)*
+
+**Statü.** Sonuç görüldükten sonra kural değiştirmek §7'nin yasağıdır — ama yasak GEVŞETMEYE
+yöneliktir. Bu bir sıkılaştırmadır: kuralın ürettiği her sayıyı ya aynı bırakır ya aşağı çeker,
+hiçbirini yukarı çekemez; bu yüzden kayıtla yapılır. Geliştirme sonucunu (DEĞERLENDİRİLEMEZ)
+değiştirmez — taker kuralı hiç pozisyon açmadı, likidasyon olmadı.
+
+**Kural (§6t > 5'in likidasyon maddesinin yerine).** Perp `P_liq = P₀ × (2 − mm)`de kapanır ve
+teminatın tamamı kaybedilir (değişmedi). **Spot bacak, perp ile AYNI AN ve AYNI BAZ varsayımıyla
+kapanır:**
+
+```
+spot çıkış fiyatı = min(bar kapanışı, P_liq × S₀ / P₀)
+```
+
+yani likidasyon **hiçbir durumda lehte bir baz kalemi üretemez** (`N(S₁/S₀ − P₁/P₀) ≤ 0`). Spot
+kapanışı sınırın altındaysa kapanış kullanılır ve aleyhe baz kaydedilir. Spot'un çıkış maliyeti
+(taker) ve teminatın kalanı eskisi gibi maliyete yazılır.
+
+**Gerekçe.** Ön-kayıtlı model tezin LEHİNE yapısal bir önyargı taşıyordu: perp bar içinde `P_liq`e
+değip fiyat daha yukarıda kapandığında, perp sınırda kapanırken spot kapanıştan satılıyordu —
+gerçekte likidasyon anında spot'u o fiyattan satmak mümkün değildir ve modelin kazancı yalnızca
+iki bacağa farklı an atamasından doğar. Yukarıdaki yeniden koşu bunun büyüklüğünü ölçtü: **tek
+bir likidasyon (TRUMP) +%1.503'lük baz kalemi üretti — maker satırının bütün bazı ve netinin
+%86'sı.**
+
+**Uygulama.** `scripts/measure_funding_carry.py::simulate` (likidasyon adımı);
+`tests/test_measure_funding_carry.py::test_liquidation_never_books_favourable_basis` spot
+sınırın üstünde kapandığında bazın tam 0, altında kapandığında negatif olduğunu sabitler. Eski
+kodda aynı test spot'u 240'tan satar ve pozitif baz yazardı.
+
+**Betimsel etki (bu pencerede, karar değil).** Aynı sabitlenmiş veride TADİLAT-2'li kodla: maker
+(m1) 6 pozisyon, net **+%0.16** = fonlama +%0.38 + baz −%0.01 − maliyet %0.20 (TRUMP: baz 0,
+net −%0.07). Taker ve (d1)/(d2) değişmez (likidasyon yok). "Maker'la açık pozitif" okuması bu
+sayıyla da kurulamaz — fonlama maliyeti yalnızca kıl payı karşılıyor.
+
+**Kasaya bu kural gider.** Kasa sınaması (TADİLAT-1 > T2) TADİLAT-2'li betikle koşulur; dondurulan
+kural = `bfd46b0` + TADİLAT-1 `b12c957` + TADİLAT-2.
 
 ---
 

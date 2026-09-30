@@ -172,6 +172,25 @@ def test_liquidation_loses_whole_margin():
     assert perp_leg == pytest.approx(-1.0)
 
 
+def test_liquidation_never_books_favourable_basis():
+    """TADİLAT-2: spot bar içinde P_liq'i aşıp YUKARIDA kapansa da çıkışı `P_liq × S₀/P₀`'la sınırlıdır."""
+    funding = {"X": _series("X", "2026-06-22T08:00Z", 8, HIGH)}
+    perp, spot = _flat(100.0), _flat(100.5)
+    spike = pd.Timestamp("2026-07-15T10:00Z")
+    perp.loc[spike, "high"] = 250.0
+    spot.loc[spike, ["high", "close"]] = [260.0, 240.0]
+    res = _run(["X"], funding, {"X": perp}, {"X": spot})
+    p = res["positions"][0]
+    assert p.exit_reason == "liquidation"
+    liq = p.p0 * (2.0 - 0.005)
+    assert p.s1 == pytest.approx(liq * p.s0 / p.p0)
+    assert p.basis == pytest.approx(0.0, abs=1e-12)
+    # bar kapanışı sınırın altındaysa kapanış kullanılır (baz yalnızca aleyhe olabilir)
+    spot.loc[spike, "close"] = 150.0
+    q = _run(["X"], funding, {"X": perp}, {"X": spot})["positions"][0]
+    assert q.s1 == pytest.approx(150.0) and q.basis < 0
+
+
 # (8) ------------------------------------------------------------------------------------
 def _primary(pos_days, entries, low, weeks=13):
     return {"position_days": pos_days, "entries": entries, "m2": {"binding_low": low, "weeks": weeks}}
