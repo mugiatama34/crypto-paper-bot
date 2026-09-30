@@ -26,6 +26,7 @@ from scripts.measure_po3 import (
     main,
     period_days,
     round_trip_cost,
+    stop_costs,
 )
 from core.config import load_config
 
@@ -57,17 +58,35 @@ def test_up_sweep_then_close_inside_is_a_short_setup_with_known_geometry():
     assert setup.cost_per_r(0.0021) == pytest.approx(0.0021 / setup.stop_distance)
 
 
-def test_sweep_bar_closing_inside_is_not_itself_the_reversal():
+def test_sweep_bar_closing_inside_is_itself_the_reversal():
     frame = _day_frame([
-        (100.5, 102.0, 100.4, 100.8),  # süpürme barı içeride kapanıyor
-        (100.8, 100.9, 100.1, 100.3),  # geri dönüş = BU bar
+        (100.5, 102.0, 100.4, 100.8),  # süpürme barı içeride kapanıyor → geri dönüş BU bar
+        (100.8, 100.9, 100.1, 100.3),  # giriş barı: açılış 100.8
         (100.2, 100.5, 100.0, 100.1),
     ])
     result = classify_day("X", DAY, frame)
     assert result.kind == "setup"
-    assert result.sweep_bar_closed_inside
-    assert result.setup.reversal_bar == DAY + pd.Timedelta(hours=8, minutes=15)
-    assert result.setup.entry == 100.2
+    assert result.same_bar
+    assert result.setup.reversal_bar == result.setup.sweep_bar == DAY + pd.Timedelta(hours=8)
+    assert result.setup.extreme == 102.0
+    assert result.setup.entry == 100.8
+
+
+def test_later_bar_reversal_is_not_same_bar():
+    frame = _day_frame([
+        (100.5, 102.0, 100.4, 101.5),
+        (101.5, 102.5, 100.2, 100.6),
+    ])
+    assert not classify_day("X", DAY, frame).same_bar
+
+
+def test_stop_slippage_cost_line_is_descriptive_and_direction_aware():
+    costs = stop_costs(load_config(None))
+    assert costs.short == pytest.approx(0.0031)
+    assert costs.long == pytest.approx(0.0021)
+    setup = _setup("2022-01-01", 0.02)
+    assert setup.stop_cost_per_r(costs) == pytest.approx(0.0031 / 0.02)
+    assert setup.cost_per_r(0.0021) == pytest.approx(0.0021 / 0.02)
 
 
 def test_sweep_without_reversal_is_the_continuation_count():

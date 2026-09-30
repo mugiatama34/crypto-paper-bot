@@ -28,10 +28,13 @@ bu betiğin erişiminde değildir.
 - **Birikim**: açılışı [00:00, 08:00) olan 32 bar; `high_A = max(high)`, `low_A = min(low)`.
 - **Manipülasyon penceresi**: açılışı [08:00, 13:00) olan 20 bar.
 - **Süpürme**: pencerede `high > high_A` (üst) ya da `low < low_A` (alt) olan ilk bar.
-- **Geri dönüş**: süpürme barından SONRAKİ (süpürme barının kendisi DEĞİL — "süpürmeden
-  sonra" kelimesi kelimesine), yine pencerede, kapanışı `[low_A, high_A]` içinde olan ilk bar.
-  Süpürme barının kendisinin içeride kapanması ayrıca SAYILIR ama kurulum üretmez; okuma
-  tercihi böylece raporda görünür.
+- **Geri dönüş**: süpürme barı DÂHİL, pencerede kapanışı `[low_A, high_A]` içinde olan ilk
+  bar. Süpürme barı içeride kapanıyorsa geri dönüş barı ODUR (fitil süpürmesi); "aynı bar" ve
+  "sonraki bar" alt sayıları ayrı raporlanır.
+
+  **TANIM DÜZELTMESİ (2026-09-30, kullanıcı kararı):** ilk sürüm geri dönüşü süpürme barından
+  SONRAKİ bardan başlatıyordu. O sürümün koşusu (measure-po3 #36704669254) SONUÇ OKUNMADAN
+  İPTAL edildi; düzeltme sayı görülmeden yapıldı ve karar kapısı değişmedi.
 - **Kurulum**: süpürme + geri dönüş. Yön süpürmenin TERSİ (üst → short, alt → long).
 - **Giriş**: geri dönüş barından sonraki barın açılışı (kural 13). 12:45'teki bir geri
   dönüşün girişi 13:00 barıdır; o bar yoksa kurulum "giriş barı yok" sayılır.
@@ -54,8 +57,12 @@ sayılmaz, ayrıca sayılır.
 - planlanan R/R = `|hedef − giriş| / |giriş − süpürme ucu|`
 - maliyet/R = gidiş-dönüş maliyeti / stop mesafesi; gidiş-dönüş = `2 × (fee_rate +
   slippage_base)` config'ten okunur (bugün %0.21). Short stop'un ek kayması
-  (`slippage_short_stop`) DÂHİL DEĞİLDİR — bir çıkışın hangi yoldan olacağını varsaymak
-  gerekirdi; kapı bu yüzden maliyeti hafife alan yönde değil, ön-kayıttaki %0.21 ile koşar.
+  (`slippage_short_stop`) KAPIDA DÂHİL DEĞİLDİR: kapı kaba bir elemedir ve ön-kayıttaki
+  %0.21 ile koşar.
+- maliyet/R (stop kaymalı) — BETİMSEL ikinci satır, kapıya girmez: kaybeden işlemin gerçek
+  gidiş-dönüşü = `2 × fee_rate + slippage_base + çıkış kayması`; çıkış kayması short'ta
+  `slippage_short_stop`, long'da `slippage_base` (bugün short %0.31, long %0.21). Asıl
+  ön-kayıt tam maliyetle kurulacak; iki satır arasındaki farkı şimdiden görmek içindir.
 
 Yüzdelikler `numpy.percentile`ın doğrusal aradeğerlemesidir.
 
@@ -171,6 +178,9 @@ class Setup:
     def cost_per_r(self, round_trip: float) -> float:
         return round_trip / self.stop_distance
 
+    def stop_cost_per_r(self, costs: "StopCosts") -> float:
+        return costs.for_direction(self.direction) / self.stop_distance
+
     @property
     def asia_width(self) -> float:
         return (self.high_a - self.low_a) / self.asia_close
@@ -188,6 +198,11 @@ class DayResult:
     sweep_bar_closed_inside: bool = False
     sweep_on_last_bar: bool = False
     setup: Setup | None = None
+
+    @property
+    def same_bar(self) -> bool:
+        """Geri dönüş süpürme barının KENDİSİ mi (fitil süpürmesi)."""
+        return self.setup is not None and self.setup.reversal_bar == self.setup.sweep_bar
 
 
 DAY_KINDS = ("incomplete", "flat", "none", "ambiguous", "continuation", "no_entry_bar", "setup")
@@ -250,13 +265,13 @@ def classify_day(symbol: str, day: pd.Timestamp, frame: pd.DataFrame) -> DayResu
     sweep_inside = bool(inside[sweep])
     on_last = sweep == WINDOW_BARS - 1
 
-    later = np.flatnonzero(inside[sweep + 1:])
+    later = np.flatnonzero(inside[sweep:])
     if later.size == 0:
         return DayResult(
             symbol=symbol, day=day, kind="continuation", side=side, asia_width=width,
             sweep_bar_closed_inside=sweep_inside, sweep_on_last_bar=on_last,
         )
-    reversal = sweep + 1 + int(later[0])
+    reversal = sweep + int(later[0])
     reversal_bar = window.index[reversal]
     entry_bar = reversal_bar + BAR
     if entry_bar not in frame.index:
@@ -371,6 +386,24 @@ def round_trip_cost(config: Mapping[str, Any]) -> float:
     return 2.0 * (float(get_setting(config, "fee_rate")) + float(get_setting(config, "slippage_base")))
 
 
+@dataclass(frozen=True, kw_only=True)
+class StopCosts:
+    """Stop'ta kapanan işlemin gidiş-dönüşü, yön başına. BETİMSEL; kapıya girmez."""
+
+    short: float
+    long: float
+
+    def for_direction(self, direction: str) -> float:
+        return self.short if direction == "short" else self.long
+
+
+def stop_costs(config: Mapping[str, Any]) -> StopCosts:
+    fee = float(get_setting(config, "fee_rate"))
+    base = float(get_setting(config, "slippage_base"))
+    short_stop = float(get_setting(config, "slippage_short_stop"))
+    return StopCosts(short=2.0 * fee + base + short_stop, long=2.0 * fee + base + base)
+
+
 # --------------------------------------------------------------------------- #
 # Rapor
 # --------------------------------------------------------------------------- #
@@ -403,7 +436,7 @@ def _day_row(label: str, scans: Sequence[SymbolScan]) -> str:
     primary = [setup for setup in setups if setup.valid]
     return (
         f"{label:<18}{len(days):>7}{sum(1 for d in days if d.kind == 'none'):>7}{up:>6}{down:>6}"
-        f"{sum(1 for d in days if d.kind == 'ambiguous'):>8}"
+        f"{sum(1 for d in days if d.kind == 'ambiguous'):>9}"
         f"{sum(1 for d in days if d.kind == 'continuation'):>9}"
         f"{len(setups):>9}{len(primary):>10}"
         f"{sum(1 for s in primary if s.direction == 'short'):>7}"
@@ -414,7 +447,7 @@ def _day_row(label: str, scans: Sequence[SymbolScan]) -> str:
 
 def format_counts(scans: Sequence[SymbolScan]) -> str:
     header = (
-        f"{'sembol':<18}{'s-gün':>7}{'yok':>7}{'üst':>6}{'alt':>6}{'belirsiz':>8}{'devam':>9}"
+        f"{'sembol':<18}{'s-gün':>7}{'yok':>7}{'üst':>6}{'alt':>6}{'belirsiz':>9}{'devam':>9}"
         f"{'kurulum':>9}{'BİRİNCİL':>10}{'short':>7}{'long':>6}{'t.gün':>8}"
     )
     lines = [header, "-" * len(header)]
@@ -429,18 +462,21 @@ def format_counts(scans: Sequence[SymbolScan]) -> str:
 def format_diagnostics(scans: Sequence[SymbolScan]) -> str:
     days = [day for scan in scans for day in scan.days]
     setups = [setup for scan in scans for setup in scan.setups]
+    primary = [setup for setup in setups if setup.valid]
     one_sided = [day for day in days if day.kind in ("continuation", "setup", "no_entry_bar")]
     continuation = [day for day in days if day.kind == "continuation"]
     return "\n".join([
         f"tek taraflı süpürme günü: {len(one_sided)}"
         f"  (üst {sum(1 for d in one_sided if d.side == 'up')}, alt {sum(1 for d in one_sided if d.side == 'down')})",
-        f"  → kurulum (geri dönüş var): {sum(1 for d in one_sided if d.kind == 'setup')}",
+        f"  → kurulum (geri dönüş var): {sum(1 for d in one_sided if d.kind == 'setup')}"
+        f"  (geri dönüş AYNI bar {sum(1 for d in one_sided if d.kind == 'setup' and d.same_bar)},"
+        f" SONRAKİ bar {sum(1 for d in one_sided if d.kind == 'setup' and not d.same_bar)})",
+        f"     BİRİNCİL içinde: AYNI bar {sum(1 for s in primary if s.reversal_bar == s.sweep_bar)},"
+        f" SONRAKİ bar {sum(1 for s in primary if s.reversal_bar != s.sweep_bar)}",
         f"  → KARŞI SAYIM, geri dönüş YOK (kırılım devam): {len(continuation)}"
         f"  (üst {sum(1 for d in continuation if d.side == 'up')}, alt {sum(1 for d in continuation if d.side == 'down')};"
-        f" süpürme pencerenin SON barında, şansı yoktu: {sum(1 for d in continuation if d.sweep_on_last_bar)})",
+        f" süpürme pencerenin SON barında: {sum(1 for d in continuation if d.sweep_on_last_bar)})",
         f"  → geri dönüş var ama giriş barı yok: {sum(1 for d in one_sided if d.kind == 'no_entry_bar')}",
-        f"süpürme barının KENDİSİ içeride kapandı (tek taraflı günlerde): "
-        f"{sum(1 for d in one_sided if d.sweep_bar_closed_inside)}  — kurulum ÜRETMEZ, okuma tercihinin izi",
         f"kurulum ama geometri kurulamaz: {sum(1 for s in setups if not s.valid)}"
         f"  (giriş stop'un ötesinde {sum(1 for s in setups if s.stop_distance <= 0)},"
         f" hedef girişte geçilmiş {sum(1 for s in setups if s.stop_distance > 0 and s.target_distance <= 0)})",
@@ -478,7 +514,7 @@ def format_clustering(primary: Sequence[Setup]) -> str:
     return "\n".join(lines)
 
 
-def format_geometry(scans: Sequence[SymbolScan], *, round_trip: float) -> str:
+def format_geometry(scans: Sequence[SymbolScan], *, round_trip: float, costs: StopCosts) -> str:
     counted = [day for scan in scans for day in scan.counted_days]
     primary = [setup for scan in scans for setup in scan.primary]
     rows = [
@@ -486,13 +522,15 @@ def format_geometry(scans: Sequence[SymbolScan], *, round_trip: float) -> str:
         ("Asya genişliği/fiyat (birincil)", dist([s.asia_width for s in primary]), True),
         ("stop mesafesi", dist([s.stop_distance for s in primary]), True),
         ("planlanan R/R", dist([s.reward_risk for s in primary]), False),
-        (f"maliyet/R (gidiş-dönüş {100 * round_trip:.2f}%)", dist([s.cost_per_r(round_trip) for s in primary]), False),
+        (f"maliyet/R (gidiş-dönüş {100 * round_trip:.2f}%) — KAPI", dist([s.cost_per_r(round_trip) for s in primary]), False),
+        (f"maliyet/R stop kaymalı (S {100 * costs.short:.2f}% / L {100 * costs.long:.2f}%)",
+         dist([s.stop_cost_per_r(costs) for s in primary]), False),
     ]
-    header = f"{'ölçü':<40}{'n':>7}{'p25':>10}{'medyan':>10}{'p75':>10}"
+    header = f"{'ölçü':<46}{'n':>7}{'p25':>10}{'medyan':>10}{'p75':>10}"
     lines = [header, "-" * len(header)]
     for label, stats, pct in rows:
         lines.append(
-            f"{label:<40}{stats.n:>7}{_num(stats.p25, pct=pct, digits=3 if pct else 2):>10}"
+            f"{label:<46}{stats.n:>7}{_num(stats.p25, pct=pct, digits=3 if pct else 2):>10}"
             f"{_num(stats.median, pct=pct, digits=3 if pct else 2):>10}"
             f"{_num(stats.p75, pct=pct, digits=3 if pct else 2):>10}"
         )
@@ -500,10 +538,12 @@ def format_geometry(scans: Sequence[SymbolScan], *, round_trip: float) -> str:
         chosen = [s for s in primary if s.direction == direction]
         stop = dist([s.stop_distance for s in chosen])
         cost = dist([s.cost_per_r(round_trip) for s in chosen])
+        full = dist([s.stop_cost_per_r(costs) for s in chosen])
         rr = dist([s.reward_risk for s in chosen])
         lines.append(
             f"  {direction:<6} n={stop.n}: stop medyan {_num(stop.median, pct=True, digits=3)},"
             f" R/R medyan {_num(rr.median)}, maliyet/R medyan {_num(cost.median)}"
+            f" (stop kaymalı {_num(full.median)})"
         )
     share = [s for s in primary if s.cost_per_r(round_trip) <= GATE_MAX_MEDIAN_COST_PER_R]
     if primary:
@@ -524,7 +564,7 @@ def format_gate(gate: GateResult) -> str:
 
 
 def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timestamp,
-            round_trip: float, gate: GateResult) -> dict[str, Any]:
+            round_trip: float, costs: StopCosts, gate: GateResult) -> dict[str, Any]:
     """Makine okunur sayım. Getiri/R/PnL alanı YOKTUR (test)."""
     primary = [setup for scan in scans for setup in scan.primary]
 
@@ -536,8 +576,9 @@ def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timesta
             "layer": LAYER, "timeframe": TIMEFRAME, "period": "A",
             "start": start.isoformat(), "end": end.isoformat(),
             "asia_utc": "00:00-08:00", "window_utc": "08:00-13:00",
-            "reversal": "süpürme barından SONRAKİ ilk içeride kapanış",
+            "reversal": "süpürme barı DÂHİL ilk içeride kapanış (tanım düzeltmesi 2026-09-30)",
             "round_trip_cost": round_trip,
+            "stop_round_trip_cost": {"short": costs.short, "long": costs.long},
         },
         "symbols": [
             {
@@ -551,11 +592,16 @@ def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timesta
         ],
         "primary_by_year": dict(sorted(Counter(s.day.year for s in primary).items())),
         "calendar_days": len({s.day for s in primary}),
+        "primary_reversal": {
+            "same_bar": sum(1 for s in primary if s.reversal_bar == s.sweep_bar),
+            "later_bar": sum(1 for s in primary if s.reversal_bar != s.sweep_bar),
+        },
         "geometry": {
             "asia_width": dist_payload(dist([d.asia_width for scan in scans for d in scan.counted_days])),
             "stop_distance": dist_payload(dist([s.stop_distance for s in primary])),
             "planned_reward_risk": dist_payload(dist([s.reward_risk for s in primary])),
             "cost_per_r": dist_payload(dist([s.cost_per_r(round_trip) for s in primary])),
+            "cost_per_r_with_stop_slippage": dist_payload(dist([s.stop_cost_per_r(costs) for s in primary])),
         },
         "gate": {
             "checks": dict(gate.checks), "passed": gate.passed,
@@ -651,7 +697,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(format_clustering(primary))
     print()
     print("=== 4. GEOMETRİ (giriş anında bilinen; getiri DEĞİL) — BİRİNCİL kurulumlar ===")
-    print(format_geometry(scans, round_trip=round_trip))
+    print(format_geometry(scans, round_trip=round_trip, costs=stop_costs(layer.config)))
     print()
     print("=== KARAR KAPISI (ön-kayıtlı) ===")
     print(format_gate(gate))
@@ -660,7 +706,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         path = Path(args.results_json)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps(payload(scans, start=start, end=end, round_trip=round_trip, gate=gate),
+            json.dumps(payload(scans, start=start, end=end, round_trip=round_trip,
+                               costs=stop_costs(layer.config), gate=gate),
                        indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
