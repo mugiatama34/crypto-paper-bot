@@ -8511,13 +8511,37 @@ o, yeni bir ön-kayıttır ve kasada sınanır.
 
 ### 12. Onay
 
-Betik, workflow ve testler bu metin kullanıcı tarafından onaylandıktan SONRA yazılır.
-Onaydan önce açık kalan noktalar:
+**ONAYLANDI (kullanıcı, 2026-09-30):** O1 → **eşit ağırlıklı** (C-1 ile E aynı, sürüklenmeden
+arınmış ölçekte; havuzlanmış ortalama betimsel yanında). O2 → **23:45 barının kapanışı**.
+Birleştirme sonuçla birlikte, kullanıcı onayıyla.
 
-- **O1 — C-1'in ortalaması:** eşit ağırlıklı (önerilen, ΔR ile tutarlı ve sürüklenmeden
-  arınmış) ↔ havuzlanmış. Hangisi seçilmezse öteki betimsel durur.
-- **O2 — zaman çıkışı fiyatı:** 23:45 barının kapanışı (önerilen) ↔ ertesi günün 00:00
-  barının açılışı (7/24 piyasada neredeyse aynı).
+### 13. TADİLAT-1 — ölçümden ÖNCE, hiçbir getiri görülmeden *(2026-09-30)*
+
+Onaydan sonra, betik yazılırken yapılan dört ekleme/düzeltme. Hiçbiri kapıyı, eşiği ya da
+kurulum tanımını DEĞİŞTİRMEZ:
+
+1. **4H yapı etiketine BOZULMA KURALI** (kullanıcı kararı): taban durum `up` iken bir 4H
+   barı son onaylı DİBİN altında (`down` iken son onaylı TEPENİN üstünde) kapanırsa kırılmadır;
+   kırılmadan sonra hem yeni bir tepe hem yeni bir dip onaylanana kadar durum `mixed`dir.
+   Kırılma taban duruma göre, yalnızca kapanışla ve kapanış anı ≤ giriş olarak tanımlanır.
+   Tek kopya `scripts/measure_po3.py::find_pivots/structure_at`; A ve A2 sayımları
+   (#36741132310, #36751661663) bu kural OLMADAN etiketlendi, yani sayımdaki 191 / 177 / 225
+   dağılımı ölçümdekinden farklı olacaktır (betimsel; kapıya girmez). Etiketin ısınması
+   dönemden önceki barları da okur (B'de 30 günlük ısınma çekilir).
+2. **İki gruplu bootstrap'ın yeri:** §5 "küme çekilişleri `backtest_dc`den İTHAL EDİLİR"
+   diyordu; `backtest_dc`de köken başına eşit ağırlıklı (iki gruplu, kümeleri BİRLİKTE
+   çeken) bir çekiliş YOKTUR. Çekiliş `scripts/measure_po3_outcome.py::equal_weight_draws`te,
+   `backtest_dc`nin RNG sözleşmesiyle (`random.Random(seed)`, küme başına `randrange`,
+   boş kalan çekiliş atılır ve sayılır) yazıldı; yüzdelik (`_percentiles`), `MIN_CLUSTERS`
+   ve MDE'nin z katsayısı (`_z`) `backtest_dc`den İTHAL edilir. MDE eşit ağırlıklı
+   tahmincinin doğrusallaştırılmış küme SE'sinden; bağlayıcı MDE iki tanımın BÜYÜĞÜDÜR
+   (`backtest_dc`nin güç tarafı kuralı).
+3. **`preflight` yalnızca dönem A'yı sayar** — §10'daki "A ve B" ifadesi §6'nın "B'nin
+   mumları yalnızca A GEÇERSE çekilir" kuralıyla çelişiyordu; §6 geçerlidir.
+4. **Dolum ayrıntıları** (`core/portfolio.py`nin sözleşmesi): stop dolumunun referansı stop
+   ile barın açılışının ALEYHTE olanıdır (boşluk); hedef seviyeden dolar (lehte boşluk
+   yazılmaz). Yolu kesintisiz olmayan kurulum ÖLÇÜLEMEZ ve iki bacak birlikte düşer (sayılır).
+   Tohum `random_seed:po3-6u:<dönem>:<ölçü>:<tanım>`; çekiliş 10 000.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 

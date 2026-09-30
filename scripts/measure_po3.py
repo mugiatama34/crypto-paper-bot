@@ -112,6 +112,14 @@ olmalıdır. **Onay gecikmesi:** i barındaki tepe ancak i+2 barı KAPANDIĞINDA
 - `mixed`: geri kalan her durum (eşitlik dâhil)
 - `undefined`: iki onaylı tepe ya da iki onaylı dip yok (dönem başı)
 
+**Bozulma kuralı** (kullanıcı kararı, 2026-09-30; sayım koşuları #36741132310 ve
+#36751661663 bu kural OLMADAN etiketlendi): taban durum `up` iken bir 4H barı son onaylı
+DİBİN altında (`down` iken son onaylı TEPENİN üstünde) KAPANIRSA bu bir KIRILMADIR; kırılmadan
+sonra hem yeni bir tepe hem yeni bir dip ONAYLANANA kadar durum `mixed`dir. Kırılma yalnızca
+kapanışla (kapanış anı ≤ giriş) ve taban duruma göre tanımlanır — taban durum o barın
+kapanış anında onaylı tepe/diplerden kurulur. Uygulama `find_pivots` + `structure_at`
+tek kopyasıdır; ölçüm (§6u) aynı kopyayı okur.
+
 Hiza PO3 bacağının yönüne göre okunur: `aligned` (long ↔ up, short ↔ down), `against`
 (long ↔ down, short ↔ up), `mixed`, `undefined`. Sayımda yalnızca dağılım basılır; ΔR
 kırılımı ön-kayıtlı ölçümün betimsel çıktısıdır.
@@ -420,6 +428,8 @@ class Pivots:
     high_values: np.ndarray
     low_confirmed: np.ndarray
     low_values: np.ndarray
+    # Bozulma kuralı: taban duruma göre KIRILMA olan 4H kapanışlarının anları (artan).
+    break_times: np.ndarray = field(default_factory=lambda: np.asarray([], dtype="int64"))
 
 
 def find_pivots(h4: pd.DataFrame) -> Pivots:
@@ -439,25 +449,48 @@ def find_pivots(h4: pd.DataFrame) -> Pivots:
         if all(lows[i] < lows[j] for j in neighbours):
             lc.append(confirmed.value)
             lv.append(lows[i])
-    return Pivots(
+    base = Pivots(
         high_confirmed=np.asarray(hc, dtype="int64"), high_values=np.asarray(hv, dtype="float64"),
         low_confirmed=np.asarray(lc, dtype="int64"), low_values=np.asarray(lv, dtype="float64"),
     )
+    closes = h4["close"].to_numpy(dtype="float64")
+    breaks = []
+    for k, opened in enumerate(index):
+        closed_at = (opened + H4).value
+        state, h_last, l_last = _base_state(base, closed_at)
+        if (state == "up" and closes[k] < l_last) or (state == "down" and closes[k] > h_last):
+            breaks.append(closed_at)
+    return dataclasses.replace(base, break_times=np.asarray(breaks, dtype="int64"))
 
 
-def structure_at(pivots: Pivots, when: pd.Timestamp) -> str:
-    """`when` anında (giriş barının açılışı) bilinen son iki tepe ve son iki dipten yapı."""
-    nh = int(np.searchsorted(pivots.high_confirmed, when.value, side="right"))
-    nl = int(np.searchsorted(pivots.low_confirmed, when.value, side="right"))
+def _base_state(pivots: Pivots, at: int) -> tuple[str, float, float]:
+    """`at` anında (ns) onaylı son iki tepe/dipten TABAN durum — bozulma kuralı UYGULANMADAN."""
+    nh = int(np.searchsorted(pivots.high_confirmed, at, side="right"))
+    nl = int(np.searchsorted(pivots.low_confirmed, at, side="right"))
     if nh < 2 or nl < 2:
-        return "undefined"
+        return "undefined", math.nan, math.nan
     h_prev, h_last = pivots.high_values[nh - 2], pivots.high_values[nh - 1]
     l_prev, l_last = pivots.low_values[nl - 2], pivots.low_values[nl - 1]
     if h_last > h_prev and l_last > l_prev:
-        return "up"
+        return "up", h_last, l_last
     if h_last < h_prev and l_last < l_prev:
-        return "down"
-    return "mixed"
+        return "down", h_last, l_last
+    return "mixed", h_last, l_last
+
+
+def structure_at(pivots: Pivots, when: pd.Timestamp) -> str:
+    """`when` anında (giriş barının açılışı) bilinen yapı, bozulma kuralı DÂHİL."""
+    state, _, _ = _base_state(pivots, when.value)
+    if state == "undefined":
+        return state
+    nb = int(np.searchsorted(pivots.break_times, when.value, side="right"))
+    if nb:
+        broke = int(pivots.break_times[nb - 1])
+        new_high = np.any((pivots.high_confirmed > broke) & (pivots.high_confirmed <= when.value))
+        new_low = np.any((pivots.low_confirmed > broke) & (pivots.low_confirmed <= when.value))
+        if not (new_high and new_low):
+            return "mixed"
+    return state
 
 
 def label_structure(days: Sequence[DayResult], frame: pd.DataFrame) -> tuple[DayResult, ...]:
@@ -475,12 +508,13 @@ def scan_symbol(symbol: str, frame: pd.DataFrame, *, start: pd.Timestamp, end: p
                 min_stop: Mapping[str, float] | None = None) -> SymbolScan:
     if frame.empty:
         return SymbolScan(symbol=symbol, skipped="hiç bar yok", min_stop=min_stop)
+    full = frame.loc[frame.index < end]  # yapı etiketinin ısınması dönemden ÖNCEKİ barları da okur
     frame = frame.loc[(frame.index >= start) & (frame.index < end)]
     if frame.empty:
         return SymbolScan(symbol=symbol, skipped="dönem A'da bar yok", min_stop=min_stop)
     listed = frame.index[0].normalize()
     days = label_structure(
-        [classify_day(symbol, day, frame) for day in period_days(start, end) if day >= listed], frame,
+        [classify_day(symbol, day, frame) for day in period_days(start, end) if day >= listed], full,
     )
     return SymbolScan(
         symbol=symbol, bars=len(frame), first_bar=frame.index[0], last_bar=frame.index[-1], days=days,

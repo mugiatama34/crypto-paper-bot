@@ -292,3 +292,29 @@ def test_alignment_is_relative_to_the_po3_direction():
     assert short.alignment == "aligned"
     assert long.alignment == "against"
     assert dataclasses.replace(long, structure="mixed").alignment == "mixed"
+
+
+def test_break_below_last_low_turns_up_into_mixed_until_a_new_pair_confirms():
+    highs = [2, 3, 5, 3, 2, 4, 7, 4, 3, 3, 3]
+    lows = [3, 2, 1, 2, 3, 3, 3.4, 3.5, 3, 3.6, 3.7]
+    base = _h4_frame(highs, lows)
+    step = pd.Timedelta(hours=4)
+    after = base.index[-1] + step
+    assert structure_at(find_pivots(base), after) == "up"
+    # 4H kapanışı son onaylı dibin (3) altında: kırılma → mixed.
+    broken = pd.concat([base, pd.DataFrame(
+        {"open": [3.2], "high": [3.3], "low": [2.4], "close": [2.5]}, index=[after])])
+    pivots = find_pivots(broken)
+    assert len(pivots.break_times) == 1
+    assert structure_at(pivots, after + step) == "mixed"
+    # Kırılmadan ÖNCEKİ bir an etkilenmez (ileriye bakış yok).
+    assert structure_at(pivots, after) == "up"
+    # Kırılmadan sonra yalnız YENİ DİP onaylanırsa hâlâ mixed; yeni tepe de gelince taban duruma döner.
+    lows_only = broken.copy()
+    for i, (h, l) in enumerate([(4.0, 3.0), (4.1, 2.0), (4.2, 3.1), (4.3, 3.2)]):
+        lows_only.loc[after + (i + 1) * step] = [h, h, l, h]
+    p2 = find_pivots(lows_only)
+    t2 = lows_only.index[-1] + step
+    assert p2.low_confirmed[-1] > p2.break_times[0]
+    assert not (p2.high_confirmed > p2.break_times[0]).any()
+    assert structure_at(p2, t2) == "mixed"
