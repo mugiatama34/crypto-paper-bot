@@ -8269,6 +8269,37 @@ dokunmadan önce gelir ve yukarıdaki üç koşul sağlandığında TEK sefer ok
 ölçümde geçti/geçmedi" diye yazılır. Maker'lı bir tez YENİ bir ön-kayıttır ve bu pencere ona
 kapalıdır (§6t > 12).
 
+#### Sonradan eklenen betimsel ayrıntı — maker (m1) ve (d1) pozisyon satırları *(2026-09-30, kullanıcı kararı)*
+
+⚠ **Sonradan eklenen betimsel ayrıntı.** Hiçbir kararı değiştirmez; yukarıdaki SONUÇ'un 3.
+maddesinin "ayrıntı yükte yok" dediği boşluğu doldurur. **Yöntem:** dondurulmuş betik (`d64eb9d`,
+TADİLAT-2'den ÖNCEKİ hâli) aynı sabitlenmiş veride (`docs/data/pins/funding_carry/`, SHA256
+doğrulandı) yerelde yeniden koşuldu; arşivin kasa öncesi satırlarının SHA256'sı 51 dosyanın hepsinde
+ölçüm koşusunun yüküyle (`archive.files`) birebir, maker (m1) ve (d1) özetleri (pozisyon, pozisyon-gün,
+toplam getiri, dört bileşen) yayımlanmış değerlerle 1e-12 içinde birebir — koşu deterministik.
+Değerler C (= 10 nominal) üzerinden yüzde.
+
+| Satır | Sembol | Giriş → çıkış (UTC) | Gün | Çıkış | Fonlama | Baz | Maliyet | Net |
+|---|---|---|---|---|---|---|---|---|
+| m1 | **TRUMP** | 08-10 05:00 → 08-22 05:00 | 12.0 | **likidasyon** | +0.022 | **+1.503** | 0.092 | **+1.433** |
+| m1 | HYPE | 08-26 01:00 → 09-26 23:00 | 31.9 | dönem sonu | +0.050 | +0.003 | 0.021 | +0.031 |
+| m1 | PEPE | 08-24 17:00 → 09-26 23:00 | 33.3 | dönem sonu | +0.052 | −0.003 | 0.021 | +0.029 |
+| m1 | SUI | 08-26 09:00 → 09-26 23:00 | 31.6 | dönem sonu | +0.066 | −0.002 | 0.025 | +0.039 |
+| m1 | XPL | 08-13 05:00 → 09-26 23:00 | 44.8 | dönem sonu | +0.132 | −0.013 | 0.025 | +0.094 |
+| m1 | XRP | 08-26 01:00 → 09-26 23:00 | 31.9 | dönem sonu | +0.056 | +0.003 | 0.021 | +0.038 |
+| d1 | ONE | 08-13 05:00 → 09-17 09:00 | 35.2 | sinyal | +0.369 | +0.622 | 0.058 | +0.933 |
+| d1 | PONS | 09-15 14:00 → 09-26 23:00 | 11.4 | dönem sonu | +0.087 | +0.042 | 0.050 | +0.080 |
+
+**Likidasyonun katkısı (kayda giren rakam):** TRUMP perp'i 12 günde `P_liq`e (`P₀ × 1.995`,
++%99.5) ulaştı; spot aynı barı `P_liq × S₀/P₀` = 2.9785'in **üstünde**, 3.203'te kapattı (spot
++%114.5). Ön-kayıtlı model spot'u bu kapanıştan sattığı için likidasyon **+%1.503'lük bir baz
+kalemi** üretti — maker satırının bütün bazı (+%1.49; öteki beş pozisyonun toplamı −%0.013) ve
+netinin %86'sı (+%1.433 / +%1.66) bu tek olaydan. Likidasyonsuz beş pozisyonun neti **+%0.23**
+(fonlama +%0.36, baz −%0.01, maliyet %0.11). Bu, SONUÇ'un 3. maddesindeki uyarıyı sayıya çevirir:
+maker satırının pozitifliği fonlamadan değil, likidasyonun modellenme biçiminden geliyordu.
+(d1)'in bazı (+%0.62) ise bir sinyal çıkışından (ONE: spot +%36.0 ↔ perp +%29.8) — likidasyon
+değil, gerçek bir spot/perp ayrışması.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
