@@ -407,7 +407,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 12 | Doku rejimi: piyasanın DOKUSU (14g Kaufman verimliliği medyanı × 7g getirilerin kesitsel std'si, eşikler önceki 365 günün medyanı, 2×2) önceden yazılmış bir eşlemeyle aileleri aç/kapa — eşleme, rejim etiketlerinin haftalık blok permütasyonundan (plasebo, 1000) iyi mi — üç kol (1D, 4H, 15m), §6q bahçesinin aileleri — **model DEĞİL, ölçüm** | §6r, commit `456ce51` (TADİLAT-1 `79167b3`: plasebo dairesel kaydırma, kapı hedge'li net getiride) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: 1D küçük pozitif, 4H ve 15m plasebodan ayırt edilemez; 15m'de eşleme her zaman açıktan iyi ama plasebo da; kapı (TADİLAT-1): HEDGE'Lİ net Δ, dairesel kaydırma plasebosunun (tüm kaydırmalar, ≥ 30 gün) %95 diliminin üstünde ∧ BH q = 0.05 m = 3, A ∧ B; ham net betimsel | **DÜŞTÜ — dönem A'da, üç kolda** (koşu #36381144532, `8bba500`): hedge'li net Δ dairesel kaydırma plasebosuna karşı 1D −%17.4 (p 0.960), 4H −%6.0 (p 0.815), 15m +%201 (p 0.185; plasebo ort. +%194); B'de doğrulanacak kol yok; ham da üç kolda geçmedi → okuma 1D/4H *"ayırt edilemedi"*, 15m *"eşleme mekanik olarak iyi, rejim bir şey bilmiyor"* (kazanç yalnızca devir azalması, plasebo birebir taşıyor). Rejimler kısa ömürlü (medyan 2 gün); blok permütasyonu ~%19 fazla geçiş üretti ama sonucu değiştirmedi. Betimsel: 1D A sol kuyruk p 0.041 (eşleme ters yönde) — yeni tez, kasada sınanamaz — §6r > SONUÇ, karar 69 |
 | 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **(1) TUTTU, (2) DÜŞTÜ — dönem A'da, 21 hücrede** (koşu #36435759788, `45fde50`; kullanıcı onayı 2026-09-28): (1) melez − taker bahçe ortalaması üç kolda A ve B'de pozitif, CI sıfırın üstünde — A haftalık 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60, +14.05]; kazanç ücret farkının aritmetiği (dolum oranı %96–99.6, dolan emir taker fiyatından girer), kaçırma bedeli tasarrufun %9–19'u. (2) hedge'li melez net hiçbir hücrede BH'yi geçmedi (en yakın 1D/F6 p 0.029, CI alt −1.8); B'de doğrulanacak hücre yok → kârlı aile yok. Kesinlik penceresi hariç satır sonucu değiştirmiyor. Dolum modelinin iyimserliği (kitap sırası yok) kayıtlı — §6s > SONUÇ |
 | 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | **DEĞERLENDİRİLEMEZ** (koşu #36577992025, `b8fd615`): taker kuralı 90 günde 0 pozisyon açtı (eşik %0.0714/gün hiç aşılmadı) → < 70 pozisyon-gün ∧ < 10 giriş; M1 KALICI (ρ̄ +0.196, CI [+0.099, +0.292]). Maker betimsel +%1.66 ama baz +%1.49, fonlama +%0.38, 1 likidasyon (yeniden koşu: likidasyon bazın tamamı, +%1.50). **TADİLAT-2** (sonuç sonrası sıkılaştırma): likidasyonda spot çıkışı `min(kapanış, P_liq × S₀/P₀)`, lehte baz yok — maker betimsel +%0.16. Kural (TADİLAT-2 dâhil) DONDURULDU, kasada ilk ölçüm — §6t > SONUÇ, karar 71 |
-| 15 | PO3 / AMD, Varyant A2: Asya aralığı (00–08 UTC) Londra penceresinde (08–13) süpürülüp aralığa geri dönünce süpürmenin TERSİNE girmek (hedef aralığın karşı tarafı, stop süpürme ucu ≥ %1.40, zaman çıkışı 24:00), AYNI yöne girmekten (kırılım devam, yansıtılmış geometri) iyi mi — 15m, `ema` evreni — **model DEĞİL, ölçüm** (dış kaynak) | §6u, bu commit | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı ve Claude: ort. R ~0, ayırt edilemez, ΔR işareti negatif olabilir; kapı: C-1 (PO3 bacağı) ∧ E (½·ΔR ≥ 0.15R ∧ ΔR bağlayıcı CI alt > 0), köken başına eşit ağırlık, gün ∧ hafta küme bootstrap'ı (küçüğü), A ∧ B | **KOŞULMADI** — ön-kayıt açık, sonuç buraya yazılacak |
+| 15 | PO3 / AMD, Varyant A2: Asya aralığı (00–08 UTC) Londra penceresinde (08–13) süpürülüp aralığa geri dönünce süpürmenin TERSİNE girmek (hedef aralığın karşı tarafı, stop süpürme ucu ≥ %1.40, zaman çıkışı 24:00), AYNI yöne girmekten (kırılım devam, yansıtılmış geometri) iyi mi — 15m, `ema` evreni — **model DEĞİL, ölçüm** (dış kaynak) | §6u, bu commit | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı ve Claude: ort. R ~0, ayırt edilemez, ΔR işareti negatif olabilir; kapı: C-1 (PO3 bacağı) ∧ E (½·ΔR ≥ 0.15R ∧ ΔR bağlayıcı CI alt > 0), köken başına eşit ağırlık, gün ∧ hafta küme bootstrap'ı (küçüğü), A ∧ B | **DÜŞTÜ — dönem A'da** (koşu #36774716786, `147574f3`): C-1 R̄_PO3 −0.109 (bağlayıcı alt −0.264); E ½·ΔR +0.035 (marj 0.15; ΔR bağlayıcı alt −0.188, üst ½·ΔR ≈ 0.15–0.16); MDE ΔR 0.372 (½·ΔR 0.186); B koşulmadı → **"ayırt edilemedi"**, marjın belirgin üstü dışlandı. Köken içi işaretler zıt (U −0.05, L +0.19) ve sürüklenmeyle tutarlı; brüt ≈ net (+0.071); kural 13 çift-stop 1 kurulum; 4H "uyumlu" grup en kötüsü (betimsel) — §6u > SONUÇ, karar 72 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -8542,6 +8542,75 @@ kurulum tanımını DEĞİŞTİRMEZ:
    ile barın açılışının ALEYHTE olanıdır (boşluk); hedef seviyeden dolar (lehte boşluk
    yazılmaz). Yolu kesintisiz olmayan kurulum ÖLÇÜLEMEZ ve iki bacak birlikte düşer (sayılır).
    Tohum `random_seed:po3-6u:<dönem>:<ölçü>:<tanım>`; çekiliş 10 000.
+
+### SONUÇ — koşuldu, dönem A'da GEÇMEDİ: süpürmenin tersine girmek, aynı yöne girmekten AYIRT EDİLEMEDİ *(2026-09-30, `measure-po3-outcome` #36774716786, tetikleyici `73023fb1`, sonuçlar `147574f3`; kullanıcı onayı BEKLENİYOR)*
+
+Preflight #36765667625: 593 / 593 kurulum ölçülebilir (U 287, L 306; küme gün 201 / 158, hafta
+102 / 96). Ölçüm A'da koştu; A GEÇMEDİĞİ için **B KOŞULMADI** ve B'nin mumları hiç çekilmedi
+(§6). Yük `docs/data/po3_outcome.json`, çift satırları `docs/data/po3_outcome_pairs.csv`.
+
+**1. C-1 (PO3 bacağı, eşit ağırlıklı R̄):** **−0.109R**; aralık gün [−0.264, +0.053], hafta
+[−0.260, +0.036] → bağlayıcı alt **−0.264** → **KALDI**.
+
+**2. E:** ΔR (eşit ağırlıklı) **+0.071** → **½·ΔR +0.035** (marj ≥ 0.15) → **KALDI**; aralık gün
+[−0.188, +0.326], hafta [−0.179, +0.301] → bağlayıcı alt **−0.188**. Kesinlik: SE_küme 0.133
+(gün) / 0.121 (hafta), DEFF 1.86 / 1.56, n_etkin 319 / 380; **bağlayıcı MDE ΔR 0.372 (½·ΔR
+ölçeğinde 0.186)**. Gözlenen ½·ΔR MDE'nin beşte biri kadar. Aralığın üst ucu ½·ΔR ölçeğinde
+0.163 (gün) / 0.151 (hafta), yani **marjın (0.15) belirgin biçimde üstündeki bir etki bu
+veriyle dışlanıyor**; marjın altındaki küçük bir etki ne gösterilebiliyor ne dışlanabiliyor.
+Güç uyarısı (§5) geçerli: GEÇMEDİ, "etki yok" diye okunmaz.
+
+**Karar (mekanik): KALDI — dönem A'da (B KOŞULMADI).**
+
+**3. Köken kırılımı (betimsel) — iki köken ZIT yönde:**
+
+| Köken | n | PO3 | ΔR net | ΔR brüt | R̄_PO3 | R̄_devam | medyan stop |
+|---|---|---|---|---|---|---|---|
+| U (üst süpürme) | 287 | short | −0.052 | −0.021 | −0.206 | −0.153 | %1.91 |
+| L (alt süpürme) | 306 | long | +0.194 | +0.163 | −0.013 | −0.206 | %1.89 |
+
+İki grupta da LONG bacak kazanıyor (U'da devam, L'de PO3) — dönem A'nın yukarı sürüklenmesiyle
+tutarlı. Eşit ağırlık tam da bunu sıfırlamak için vardı: kalan +0.071 gürültünün içinde. Medyan
+stop mesafeleri eşit (A2'nin tek eşiği işini yaptı), yani sıfırlama geometri açısından temiz.
+
+**4. Brüt ↔ net:** eşit ağırlıklı ΔR brüt **+0.071**, net **+0.071** — maliyet asimetrisi
+birleştirmede tamamen sönüyor. Köken içinde görünür: U'da net − brüt = −0.031 (short PO3'ün stop
+kayması), L'de +0.030 (short devamın stop kayması); ikisi birbirini götürüyor. Havuzlanmış ΔR
++0.075 (net) / +0.074 (brüt), eşit ağırlıklıyla neredeyse aynı — sürüklenmenin iki kökene
+dağılımı dengeli olduğu için havuz da büyük ölçüde arınmış.
+
+**5. Çıkış sebepleri ve kural 13:** PO3 bacağı U: stop 165 / hedef 59 / zaman 63; L: stop 161 /
+hedef 77 / zaman 68. Devam bacağı U: 168 / 70 / 49; L: 180 / 76 / 50. Hedef payı dört hücrede
+%21–25, stop payı %53–59. **Kural 13'ün iki bacağı aynı barda stop'a düşürdüğü kurulum: 1
+(%0.17)** — varsayım bu tasarımda sonucu bağlamıyor.
+
+**6. 4H yapı kırılımı (bozulma kuralı dâhil; grup içi aralık hesaplanmadı, grup başına kaba SE
+≈ 0.13·√(593/n) ≈ 0.19–0.26R):**
+
+| Hiza | n | gün | ΔR eşit ağ. | R̄_PO3 eşit ağ. |
+|---|---|---|---|---|
+| uyumlu | 146 | 108 | −0.098 | −0.222 |
+| ters | 161 | 119 | +0.041 | −0.029 |
+| karışık | 286 | 192 | +0.171 | −0.099 |
+
+Arkadaşın "yapıyla uyumlu" katmanı PO3'ü iyileştirmiyor; uyumlu grup nokta tahmininde en kötüsü.
+Farklar grup SE'lerinin içinde — bu kırılımdan bir filtre TÜRETİLMEZ (§11).
+
+**Diğer betimsel.** Geri dönüş AYNI bar: n 141, ΔR −0.324, R̄_PO3 −0.377; SONRAKİ bar: n 452,
+ΔR +0.207, R̄_PO3 −0.016. Yıl: 2022 ΔR −0.079, 2023 +0.170, 2024 +0.129 (eşit ağırlıklı). Bunlar
+da SE'lerinin içinde ve §11 gereği bir filtreye dönüşmez; "sonraki bar" alt kümesi yeni bir tez
+olarak ancak kendi ön-kaydıyla ve kasada sınanabilir.
+
+**7. B:** koşulmadı (A geçmedi).
+
+**Tahminle kıyas (§8):** "ortalama R sıfıra yakın, ayırt edilemez" TUTTU (R̄_PO3 −0.11, aralık
+sıfırı içeriyor). "ΔR'nin işareti negatif olabilir" TUTMADI: ΔR +0.07, ama ayırt edilemez; oynak
+günlerde "devam" eğilimi eşit ağırlıklı ölçüde görülmedi — köken içi işaretler sürüklenmeyle
+açıklanıyor.
+
+**Sayılmayanlar.** Hiçbir model, motor, defter, config ya da kapı değişmez. Varyant A2 dondurulur;
+PO3'ün başka bir varyantı (eşik, pencere, "sonraki bar" alt kümesi, yapı filtresi) yeni bir
+ön-kayıttır ve bu dönemin A'sı ona kapalıdır. Sicil 15.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
