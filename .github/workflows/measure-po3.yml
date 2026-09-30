@@ -7,7 +7,8 @@
 # edildi (birincil ≥ 300, ≥ 150 takvim günü, medyan maliyet/R ≤ 0.15).
 #
 # VARYANT A ("yalnızca geniş süpürmeler", `--variant A`) ayrı bir aşamadır:
-# `.github/triggers/po3-varA*.run` → `count-a`. Filtre ve kapısı betiğin sabitleridir.
+# `.github/triggers/po3-varA*.run` → `count-a`. VARYANT A2 (tek eşik, iki yönde %1.40):
+# `.github/triggers/po3-varA2*.run` → `count-a2`. Filtreler ve kapıları betiğin sabitleridir.
 #
 # Aşamalar tetikleyici dosyadan (`po3-count*.run` → `count`, `po3-varA*.run` → `count-a`),
 # `scripts/trigger_stage.py`den (karar 64). `workflow_dispatch` de açık. `permissions:
@@ -54,7 +55,7 @@ jobs:
           if [ "$EVENT" = "workflow_dispatch" ]; then
             echo "stage=count" >> "$GITHUB_OUTPUT"
           else
-            python scripts/trigger_stage.py --before "$BEFORE" --sha "$GITHUB_SHA" --branch "$BRANCH" --stage "count=po3-count*.run" --stage "count-a=po3-varA*.run"
+            python scripts/trigger_stage.py --before "$BEFORE" --sha "$GITHUB_SHA" --branch "$BRANCH" --stage "count=po3-count*.run" --stage "count-a=po3-varA.run" --stage "count-a2=po3-varA2*.run"
           fi
 
   count:
@@ -84,6 +85,7 @@ jobs:
           mkdir -p out
           VARIANT=()
           if [ "$STAGE" = "count-a" ]; then VARIANT=(--variant A); fi
+          if [ "$STAGE" = "count-a2" ]; then VARIANT=(--variant A2); fi
           python scripts/measure_po3.py "${VARIANT[@]}" --results-json out/po3.json | tee out/report.txt
 
       - name: Upload count

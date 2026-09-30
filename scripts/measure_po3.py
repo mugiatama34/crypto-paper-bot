@@ -88,6 +88,34 @@ durur (çıkış 2). Varyant A'nın kapısı: birincil ≥ 300 **VE** ≥ 150 fa
 koşulu tanım gereği sağlanır ve yalnızca bir SAĞLAMA olarak basılır (azami stop kaymalı
 maliyet/R ≤ 0.15). Filtrenin elediği geçerli kurulumlar yön bazında ayrıca sayılır.
 
+## VARYANT A2 — tek eşik (`--variant A2`; 2026-09-30, kullanıcı kararı, getiri görülmeden)
+
+Varyant A'nın sayımı (#36741132310) kapıyı geçti ama yön bazlı eşik short grubunu 124'e
+indirdi (long 306); ön-kayıttaki köken bazlı EŞİT AĞIRLIKLI birleştirmede o küçük grup testin
+belirsizliğini tek başına belirlerdi. A2 tanımı ve kapıyı DEĞİŞTİRMEZ, eşiği iki yönde de
+long'unkine eşitler: **stop mesafesi ≥ %1.40**. Bedeli yazılıdır: short'ta stop kaymalı
+maliyet/R azami 0.31 / 1.40 ≈ 0.22'ye çıkar (kaba eleme çıtası 0.15'in üstü, filtresiz
+medyan 0.42'nin çok altı; asıl test tam maliyetle koşar). Kapı: birincil ≥ 300 **VE** ≥ 150
+takvim günü. Sağlama yalnızca long için (≤ 0.15); short'un maliyet/R satırı (medyan, p75,
+azami) AYRICA basılır, kapıya girmez. Varyant A'nın sabitleri kayıt olarak DURUR.
+
+## Giriş anındaki 4 saatlik piyasa YAPISI — BETİMSEL etiket (kapı değil)
+
+Her kuruluma giriş barının AÇILIŞI anındaki 4H yapı durumu yazılır. 4H barları 15m'den
+kurulur (00:00 UTC hizalı, 16 barı tam olmayan 4H barı atılır). Tepe (dip): `high` (`low`)
+iki yanındaki 2'şer barın HEPSİNDEN kesin büyük (küçük) olan bar; beş bar kesintisiz ardışık
+olmalıdır. **Onay gecikmesi:** i barındaki tepe ancak i+2 barı KAPANDIĞINDA bilinir, yani
+`index[i+2] + 4h ≤ giriş`. Durum son iki ONAYLI tepe ve son iki ONAYLI dipten:
+
+- `up`: son tepe > önceki tepe **ve** son dip > önceki dip
+- `down`: son tepe < önceki tepe **ve** son dip < önceki dip
+- `mixed`: geri kalan her durum (eşitlik dâhil)
+- `undefined`: iki onaylı tepe ya da iki onaylı dip yok (dönem başı)
+
+Hiza PO3 bacağının yönüne göre okunur: `aligned` (long ↔ up, short ↔ down), `against`
+(long ↔ down, short ↔ up), `mixed`, `undefined`. Sayımda yalnızca dağılım basılır; ΔR
+kırılımı ön-kayıtlı ölçümün betimsel çıktısıdır.
+
 ## Çıkış kodları (karar 51: boş rapor yeşil dönmez)
 
 - `0` — sayım yapıldı (kapının sonucu ne olursa olsun).
@@ -103,6 +131,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import dataclasses
 import json
 import logging
 import math
@@ -150,6 +179,15 @@ VARIANT_A_MIN_STOP: Mapping[str, float] = {"long": 0.0140, "short": 0.0207}
 VARIANT_A_MIN_SETUPS = 300
 VARIANT_A_MIN_DAYS = 150
 
+# VARYANT A2 — tek eşik, iki yönde de long'un eşiği. Ön-kayıtlı, getiri görülmeden. Girdi DEĞİLDİR.
+VARIANT_A2_MIN_STOP: Mapping[str, float] = {"long": 0.0140, "short": 0.0140}
+VARIANTS: Mapping[str, Mapping[str, float]] = {"A": VARIANT_A_MIN_STOP, "A2": VARIANT_A2_MIN_STOP}
+
+# 4H yapı etiketi (betimsel): tepe/dip iki yanında 2'şer bar; onay i+2 barının kapanışı.
+H4 = pd.Timedelta(hours=4)
+H4_BARS = int(H4 / BAR)  # 16
+PIVOT_SIDE = 2
+
 
 # --------------------------------------------------------------------------- #
 # Birimler
@@ -170,6 +208,15 @@ class Setup:
     high_a: float
     low_a: float
     asia_close: float
+    structure: str | None = None  # 4H yapı: up | down | mixed | undefined (betimsel)
+
+    @property
+    def alignment(self) -> str | None:
+        """PO3 bacağının yönüne göre yapı hizası (betimsel)."""
+        if self.structure is None or self.structure in ("mixed", "undefined"):
+            return self.structure
+        aligned = (self.direction == "long") == (self.structure == "up")
+        return "aligned" if aligned else "against"
 
     @property
     def direction(self) -> str:
@@ -352,6 +399,78 @@ def period_days(start: pd.Timestamp, end: pd.Timestamp) -> list[pd.Timestamp]:
     return days
 
 
+# --------------------------------------------------------------------------- #
+# 4H piyasa yapısı (betimsel)
+# --------------------------------------------------------------------------- #
+def to_h4(frame: pd.DataFrame) -> pd.DataFrame:
+    """15m → 4H, 00:00 UTC hizalı; 16 barı tam olmayan 4H barı atılır."""
+    if frame.empty:
+        return frame.iloc[:0][["open", "high", "low", "close"]]
+    grouped = frame.resample(H4, origin="epoch", label="left", closed="left")
+    h4 = grouped.agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+    h4["n"] = grouped["close"].count()
+    return h4.loc[h4["n"] == H4_BARS, ["open", "high", "low", "close"]]
+
+
+@dataclass(frozen=True, kw_only=True)
+class Pivots:
+    """Onaylı tepe/dipler: onay anı (i+2 barının KAPANIŞI) ve değer, onay sırasıyla."""
+
+    high_confirmed: np.ndarray
+    high_values: np.ndarray
+    low_confirmed: np.ndarray
+    low_values: np.ndarray
+
+
+def find_pivots(h4: pd.DataFrame) -> Pivots:
+    highs = h4["high"].to_numpy(dtype="float64")
+    lows = h4["low"].to_numpy(dtype="float64")
+    index = h4.index
+    span = 2 * PIVOT_SIDE * H4
+    hc, hv, lc, lv = [], [], [], []
+    for i in range(PIVOT_SIDE, len(h4) - PIVOT_SIDE):
+        if index[i + PIVOT_SIDE] - index[i - PIVOT_SIDE] != span:
+            continue  # beş bar kesintisiz ardışık değil
+        neighbours = [j for j in range(i - PIVOT_SIDE, i + PIVOT_SIDE + 1) if j != i]
+        confirmed = index[i + PIVOT_SIDE] + H4
+        if all(highs[i] > highs[j] for j in neighbours):
+            hc.append(confirmed.value)
+            hv.append(highs[i])
+        if all(lows[i] < lows[j] for j in neighbours):
+            lc.append(confirmed.value)
+            lv.append(lows[i])
+    return Pivots(
+        high_confirmed=np.asarray(hc, dtype="int64"), high_values=np.asarray(hv, dtype="float64"),
+        low_confirmed=np.asarray(lc, dtype="int64"), low_values=np.asarray(lv, dtype="float64"),
+    )
+
+
+def structure_at(pivots: Pivots, when: pd.Timestamp) -> str:
+    """`when` anında (giriş barının açılışı) bilinen son iki tepe ve son iki dipten yapı."""
+    nh = int(np.searchsorted(pivots.high_confirmed, when.value, side="right"))
+    nl = int(np.searchsorted(pivots.low_confirmed, when.value, side="right"))
+    if nh < 2 or nl < 2:
+        return "undefined"
+    h_prev, h_last = pivots.high_values[nh - 2], pivots.high_values[nh - 1]
+    l_prev, l_last = pivots.low_values[nl - 2], pivots.low_values[nl - 1]
+    if h_last > h_prev and l_last > l_prev:
+        return "up"
+    if h_last < h_prev and l_last < l_prev:
+        return "down"
+    return "mixed"
+
+
+def label_structure(days: Sequence[DayResult], frame: pd.DataFrame) -> tuple[DayResult, ...]:
+    pivots = find_pivots(to_h4(frame))
+    labelled = []
+    for day in days:
+        if day.setup is not None:
+            setup = dataclasses.replace(day.setup, structure=structure_at(pivots, day.setup.entry_bar))
+            day = dataclasses.replace(day, setup=setup)
+        labelled.append(day)
+    return tuple(labelled)
+
+
 def scan_symbol(symbol: str, frame: pd.DataFrame, *, start: pd.Timestamp, end: pd.Timestamp,
                 min_stop: Mapping[str, float] | None = None) -> SymbolScan:
     if frame.empty:
@@ -360,8 +479,8 @@ def scan_symbol(symbol: str, frame: pd.DataFrame, *, start: pd.Timestamp, end: p
     if frame.empty:
         return SymbolScan(symbol=symbol, skipped="dönem A'da bar yok", min_stop=min_stop)
     listed = frame.index[0].normalize()
-    days = tuple(
-        classify_day(symbol, day, frame) for day in period_days(start, end) if day >= listed
+    days = label_structure(
+        [classify_day(symbol, day, frame) for day in period_days(start, end) if day >= listed], frame,
     )
     return SymbolScan(
         symbol=symbol, bars=len(frame), first_bar=frame.index[0], last_bar=frame.index[-1], days=days,
@@ -421,11 +540,16 @@ def evaluate_gate(primary: Sequence[Setup], *, round_trip: float) -> GateResult:
     )
 
 
-def evaluate_gate_variant_a(primary: Sequence[Setup], *, costs: "StopCosts") -> GateResult:
-    """Varyant A kapısı. Maliyet satırı tanım gereği sağlanır; bir SAĞLAMADIR, eşik değil."""
+def evaluate_gate_variant_a(primary: Sequence[Setup], *, costs: "StopCosts",
+                            sanity_directions: Sequence[str] = ("short", "long")) -> GateResult:
+    """Varyant A/A2 kapısı. Maliyet satırı tanım gereği sağlanır; bir SAĞLAMADIR, eşik değil.
+
+    A2'de sağlama yalnızca long'dadır: short'un maliyet/R'si bilerek 0.15'in üstüne çıkabilir.
+    """
     days = len({setup.day for setup in primary})
     per_r = [setup.stop_cost_per_r(costs) for setup in primary]
-    worst = max(per_r) if per_r else None
+    checked = [setup.stop_cost_per_r(costs) for setup in primary if setup.direction in sanity_directions]
+    worst = max(checked) if checked else None
     return GateResult(
         setups=len(primary),
         days=days,
@@ -433,7 +557,7 @@ def evaluate_gate_variant_a(primary: Sequence[Setup], *, costs: "StopCosts") -> 
         checks={
             f"birincil kurulum >= {VARIANT_A_MIN_SETUPS}": len(primary) >= VARIANT_A_MIN_SETUPS,
             f"farklı takvim günü >= {VARIANT_A_MIN_DAYS}": days >= VARIANT_A_MIN_DAYS,
-            f"sağlama: azami stop kaymalı maliyet/R <= {VARIANT_A_MAX_COST_PER_R}": (
+            f"sağlama ({'/'.join(sanity_directions)}): azami stop kaymalı maliyet/R <= {VARIANT_A_MAX_COST_PER_R}": (
                 worst is not None and worst <= VARIANT_A_MAX_COST_PER_R + 1e-12
             ),
         },
@@ -563,7 +687,27 @@ def format_filter(scans: Sequence[SymbolScan]) -> str:
         after = sum(1 for s in primary if s.direction == direction)
         share = f"{100.0 * after / before:.1f}%" if before else "—"
         parts.append(f"{direction} (stop ≥ {100 * min_stop[direction]:.2f}%) {before} → {after} ({share})")
-    return "VARYANT A filtresi (geometrisi kurulabilen → BİRİNCİL): " + "; ".join(parts)
+    return "VARYANT filtresi (geometrisi kurulabilen → BİRİNCİL): " + "; ".join(parts)
+
+
+STRUCTURES = ("up", "down", "mixed", "undefined")
+ALIGNMENTS = ("aligned", "against", "mixed", "undefined")
+
+
+def format_structure(primary: Sequence[Setup]) -> str:
+    """Betimsel: giriş anındaki 4H yapı ve PO3 yönüne göre hiza. Getiri YOK."""
+    header = f"{'':<14}" + "".join(f"{name:>11}" for name in STRUCTURES) + f"{'toplam':>9}"
+    lines = [header, "-" * len(header)]
+    for direction in ("short", "long"):
+        chosen = [s for s in primary if s.direction == direction]
+        lines.append(f"{'PO3 ' + direction:<14}" + "".join(
+            f"{sum(1 for s in chosen if s.structure == name):>11}" for name in STRUCTURES) + f"{len(chosen):>9}")
+    lines.append("hiza (PO3 yönüne göre): " + ", ".join(
+        f"{name} {sum(1 for s in primary if s.alignment == name)}" for name in ALIGNMENTS))
+    for name in ALIGNMENTS:
+        days = len({s.day for s in primary if s.alignment == name})
+        lines.append(f"  {name:<10} takvim günü {days}")
+    return "\n".join(lines)
 
 
 def format_years(scans: Sequence[SymbolScan]) -> str:
@@ -623,10 +767,13 @@ def format_geometry(scans: Sequence[SymbolScan], *, round_trip: float, costs: St
         cost = dist([s.cost_per_r(round_trip) for s in chosen])
         full = dist([s.stop_cost_per_r(costs) for s in chosen])
         rr = dist([s.reward_risk for s in chosen])
+        worst = max((s.stop_cost_per_r(costs) for s in chosen), default=None)
+        over = sum(1 for s in chosen if s.stop_cost_per_r(costs) > GATE_MAX_MEDIAN_COST_PER_R)
         lines.append(
             f"  {direction:<6} n={stop.n}: stop medyan {_num(stop.median, pct=True, digits=3)},"
             f" R/R medyan {_num(rr.median)}, maliyet/R medyan {_num(cost.median)}"
-            f" (stop kaymalı {_num(full.median)})"
+            f" (stop kaymalı medyan {_num(full.median)}, p75 {_num(full.p75)}, azami {_num(worst)};"
+            f" > {GATE_MAX_MEDIAN_COST_PER_R}: {over})"
         )
     share = [s for s in primary if s.cost_per_r(round_trip) <= GATE_MAX_MEDIAN_COST_PER_R]
     if primary:
@@ -662,7 +809,7 @@ def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timesta
             "asia_utc": "00:00-08:00", "window_utc": "08:00-13:00",
             "reversal": "süpürme barı DÂHİL ilk içeride kapanış (tanım düzeltmesi 2026-09-30)",
             "variant": variant,
-            "min_stop": None if variant is None else dict(VARIANT_A_MIN_STOP),
+            "min_stop": None if variant is None else dict(VARIANTS[variant]),
             "round_trip_cost": round_trip,
             "stop_round_trip_cost": {"short": costs.short, "long": costs.long},
         },
@@ -685,6 +832,12 @@ def payload(scans: Sequence[SymbolScan], *, start: pd.Timestamp, end: pd.Timesta
             "short": sum(1 for s in primary if s.direction == "short"),
             "long": sum(1 for s in primary if s.direction == "long"),
         },
+        "structure": {
+            direction: {name: sum(1 for s in primary if s.direction == direction and s.structure == name)
+                        for name in STRUCTURES}
+            for direction in ("short", "long")
+        },
+        "alignment": {name: sum(1 for s in primary if s.alignment == name) for name in ALIGNMENTS},
         "setups_per_calendar_day": dict(sorted(Counter(Counter(s.day for s in primary).values()).items())),
         "primary_reversal": {
             "same_bar": sum(1 for s in primary if s.reversal_bar == s.sweep_bar),
@@ -749,13 +902,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     costs = stop_costs(layer.config)
     min_stop: Mapping[str, float] | None = None
-    if args.variant == "A":
+    if args.variant is not None:
         if not variant_a_thresholds_match(costs):
             logger.error("varyant A eşikleri config'ten türeyenle ayrıştı: %s ↔ short %s / long %s",
                          dict(VARIANT_A_MIN_STOP), costs.short / VARIANT_A_MAX_COST_PER_R,
                          costs.long / VARIANT_A_MAX_COST_PER_R)
             return 2
-        min_stop = VARIANT_A_MIN_STOP
+        min_stop = VARIANTS[args.variant]
 
     cache_dir = args.cache_dir or tempfile.mkdtemp(prefix="po3-")
     run_config = copy.deepcopy(dict(layer.config))
@@ -783,12 +936,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     primary = [setup for scan in scans for setup in scan.primary]
     gate = (
-        evaluate_gate_variant_a(primary, costs=costs) if min_stop is not None
+        evaluate_gate_variant_a(primary, costs=costs,
+                                sanity_directions=("long",) if args.variant == "A2" else ("short", "long"))
+        if min_stop is not None
         else evaluate_gate(primary, round_trip=round_trip)
     )
     if min_stop is not None:
         print()
-        print(f"*** VARYANT A — yalnızca geniş süpürmeler: short stop ≥ {100 * min_stop['short']:.2f}%,"
+        print(f"*** VARYANT {args.variant} — yalnızca geniş süpürmeler: short stop ≥ {100 * min_stop['short']:.2f}%,"
               f" long stop ≥ {100 * min_stop['long']:.2f}% ***")
 
     print()
@@ -809,7 +964,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("=== 4. GEOMETRİ (giriş anında bilinen; getiri DEĞİL) — BİRİNCİL kurulumlar ===")
     print(format_geometry(scans, round_trip=round_trip, costs=costs))
     print()
-    print(f"=== KARAR KAPISI (ön-kayıtlı{', VARYANT A' if min_stop is not None else ''}) ===")
+    print("=== 5. GİRİŞ ANINDAKİ 4H YAPI (betimsel; getiri DEĞİL) — BİRİNCİL kurulumlar ===")
+    print(format_structure(primary))
+    print()
+    print(f"=== KARAR KAPISI (ön-kayıtlı{', VARYANT ' + args.variant if min_stop is not None else ''}) ===")
     print(format_gate(gate))
 
     if args.results_json:
@@ -833,8 +991,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--symbols", nargs="*", default=None, help=f"varsayılan: {LAYER} evreninin tamamı")
     parser.add_argument("--start", default=PERIOD_A_START, help="dönem A başlangıcı (ithal)")
     parser.add_argument("--end", default=PERIOD_A_CUTOFF, help="dönem A kesimi — AŞILAMAZ (çıkış 2)")
-    parser.add_argument("--variant", choices=["A"], default=None,
-                        help="A: yalnızca geniş süpürmeler (ön-kayıtlı yön başına asgari stop; sabit, girdi değil)")
+    parser.add_argument("--variant", choices=sorted(VARIANTS), default=None,
+                        help="A: yön başına asgari stop (L %%1.40 / S %%2.07); A2: iki yönde %%1.40 (sabit, girdi değil)")
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--results-json", default=None)
     return parser.parse_args(argv)

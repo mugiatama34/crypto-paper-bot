@@ -9,6 +9,7 @@ etmemesi.
 from __future__ import annotations
 
 import ast
+import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,10 @@ from scripts.measure_po3 import (
     VARIANT_A_MIN_DAYS,
     VARIANT_A_MIN_SETUPS,
     VARIANT_A_MIN_STOP,
+    VARIANT_A2_MIN_STOP,
+    find_pivots,
+    structure_at,
+    to_h4,
     Setup,
     SymbolScan,
     DayResult,
@@ -218,3 +223,72 @@ def test_variant_a_gate_needs_count_and_days_cost_is_a_sanity_check():
     few_days = [_setup("2022-01-01", 0.03) for _ in range(VARIANT_A_MIN_SETUPS)]
     assert not evaluate_gate_variant_a(few_days, costs=costs).passed
     assert not evaluate_gate_variant_a([], costs=costs).passed
+
+
+# --------------------------------------------------------------------------- #
+# VARYANT A2 — tek eşik
+# --------------------------------------------------------------------------- #
+def test_variant_a2_uses_the_long_threshold_in_both_directions():
+    assert VARIANT_A2_MIN_STOP == {"long": 0.0140, "short": 0.0140}
+    assert wide_enough(_setup("2022-01-01", 0.0150, side="up"), VARIANT_A2_MIN_STOP)
+    assert not wide_enough(_setup("2022-01-01", 0.0130, side="up"), VARIANT_A2_MIN_STOP)
+
+
+def test_variant_a2_gate_checks_cost_only_on_long():
+    days = pd.date_range("2022-01-01", periods=VARIANT_A_MIN_DAYS, freq="D", tz="UTC")
+    costs = stop_costs(load_config(None))
+    shorts = [_setup(str(days[i % len(days)]), 0.0150, side="up") for i in range(VARIANT_A_MIN_SETUPS)]
+    assert shorts[0].stop_cost_per_r(costs) > 0.15
+    assert not evaluate_gate_variant_a(shorts, costs=costs).passed
+    assert evaluate_gate_variant_a(shorts + [_setup("2022-01-01", 0.0150, side="down")], costs=costs,
+                                   sanity_directions=("long",)).passed
+
+
+# --------------------------------------------------------------------------- #
+# 4H yapı (betimsel)
+# --------------------------------------------------------------------------- #
+def _h4_frame(highs: list[float], lows: list[float]) -> pd.DataFrame:
+    index = pd.date_range("2022-01-01", periods=len(highs), freq="4h", tz="UTC")
+    return pd.DataFrame({"open": lows, "high": highs, "low": lows, "close": highs}, index=index)
+
+
+def test_to_h4_aggregates_and_drops_incomplete_bars():
+    index = pd.date_range("2022-01-01", periods=16 * 2, freq="15min", tz="UTC")
+    frame = pd.DataFrame({"open": 1.0, "high": np.arange(32.0), "low": -np.arange(32.0), "close": 2.0}, index=index)
+    h4 = to_h4(frame.drop(index[20]))
+    assert list(h4.index) == [index[0]]
+    assert h4.iloc[0]["high"] == 15.0 and h4.iloc[0]["low"] == -15.0
+
+
+def test_pivot_is_known_only_after_two_more_bars_close():
+    frame = _h4_frame([1, 2, 5, 2, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0])
+    pivots = find_pivots(frame)
+    assert list(pivots.high_values) == [5.0]
+    confirmed = frame.index[4] + pd.Timedelta(hours=4)
+    assert pivots.high_confirmed[0] == confirmed.value
+    assert len(pivots.low_values) == 0  # eşitlik tepe/dip değildir
+
+
+def test_structure_up_down_mixed_and_undefined():
+    # tepeler 5 → 7 (HH), dipler 1 → 3 (HL): yukarı
+    highs = [2, 3, 5, 3, 2, 4, 7, 4, 3, 3, 3]
+    lows = [3, 2, 1, 2, 3, 3, 3.4, 3.5, 3, 3.6, 3.7]
+    frame = _h4_frame(highs, lows)
+    pivots = find_pivots(frame)
+    after = frame.index[-1] + pd.Timedelta(hours=4)
+    assert list(pivots.high_values) == [5.0, 7.0]
+    assert list(pivots.low_values) == [1.0, 3.0]
+    assert structure_at(pivots, after) == "up"
+    assert structure_at(pivots, frame.index[0]) == "undefined"
+    down = find_pivots(_h4_frame([-h for h in lows], [-h for h in highs]))
+    assert structure_at(down, after) == "down"
+    mixed = find_pivots(_h4_frame(highs, [3, 2, 1, 2, 3, 3, 3.4, 3.5, 0.5, 3.6, 3.7]))
+    assert structure_at(mixed, after) == "mixed"
+
+
+def test_alignment_is_relative_to_the_po3_direction():
+    short = dataclasses.replace(_setup("2022-01-01", 0.02, side="up"), structure="down")
+    long = dataclasses.replace(_setup("2022-01-01", 0.02, side="down"), structure="down")
+    assert short.alignment == "aligned"
+    assert long.alignment == "against"
+    assert dataclasses.replace(long, structure="mixed").alignment == "mixed"
