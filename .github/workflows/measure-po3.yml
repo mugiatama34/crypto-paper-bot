@@ -1,0 +1,88 @@
+# PO3 / AMD (Asya aralığı süpürme + geri dönüş) ÖLÇÜLEBİLİRLİK SAYIMININ tetikleyicisi
+# (`scripts/measure_po3.py`). Salt okunur; strateji koşusu DEĞİL — getiri/R/kazanma oranı
+# hesaplanmaz, yalnızca olay sayımı ve giriş anında bilinen geometri.
+#
+# Kapsam: `ema` katmanının 13 sembolü, 15m, YALNIZCA dönem A (sınırlar `backtest_ema.py`den
+# ithal; girdi DEĞİL). Tanım ve KARAR KAPISI betiğin sabitleridir ve koşudan ÖNCE commit
+# edildi (birincil ≥ 300, ≥ 150 takvim günü, medyan maliyet/R ≤ 0.15).
+#
+# Tek aşama, tek tetikleyici dosya (`.github/triggers/po3-count*.run`), aşama
+# `scripts/trigger_stage.py`den (karar 64). `workflow_dispatch` de açık. `permissions:
+# contents: read` — bu iş YAZAMAZ; çıktı log + artifact. `cron` YOKTUR (docs/backtest.md > 7).
+name: measure-po3
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - ".github/triggers/po3-*.run"
+
+concurrency:
+  group: measure-po3
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      stage: ${{ steps.stage.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve stage
+        id: stage
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "stage=count" >> "$GITHUB_OUTPUT"
+          else
+            python scripts/trigger_stage.py --before "$BEFORE" --sha "$GITHUB_SHA" --branch "$BRANCH" --stage "count=po3-count*.run"
+          fi
+
+  count:
+    needs: stage
+    if: needs.stage.outputs.stage != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Count PO3 setups (period A only)
+        run: |
+          set -o pipefail
+          mkdir -p out
+          python scripts/measure_po3.py --results-json out/po3.json | tee out/report.txt
+
+      - name: Upload count
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: po3-count
+          path: out/
+          if-no-files-found: warn
