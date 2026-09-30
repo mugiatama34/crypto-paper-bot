@@ -4037,6 +4037,21 @@ gereken yeni bir serbestliktir). Ayrıntı ve yeniden açılma koşulu docs/back
 "fonlama tezi ASKIYA ALINDI".
 
 
+### KAPANDI (2026-09-29): portal yolu KESİN kapatıldı
+
+Askının şartı doğrudan bir gözlemle sınandı (kullanıcı, tarayıcıdan): **tek sembol**
+(BTC-USDT), **aylık**, 03/2022 → 08/2022 talebi yine **yalnızca son ayı (2022-08)** döndürdü.
+Önceki gözlemin (4 sembol × 6 ay → tek dosya) sembol limitinden ya da çok sembollü talepten
+gelme ihtimali böylece düştü: **portal bir ARALIK istendiğinde yalnızca son ayı teslim ediyor.**
+Kapsam ancak sembol-ay başına ayrı bir istekle (~360) alınabilir; bu, "talep edilen teslim
+edilmiyor" engelini aşmaz, yalnızca onun etrafından dolanmaya çalışır — ve her dosyanın ayrı
+ayrı doğrulanması gereken, elle yürütülen bir çekime dönüşür.
+
+**Sonuç: A-2'nin portal dalı KAPANDI.** Tez (§6f, fonlama ekstremi) ölçülmedi, ölçülemedi;
+düşmedi. Fonlama tarihi için tek yol bundan sonra kendi arşivimizdir
+(`scripts/archive_funding.py`, 2026-06-22'den itibaren). İlk tüketicisi §6t'dir (fonlama
+taşıması; TADİLAT-1 bu kapanışa dayanarak "yalnızca arşiv" dalını seçti).
+
 ---
 
 ## 39-DOĞRULAMA: tahmin kıl payı tuttu, ama onarımın DAYANDIĞI MEKANİZMA çürüdü
@@ -5605,3 +5620,44 @@ OLASILIĞI tahmin edilenden çok küçük; kullanıcının tahmini (üç kolda g
 karar ve ayrı bir ön-kayıttır; o ön-kayıt bu ölçümün dolum modelinin iyimserliğini (kitap
 sırası, post-only reddi, aralık) ele almak zorundadır. Kârlı aile olmadığı için hiçbir şey
 dondurulmaz, kasa açılmaz. Sicil satırı 13.
+
+---
+
+## 71. Fonlama taşıması: öncül tutuyor, taker eşiği pencerede hiç aşılmadı — DEĞERLENDİRİLEMEZ, kural donduruldu, kasada ilk ölçüm; ön-kayıt §6t *(2026-09-29)*
+
+**Ne ölçüldü.** Delta-nötr fonlama taşıması (long spot + short perp): son 7 günün ortalama
+fonlaması maliyetten türetilmiş eşiği aşınca gir, sıfırın altına inince çık. Tek geliştirme
+dönemi 2026-06-29 → 09-27 (13 hafta; portal kapalı, A/B yok). Birincil evren kasa öncesi
+bilgiyle: 2026-06-22 öncesi 30 günün perp cirosuna göre spot karşılığı olan ilk 20 sembol,
+17'si ölçülebilir (%85; ALLO, XLM, RE arşivde yok).
+
+**Sonuç.** Mekanizma KALICI (günlük kesitsel Spearman ρ̄ +0.196, hafta kümeli CI [+0.099,
++0.292]). Ama taker eşiği (%0.0714/gün ≈ yıllık %26) birincil evrende hiçbir sembolde aşılmadı:
+**0 pozisyon** → T2'nin eşiği (≥ 70 pozisyon-gün, ≥ 10 giriş) sağlanmadı → **DEĞERLENDİRİLEMEZ**
+(§7.6'dan kayıtlı sapma: GEÇMEDİ değil). Betimsel: maker kendi eşiğiyle 6 pozisyon, net +%1.66;
+bunun +%1.49'u baz, +%0.38'i fonlama, bir pozisyon 1x likidasyonla kapandı — yani pozitiflik
+fonlamanın maliyeti yenmesinden değil, bir fiyat olayının modellenme biçiminden geliyor. Taker
+eşiği yalnızca bugünkü (kasa sonrası seçilmiş) evrende aşıldı (2 pozisyon); `ema`-13'te hiç.
+
+**Karar.** Hiçbir model, motor, defter ya da kapı değişmez. Kural DONDURULUR (betik `d64eb9d`,
+ön-kayıt `bfd46b0`, TADİLAT-1 `b12c957`). Kasa sınaması ayrı bir ön-kayıtla, kasaya dokunmadan
+önce gelir; ≥ 13 tam hafta VE ≥ 70 pozisyon-gün VE ≥ 10 giriş sağlandığında (yalnızca sayımla
+sınanarak) TEK sefer okunur ve sonucu "kasada ilk ölçümde geçti/geçmedi" diye yazılır —
+"doğrulandı" değil, çünkü bu geliştirme sonucunun doğrulaması değil tezin ilk ölçümüdür. Maker'lı
+bir tez yeni bir ön-kayıttır ve bu pencere ona kapalıdır. Sicil satırı 14.
+
+**Ne öğrenildi (kayıt, kural değil).** Maliyetten türetilen bir eşik, sakin bir fonlama rejiminde
+büyük coinlerde taşımayı tamamen kapatır; kalıcılık tek başına yetmez, SEVİYE de gerekir. Bu,
+ön-kayıttaki notun (§6t > 11) doğrulanmasıdır, eşiği gevşetmenin gerekçesi değil.
+
+
+**EK (2026-09-30) — TADİLAT-2, sonuç sonrası sıkılaştırma (kullanıcı kararı).** Dondurulmuş
+betiğin sabitlenmiş veride yeniden koşusu (sonradan eklenen betimsel ayrıntı; deterministik,
+yayımlanmış özetlerle birebir) likidasyonun katkısını ölçtü: tek olay (TRUMP) **+%1.503'lük baz
+kalemi** üretti — maker bazının tamamı, netinin %86'sı; likidasyonsuz beş pozisyonun neti +%0.23.
+Sebep modelin yapısal önyargısıydı: perp `P_liq`de kapanırken spot barın (daha yüksek)
+kapanışından satılıyordu. **Kural sıkılaştırıldı:** likidasyonda spot çıkış fiyatı
+`min(bar kapanışı, P_liq × S₀/P₀)`; likidasyon hiçbir durumda lehte baz üretemez (§6t > TADİLAT-2).
+§7'nin yasağı gevşetmeye yöneliktir; bu sıkılaştırma kayıtla yapıldı ve DEĞERLENDİRİLEMEZ sonucunu
+değiştirmez (taker'da likidasyon yok). TADİLAT-2 altında maker betimsel neti +%0.16. **Kasaya
+giden kural:** `bfd46b0` + TADİLAT-1 `b12c957` + TADİLAT-2.
