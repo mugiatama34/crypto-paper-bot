@@ -5661,3 +5661,31 @@ kapanışından satılıyordu. **Kural sıkılaştırıldı:** likidasyonda spot
 §7'nin yasağı gevşetmeye yöneliktir; bu sıkılaştırma kayıtla yapıldı ve DEĞERLENDİRİLEMEZ sonucunu
 değiştirmez (taker'da likidasyon yok). TADİLAT-2 altında maker betimsel neti +%0.16. **Kasaya
 giden kural:** `bfd46b0` + TADİLAT-1 `b12c957` + TADİLAT-2.
+
+
+## 72. PO3 / AMD (Varyant A2): süpürmenin tersine girmek, kırılım devamından ayırt edilemedi — ölçüm, yeni model YOK; ön-kayıt §6u *(2026-09-30, kullanıcı onayı 2026-10-01)*
+
+**Bağlam.** Dış kökenli kural (kullanıcının arkadaşı): Asya aralığı (00–08 UTC) Londra
+penceresinde (08–13) süpürülüp aralığa geri dönünce süpürmenin tersine gir; stop süpürme ucu,
+hedef aralığın karşı tarafı, zaman çıkışı 24:00. Üç sayım: filtresiz (maliyetten kaldı,
+#36709304143), Varyant A (#36741132310), Varyant A2 — stop ≥ %1.40 iki yönde (#36751661663,
+593 kurulum / 330 gün). Kontrol yazı-tura değil BİREBİR TERS bacaktı (kırılım devamı, aynı
+mesafeler); marj bu yüzden ½·ΔR ≥ 0.15R; köken başına eşit ağırlık (sürüklenme arınması).
+
+**Sonuç** (koşu #36774716786): C-1 R̄_PO3 −0.109 [bağlayıcı alt −0.264] KALDI; E ½·ΔR +0.035
+[ΔR bağlayıcı alt −0.188] KALDI; MDE ΔR 0.372. B koşulmadı. Okuma "ayırt edilemedi": aralığın üst
+ucu marja denk (½·ΔR ≈ 0.15–0.16), marj düzeyinde bir etki dışlanmıyor; MDE(½·ΔR) 0.186 > marj
+0.15, yani test marj düzeyindeki etkiyi görecek güçte değildi. Tahmin: "sıfıra yakın" tuttu,
+"işaret negatif" tutmadı.
+
+**Karar.** Hiçbir model, motor, defter ya da kapı değişmez. Varyant A2 dondurulur. Betimsel
+kırılımlar (geri dönüş aynı/sonraki bar, 4H hiza, yıl) filtreye dönüşmez; aynı bar ↔ sonraki bar
+ayrımı betimsel kalır ve tez açılmaz (kullanıcı kararı, 2026-10-01). Sicil satırı 15.
+
+**Ne öğrenildi (kayıt, kural değil).** (1) Köken içi ham farklar dönem sürüklenmesini taşıyor
+(iki grupta da long bacak kazandı); eşit ağırlıklı birleştirme olmasa L grubu tek başına "PO3
+çalışıyor" gibi okunurdu. (2) A → A2 geçişi (yön bazlı → tek eşik) sayıma bakılarak yapılan bir
+araştırmacı serbestliğiydi; getiriye kördü ve sonuç GEÇMEDİ olduğu için lehte bir seçim etkisi
+söz konusu değil, ama kayıtta durur. (3) Birebir ters kontrolde kural 13'ün iki bacağı birlikte
+bağlaması pratikte yok (1 / 593).
+
