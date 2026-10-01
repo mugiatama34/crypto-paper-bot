@@ -8611,6 +8611,135 @@ eğilimi eşit ağırlıklı ölçüde görülmedi; köken içi işaretler sür�
 PO3'ün başka bir varyantı (eşik, pencere, yapı filtresi) yeni bir
 ön-kayıttır ve bu dönemin A'sı ona kapalıdır. Sicil 15.
 
+## 6v. ÖN-KAYIT (TASLAK) — 4H DÖNGÜ PO3: her 4 saatlik mumun ilk saati süpürülüp içeri kapanınca TERSİNE girmek ÖLÇÜLEBİLİR mi? *(2026-10-01; SAYIM aşaması, getiri YOK)*
+
+**Durum: TASLAK — kullanıcı onayı bekleniyor.** Bu bölüm yalnızca bir ÖLÇÜLEBİLİRLİK SAYIMININ
+ön-kaydıdır (§6u'nun Adım 1'inin deseni). Getiri, R, PnL, kazanma oranı hesaplanmaz; sayım
+betiği onaydan SONRA yazılır ve tanımlar betiğin sabitlerine buradan geçer. Sonuç ölçümü
+(iki bacak, kapılar) yalnızca bu sayımın kapıları geçerse AYRI bir ön-kayıtla gelir.
+
+**Köken.** §6u'nun (karar 72) dış kökenli kuralının gün içi döngüye taşınmış hâli (kullanıcı):
+günlük Asya aralığı yerine HER 4H mumun kendi ilk saati. §6u'nun sonucu bu taslağı yönlendirmedi
+(o sonuç bir tez açmaz, §6u > SONUÇ); bu bölüm ayrı, dış kökenli bir tezdir.
+
+**Sicil.** Sayım aşaması sicile GİRMEZ (§6u'nun sayımları da girmedi); sonuç ölçümünün ön-kaydı
+yazılırsa sicilde YENİ bir satır açar.
+
+### 1. Kapsam
+
+- `ema` katmanının SABİT 13 sembolü, OKX 15m mumları, UTC. **Yalnızca dönem A**
+  (2022-01-01 → 2024-06-30, `scripts/backtest_ema.py`den İTHAL). Dönem B ve kasa bu aşamada
+  çekilmez.
+- **Kasa sınırı 2026-09-27T00:00Z** (`scripts/vault.py`): bu andan sonra kapanan hiçbir bar hiçbir
+  aşamada kullanılmaz; sonuç ölçümünün B'si de en geç burada biter.
+- **Kapsam DIŞI:** eşit tepe/dip (EQH/EQL) likiditesi ve ters FVG (IFVG). Bunlar ne kurulumu ne
+  etiketleri etkiler.
+
+### 2. Kurulum (sabitler betiğe buradan geçer)
+
+4H mumları 00:00 UTC hizalıdır (00, 04, 08, 12, 16, 20). Her 4H mumu 16 adet 15m bardır.
+
+- **Kutu:** 4H mumun İLK SAATİ = ilk 4 bar (b1–b4); `H_K = max(high)`, `L_K = min(low)`.
+  `O_4H` = b1'in açılışı. Kutu düzse (`H_K ≤ L_K`) ya da 16 barın biri eksikse 4H mumu sayılmaz
+  (ayrıca sayılır).
+- **Pencere:** b5–b16 (sonraki 3 saat).
+- **Süpürme:** pencerede `high > H_K` (üst) ya da `low < L_K` (alt) olan İLK bar. Pencerede İKİ
+  taraf da süpürüldüyse 4H mumu **belirsiz**, kurulum yok.
+- **Geri dönüş (içeri kapanış):** süpürme barı DÂHİL, kapanışı `[L_K, H_K]` içinde olan ilk bar.
+  **Birden fazla bar dışarıda kalabilir** — süpürmeyle geri dönüş arasında dışarıda kapanan bar
+  sayısı sınırlanmaz, yalnızca pencereyle sınırlıdır. Geri dönüş b15'ten sonra olursa (giriş
+  barı penceredeki son bar olamazsa) kurulum yok, ayrıca sayılır.
+- **Giriş (ters):** geri dönüş barından sonraki barın AÇILIŞI; üst süpürmede short, alt
+  süpürmede long.
+- **Konum şartı (premium/discount):** long YALNIZCA giriş `< O_4H` ise, short YALNIZCA giriş
+  `> O_4H` ise kurulumdur. Şartı sağlamayan "konum dışı" olarak ayrıca sayılır.
+- **Süpürme ucu:** süpürme barından geri dönüş barına kadarki uç (üstte `max(high)`, altta
+  `min(low)`).
+- **Tamponlu stop:** süpürme ucunun ötesinde, `tampon = 0.1 × (H_K − L_K)` kadar (açık nokta O1).
+- **Hedef:** kutunun karşı tarafı (short → `L_K`, long → `H_K`) (açık nokta O2). Geometri
+  kurulamıyorsa (stop girişin yanlış tarafında ya da hedef girişte geçilmiş) kurulum birincile
+  girmez, ayrıca sayılır.
+- Sembol başına 4H mumda en fazla bir kurulum (tanım gereği).
+
+### 3. Kapılar (sayım aşaması; sabit, girdi değil)
+
+1. **Maliyet:** birincil kurulum = stop kaymalı tam maliyetle **maliyet/R ≤ 0.15** olan kurulum.
+   Stop mesafesi `|giriş − stop| / giriş`; gidiş-dönüş long'da `2·fee + 2·slippage_base`
+   (%0.21), short'ta `2·fee + slippage_base + slippage_short_stop` (%0.31) → long stop ≥ %1.40,
+   short stop ≥ %2.07 (açık nokta O3). Tanım gereği sağlanır; kapı olarak bir sağlama satırıdır.
+2. **Örneklem:** birincil ≥ 300 **VE** ≥ 150 farklı takvim günü.
+3. **GÜÇ (yeni, sıkılaştırma):** A2'nin R varyansıyla tahmini **MDE(½·ΔR) ≤ 0.15**. Sağlanmazsa
+   sonuç ölçümü (measure) **koşulmaz**. Formül, sayım görülmeden burada sabitlenir:
+
+   `MDE_proj(½·ΔR) = ½ · 2.802 · σ_D · ½·√(1/n_U + 1/n_L) · √DEFF_proj,t`
+
+   - `σ_D = 2.370` — A2'nin (§6u) köken içi havuzlanmış D standart sapması
+     (`docs/data/po3_outcome_pairs.csv`, SHA256 `81ecfeb1bae93eda…`; betik özeti doğrular).
+   - `n_U`, `n_L` — üst ve alt süpürme kökenli birincil kurulum sayıları.
+   - `DEFF_proj,t = max(1, 1 + (DEFF_A2,t − 1) · (m̄_t − 1) / (m̄_A2,t − 1))`, t ∈ {gün, ISO hafta};
+     A2: gün DEFF 1.860 @ m̄ 1.797, hafta DEFF 1.559 @ m̄ 4.983; `m̄_t` bu sayımın küme başına
+     ortalama birincil kurulum sayısı. **Bağlayıcı MDE iki tanımın BÜYÜĞÜDÜR.**
+   - Gerekçe: §6u'da MDE(½·ΔR) 0.186 marjın (0.15) üstündeydi ve test marj düzeyindeki etkiyi
+     göremedi. Yeterli güç baştan yoksa ölçümü koşmak bir sonuç değil, bir "ayırt edilemedi"
+     üretir. Kapı yalnızca koşuyu ENGELLEYEBİLİR, hiçbir sonucu geçirmez — yönü muhafazakâr.
+   - **Bilinen sınır:** σ_D A2'nin geometrisinden (günlük pencere, ~%1.9 stop) gelir; 4H'nin
+     3 saatlik penceresi ve farklı R/R dağılımı varyansı değiştirebilir. Tahmin bir ölçüm değil
+     bir ön elemedir; sonuç ölçümü kendi MDE'sini veriden hesaplar.
+   - Referans (sayım görülmeden, A2 DEFF'iyle dengeli kökenler): MDE(½·ΔR) ≤ 0.15 için ≈ 910
+     birincil kurulum gerekir; küme başına kurulum arttıkça gereken sayı DEFF ile birlikte büyür.
+
+Üç kapıdan biri kalırsa tur durur; model ya da ölçüm kurulmaz.
+
+### 4. Raporlanacak sayılar (getiri YOK)
+
+Kapsam; sembol × gün bazında 4H mum sınıfları (eksik, düz, süpürme yok, belirsiz, devam = geri
+dönüş yok, giriş barı yok, konum dışı, geometri kurulamaz, maliyet filtresi, birincil); yön
+dağılımı; yıl ve sembol dağılımı; 4H dilimine (00/04/…/20) göre dağılım; gün ve hafta başına
+kurulum histogramı; stop mesafesi, planlanan R/R ve maliyet/R dağılımı (yön başına); kapıların
+mekanik sonucu ve MDE_proj (gün, hafta, bağlayıcı).
+
+### 5. Betimsel etiketler (kapı DEĞİL; yalnızca dağılım raporlanır)
+
+Hepsi giriş anında ya da girişten önce bilinen bilgiyle kurulur; tek istisna (e) aşağıda yazılı.
+
+- **(a) 4H yapı:** `scripts/measure_po3.py`nin etiketi (tepe/dip iki yanında 2'şer bar, onay
+  i+2 kapanışı, bozulma kuralı), giriş barının açılışında; PO3 yönüne göre hiza
+  (uyumlu / ters / karışık / tanımsız).
+- **(b) Süpürülen seviye:** süpürme ucu kutunun ötesinde ayrıca önceki UTC gününün tepesini
+  (üst) / dibini (alt) aştıysa `önceki gün`, aşmadı ama önceki 4H mumun tepesini/dibini aştıysa
+  `önceki 4H`, hiçbirini aşmadıysa `hiçbiri`. Öncelik gün > 4H.
+- **(c) Geri dönüş gecikmesi:** geri dönüş barı − süpürme barı, bar cinsinden (0 = aynı bar).
+- **(d) İlk 3 barda FVG:** geri dönüş barı ve sonraki iki bar (r, r+1, r+2) giriş yönünde bir
+  FVG oluşturuyor mu — long: `low[r+2] > high[r]`, short: `high[r+2] < low[r]`. r+2 dördüncü
+  saatin dışına taşarsa etiket `değerlendirilemez`.
+- **(e) FVG limit dolumu:** (d) varsa, FVG'nin giriş tarafı kenarına (long: `low[r+2]`, short:
+  `high[r+2]`) r+2 kapandıktan sonra konan limit emir, 4H mumun son barına (b16) kadar dokunulmuş
+  olur muydu (`dolar` / `dolmaz`). **İstisna:** bu etiket girişten SONRAKİ barların yalnızca
+  high/low'una bakar — bir dolum olgusudur, getiri değildir; R hesaplanmaz.
+- **(f) İki giriş için ayrı maliyet/R:** piyasa girişi (giriş barı açılışı) ve FVG limit girişi
+  ((e) dolarsa limit fiyatı) için, aynı stopla, stop kaymalı tam maliyet/R. Limit girişte de
+  taker maliyeti varsayılır (karşılaştırılabilirlik; maker ücreti kapsam dışı).
+- **(g) Karşı likidite ≥ 2R:** girişin hedef tarafındaki en yakın likidite = önceki 4H mumun ve
+  önceki UTC gününün karşı ucu (long: tepeler, short: dipler) içinden girişe en yakın olanı;
+  mesafesi ≥ 2 × stop mesafesi ise `evet`, değilse `hayır`, hedef tarafında hiçbiri yoksa `yok`.
+
+### 6. Tahmin (sayım görülmeden)
+
+Bir saatlik kutunun süpürme ucu çoğunlukla dar olacağı için maliyet filtresi kurulumların büyük
+kısmını eler; filtre sonrası birincil kurulum sayısı örneklem kapısını geçebilir ama **güç kapısı
+(MDE_proj ≤ 0.15) muhtemelen KALIR**, çünkü aynı gün içinde çok sayıda kurulum DEFF'i büyütür.
+
+### 7. Açık noktalar (onaydan önce kapanmalı)
+
+- **O1 — tampon:** `0.1 × kutu genişliği` (önerilen; ölçek kutudan gelir, veriden seçilmez) ↔
+  sabit yüzde ↔ tampon yok.
+- **O2 — hedef:** kutunun karşı tarafı (önerilen; §6u ile aynı mantık) ↔ (g)'deki karşı likidite.
+- **O3 — maliyet filtresi:** yön başına (long %1.40 / short %2.07; "maliyet/R ≤ 0.15"in harfiyen
+  hâli, önerilen) ↔ iki yönde %1.40 (A2'nin deseni; short'ta maliyet/R ≤ 0.22, kökenler dengeli).
+  Varyant A deneyimi: yön başına eşik short'u daralttı ve gücü düşürdü.
+- **O4 — zaman çıkışı (sonuç ölçümü için, sayımı etkilemez):** 4H mumun son barının kapanışı
+  (önerilen) ↔ sonraki 4H mumun sonu.
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
