@@ -8613,7 +8613,7 @@ PO3'ün başka bir varyantı (eşik, pencere, yapı filtresi) yeni bir
 
 ## 6v. ÖN-KAYIT (TASLAK) — 4H DÖNGÜ PO3: her 4 saatlik mumun ilk saati süpürülüp içeri kapanınca TERSİNE girmek ÖLÇÜLEBİLİR mi? *(2026-10-01; SAYIM aşaması, getiri YOK)*
 
-**Durum: TASLAK — kullanıcı onayı bekleniyor.** Bu bölüm yalnızca bir ÖLÇÜLEBİLİRLİK SAYIMININ
+**Durum: TASLAK — açık noktalar kapandı (2026-10-01), kullanıcı onayı bekleniyor.** Bu bölüm yalnızca bir ÖLÇÜLEBİLİRLİK SAYIMININ
 ön-kaydıdır (§6u'nun Adım 1'inin deseni). Getiri, R, PnL, kazanma oranı hesaplanmaz; sayım
 betiği onaydan SONRA yazılır ve tanımlar betiğin sabitlerine buradan geçer. Sonuç ölçümü
 (iki bacak, kapılar) yalnızca bu sayımın kapıları geçerse AYRI bir ön-kayıtla gelir.
@@ -8655,18 +8655,28 @@ yazılırsa sicilde YENİ bir satır açar.
   `> O_4H` ise kurulumdur. Şartı sağlamayan "konum dışı" olarak ayrıca sayılır.
 - **Süpürme ucu:** süpürme barından geri dönüş barına kadarki uç (üstte `max(high)`, altta
   `min(low)`).
-- **Tamponlu stop:** süpürme ucunun ötesinde, `tampon = 0.1 × (H_K − L_K)` kadar (açık nokta O1).
-- **Hedef:** kutunun karşı tarafı (short → `L_K`, long → `H_K`) (açık nokta O2). Geometri
+- **Tamponlu stop:** süpürme ucunun ötesinde, `tampon = 0.1 × (H_K − L_K)` kadar — SABİT
+  (karar O1).
+- **Hedef (GEÇİCİ):** kutunun karşı tarafı (short → `L_K`, long → `H_K`) (karar O2). Bu sayımda
+  yalnızca geometriyi tanımlamak ve hedef mesafesi/R dağılımını raporlamak için kullanılır;
+  **hedef tanımı sonuç ölçümünün ön-kaydında, getiri görülmeden kesinleşir.** Geometri
   kurulamıyorsa (stop girişin yanlış tarafında ya da hedef girişte geçilmiş) kurulum birincile
   girmez, ayrıca sayılır.
+- **Zaman çıkışı (sonuç ölçümü için; sayımı etkilemez):** 4H mumun son barının (b16) kapanışı
+  (karar O4).
 - Sembol başına 4H mumda en fazla bir kurulum (tanım gereği).
 
 ### 3. Kapılar (sayım aşaması; sabit, girdi değil)
 
-1. **Maliyet:** birincil kurulum = stop kaymalı tam maliyetle **maliyet/R ≤ 0.15** olan kurulum.
-   Stop mesafesi `|giriş − stop| / giriş`; gidiş-dönüş long'da `2·fee + 2·slippage_base`
-   (%0.21), short'ta `2·fee + slippage_base + slippage_short_stop` (%0.31) → long stop ≥ %1.40,
-   short stop ≥ %2.07 (açık nokta O3). Tanım gereği sağlanır; kapı olarak bir sağlama satırıdır.
+1. **Maliyet — İKİ YÖNDE TEK EŞİK** (karar O3; yön başına eşik YOK). Kural: %1.40'ta short
+   bacak da stop kaymalı maliyet/R ≤ 0.15'i sağlıyorsa eşik iki yönde %1.40, sağlamıyorsa iki
+   yönde %2.07. Stop mesafesi `|giriş − stop| / giriş`. **%2.07'nin kaynağı:** short'un stop
+   kaymalı gidiş-dönüşü `2·fee_rate + slippage_base + slippage_short_stop` = 2·0.055 + 0.05 + 0.15
+   = %0.31; %0.31 / 0.15 = %2.067, yukarı yuvarlanmış (Varyant A'nın short eşiği, §6u).
+   **Kuralın sonucu config'ten okunur, veriden değil:** %1.40'ta short maliyet/R = 0.31 / 1.40 =
+   0.221 > 0.15 → **eşik iki yönde %2.07** (long'da maliyet/R = 0.21 / 2.07 = 0.10). Betik
+   eşiği config'ten türetir ve bu değerle ayrışırsa durur (çıkış 2). Birincil kurulum = stop
+   mesafesi ≥ %2.07 olan kurulum; maliyet koşulu tanım gereği sağlanır, kapı bir sağlama satırıdır.
 2. **Örneklem:** birincil ≥ 300 **VE** ≥ 150 farklı takvim günü.
 3. **GÜÇ (yeni, sıkılaştırma):** A2'nin R varyansıyla tahmini **MDE(½·ΔR) ≤ 0.15**. Sağlanmazsa
    sonuç ölçümü (measure) **koşulmaz**. Formül, sayım görülmeden burada sabitlenir:
@@ -8695,8 +8705,9 @@ yazılırsa sicilde YENİ bir satır açar.
 Kapsam; sembol × gün bazında 4H mum sınıfları (eksik, düz, süpürme yok, belirsiz, devam = geri
 dönüş yok, giriş barı yok, konum dışı, geometri kurulamaz, maliyet filtresi, birincil); yön
 dağılımı; yıl ve sembol dağılımı; 4H dilimine (00/04/…/20) göre dağılım; gün ve hafta başına
-kurulum histogramı; stop mesafesi, planlanan R/R ve maliyet/R dağılımı (yön başına); kapıların
-mekanik sonucu ve MDE_proj (gün, hafta, bağlayıcı).
+kurulum histogramı; stop mesafesi ve maliyet/R dağılımı (yön başına); **geçici hedefin mesafesi
+ve planlanan R/R dağılımı — medyan, çeyrekler (p25/p75) ve R/R < 1 payı** (yön başına; karar
+O2); kapıların mekanik sonucu ve MDE_proj (gün, hafta, bağlayıcı).
 
 ### 5. Betimsel etiketler (kapı DEĞİL; yalnızca dağılım raporlanır)
 
@@ -8722,23 +8733,25 @@ Hepsi giriş anında ya da girişten önce bilinen bilgiyle kurulur; tek istisna
 - **(g) Karşı likidite ≥ 2R:** girişin hedef tarafındaki en yakın likidite = önceki 4H mumun ve
   önceki UTC gününün karşı ucu (long: tepeler, short: dipler) içinden girişe en yakın olanı;
   mesafesi ≥ 2 × stop mesafesi ise `evet`, değilse `hayır`, hedef tarafında hiçbiri yoksa `yok`.
+- **(h) Girişte kalan bar sayısı:** giriş barından 4H mumun son barına (b16) kadar, ikisi dâhil,
+  15m bar sayısı (1–11) — zaman çıkışına kalan süre (karar O4).
 
 ### 6. Tahmin (sayım görülmeden)
 
-Bir saatlik kutunun süpürme ucu çoğunlukla dar olacağı için maliyet filtresi kurulumların büyük
-kısmını eler; filtre sonrası birincil kurulum sayısı örneklem kapısını geçebilir ama **güç kapısı
-(MDE_proj ≤ 0.15) muhtemelen KALIR**, çünkü aynı gün içinde çok sayıda kurulum DEFF'i büyütür.
+Bir saatlik kutunun süpürme ucu çoğunlukla dar olacağı için iki yönde %2.07'lik eşik kurulumların
+çok büyük kısmını eler. **Örneklem kapısı muhtemelen KALIR**; geçse bile güç kapısı (MDE_proj ≤
+0.15, ≈ 910 dengeli birincil gerektirir) büyük olasılıkla KALIR.
 
-### 7. Açık noktalar (onaydan önce kapanmalı)
+### 7. Kararlar (kullanıcı, 2026-10-01)
 
-- **O1 — tampon:** `0.1 × kutu genişliği` (önerilen; ölçek kutudan gelir, veriden seçilmez) ↔
-  sabit yüzde ↔ tampon yok.
-- **O2 — hedef:** kutunun karşı tarafı (önerilen; §6u ile aynı mantık) ↔ (g)'deki karşı likidite.
-- **O3 — maliyet filtresi:** yön başına (long %1.40 / short %2.07; "maliyet/R ≤ 0.15"in harfiyen
-  hâli, önerilen) ↔ iki yönde %1.40 (A2'nin deseni; short'ta maliyet/R ≤ 0.22, kökenler dengeli).
-  Varyant A deneyimi: yön başına eşik short'u daralttı ve gücü düşürdü.
-- **O4 — zaman çıkışı (sonuç ölçümü için, sayımı etkilemez):** 4H mumun son barının kapanışı
-  (önerilen) ↔ sonraki 4H mumun sonu.
+- **O1 — tampon:** `0.1 × kutu genişliği`, sabit.
+- **O2 — hedef:** kutunun karşı tarafı, GEÇİCİ; sayım hedef mesafesi ve R/R dağılımını raporlar
+  (medyan, çeyrekler, < 1R payı); kesin tanım sonuç ölçümünün ön-kaydında, getiri görülmeden.
+- **O3 — maliyet filtresi:** iki yönde tek eşik; kural %1.40 ↔ %2.07 arasında config'ten
+  çözülür ve bugünkü maliyetlerle **%2.07**'dir (§3.1). Yön başına eşik yok.
+- **O4 — zaman çıkışı:** 4H mumun son barının kapanışı; betimsel etiket (h) girişte kalan bar
+  sayısıdır.
+- Güç kapısı (§3.3) ve betimsel etiketler (§5) taslaktaki gibi.
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
