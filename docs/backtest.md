@@ -8611,9 +8611,28 @@ eğilimi eşit ağırlıklı ölçüde görülmedi; köken içi işaretler sür�
 PO3'ün başka bir varyantı (eşik, pencere, yapı filtresi) yeni bir
 ön-kayıttır ve bu dönemin A'sı ona kapalıdır. Sicil 15.
 
-## 6v. ÖN-KAYIT (TASLAK) — 4H DÖNGÜ PO3: her 4 saatlik mumun ilk saati süpürülüp içeri kapanınca TERSİNE girmek ÖLÇÜLEBİLİR mi? *(2026-10-01; SAYIM aşaması, getiri YOK)*
+**Dipnot — A2 maliyet kapısının uzlaştırması (2026-10-01; A2 sonucu DEĞİŞMEZ).** Soru: %1.40
+tek eşikte short'un stop kaymalı maliyet/R'si 0.31 / 1.40 = 0.221 olmalıydı; kapı nasıl geçti?
+Cevap: **sağlama satırı yalnızca LONG'a uygulandı ve bu tasarım gereğiydi** — ortalama değil,
+short kayması da sonradan eklenmedi.
+- A2'nin kapısı sayım koşusundan ÖNCE yazıldı (`9caf5bde`, 2026-09-30 17:28): bağlayıcı olanlar
+  birincil ≥ 300 ∧ ≥ 150 takvim günü; maliyet satırı `sanity_directions=("long",)` ile yalnızca
+  long'da sınandı. Short'un 0.15'i aşabileceği o commit'te ve kullanıcının A2 kararında açıkça
+  yazılıydı ("short'ta azami ≈ 0.22, kaba eleme çıtasının üstü; asıl test tam maliyetle koşar").
+- Short stop kayması (`slippage_short_stop`) sayım betiğinde A2'den ÖNCE vardı (`402407d1`,
+  2026-09-30 11:33, ikinci filtresiz sayımdan önce); A2 koşusu short satırını AYRICA bastı:
+  medyan 0.16, p75 0.19, azami 0.22, 287'nin 163'ü > 0.15 (§6u > S3).
+- Karışıklığın olası kaynağı: sayım raporundaki "maliyet/R ≤ 0.15 olan birincil: 593 / 593"
+  satırı, filtresiz sayımdan kalan ESKİ kapının ölçüsüydü — iki yönde de gidiş-dönüş %0.21
+  (short stop kayması YOK) kullanır, yani short'u olduğundan ucuz gösterir. A2'nin kapısı o
+  satıra bakmadı; satır yalnızca betimseldi.
+- Ölçüm (§6u) short'u tam maliyetle (`slippage_short_stop` dâhil) koştu; sonuç bu yüzden
+  etkilenmedi. §6v'de aynı belirsizlik doğmasın diye eşik iki yönde de short'un maliyetinden
+  türetildi (%2.07).
 
-**Durum: TASLAK — açık noktalar kapandı (2026-10-01), kullanıcı onayı bekleniyor.** Bu bölüm yalnızca bir ÖLÇÜLEBİLİRLİK SAYIMININ
+## 6v. ÖN-KAYIT — 4H DÖNGÜ PO3: her 4 saatlik mumun ilk saati süpürülüp içeri kapanınca TERSİNE girmek ÖLÇÜLEBİLİR mi? *(2026-10-01; SAYIM aşaması, getiri YOK)*
+
+**Durum: ONAYLANDI (kullanıcı, 2026-10-01).** Bu bölüm yalnızca bir ÖLÇÜLEBİLİRLİK SAYIMININ
 ön-kaydıdır (§6u'nun Adım 1'inin deseni). Getiri, R, PnL, kazanma oranı hesaplanmaz; sayım
 betiği onaydan SONRA yazılır ve tanımlar betiğin sabitlerine buradan geçer. Sonuç ölçümü
 (iki bacak, kapılar) yalnızca bu sayımın kapıları geçerse AYRI bir ön-kayıtla gelir.
@@ -8699,6 +8718,11 @@ yazılırsa sicilde YENİ bir satır açar.
      birincil kurulum gerekir; küme başına kurulum arttıkça gereken sayı DEFF ile birlikte büyür.
 
 Üç kapıdan biri kalırsa tur durur; model ya da ölçüm kurulmaz.
+
+**Kapı kalırsa (kullanıcı kararı, 2026-10-01):** örneklem ya da güç kapısı kalırsa **eşik
+(%2.07) ve kutu tanımı (ilk saat, pencere, tampon, konum şartı) DEĞİŞTİRİLMEZ**; sonuç
+**"ölçülemez"** diye kaydedilir ve **PO3 ailesi PARK EDİLİR** — aynı aileden yeni bir varyant
+(eşik, kutu süresi, pencere) bu sayımın sonucuna bakılarak açılmaz.
 
 ### 4. Raporlanacak sayılar (getiri YOK)
 
