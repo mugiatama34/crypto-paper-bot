@@ -5663,7 +5663,7 @@ değiştirmez (taker'da likidasyon yok). TADİLAT-2 altında maker betimsel neti
 giden kural:** `bfd46b0` + TADİLAT-1 `b12c957` + TADİLAT-2.
 
 
-## 72. PO3 / AMD (Varyant A2): süpürmenin tersine girmek, kırılım devamından ayırt edilemedi — ölçüm, yeni model YOK; ön-kayıt §6u *(2026-09-30, kullanıcı onayı BEKLENİYOR)*
+## 72. PO3 / AMD (Varyant A2): süpürmenin tersine girmek, kırılım devamından ayırt edilemedi — ölçüm, yeni model YOK; ön-kayıt §6u *(2026-09-30, kullanıcı onayı 2026-10-01)*
 
 **Bağlam.** Dış kökenli kural (kullanıcının arkadaşı): Asya aralığı (00–08 UTC) Londra
 penceresinde (08–13) süpürülüp aralığa geri dönünce süpürmenin tersine gir; stop süpürme ucu,
@@ -5673,13 +5673,14 @@ hedef aralığın karşı tarafı, zaman çıkışı 24:00. Üç sayım: filtres
 mesafeler); marj bu yüzden ½·ΔR ≥ 0.15R; köken başına eşit ağırlık (sürüklenme arınması).
 
 **Sonuç** (koşu #36774716786): C-1 R̄_PO3 −0.109 [bağlayıcı alt −0.264] KALDI; E ½·ΔR +0.035
-[ΔR bağlayıcı alt −0.188] KALDI; MDE ΔR 0.372. B koşulmadı. Okuma "ayırt edilemedi": marjın
-belirgin üstündeki bir etki dışlandı (½·ΔR üst ucu ≈ 0.15–0.16), küçük bir etki ne gösterilebilir
-ne dışlanabilir.
+[ΔR bağlayıcı alt −0.188] KALDI; MDE ΔR 0.372. B koşulmadı. Okuma "ayırt edilemedi": aralığın üst
+ucu marja denk (½·ΔR ≈ 0.15–0.16), marj düzeyinde bir etki dışlanmıyor; MDE(½·ΔR) 0.186 > marj
+0.15, yani test marj düzeyindeki etkiyi görecek güçte değildi. Tahmin: "sıfıra yakın" tuttu,
+"işaret negatif" tutmadı.
 
 **Karar.** Hiçbir model, motor, defter ya da kapı değişmez. Varyant A2 dondurulur. Betimsel
-kırılımlar (geri dönüş sonraki bar, 4H hiza, yıl) filtreye dönüşmez; her biri yeni bir ön-kayıt
-ve bu A'ya kapalı. Sicil satırı 15.
+kırılımlar (geri dönüş aynı/sonraki bar, 4H hiza, yıl) filtreye dönüşmez; aynı bar ↔ sonraki bar
+ayrımı betimsel kalır ve tez açılmaz (kullanıcı kararı, 2026-10-01). Sicil satırı 15.
 
 **Ne öğrenildi (kayıt, kural değil).** (1) Köken içi ham farklar dönem sürüklenmesini taşıyor
 (iki grupta da long bacak kazandı); eşit ağırlıklı birleştirme olmasa L grubu tek başına "PO3
