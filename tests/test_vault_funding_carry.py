@@ -169,7 +169,8 @@ def test_count_before_first_checkpoint_does_not_fetch(tmp_path: Path, capsys: py
 
 def test_workflow_schedules_only_the_count() -> None:
     body = (ROOT / ".github" / "workflows" / "measure-funding-carry-vault.yml").read_text(encoding="utf-8")
-    assert body.count("- cron:") == 1
+    # Zamanlama evren kaydı (§6w > 9) main'e girene kadar YOK; o PR bu satırı `== 1`e çevirir.
+    assert body.count("- cron:") == 0
     assert 'if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then\n            echo "stage=count"' in body
     assert '--stage "measure=fcv-measure*.run"' in body           # measure YALNIZCA tetikleyici dosyayla
     count_job = body.split("\n  count:\n", 1)[1].split("\n  measure:\n", 1)[0]
