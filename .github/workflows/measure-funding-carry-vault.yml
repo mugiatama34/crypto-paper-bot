@@ -6,21 +6,22 @@
 #   - `universe` (tetikleyici `fcv-universe*.run`): yalnızca kasa ÖNCESİ veri — enstrüman listesi,
 #     2026-08-28 → 09-27 perp cirosu, 2026-09-20 → 09-27 1H mumlar. Birincil evren donar ve ayrı
 #     `pin` işinde `docs/data/pins/funding_carry_vault/`e commit edilir. Ağ okuyan iş YAZAMAZ.
-#   - `count` (haftalık zamanlanacak; bugün yalnızca elle): YALNIZCA SAYIM — 2026-12-28'den 2027-09-27'ye kadar
+#   - `count` (ZAMANLANMIŞ, haftalık; ve elle): YALNIZCA SAYIM — 2026-12-28'den 2027-09-27'ye kadar
 #     her Pazartesi kontrol noktasında tam hafta, Σ pozisyon-gün, giriş sayısı, ölçülen pay ve kapı
 #     sonucu. Getiri/fonlama/baz/maliyet YAZMAZ. Yazma yetkisi YOK; çıktı log + step summary + artifact.
 #     ⚠ Cron istisnası (§6w > 4, kullanıcı kararı V2): ölçüm işlerinin kalıbı "cron YOK"tur; bu iş
 #     yalnızca sayım ürettiği ve okuma anını rejime bakarak seçmeyi engellediği için istisnadır.
-#     ⚠ ZAMANLAMA BU DOSYADA HENÜZ YOK (kullanıcı kararı, 2026-10-02): `schedule:` bloğu evren listesi
-#     ve hash'i §6w > 9'a yazılıp main'e girdiği PR'la eklenir — haftalık kontrol, dondurulmuş evren
-#     ön-kayıtta durmadan etkinleşmez.
+#     Zamanlama, evren listesi ve hash'i §6w > 9'a yazıldığı PR'la eklendi (kullanıcı kararı,
+#     2026-10-02): haftalık kontrol, dondurulmuş evren ön-kayıtta durmadan etkinleşmez.
 #   - `measure` (tetikleyici `fcv-measure*.run`): ilk okunabilir kontrol noktasında TEK sefer; sonuç
 #     ayrı `pin-results` işinde `docs/data/funding_carry_vault*`e. ASLA zamanlanmaz.
 #
-# Aşama: elle (ileride zamanlanmış) → `count`; push → `scripts/trigger_stage.py` (karar 64).
+# Aşama: zamanlanmış/elle → `count`; push → `scripts/trigger_stage.py` (karar 64).
 name: measure-funding-carry-vault
 
 on:
+  schedule:
+    - cron: "41 6 * * 1"
   workflow_dispatch:
   push:
     branches:
