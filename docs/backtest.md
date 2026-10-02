@@ -8818,6 +8818,173 @@ kutu tanımı DEĞİŞMEZ; sonuç ölçümünün ön-kaydı yazılmaz, measure k
   log'dadır; hiçbiri filtreye ya da yeni bir varyanta dönüşmez — park kuralı tam olarak bunu
   kapatır.
 
+## 6w. ÖN-KAYIT — FONLAMA TAŞIMASI, KASA SINAMASI: dondurulmuş kuralın kasadaki İLK ÖLÇÜMÜ *(2026-10-02)*
+
+**Durum: kararlar işlendi (kullanıcı, 2026-10-02: V1–V7, bkz. 10) — PR onayı bekliyor.** Kod,
+workflow ve tetikleyici onaydan SONRA yazılır. **Kasa verisine dokunulmadan yazıldı:**
+2026-09-27T00:00Z'den sonra kapanan hiçbir mum, hiçbir fonlama kaydı ve hiçbir sayım okunmadı.
+Bu bölüm §6t'nin (karar 71) kasa sınamasıdır; §7.8'in "kasa yalnızca bir SINAMA için, kasaya
+dokunmadan önce ön-kayda alınmış TEK seferlik" şartını karşılar. §7'nin tamamı uygulanır.
+
+### 1. Statü ve dondurma kaydı
+
+- **Dondurulan kural** (§7.8'in istediği commit hash'leri): ön-kayıt `bfd46b05`, TADİLAT-1
+  `b12c957e`, betik `d64eb9dc` + TADİLAT-2 `fbfc2cd1` (betik, test, belge). Kural =
+  `scripts/measure_funding_carry.py` @ `fbfc2cd1`.
+- **Etiket:** sonuç "kasada İLK ÖLÇÜMDE geçti / geçmedi / değerlendirilemez" diye yazılır,
+  "doğrulandı" diye DEĞİL (TADİLAT-1 > T2): geliştirme dönemi DEĞERLENDİRİLEMEZ çıktığı için kasa
+  bir doğrulama değil, tezin ilk ölçümüdür.
+- **Sicil:** yeni hipotez DEĞİL — §6c satır 14'e kasa sonucu eklenir; m = 1, BH paydası
+  değişmez.
+- **§7.8 sapması (O1, §6t'de kabul edildi):** kasa "A ve B'yi geçmiş" bir teze değil, A/B'siz
+  tek dönemde dondurulmuş bir kurala açılıyor. Gerekçe §6t > 10'dadır (veriden seçilen serbest
+  parametre yok); burada değişmez.
+
+### 2. DEĞİŞMEYEN (dondurulmuş, kasa koşusu İTHAL eder)
+
+Sinyal (7 günlük `realized_rate` ortalaması, tanımlılık, 1.5× boşluk kuralı), eşikler (taker
+`θ = 2·RT/14` = %0.0714/gün; maker betimsel), K = 5, takas yok, histerezis (çıkış 0), dolum
+T + 1h, tahakkuk `giriş < t < çıkış`, eşit nominal, 1x, likidasyon **TADİLAT-2'li** hâliyle,
+maliyet tablosu (OKX standart kademe + `slippage_base`), P&L'in üç bileşeni, M1/M2/M3
+tanımları, bootstrap (gün ∧ ISO hafta, 10 000 çekiliş, bağlayıcı = alt sınırların küçüğü), U1/U2,
+N = 20, ölçülemeyen sembol kuralı ve zorunlu cümlesi, dönem sonunda çıkış maliyetli kapanış.
+Bunların hiçbiri bu ön-kayıtla ya da kasa sonucuyla değiştirilemez.
+
+### 3. YALNIZCA TARİHLER kayar
+
+| | Geliştirme (§6t) | Kasa (bu ön-kayıt) |
+|---|---|---|
+| Hacim sıralaması (T1) | 2026-05-23 → 06-22 | **2026-08-28T00:00Z → 2026-09-27T00:00Z** (30 UTC günü, kasa öncesi) |
+| Kimlik kapısı U2 (ilk 168 ortak 1H bar) | 06-15'ten | **2026-09-20T00:00Z'den** (kasa öncesi) |
+| Sinyal ısınması (girdi, sonuç değil) | 06-22 → 06-29 | 2026-09-21 → 09-28 (09-21 → 09-27 kısmı kasa öncesi, §7.8 > İstisna 2) |
+| Karar ve ölçüm başlangıcı | 2026-06-29T00:00Z | **2026-09-28T00:00Z** (ilk tam ISO hafta; V7) |
+| Pencere sonu `W_end` | kasa başlangıcı | 4'ün kontrol noktalarından biri |
+| Fonlama satırları | `< KASA_START` | `< W_end` (kasa satırları YALNIZCA bu sınama için açılır) |
+
+2026-09-27 Pazar günü yalnızca sinyal girdisi olarak okunur; işlem ve ölçüm günü değildir.
+
+### 4. Gözlem penceresi ve okuma anı
+
+- **Başlangıç sabit:** 2026-09-28T00:00Z (V7).
+- **Kontrol noktaları:** her ISO hafta sınırı (Pazartesi 00:00Z). İlki **2026-12-28T00:00Z**
+  (13 tam hafta; §6t > T5), sonuncusu — **tavan — 2027-09-27T00:00Z** (52 tam hafta; V1).
+- **Kontrol ZAMANLANMIŞ bir workflow'la, haftalık ve YALNIZCA SAYIM olarak koşar** (V2;
+  `count`). Her koşu, o ana kadar tamamlanmış bütün kontrol noktalarını baştan değerlendirir
+  (durum dosyası yok; aynı veride aynı sayılar) ve YALNIZCA şunları yazar: kontrol noktası başına
+  tam hafta sayısı, birincil evrende taker için Σ pozisyon-gün ve farklı giriş sayısı, ölçülen
+  pay, kapının sonucu ve ilk geçen nokta. **Getiri, fonlama tutarı, baz, maliyet, sinyal değeri,
+  eşik aşımı sayısı ya da sembol bazında hiçbir sayı YAZMAZ** (test). Maker ve betimsel evrenler
+  bu aşamada hiç koşulmaz. 2026-12-28'den önce "henüz kontrol noktası yok" der; tavandan sonra
+  son durumu (ilk geçen nokta ya da DEĞERLENDİRİLEMEZ / ÖLÇÜLEMEZ) yazar ve başka bir şey
+  yapmaz.
+- **⚠ Cron istisnası (kullanıcı kararı, V2):** §7 ve ölçüm workflow'larının kalıbı "cron YOK"tur,
+  çünkü periyodik koşu "sonucu görüp tekrar koşma"yı otomatikleştirir. Buradaki zamanlanmış iş o
+  yasağın kapsamı DIŞINDADIR: yalnızca sayım üretir, hiçbir getiri görmez ve okuma anını
+  rejime bakarak seçmeyi engellemek için vardır. **`measure` ASLA zamanlanmaz.**
+- **İlk geçen kontrol noktası `W_end` olur** ve `measure` o pencereyle, tek bir tetikleyici
+  dosyayla, TEK sefer koşar. Ölçümün pozisyon-gün ve giriş sayısı `count`un aynı noktada
+  yazdığıyla birebir olmalıdır (kapı; ayrışırsa çıkış 2).
+- **Gerekçe:** T2 "kasa ≥ 13 hafta VE eşik sağlandığında okunur" diyor ve dondurulmuştur. Eksik
+  kalan iki parça burada sabitlenir: sabit kontrol takvimi (okuma anı rejime bakılarak
+  seçilemesin) ve tavan (sonsuz bekleme olmasın).
+
+### 5. Ölçülebilirlik kapısı (her kontrol noktasında; yalnızca sayım)
+
+Bir kontrol noktası ancak hepsi sağlanırsa okunabilir:
+
+1. **Tam hafta ≥ 13.**
+2. **Σ pozisyon-gün ≥ 70** (taker, birincil evren; açık pozisyonlar o noktaya kadar sayılır) —
+   T2 aynen.
+3. **Farklı giriş ≥ 10** — T2 aynen.
+4. **Ölçülen pay ≥ 17/20** (V3, YENİ KAPI): arşivde ısınma başlangıcından (09-21) kontrol
+   noktasına kadar fonlama kaydı olan birincil sembol sayısı. Gerekçe: §6t > SONUÇ'un "ölçülen
+   pay kasada %85'in altına düşmez" beklentisi bir iddiaydı, burada kapıya çevrilir; arşiv
+   2026-09-30'dan beri bütün USDT perp'leri tutuyor ve o gün REST'in ~3 aylık penceresini çekti,
+   yani ısınma penceresi kapsanmış OLMALI — ama bu sayılır, varsayılmaz.
+
+Yanında raporlanır (kapı değil): `_conflicts.csv`in pencereyle kesişimi, U1/U2'den kalan semboller
+ve sebepleri, ızgara boşlukları.
+
+### 6. "Değerlendirilemez" eşiği ve sonuç etiketleri
+
+- **DEĞERLENDİRİLEMEZ:** tavana (52. hafta) kadar hiçbir kontrol noktasında 5'in 1–3. koşulları
+  birlikte sağlanmazsa. Kesindir: eşik, pencere ve kural gevşetilmez; fonlama taşıması bu
+  kuralla **park edilir.** T2'nin sapması burada da geçerlidir — değerlendirilemez GEÇMEDİ
+  DEĞİLDİR (kural maliyeti karşılamayan taşımayı reddetti; tez sınanıp düşmedi).
+- **ÖLÇÜLEMEZ (ayrı etiket):** 5'in 4. koşulu (ölçülen pay) bir kontrol noktasında kalırsa o
+  nokta okunmaz; tavanda hâlâ kalıyorsa sonuç "kasada ölçülemez". Bu bir veri kaynağı
+  sonucudur, tezin değil; ikisi tek etikete indirilmez.
+- **Okunduğunda (dondurulmuş kapılar, §6t > 8 ve 12):** M2 — taker net günlük getiri > 0 VE
+  bağlayıcı alt sınır (gün ∧ hafta, küçüğü) > 0 → **"kasada ilk ölçümde GEÇTİ"**, aksi
+  **"GEÇMEDİ"**. M1 etiketi (kalıcı / değil) §6t > 12'nin tablosuyla birlikte okunur; o tablodaki
+  "kasaya aday" hücresi burada "kasada ilk ölçümde geçti" olur. Betimsel: maker (m1, m2), (d1)
+  bugünkü evren, (d2) `ema`-13, M3'ün tamamı, çıkış maliyetsiz dönem sonu.
+- **Geçerse:** hiçbir model, kapı ya da defter otomatik değişmez (§6t > 1: motor iki bacaklı
+  pozisyonu ifade edemez). Kasa bu kurala harcanmış olur; bir model yolu kendi ön-kaydıyla ve
+  ancak kullanıcı kararıyla açılacak daha İLERİ bir kasayla gelir.
+
+### 7. Kabul edilen sapmalar (yönleri önceden)
+
+1. **Sıralı okuma:** pencere, giriş sayısının eşiği ilk geçtiği hafta sınırında biter; genç
+   pozisyonlar çıkış maliyetiyle kapanır ve bir fonlama ısınmasının hemen ardından kesilir →
+   tezin **ALEYHİNE** (muhafazakâr).
+2. **Okuma bir ısınma içermeye koşulludur:** kapı ancak fonlama eşiği yeterince aşıldıysa geçer,
+   yani okunan sonuç "sıcak bir rejim içeren pencere"nin ölçüsüdür; sonuç metni bunu söyler.
+3. **Kaldırılmış semboller:** evren 8'deki `universe` aşamasında sabitlenir; 2026-09-27 ile o an
+   arasında kaldırılmış bir perp sıralamaya giremez. Yön belirsiz; boşluk günle yazılır.
+4. **Tek rejim, tek kayma sabiti, iki bacağın aynı bardan dolumu:** §6t > 13'ün 1, 2 ve 5.
+   maddeleri aynen.
+
+### 8. Araç ve aşamalar (kod onaydan SONRA)
+
+- **Kural ikinci kez yazılmaz** (V4): `scripts/measure_funding_carry.py`'de YALNIZCA tarih
+  sabitleri (hacim penceresi, U2 başlangıcı, ölçüm başlangıcı, pencere sonu) varsayılanı
+  geliştirme değerleri olan parametrelere çevrilir. Dondurulmuş betiğe (`fbfc2cd1`) karşı diff
+  yalnızca sabit/parametre satırlarından oluşur; kod PR'ının açıklaması bunu satır satır gösterir.
+- **Zorunlu regresyon testi (CI'da her koşuda):** parametreli betik geliştirme penceresiyle,
+  sabitlenmiş veride (`docs/data/pins/funding_carry/` + arşivin kasa öncesi satırları) §6t'nin
+  sayılarını birebir üretir — **taker 0 pozisyon; (d1) 2 pozisyon, 46.5 pozisyon-gün, net
+  +%1.01; maker (m1) TADİLAT-2'li net +%0.16** (1e-12 içinde). Ayrışırsa CI kırmızıdır ve kasa
+  koşusu başlamaz.
+- **Kasa kapısı:** `scripts/vault.py`'ye kasayı açan tek kayıt eklenir (bu ön-kayıt + araç);
+  başka hiçbir araç kasa verisi çekemez (test). `assert_before_vault` diğer bütün araçlarda
+  değişmeden kalır.
+- **Aşamalar** (`.github/workflows/measure-funding-carry-vault.yml`):
+  - `universe` (V5) — PR onayından hemen sonra, tetikleyici dosyayla: enstrüman listesi +
+    08-28 → 09-27 günlük ciro + 09-20 → 09-27 1H mumlar → `docs/data/pins/funding_carry_vault/`
+    (yalnızca kasa ÖNCESİ veri). Birincil evren burada donar; **liste ve pin'in SHA256'sı ayrı
+    bir commit'le bu ön-kayda (9) yazılır** — bir kural değişikliği değil, onaylanmış kuralın
+    ürettiği kayıttır.
+  - `count` — zamanlanmış (haftalık, Pazartesi), yalnızca sayım; kendi mum snapshot'ını artifact
+    olarak saklar; çıktı log + step summary + artifact. Yazma yetkisi YOK.
+  - `measure` — ilk geçen kontrol noktasından sonra, tek tetikleyici dosyayla (`fcv-measure*.run`,
+    aşama `scripts/trigger_stage.py`den) TEK sefer; sonuç `pin-results` işiyle
+    `docs/data/funding_carry_vault*`e.
+- `strategies/*`, `core/portfolio|engine|ledger|metrics` import edilmez (değişmedi).
+
+### 9. Evren kaydı
+
+*(`universe` aşaması koştuktan sonra buraya eklenecek: birincil 20 sembol sırasıyla, U1/U2'den
+kalanlar ve sebepleri, pin dizininin `SHA256SUMS` özeti, koşu kimliği.)*
+
+### 10. Tahmin (kullanıcı, 2026-10-02, kasa verisi görülmeden, değiştirilmeden)
+
+> En olası sonuç **değerlendirilemez** (giriş sayısı ≥ 10'a ulaşmaz). Ölçülürse: brüt taşıma
+> pozitif, net etki sıfıra yakın; **geçmedi**, geçti'den olası. Olasılık sırası:
+> **değerlendirilemez > geçmedi > geçti.**
+
+### 11. Kararlar (kullanıcı, 2026-10-02)
+
+| # | Nokta | Karar |
+|---|---|---|
+| **V1** | Tavan | 52 tam hafta (2027-09-27T00:00Z) |
+| **V2** | Kontrol takvimi | haftalık, zamanlanmış workflow, yalnızca sayım |
+| **V3** | Ölçülen pay | ≥ 17/20, KAPI; kalırsa "ölçülemez" |
+| **V4** | Araç | dondurulmuş betikte yalnızca tarih sabitleri parametreye; CI'da zorunlu regresyon testi (§6t sayıları birebir); kod PR'ında diff'in yalnızca sabit/parametre satırları olduğu açıklamada |
+| **V5** | Evren | onaydan sonra sabitlenir; liste ve hash bu ön-kayda (9) |
+| **V6** | Tahmin | 10'daki metin |
+| **V7** | Başlangıç | 2026-09-28T00:00Z |
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
