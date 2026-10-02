@@ -5689,3 +5689,26 @@ araştırmacı serbestliğiydi; getiriye kördü ve sonuç GEÇMEDİ olduğu iç
 söz konusu değil, ama kayıtta durur. (3) Birebir ters kontrolde kural 13'ün iki bacağı birlikte
 bağlaması pratikte yok (1 / 593).
 
+## 73. 4H döngü PO3: güç kapısından KALDI — ölçülemez, PO3 ailesi park; ön-kayıt §6v *(2026-10-01)*
+
+**Bağlam.** §6u'nun (karar 72) kuralının gün içi döngüye taşınmış hâli (kullanıcı): her 4H mumun
+ilk saati kutu, sonraki üç saat pencere; süpürme + içeri kapanış → ters giriş, konum şartı
+(premium/discount), stop süpürme ucu + 0.1 × kutu, iki yönde tek eşik %2.07 (config'ten). Sayım
+aşaması getiri üretmez; sonuç ölçümü yalnızca üç kapı geçerse ayrı bir ön-kayıtla gelecekti. Güç
+kapısı yeni bir sıkılaştırmaydı: §6u'da MDE(½·ΔR) 0.186 marjın üstünde kalmış, test marj
+düzeyindeki etkiyi görememişti.
+
+**Sonuç** (koşu #36851045003): maliyet sağlaması ve örneklem geçti (1006 birincil, 423 gün),
+güç kapısı KALDI — bağlayıcı MDE_proj(½·ΔR) 0.166 (gün; hafta 0.151) > 0.15. Kurulumlar günlere
+yığıldığı için (gün başına 2.38) DEFF n'nin kazancını yedi.
+
+**Karar.** Ön-kayıtlı park kuralı uygulanır (kullanıcı kararı, 2026-10-01): eşik ve kutu tanımı
+DEĞİŞMEZ, sonuç "ölçülemez", PO3 ailesi park edilir — bu sayımın sonucuna bakılarak aynı aileden
+(eşik, kutu süresi, pencere) yeni bir varyant açılmaz. Measure koşulmaz; model, motor, defter
+ya da kapı değişmez.
+
+**Ne öğrenildi (kayıt, kural değil).** (1) Güç kapısı tam olarak tasarlandığı işi yaptı: geçen
+bir örneklem kapısı, sonucu "ayırt edilemedi" olacak bir ölçümü koşturacaktı. (2) Kapı sınırın
+hemen üstünde kaldı (0.166 ↔ 0.15); bu bir yakın ıska değil, kuralın tanımıdır — eşik sonuç
+görüldükten sonra tartışılmaz.
+

@@ -8777,6 +8777,47 @@ Bir saatlik kutunun süpürme ucu çoğunlukla dar olacağı için iki yönde %2
   sayısıdır.
 - Güç kapısı (§3.3) ve betimsel etiketler (§5) taslaktaki gibi.
 
+### 8. SONUÇ *(2026-10-01; koşu measure-po3-4h #36851045003, `0b4c9b40`)*
+
+**Karar: KALDI — ÖLÇÜLEMEZ. PO3 ailesi PARK EDİLİR** (§3 > "Kapı kalırsa"). Eşik (%2.07) ve
+kutu tanımı DEĞİŞMEZ; sonuç ölçümünün ön-kaydı yazılmaz, measure koşulmaz.
+
+| Kapı | Değer | Sonuç |
+|---|---|---|
+| Maliyet sağlaması (azami stop kaymalı maliyet/R ≤ 0.15) | eşik %2.07, iki yönde | GEÇTİ |
+| Örneklem: birincil ≥ 300 | 1006 (U 442 → short, L 564 → long) | GEÇTİ |
+| Örneklem: ≥ 150 takvim günü | 423 | GEÇTİ |
+| Güç: bağlayıcı MDE_proj(½·ΔR) ≤ 0.15 | gün 0.166 (423 küme, m̄ 2.378, DEFF_proj 2.487); hafta 0.151 (119 küme, m̄ 8.454, DEFF_proj 2.046) → **0.166** | **KALDI** |
+
+- **Kapsam:** 13 sembolden 12'si (PENGU dönem A'da listelenmemiş; BNB, SUI, ETHFI dönem içinde
+  başlıyor). 55 655 sayılan 4H mum: süpürme yok 2587, belirsiz 16 186, devam 8378, giriş barı
+  yok 552, konum dışı 3366, geometri kurulamaz 1, maliyet filtresi 23 579, birincil 1006.
+- **Geometri (betimsel):** stop medyanı %2.59; geçici hedefin planlanan R/R medyanı 0.90 ve
+  birincilin %57.3'ünde R/R < 1 (short %54.3, long %59.6).
+- **Geometri gerilimi:** dar stopta maliyet/R kapısı, geniş stopta R/R (<1, %57) aleyhte; PO3
+  bu maliyet yapısında iki koşulu birlikte sağlamıyor.
+- **4H dilimine göre birincil kurulum** (betimsel; sayım log'undan, yeni koşu yok — park
+  edilmiş aile için koşu açılmaz):
+
+  | 4H mum açılışı (UTC) | 00 | 04 | 08 | 12 | 16 | 20 | toplam |
+  |---|---|---|---|---|---|---|---|
+  | birincil | 203 | 120 | 145 | 187 | 210 | 141 | 1006 |
+  | pay | %20.2 | %11.9 | %14.4 | %18.6 | %20.9 | %14.0 | %100 |
+
+  Dağılım yalnızca bir sayımdır; hiçbir dilim filtreye ya da yeni varyanta dönüşmez (§3 > park
+  kuralı).
+- **Güç kapısı neden kaldı:** örneklem yeterli ama kurulumlar günlere yığılıyor (gün başına ort.
+  2.38, A2'de 1.80); DEFF'in büyümesi n'nin büyümesini yiyor. İki küme tanımı da eşiğin üstünde.
+  Kapı bir ön elemedir (§3.3 > Bilinen sınır); bu sonuç "etki yok" demez, "ölçüm marj
+  düzeyindeki bir etkiyi göremezdi" der.
+- **Tahmin kıyası (§6):** "örneklem kapısı muhtemelen kalır" TUTMADI (1006 / 423 gün);
+  "güç kapısı büyük olasılıkla kalır" TUTTU.
+- **Sicil:** sayım aşaması sicile girmez (bu bölümün başı); ölçüm koşulmadığı için yeni satır
+  açılmaz.
+- **Betimsel etiketler** (4H yapı, süpürülen seviye, FVG, karşı likidite, kalan bar) yükte ve
+  log'dadır; hiçbiri filtreye ya da yeni bir varyanta dönüşmez — park kuralı tam olarak bunu
+  kapatır.
+
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
 Bu liste bağlayıcıdır. İhlal edilirse backtest bir ölçüm olmaktan çıkar.
