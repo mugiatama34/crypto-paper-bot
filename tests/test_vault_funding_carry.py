@@ -175,3 +175,16 @@ def test_workflow_schedules_only_the_count() -> None:
     count_job = body.split("\n  count:\n", 1)[1].split("\n  measure:\n", 1)[0]
     assert "contents: write" not in count_job                       # sayım işi yazamaz
     assert "--stage count" in count_job and "--stage measure" not in count_job
+
+
+def test_pinned_universe_matches_preregistration() -> None:
+    """§6w > 9'a yazılan özet ve liste, sabitlenmiş pinlerle birebir (pin sonradan değişemez)."""
+    import hashlib
+    pins = ROOT / "docs" / "data" / "pins" / "funding_carry_vault"
+    section = (ROOT / "docs" / "backtest.md").read_text(encoding="utf-8").split("### 9. Evren kaydı", 1)[1]
+    section = section.split("### 10.", 1)[0]
+    for name in ("SHA256SUMS", "MANIFEST.json"):
+        assert hashlib.sha256((pins / name).read_bytes()).hexdigest() in section, name
+    primary = json.loads((pins / "MANIFEST.json").read_text(encoding="utf-8"))["selection"]["primary"]
+    assert len(primary) == 20
+    assert all(f"| {s.removesuffix('-USDT-SWAP')} |" in section for s in primary)
