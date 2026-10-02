@@ -8794,6 +8794,18 @@ kutu tanımı DEĞİŞMEZ; sonuç ölçümünün ön-kaydı yazılmaz, measure k
   yok 552, konum dışı 3366, geometri kurulamaz 1, maliyet filtresi 23 579, birincil 1006.
 - **Geometri (betimsel):** stop medyanı %2.59; geçici hedefin planlanan R/R medyanı 0.90 ve
   birincilin %57.3'ünde R/R < 1 (short %54.3, long %59.6).
+- **Geometri gerilimi:** dar stopta maliyet/R kapısı, geniş stopta R/R (<1, %57) aleyhte; PO3
+  bu maliyet yapısında iki koşulu birlikte sağlamıyor.
+- **4H dilimine göre birincil kurulum** (betimsel; sayım log'undan, yeni koşu yok — park
+  edilmiş aile için koşu açılmaz):
+
+  | 4H mum açılışı (UTC) | 00 | 04 | 08 | 12 | 16 | 20 | toplam |
+  |---|---|---|---|---|---|---|---|
+  | birincil | 203 | 120 | 145 | 187 | 210 | 141 | 1006 |
+  | pay | %20.2 | %11.9 | %14.4 | %18.6 | %20.9 | %14.0 | %100 |
+
+  Dağılım yalnızca bir sayımdır; hiçbir dilim filtreye ya da yeni varyanta dönüşmez (§3 > park
+  kuralı).
 - **Güç kapısı neden kaldı:** örneklem yeterli ama kurulumlar günlere yığılıyor (gün başına ort.
   2.38, A2'de 1.80); DEFF'in büyümesi n'nin büyümesini yiyor. İki küme tanımı da eşiğin üstünde.
   Kapı bir ön elemedir (§3.3 > Bilinen sınır); bu sonuç "etki yok" demez, "ölçüm marj
