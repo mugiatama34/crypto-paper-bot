@@ -8964,8 +8964,40 @@ ve sebepleri, ızgara boşlukları.
 
 ### 9. Evren kaydı
 
-*(`universe` aşaması koştuktan sonra buraya eklenecek: birincil 20 sembol sırasıyla, U1/U2'den
-kalanlar ve sebepleri, pin dizininin `SHA256SUMS` özeti, koşu kimliği.)*
+`universe` aşaması koştu: **#37063469802** (tetikleyici `3943151f`, pin commit'i `646ff005`,
+2026-10-02). Yalnızca kasa öncesi veri okundu (hacim penceresi 2026-08-28 → 09-27, U2 mumları
+2026-09-20 → 09-26 23:00, `now` = 2026-09-27T00:00Z); hiçbir fonlama oranı okunmadı, hiçbir sayım
+ya da getiri üretilmedi.
+
+**Birincil evren (ciro sırasıyla, DONDURULDU):**
+
+| # | Sembol | # | Sembol | # | Sembol | # | Sembol |
+|---|---|---|---|---|---|---|---|
+| 1 | ETH | 6 | DOGE | 11 | ARB | 16 | FIL |
+| 2 | BTC | 7 | HYPE | 12 | NEAR | 17 | ENA |
+| 3 | ZEC | 8 | TRUMP | 13 | PUMP | 18 | LIT |
+| 4 | SOL | 9 | UNI | 14 | SUI | 19 | PONS |
+| 5 | XRP | 10 | PEPE | 15 | WLD | 20 | BNB |
+
+(hepsi `-USDT-SWAP`; sıralamada ilk 29 perp yüründü.)
+
+**U1'den kalanlar (spot karşılığı yok, 9):** SNDK (5.), XAU (8.), SKHYNIX (12.), SOXL (15.),
+USELESS (19.), CL (20.), SPCX (21.), MU (25.), AKE (26.). **U2'den kalan: yok.**
+
+**Arşiv kapsamı (meta veri, oran değil):** evren anındaki arşiv listesi 480 dosya
+(`archive_symbols.json.gz`); birincil 20 sembolün **20'sinin** dosyası var. Bu, kontrol
+noktalarındaki ölçülen payın ön koşuludur, kendisi değildir — ölçülen pay her kontrol noktasında
+fonlama kaydının o noktaya kadar sürmesine bakar (§5). Betimsel kümeler: "bugünkü evren" 217
+uygun sembol (arşiv listesinin 263'ü uygunluktan kaldı), `ema` 13'ün 13'ü uygun.
+
+**Sabitleme:** `docs/data/pins/funding_carry_vault/` — 438 mum dosyası + enstrüman listesi + ciro
++ arşiv listesi (440 dosya), hepsi `SHA256SUMS`te (özetler SIKIŞTIRILMAMIŞ içeriğe aittir).
+
+- `SHA256SUMS` özeti: `52ffabd3cc6838bcbfab1e98499c2409ec1da530c54c5f669b61c529448abaec`
+- `MANIFEST.json` özeti: `26a9508ed8a24fe2143f6fe6a8218ea7640787a029edbde74e9ec96d3d5451fc`
+
+`count` ve `measure` bu pinleri okur; `load_universe` evreni pinlerden YENİDEN seçer ve bu listeyle
+birebir değilse durur. Yerelde yeniden seçim bu listeyi birebir üretti.
 
 ### 10. Tahmin (kullanıcı, 2026-10-02, kasa verisi görülmeden, değiştirilmeden)
 
