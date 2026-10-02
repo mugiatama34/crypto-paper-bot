@@ -60,7 +60,7 @@ import pandas as pd  # noqa: E402
 from core.config import get_setting, load_config  # noqa: E402
 from core.data import OKXClient, fetch_ohlcv  # noqa: E402
 from scripts.backtest_dc import MIN_CLUSTERS, _percentiles, cluster_mean_draws  # noqa: E402
-from scripts.vault import KASA_START, assert_before_vault, vault_now  # noqa: E402
+from scripts.vault import KASA_START, assert_before_vault, assert_vault_opening  # noqa: E402
 
 logger = logging.getLogger("measure_funding_carry")
 
@@ -97,6 +97,27 @@ UNMEASURED_SENTENCE = (
     "Ölçülen semboller, kasa sonrası kurulan arşivle kesişimdir; evren seçim yanlılığının bu "
     "kısmı tamamen KAPANMIYOR — (b) onu görünür kılıyor."
 )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Window:
+    """Ölçümün TARİHLERİ — kasa sınamasında (§6w > 3) yalnızca bunlar kayar, kural aynı kalır."""
+    data_start: pd.Timestamp
+    measure_start: pd.Timestamp
+    end: pd.Timestamp
+    snapshot_start: pd.Timestamp
+    volume_start: pd.Timestamp
+    volume_end: pd.Timestamp
+    fetch_now: pd.Timestamp
+    opening: str | None = None     # kasa açılışı (scripts/vault.py::OPENINGS); None = kasa öncesi
+
+    def __post_init__(self) -> None:
+        if max(self.end, self.fetch_now) > KASA_START:
+            assert_vault_opening(self.opening)
+
+
+DEV_WINDOW = Window(data_start=DEV_START, measure_start=MEASURE_START, end=DEV_END, snapshot_start=SNAPSHOT_START,
+                    volume_start=VOLUME_START, volume_end=VOLUME_END, fetch_now=KASA_START)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -180,13 +201,14 @@ class FundingSeries:
     rates: np.ndarray | None           # None = oran OKUNMADI (preflight)
 
 
-def read_archive(archive_dir: Path, *, with_rates: bool) -> tuple[dict[str, FundingSeries], dict[str, Any]]:
-    """`funding_time < KASA_START` satırları. `with_rates=False` iken oran kolonu AYRIŞTIRILMAZ.
+def read_archive(archive_dir: Path, *, with_rates: bool,
+                 window: Window = DEV_WINDOW) -> tuple[dict[str, FundingSeries], dict[str, Any]]:
+    """`funding_time < window.end` satırları (geliştirme: `KASA_START`). `with_rates=False` iken oran kolonu AYRIŞTIRILMAZ.
 
     Çakışma dosyasındaki (sembol, damga) çiftleri seriden ÇIKARILIR (§6t > 2) — ızgarada boşluk
     olarak görünür ve sayılır.
     """
-    cutoff_ms = _ms(KASA_START)
+    cutoff_ms = _ms(window.end)
     conflicts: set[tuple[str, int]] = set()
     conflict_path = archive_dir / CONFLICTS_FILE
     if conflict_path.is_file():
@@ -280,12 +302,12 @@ def rank_perps(swaps: Sequence[str], volumes: Mapping[str, Mapping[str, float]])
     return sorted(ranked, key=lambda kv: (-kv[1], kv[0]))
 
 
-def identity_check(perp: pd.DataFrame, spot: pd.DataFrame) -> tuple[bool, int]:
+def identity_check(perp: pd.DataFrame, spot: pd.DataFrame, *, window: Window = DEV_WINDOW) -> tuple[bool, int]:
     """U2: ortak 1H barların ilk 168'inde (en az 24) medyan |perp/spot − 1| ≤ %2."""
     if perp.empty or spot.empty:
         return False, 0
     common = perp.index.intersection(spot.index).sort_values()
-    common = common[common >= SNAPSHOT_START][:IDENTITY_BARS]
+    common = common[common >= window.snapshot_start][:IDENTITY_BARS]
     if len(common) < IDENTITY_MIN_BARS:
         return False, int(len(common))
     ratio = perp.loc[common, "close"].to_numpy(dtype="float64") / spot.loc[common, "close"].to_numpy(dtype="float64")
@@ -295,7 +317,7 @@ def identity_check(perp: pd.DataFrame, spot: pd.DataFrame) -> tuple[bool, int]:
 FrameGetter = Callable[[str], pd.DataFrame]
 
 
-def eligibility(perp: str, spot_ids: set[str], frames: FrameGetter) -> str:
+def eligibility(perp: str, spot_ids: set[str], frames: FrameGetter, *, window: Window = DEV_WINDOW) -> str:
     """"ok" | "no_spot" | "spot_no_bars" | "identity" — GEÇTİ/KALDI dışında DEĞER yazılmaz."""
     spot = spot_of(perp)
     if spot not in spot_ids:
@@ -303,17 +325,18 @@ def eligibility(perp: str, spot_ids: set[str], frames: FrameGetter) -> str:
     spot_frame = frames(spot)
     if spot_frame.empty:
         return "spot_no_bars"
-    passed, _ = identity_check(frames(perp), spot_frame)
+    passed, _ = identity_check(frames(perp), spot_frame, window=window)
     return "ok" if passed else "identity"
 
 
 def select_universes(ranked: Sequence[tuple[str, float]], spot_ids: set[str], frames: FrameGetter, *,
-                     archive_symbols: Sequence[str], ema_symbols: Sequence[str]) -> dict[str, Any]:
+                     archive_symbols: Sequence[str], ema_symbols: Sequence[str],
+                     window: Window = DEV_WINDOW) -> dict[str, Any]:
     status: dict[str, str] = {}
 
     def check(sym: str) -> str:
         if sym not in status:
-            status[sym] = eligibility(sym, spot_ids, frames)
+            status[sym] = eligibility(sym, spot_ids, frames, window=window)
         return status[sym]
 
     primary: list[str] = []
@@ -348,15 +371,15 @@ def list_instruments(client: Any, inst_type: str) -> list[str]:
     return sorted(set(ids))
 
 
-def daily_quote_volume(client: Any, inst_id: str) -> dict[str, str]:
-    """`1Dutc` mumlarının `volCcyQuote` METNİ, [VOLUME_START, VOLUME_END). Tek istek (≤ 100 gün)."""
-    assert_before_vault(VOLUME_END, what="hacim penceresi")
+def daily_quote_volume(client: Any, inst_id: str, *, window: Window = DEV_WINDOW) -> dict[str, str]:
+    """`1Dutc` mumlarının `volCcyQuote` METNİ, [volume_start, volume_end). Tek istek (≤ 100 gün)."""
+    assert_before_vault(window.volume_end, what="hacim penceresi")
     rows = client.get("/api/v5/market/history-candles",
-                      {"instId": inst_id, "bar": "1Dutc", "after": str(_ms(VOLUME_END)), "limit": "100"})
+                      {"instId": inst_id, "bar": "1Dutc", "after": str(_ms(window.volume_end)), "limit": "100"})
     out: dict[str, str] = {}
     for raw in rows:
         ts = pd.Timestamp(int(raw[0]), unit="ms", tz="UTC")
-        if VOLUME_START <= ts < VOLUME_END:
+        if window.volume_start <= ts < window.volume_end:
             if len(raw) < 8:
                 raise DataGateError(f"{inst_id}: volCcyQuote alanı yok")
             out[ts.strftime("%Y-%m-%d")] = str(raw[7]).strip()
@@ -364,15 +387,15 @@ def daily_quote_volume(client: Any, inst_id: str) -> dict[str, str]:
 
 
 def fetch_hourly(config: Mapping[str, Any], inst_id: str, *, cache_dir: str,
-                 fetcher: Callable[..., pd.DataFrame] | None = None) -> pd.DataFrame:
+                 fetcher: Callable[..., pd.DataFrame] | None = None, window: Window = DEV_WINDOW) -> pd.DataFrame:
     fetch = fetcher if fetcher is not None else fetch_ohlcv
-    now = vault_now()
+    now = window.fetch_now
     local = copy.deepcopy(dict(config))
     local["timeframe"] = "1H"
-    bars = int(math.ceil((now - SNAPSHOT_START) / HOUR)) + 2
+    bars = int(math.ceil((now - window.snapshot_start) / HOUR)) + 2
     local["data"] = {**local["data"], "history_bars": bars, "cache_dir": cache_dir}
     frame = fetch(local, inst_id, now=now)
-    frame = frame.loc[(frame.index >= SNAPSHOT_START) & (frame.index + HOUR <= now)]
+    frame = frame.loc[(frame.index >= window.snapshot_start) & (frame.index + HOUR <= now)]
     return frame[["open", "high", "low", "close"]]
 
 
@@ -385,7 +408,8 @@ def _frame_csv(frame: pd.DataFrame) -> bytes:
 
 
 def write_pins(out: Path, *, instruments: Mapping[str, Sequence[str]], volumes: Mapping[str, Mapping[str, str]],
-               frames: Mapping[str, pd.DataFrame], selection: Mapping[str, Any], run: str | None) -> dict[str, Any]:
+               frames: Mapping[str, pd.DataFrame], selection: Mapping[str, Any], run: str | None,
+               window: Window = DEV_WINDOW) -> dict[str, Any]:
     out.mkdir(parents=True, exist_ok=True)
     payloads: dict[str, bytes] = {
         "instruments.json": (json.dumps({k: list(v) for k, v in instruments.items()}, indent=1) + "\n").encode("utf-8"),
@@ -410,8 +434,8 @@ def write_pins(out: Path, *, instruments: Mapping[str, Sequence[str]], volumes: 
     manifest = {
         "purpose": "OKX enstrüman listeleri, 30g perp cirosu, 1H mumlar — docs/backtest.md > 6t; "
                    "evren seçimi dışında hiçbir şey hesaplanmadı",
-        "snapshot_start": SNAPSHOT_START.isoformat(), "now": vault_now().isoformat(),
-        "volume_window": [VOLUME_START.isoformat(), VOLUME_END.isoformat()],
+        "snapshot_start": window.snapshot_start.isoformat(), "now": window.fetch_now.isoformat(),
+        "volume_window": [window.volume_start.isoformat(), window.volume_end.isoformat()],
         "snapshot_run": run,
         "note": "ts = bar AÇILIŞI (UTC); sha256 SIKIŞTIRILMAMIŞ içeriğe aittir",
         "selection": {k: selection[k] for k in ("primary", "today", "ema13")},
@@ -671,8 +695,8 @@ def daily_equity(positions: Sequence[Position], perp: Mapping[str, pd.DataFrame]
     return out
 
 
-def measurement_days() -> list[pd.Timestamp]:
-    return list(pd.date_range(MEASURE_START, DEV_END, freq="D"))
+def measurement_days(window: Window = DEV_WINDOW) -> list[pd.Timestamp]:
+    return list(pd.date_range(window.measure_start, window.end, freq="D"))
 
 
 def ci_block(returns: Sequence[float], days: Sequence[pd.Timestamp], *, seed_base: str, alpha: float) -> dict[str, Any]:
@@ -693,9 +717,10 @@ def ci_block(returns: Sequence[float], days: Sequence[pd.Timestamp], *, seed_bas
 
 
 def summarize(result: Mapping[str, Any], perp: Mapping[str, pd.DataFrame], spot: Mapping[str, pd.DataFrame], *,
-              capital: float, seed_base: str, alpha: float, with_ci: bool) -> dict[str, Any]:
+              capital: float, seed_base: str, alpha: float, with_ci: bool,
+              window: Window = DEV_WINDOW) -> dict[str, Any]:
     positions: list[Position] = result["positions"]
-    days = measurement_days()
+    days = measurement_days(window)
     equity = daily_equity(positions, perp, spot, days)
     returns = [(b - a) / capital for a, b in zip(equity[:-1], equity[1:])]
     ret_days = days[:-1]
@@ -712,9 +737,9 @@ def summarize(result: Mapping[str, Any], perp: Mapping[str, pd.DataFrame], spot:
         },
         "total_return": (equity[-1] - equity[0]) / capital,
         "counters": result["counters"],
-        "slot_occupancy": pos_days / (K_SLOTS * (DEV_END - MEASURE_START) / DAY),
+        "slot_occupancy": pos_days / (K_SLOTS * (window.end - window.measure_start) / DAY),
         "days_with_position": float(np.mean([any(p.entry <= d < p.exit for p in positions) for d in ret_days])),
-        "turnover_per_day": (len(positions) * 2.0 / capital) / ((DEV_END - MEASURE_START) / DAY),
+        "turnover_per_day": (len(positions) * 2.0 / capital) / ((window.end - window.measure_start) / DAY),
         "holding_days": {"mean": float(np.mean([p.days for p in positions])) if positions else None,
                          "median": float(np.median([p.days for p in positions])) if positions else None},
         "exit_reasons": {r: sum(1 for p in positions if p.exit_reason == r)
@@ -752,8 +777,9 @@ def position_rows(positions: Sequence[Position], capital: float) -> list[dict[st
 # M1 — mekanizma
 # --------------------------------------------------------------------------- #
 def mechanism(symbols: Sequence[str], funding: Mapping[str, FundingSeries], *, threshold: float,
-              seed_base: str, alpha: float) -> dict[str, Any]:
-    anchors = [d for d in pd.date_range(MEASURE_START, DEV_END, freq="D") if d + SIGNAL_DAYS * DAY <= DEV_END]
+              seed_base: str, alpha: float, window: Window = DEV_WINDOW) -> dict[str, Any]:
+    anchors = [d for d in pd.date_range(window.measure_start, window.end, freq="D")
+               if d + SIGNAL_DAYS * DAY <= window.end]
     daily: list[tuple[pd.Timestamp, float]] = []
     pooled_x: list[float] = []
     pooled_y: list[float] = []
@@ -828,27 +854,28 @@ def decide(primary: Mapping[str, Any], m1: Mapping[str, Any]) -> dict[str, Any]:
 # Aşamalar
 # --------------------------------------------------------------------------- #
 def run_snapshot(args: argparse.Namespace, config: Mapping[str, Any], *, client: Any | None = None,
-                 fetcher: Callable[..., pd.DataFrame] | None = None) -> int:
+                 fetcher: Callable[..., pd.DataFrame] | None = None, window: Window = DEV_WINDOW,
+                 out_name: str = "funding_carry") -> int:
     active = client if client is not None else OKXClient.from_config(dict(config))
     swaps = list_instruments(active, "SWAP")
     spots = list_instruments(active, "SPOT")
     volumes_text: dict[str, dict[str, str]] = {}
     for sym in swaps:
-        volumes_text[sym] = daily_quote_volume(active, sym)
+        volumes_text[sym] = daily_quote_volume(active, sym, window=window)
     volumes = {s: {d: float(v) for d, v in days.items()} for s, days in volumes_text.items()}
     ranked = rank_perps(swaps, volumes)
     frames: dict[str, pd.DataFrame] = {}
     with tempfile.TemporaryDirectory() as cache:
         def getter(inst: str) -> pd.DataFrame:
             if inst not in frames:
-                frames[inst] = fetch_hourly(config, inst, cache_dir=cache, fetcher=fetcher)
+                frames[inst] = fetch_hourly(config, inst, cache_dir=cache, fetcher=fetcher, window=window)
                 logger.info("%s: %d bar", inst, len(frames[inst]))
             return frames[inst]
 
         selection = select_universes(ranked, set(spots), getter, archive_symbols=archive_symbols(Path(args.archive)),
-                                     ema_symbols=ema_symbols(config))
-    manifest = write_pins(Path(args.out_dir) / "funding_carry", instruments={"swap": swaps, "spot": spots},
-                          volumes=volumes_text, frames=frames, selection=selection, run=args.run)
+                                     ema_symbols=ema_symbols(config), window=window)
+    manifest = write_pins(Path(args.out_dir) / out_name, instruments={"swap": swaps, "spot": spots},
+                          volumes=volumes_text, frames=frames, selection=selection, run=args.run, window=window)
     print(json.dumps({"selection": manifest["selection"], "files": len(manifest["files"])}, indent=2, ensure_ascii=False))
     if len(selection["primary"]) < N_UNIVERSE:
         logger.error("birincil evren %d < %d sembol", len(selection["primary"]), N_UNIVERSE)
@@ -856,7 +883,8 @@ def run_snapshot(args: argparse.Namespace, config: Mapping[str, Any], *, client:
     return 0
 
 
-def load_inputs(args: argparse.Namespace, config: Mapping[str, Any], *, with_rates: bool) -> dict[str, Any]:
+def load_inputs(args: argparse.Namespace, config: Mapping[str, Any], *, with_rates: bool,
+                window: Window = DEV_WINDOW) -> dict[str, Any]:
     pins = load_pins(Path(args.pins))
     ranked = rank_perps(pins.instruments["swap"], pins.volumes)
     missing: list[str] = []
@@ -869,7 +897,7 @@ def load_inputs(args: argparse.Namespace, config: Mapping[str, Any], *, with_rat
 
     arch = archive_symbols(Path(args.archive))
     selection = select_universes(ranked, set(pins.instruments["spot"]), getter,
-                                 archive_symbols=arch, ema_symbols=ema_symbols(config))
+                                 archive_symbols=arch, ema_symbols=ema_symbols(config), window=window)
     if missing:
         raise DataGateError("pins içinde eksik mum: " + ", ".join(sorted(set(missing))))
     recorded = pins.manifest.get("selection", {})
@@ -878,7 +906,7 @@ def load_inputs(args: argparse.Namespace, config: Mapping[str, Any], *, with_rat
             raise DataGateError(f"evren seçimi MANIFEST ile tutmuyor ({key})")
     if len(selection["primary"]) < N_UNIVERSE:
         raise DataGateError(f"birincil evren {len(selection['primary'])} < {N_UNIVERSE}")
-    funding, archive_meta = read_archive(Path(args.archive), with_rates=with_rates)
+    funding, archive_meta = read_archive(Path(args.archive), with_rates=with_rates, window=window)
     measured = [s for s in selection["primary"] if s in funding and len(funding[s].times)]
     if not measured:
         raise DataGateError("birincil evrende ölçülebilir sembol yok")
@@ -886,20 +914,21 @@ def load_inputs(args: argparse.Namespace, config: Mapping[str, Any], *, with_rat
             "archive_meta": archive_meta, "measured": measured}
 
 
-def coverage(frames: Mapping[str, pd.DataFrame], symbols: Sequence[str]) -> dict[str, Any]:
-    expected = int((DEV_END - DEV_START) / HOUR)
+def coverage(frames: Mapping[str, pd.DataFrame], symbols: Sequence[str], *,
+             window: Window = DEV_WINDOW) -> dict[str, Any]:
+    expected = int((window.end - window.data_start) / HOUR)
     out = {}
     for sym in symbols:
         for inst in (sym, spot_of(sym)):
             frame = frames.get(inst, pd.DataFrame())
-            inside = frame.loc[(frame.index >= DEV_START) & (frame.index < DEV_END)] if len(frame) else frame
+            inside = frame.loc[(frame.index >= window.data_start) & (frame.index < window.end)] if len(frame) else frame
             out[inst] = {"bars_dev_window": int(len(inside)), "expected": expected,
                          "first": _utc(frame.index[0]).isoformat() if len(frame) else None,
                          "last": _utc(frame.index[-1]).isoformat() if len(frame) else None}
     return out
 
 
-def universe_report(inputs: Mapping[str, Any]) -> dict[str, Any]:
+def universe_report(inputs: Mapping[str, Any], *, window: Window = DEV_WINDOW) -> dict[str, Any]:
     sel = inputs["selection"]
     funding = inputs["funding"]
     measured = inputs["measured"]
@@ -908,30 +937,32 @@ def universe_report(inputs: Mapping[str, Any]) -> dict[str, Any]:
         "measured": measured, "unmeasured": [s for s in sel["primary"] if s not in measured],
         "measured_share": len(measured) / N_UNIVERSE, "measured_note": UNMEASURED_SENTENCE,
         "delisted_note": "enstrüman listesi yalnızca bugün işlem gören sözleşmeleri döndürür; "
-                         "2026-06-22'den sonra kaldırılmış perp'ler sıralamaya giremedi (TADİLAT-1 > T1)",
+                         f"{window.volume_end:%Y-%m-%d}'den sonra kaldırılmış perp'ler sıralamaya giremedi (TADİLAT-1 > T1)",
         "today": [s for s in sel["today"] if s in funding], "ema13": [s for s in sel["ema13"] if s in funding],
         "excluded": sel["excluded"],
     }
 
 
-def run_analysis(args: argparse.Namespace, config: Mapping[str, Any], *, measure: bool) -> int:
+def run_analysis(args: argparse.Namespace, config: Mapping[str, Any], *, measure: bool,
+                 window: Window = DEV_WINDOW, out_name: str = "funding_carry") -> int:
     try:
-        inputs = load_inputs(args, config, with_rates=measure)
+        inputs = load_inputs(args, config, with_rates=measure, window=window)
     except DataGateError as exc:
         logger.error("VERİ KAPISI: %s", exc)
         return 3
     pins: Pins = inputs["pins"]
     funding: dict[str, FundingSeries] = inputs["funding"]
-    universes = universe_report(inputs)
+    universes = universe_report(inputs, window=window)
     report: dict[str, Any] = {
         "stage": "measure" if measure else "preflight",
         "preregistration": "docs/backtest.md > 6t (bfd46b0, TADİLAT-1 b12c957, TADİLAT-2)",
-        "window": {"dev_start": DEV_START.isoformat(), "measure_start": MEASURE_START.isoformat(),
-                   "dev_end": DEV_END.isoformat(), "weeks": len({iso_week_key(d) for d in measurement_days()[:-1]})},
+        "window": {"dev_start": window.data_start.isoformat(), "measure_start": window.measure_start.isoformat(),
+                   "dev_end": window.end.isoformat(), "weeks": len({iso_week_key(d) for d in measurement_days(window)[:-1]})},
         "universe": universes,
         "archive": {**inputs["archive_meta"],
                     "grid_gaps": {s: grid_gaps(funding[s].times) for s in sorted(funding)}},
-        "coverage": coverage(pins.frames, sorted(set(universes["measured"]) | set(universes["today"]) | set(universes["ema13"]))),
+        "coverage": coverage(pins.frames, sorted(set(universes["measured"]) | set(universes["today"]) | set(universes["ema13"])),
+                             window=window),
     }
     costs = scenario_costs(config)
     report["thresholds"] = {name: {"round_trip": c.round_trip, "entry_daily": c.entry_threshold, "exit_daily": EXIT_THRESHOLD}
@@ -946,12 +977,15 @@ def run_analysis(args: argparse.Namespace, config: Mapping[str, Any], *, measure
 
         def run(symbols: Sequence[str], threshold: float, cost: Costs) -> dict[str, Any]:
             return simulate(symbols, funding, {s: perp[s] for s in symbols}, {s: spot[s] for s in symbols},
-                            threshold=threshold, costs=cost, taker=costs["taker"], mm=mm)
+                            threshold=threshold, costs=cost, taker=costs["taker"], mm=mm,
+                            start=window.measure_start, end=window.end)
 
         measured = universes["measured"]
         taker = run(measured, costs["taker"].entry_threshold, costs["taker"])
-        primary = summarize(taker, perp, spot, capital=capital, seed_base=seed_base, alpha=alpha, with_ci=True)
-        m1 = mechanism(measured, funding, threshold=costs["taker"].entry_threshold, seed_base=seed_base, alpha=alpha)
+        primary = summarize(taker, perp, spot, capital=capital, seed_base=seed_base, alpha=alpha, with_ci=True,
+                            window=window)
+        m1 = mechanism(measured, funding, threshold=costs["taker"].entry_threshold, seed_base=seed_base, alpha=alpha,
+                       window=window)
         maker_m1 = run(measured, costs["maker"].entry_threshold, costs["maker"])
         m2_recost = [copy.copy(p) for p in taker["positions"]]
         for p in m2_recost:
@@ -969,23 +1003,24 @@ def run_analysis(args: argparse.Namespace, config: Mapping[str, Any], *, measure
                                         if basis else None)
         report["descriptive"] = {
             "maker_own_threshold": summarize(maker_m1, perp, spot, capital=capital, seed_base=seed_base,
-                                             alpha=alpha, with_ci=False),
+                                             alpha=alpha, with_ci=False, window=window),
             "taker_trades_at_maker_cost": summarize({"positions": m2_recost, "counters": taker["counters"]},
                                                     perp, spot, capital=capital, seed_base=seed_base,
-                                                    alpha=alpha, with_ci=False),
+                                                    alpha=alpha, with_ci=False, window=window),
         }
         for name in ("today", "ema13"):
             syms = universes[name]
             res = run(syms, costs["taker"].entry_threshold, costs["taker"])
             report["descriptive"][f"universe_{name}"] = summarize(res, perp, spot, capital=capital,
-                                                                  seed_base=seed_base, alpha=alpha, with_ci=False)
+                                                                  seed_base=seed_base, alpha=alpha, with_ci=False,
+                                                                  window=window)
         positions_csv = position_rows(taker["positions"], capital)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    name = "funding_carry.json" if measure else "funding_carry_preflight.json"
-    (out / name).write_text(json.dumps(_clean(report), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    report_name = f"{out_name}.json" if measure else f"{out_name}_preflight.json"
+    (out / report_name).write_text(json.dumps(_clean(report), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if measure:
-        with (out / "funding_carry_positions.csv").open("w", newline="", encoding="utf-8") as handle:
+        with (out / f"{out_name}_positions.csv").open("w", newline="", encoding="utf-8") as handle:
             fields = ["symbol", "entry", "exit", "days", "exit_reason", "funding", "basis", "cost", "net"]
             writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
             writer.writeheader()
@@ -994,7 +1029,7 @@ def run_analysis(args: argparse.Namespace, config: Mapping[str, Any], *, measure
         print(json.dumps(_clean({k: v for k, v in report["primary_taker"].items() if k != "daily"}), indent=2, ensure_ascii=False))
     else:
         print(json.dumps(_clean({k: report[k] for k in ("window", "universe")}), indent=2, ensure_ascii=False))
-    logger.info("yazıldı: %s", out / name)
+    logger.info("yazıldı: %s", out / report_name)
     return 0
 
 

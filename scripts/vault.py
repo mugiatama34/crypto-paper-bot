@@ -8,7 +8,9 @@ kasaya sessizce bakar.
 
 Kasayı okuyan her yeni ölçüm aracı veri çekiminin `now`unu `vault_now()`dan alır ve
 istediği her uç noktayı `assert_before_vault` ile sınar. Kasa yalnızca dondurulmuş bir tezin
-ön-kayıtlı TEK sınamasında açılır; o araç bu modülü kullanmaz, kendi ön-kaydını gösterir.
+ön-kayıtlı TEK sınamasında açılır ve o açılış `OPENINGS`te ön-kaydıyla birlikte KAYITLIDIR;
+kasanın içine uzanan bir pencere yalnızca kayıtlı bir açılışın adıyla kurulabilir
+(`assert_vault_opening`, test: hangi araçların bir açılış adı taşıyabildiği sabittir).
 """
 
 from __future__ import annotations
@@ -36,3 +38,16 @@ def assert_before_vault(ts: pd.Timestamp | str, *, what: str = "uç nokta") -> p
     if stamp > KASA_START:
         raise VaultError(f"{what} {stamp} kasanın içinde (KASA_START {KASA_START}; docs/backtest.md > 7.8)")
     return stamp
+
+
+# Kasanın açıldığı TEK sınamalar: ad -> ön-kayıt. Kayıt ancak kullanıcı onaylı bir ön-kayıtla eklenir.
+OPENINGS: dict[str, str] = {
+    "funding_carry_vault": "docs/backtest.md > 6w (fonlama taşıması, kasada ilk ölçüm)",
+}
+
+
+def assert_vault_opening(name: str | None) -> str:
+    """Kasanın içine uzanan pencere yalnızca KAYITLI bir açılışla kurulabilir."""
+    if name not in OPENINGS:
+        raise VaultError(f"kasa açılışı kayıtlı değil: {name!r} (scripts/vault.py::OPENINGS; docs/backtest.md > 7.8)")
+    return OPENINGS[name]
