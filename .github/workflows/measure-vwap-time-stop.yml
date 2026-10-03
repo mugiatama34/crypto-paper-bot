@@ -1,12 +1,17 @@
 # `vwap_managed` zaman stop'u varyantı (16 → 32 bar) ölçümünün tetikleyicisi
 # (docs/backtest.md > 6x; `scripts/measure_vwap_time_stop.py`). Salt okunur; canlı model değişmez.
 #
-# İKİ AŞAMA, İKİ TETİKLEYİCİ DOSYA (`measure-po3-outcome.yml`in deseni), yalnızca `claude/**`:
+# ÜÇ AŞAMA, ÜÇ TETİKLEYİCİ DOSYA (`measure-po3-outcome.yml`in deseni), yalnızca `claude/**`:
 #   - `.github/triggers/vts-preflight*.run` → `--stage preflight`: YALNIZCA dönem A — P'nin
 #     büyüklüğü, küme sayıları, parite ve sağlama ihlal SAYILARI, süre. Hiçbir R üretmez.
-#   - `.github/triggers/vts-measure*.run`   → `--stage measure`: TEK SEFER (§6x > 11).
-#     A ölçülür; A'da ΔR kapısı ve C-1 BİRLİKTE geçerse B'nin mumları çekilir (TADİLAT-1).
-#     Yeni bir dosya yalnızca önceki tetikleme HİÇBİR SAYI ÜRETMEDEN düştüyse eklenir.
+#   - `.github/triggers/vts-measure-a*.run` → `--stage measure`: TEK SEFER, YALNIZCA dönem A
+#     (§6x > TADİLAT-1 > 9). Yük + SHA256'sı `pin-results` ile `docs/data/vwap_time_stop_a*`e.
+#   - `.github/triggers/vts-measure-b*.run` → `--stage measure-b`: pin'lenmiş A'yı okur, hash'ini
+#     doğrular; ΔR kapısı ∧ C-1 A'da birlikte geçmediyse VERİ ÇEKMEDEN "B koşulmadı" yazar.
+#     Tetikleyici, A'nın pin commit'ini İÇEREN bir commit'e eklenir (checkout o yükü okur).
+#   Adlar `vts-measure-a` / `vts-measure-b`dir: tek bir `vts-measure*` kalıbı iki aşamayı birden
+#   yakalar ve `trigger_stage.py` çok aşamalı tetiklemeyi reddeder.
+#   Yeni bir dosya yalnızca önceki tetikleme HİÇBİR SAYI ÜRETMEDEN düştüyse eklenir.
 #
 # Dönem sınırları GİRDİ DEĞİLDİR (A `backtest_ema.py`den, B betiğin sabitlerinden; ikisi de
 # kasadan önce). Ölçüm işi `contents: read`; `pin-results` yalnızca aynı koşunun artifact'ini
@@ -17,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       stage:
-        description: "preflight | measure"
+        description: "preflight | measure | measure-b"
         required: true
         default: "preflight"
   push:
@@ -57,11 +62,11 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            case "$DISPATCH_STAGE" in preflight|measure) ;; *) echo "::error::geçersiz aşama: $DISPATCH_STAGE"; exit 1;; esac
+            case "$DISPATCH_STAGE" in preflight|measure|measure-b) ;; *) echo "::error::geçersiz aşama: $DISPATCH_STAGE"; exit 1;; esac
             echo "stage=$DISPATCH_STAGE" >> "$GITHUB_OUTPUT"
             echo "aşama: $DISPATCH_STAGE"
           else
-            python scripts/trigger_stage.py --before "$BEFORE" --sha "$GITHUB_SHA" --branch "$BRANCH" --stage "preflight=vts-preflight*.run" --stage "measure=vts-measure*.run"
+            python scripts/trigger_stage.py --before "$BEFORE" --sha "$GITHUB_SHA" --branch "$BRANCH" --stage "preflight=vts-preflight*.run" --stage "measure=vts-measure-a*.run" --stage "measure-b=vts-measure-b*.run"
           fi
 
   measure:
@@ -95,7 +100,7 @@ jobs:
           python scripts/measure_vwap_time_stop.py --stage "$STAGE" --out-dir backtests/vwap_time_stop
           CODE=$?
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          if [ -f backtests/vwap_time_stop/vwap_time_stop.json ]; then
+          if [ -f backtests/vwap_time_stop/vwap_time_stop_a.json ] || [ -f backtests/vwap_time_stop/vwap_time_stop_b.json ]; then
             echo "has_results=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_results=false" >> "$GITHUB_OUTPUT"
@@ -120,7 +125,7 @@ jobs:
 
   pin-results:
     needs: [stage, measure]
-    if: always() && needs.stage.outputs.stage == 'measure' && needs.measure.outputs.has_results == 'true'
+    if: always() && (needs.stage.outputs.stage == 'measure' || needs.stage.outputs.stage == 'measure-b') && needs.measure.outputs.has_results == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -133,20 +138,23 @@ jobs:
       - name: Download results
         uses: actions/download-artifact@v4
         with:
-          name: vwap-time-stop-measure
+          name: vwap-time-stop-${{ needs.stage.outputs.stage }}
           path: results
 
       - name: Commit results
+        env:
+          STAGE: ${{ needs.stage.outputs.stage }}
         run: |
           set -euo pipefail
-          cp results/vwap_time_stop* docs/data/
+          if [ "$STAGE" = "measure" ]; then SUFFIX=a; else SUFFIX=b; fi
+          cp results/vwap_time_stop_${SUFFIX}* docs/data/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/data/vwap_time_stop*
           if git diff --cached --quiet; then
             echo "değişiklik yok"; exit 0
           fi
-          git commit -m "vwap-time-stop: 6x ölçüm sonuçları (#${GITHUB_RUN_ID})"
+          git commit -m "vwap-time-stop: 6x ${STAGE} sonuçları (#${GITHUB_RUN_ID})"
           for attempt in 1 2 3 4; do
             if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
             echo "push başarısız (deneme ${attempt}), rebase edilip tekrar denenecek"

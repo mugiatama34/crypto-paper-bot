@@ -7,6 +7,7 @@ mu, B yalnızca A'da iki kapı geçince mi koşuyor, rapor sırası sabit mi.
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -237,29 +238,76 @@ def _fake_run(name: str, passed: bool) -> tuple[m.PeriodRun, MarketData]:
     return run, None  # type: ignore[return-value]
 
 
-@pytest.mark.parametrize("a_passes", [False, True])
-def test_b_runs_only_when_both_gates_pass_in_a(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, a_passes: bool
-) -> None:
+def test_measure_stage_runs_only_period_a(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`measure` yalnızca A'yı koşar (TADİLAT-1 > 9); B'nin kararını YÜKE yazar, B'yi koşmaz."""
     called: list[str] = []
 
     def fake_run_period(period: m.Period, **_: Any) -> tuple[m.PeriodRun, MarketData]:
         called.append(period.name)
-        return _fake_run(period.name, a_passes)
+        return _fake_run(period.name, True)
 
     monkeypatch.setattr(m, "run_period", fake_run_period)
     monkeypatch.setattr(m, "precheck_payload", lambda run: {"period": run.period.name})
-    monkeypatch.setattr(m, "gates", lambda run, seed: {"passed": run._passed})
+    monkeypatch.setattr(m, "gates", lambda run, seed: _gates(True, True))
     monkeypatch.setattr(m, "descriptive", lambda run: {})
     monkeypatch.setattr(m, "mfe_diagnosis", lambda run, market, step: {})
-    code, payload = m.measure(tmp_path)
+    code, payload = m.measure_a(tmp_path)
+    assert code == m.EXIT_OK and called == ["A"]
+    assert "B" not in payload["periods"]
+    assert payload["b_decision"]["eligible"] is True
+
+
+def _gates(c1: bool, delta: bool) -> dict[str, Any]:
+    return {"c1": {"passed": c1}, "delta": {"passed": delta}, "passed": c1 and delta}
+
+
+def _pin(tmp_path: Path, payload: dict[str, Any]) -> tuple[Path, Path]:
+    pinned = tmp_path / "vwap_time_stop_a.json"
+    pinned.write_text(json.dumps(payload), encoding="utf-8")
+    sha = tmp_path / "vwap_time_stop_a.json.sha256"
+    sha.write_text(f"{m.sha256_of(pinned)}  {pinned.name}\n", encoding="utf-8")
+    return pinned, sha
+
+
+@pytest.mark.parametrize(
+    ("c1", "delta", "runs"),
+    [(True, True, True), (True, False, False), (False, True, False), (False, False, False)],
+)
+def test_measure_b_runs_only_when_both_gates_passed_in_pinned_a(
+    tmp_path: Path, c1: bool, delta: bool, runs: bool
+) -> None:
+    """Karar programatik: ΔR ∧ C-1 A'da birlikte geçmediyse B'nin koşucusu HİÇ çağrılmaz."""
+    pinned, sha = _pin(tmp_path, {"stage": "measure", "periods": {"A": {"gates": _gates(c1, delta)}}})
+    called: list[Path] = []
+
+    def run_b(out_dir: Path) -> tuple[int, dict[str, Any]]:
+        called.append(out_dir)
+        return m.EXIT_OK, {"gates": {}}
+
+    code, payload = m.measure_b(tmp_path, pinned=pinned, sha_file=sha, run_b=run_b)
     assert code == m.EXIT_OK
-    if a_passes:
-        assert called == ["A", "B"]
-        assert "gates" in payload["periods"]["B"]
-    else:
-        assert called == ["A"], "A kalınca B'nin verisi çekilmemeli"
-        assert "skipped" in payload["periods"]["B"]
+    assert bool(called) is runs
+    assert payload["a_source"]["sha256"] == m.sha256_of(pinned)
+    if not runs:
+        assert payload["periods"]["B"]["skipped"].startswith("B koşulmadı")
+
+
+def test_measure_b_refuses_when_the_pinned_hash_does_not_match(tmp_path: Path) -> None:
+    pinned, sha = _pin(tmp_path, {"stage": "measure", "periods": {"A": {"gates": _gates(True, True)}}})
+    pinned.write_text(pinned.read_text(encoding="utf-8") + " ", encoding="utf-8")  # kurcalanmış
+
+    def run_b(out_dir: Path) -> tuple[int, dict[str, Any]]:
+        raise AssertionError("hash tutmazken B koşmamalı")
+
+    code, payload = m.measure_b(tmp_path, pinned=pinned, sha_file=sha, run_b=run_b)
+    assert code == m.EXIT_GATE and "hash" in payload["periods"]["B"]["error"]
+
+
+def test_measure_b_does_not_trust_an_incomplete_a_payload(tmp_path: Path) -> None:
+    """Kapı alanı olmayan (hata vermiş) bir A yükü "geçti" sayılmaz."""
+    pinned, sha = _pin(tmp_path, {"stage": "measure", "periods": {"A": {"error": "x"}}})
+    code, payload = m.measure_b(tmp_path, pinned=pinned, sha_file=sha, run_b=lambda d: (0, {}))
+    assert code == m.EXIT_OK and "skipped" in payload["periods"]["B"]
 
 
 def test_report_sections_follow_the_preregistered_order() -> None:
