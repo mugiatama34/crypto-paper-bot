@@ -16,8 +16,10 @@ backtest defterleri koşuya özel dizindedir (`--out-dir`).
    geometriyle yeniden kurar. Fiyat yolu, stop hareketi, kısmi dolum, kural 13 ve
    likidasyon motorun kodudur.
 
-**Parite kapısı (ön-kontrol):** 16 barlık yeniden oynatmanın R'si portföy koşusunun aynı
-pozisyonunun R'sine eşit olmalıdır (göreli ≤ 1e-6). Eşleşmeyen pay > %1 → o dönem ölçülmez.
+**Parite kapısı (ön-kontrol, TADİLAT-1 > 4):** iki ayrı sayım. *Oynatılamayan* (gereken bir
+bar eksik) pozisyon iki koldan da çıkarılır; pay ≤ %1 tolere edilir. *Uyuşmazlık* (oynatıldı,
+R portföyden farklı — göreli 1e-6 sayısal hassasiyetin ötesinde — ya da başka bir pozisyon
+açıldı) için tolerans YOKTUR: tek biri dönemi durdurur.
 **Sağlama:** 16 barlık kolda zaman stop'uyla KAPANMAYAN her pozisyonda iki kol birebir
 aynıdır (`ΔR = 0` TAM). Tek ihlal → alet hatası.
 
@@ -98,8 +100,12 @@ TAIL = pd.Timedelta("12h")
 CLUSTER_DEFINITIONS: tuple[str, ...] = ("day", "week")
 ALPHA = 0.05
 ITERATIONS = 10_000
+# Parite iki AYRI olguyu sayar (TADİLAT-1 > 4): yeniden OYNATILAMAYAN (veri eksik) pozisyon
+# ≤ %1 tolere edilir ve iki koldan da çıkarılır; oynatılıp R'si FARKLI çıkan pozisyonda
+# tolerans YOKTUR — tek bir uyuşmazlık ölçümü durdurur. `PARITY_RTOL` bir tolerans değil
+# sayısal hassasiyettir (defter CSV'si kayan noktayı ~1e-9 göreli ile yuvarlar).
 PARITY_RTOL = 1e-6
-PARITY_MAX_MISMATCH_SHARE = 0.01
+UNREPLAYABLE_MAX_SHARE = 0.01
 # Yeniden oynatma penceresi: sinyal barından ÖNCE görülen bar sayısı. Modelin göstergeleri
 # gün-çapalı VWAP (≤ 96 bar) ve ATR(14)'tür; fazlası sinyali değiştirmez — değiştirseydi
 # parite kapısı yakalardı.
@@ -116,6 +122,30 @@ EXIT_GATE = 3
 
 class GateError(RuntimeError):
     """Veri/alet kapısı: dönem ölçülmez (çıkış 3)."""
+
+
+def replay_data_gap(
+    position: "PortfolioPosition", *, market: MarketData, step: pd.Timedelta
+) -> str | None:
+    """Yeniden oynatmanın İHTİYAÇ DUYDUĞU barlardan eksik olan varsa sebebi, yoksa None.
+
+    Gereken: sembolün ve çıpanın sinyal barı ve dolumdan varyantın kapanış dolumuna kadar
+    (`opened_at` … `opened_at + (VARIANT_BARS + 1) × step`) HER bar. Eksik bar varken
+    koşulan bir oynatma ölçmediği bir yolu ölçmüş gibi görünürdü; bu pozisyon "oynatılamaz"
+    sayılır (TADİLAT-1 > 4), uyuşmazlık DEĞİL.
+    """
+    signal_bar = position.opened_at - step
+    needed = pd.date_range(
+        position.opened_at, position.opened_at + (VARIANT_BARS + 1) * step, freq=step
+    ).append(pd.DatetimeIndex([signal_bar]))
+    frame = market.ohlcv.get(position.symbol)
+    if frame is None:
+        return f"{position.symbol}: mum serisi yok"
+    for name, index in ((position.symbol, frame.index), ("çıpa", market.btc.index)):
+        missing = needed.difference(index)
+        if len(missing):
+            return f"{name}: {len(missing)} bar eksik (ilk {missing[0].isoformat()})"
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -349,6 +379,7 @@ class PeriodRun:
     period: Period
     positions: list[PortfolioPosition]
     pairs: list[Pair] = field(default_factory=list)
+    unreplayable: list[dict[str, Any]] = field(default_factory=list)
     mismatches: list[dict[str, Any]] = field(default_factory=list)
     sanity: list[dict[str, Any]] = field(default_factory=list)
     portfolio: Mapping[str, Any] = field(default_factory=dict)
@@ -357,18 +388,20 @@ class PeriodRun:
     seconds: Mapping[str, float] = field(default_factory=dict)
 
     @property
-    def mismatch_share(self) -> float:
-        return len(self.mismatches) / len(self.positions) if self.positions else float("nan")
+    def unreplayable_share(self) -> float:
+        return len(self.unreplayable) / len(self.positions) if self.positions else float("nan")
 
     @property
     def gate_failures(self) -> list[str]:
         out: list[str] = []
         if not self.positions:
             out.append("P boş: dönemde hiç pozisyon yok")
-        if self.positions and self.mismatch_share > PARITY_MAX_MISMATCH_SHARE:
+        if self.positions and self.unreplayable_share > UNREPLAYABLE_MAX_SHARE:
             out.append(
-                f"parite: eşleşmeyen pay {self.mismatch_share:.4f} > {PARITY_MAX_MISMATCH_SHARE}"
+                f"oynatılamayan pay {self.unreplayable_share:.4f} > {UNREPLAYABLE_MAX_SHARE}"
             )
+        if self.mismatches:
+            out.append(f"parite uyuşmazlığı: {len(self.mismatches)} pozisyon (tolerans yok)")
         if self.sanity:
             out.append(f"sağlama: {len(self.sanity)} pozisyonda ΔR ≠ 0 (zaman stop'u görmeden)")
         return out
@@ -381,16 +414,30 @@ def pair_positions(
     config: Mapping[str, Any],
     workdir: Path,
     factory: StrategyFactory = build_model,
-) -> tuple[list[Pair], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Her pozisyon iki kolda; parite ve sağlama ihlalleri SEBEPLERİYLE döner.
+) -> tuple[list[Pair], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Her pozisyon iki kolda: `(eşler, oynatılamayan, uyuşmazlık, sağlama)`, SEBEPLERİYLE.
 
-    Pariteyi tutmayan pozisyon eşleştirmeye GİRMEZ (16'lık kolu portföy pozisyonunu
-    temsil etmiyor) ve sayılır; pay > %1 ise dönem zaten ölçülmez.
+    Oynatılamayan (veri eksik) pozisyon iki koldan da ÇIKARILIR ve sayılır. Oynatılıp
+    portföy R'sini üretmeyen ya da başka bir pozisyon açan oynatma bir UYUŞMAZLIKTIR;
+    eşleştirmeye girmez ve tek başına dönemi durdurur (TADİLAT-1 > 4).
     """
+    step = bar_duration(str(get_setting(config, "timeframe")))
     pairs: list[Pair] = []
+    unreplayable: list[dict[str, Any]] = []
     mismatches: list[dict[str, Any]] = []
     sanity: list[dict[str, Any]] = []
     for i, position in enumerate(positions):
+        gap = replay_data_gap(position, market=market, step=step)
+        if gap is not None:
+            unreplayable.append(
+                {
+                    "symbol": position.symbol,
+                    "direction": position.direction,
+                    "opened_at": position.opened_at.isoformat(),
+                    "reason": gap,
+                }
+            )
+            continue
         try:
             replays = {
                 bars: replay_position(
@@ -400,8 +447,7 @@ def pair_positions(
                 for bars in ARMS
             }
         except GateError as exc:
-            # Yeniden oynatılamayan pozisyon (ör. dolum barı eksik, pozisyon açılmadı) bir
-            # PARİTE ihlalidir: dönemi tek başına düşürmez, sayılır ve %1 kapısına girer.
+            # Veri tamken oynatma aynı pozisyonu kuramadı: bu bir UYUŞMAZLIKTIR.
             mismatches.append(
                 {
                     "symbol": position.symbol,
@@ -438,7 +484,7 @@ def pair_positions(
                 }
             )
         pairs.append(pair)
-    return pairs, mismatches, sanity
+    return pairs, unreplayable, mismatches, sanity
 
 
 # --------------------------------------------------------------------------- #
@@ -723,7 +769,7 @@ def run_period(period: Period, *, out_dir: Path, config: Mapping[str, Any], full
         funding_coverage=dict(result.funding_coverage),
     )
     with tempfile.TemporaryDirectory(prefix="vwap-time-stop-") as tmp:
-        run.pairs, run.mismatches, run.sanity = pair_positions(
+        run.pairs, run.unreplayable, run.mismatches, run.sanity = pair_positions(
             positions, market=market, config=config, workdir=Path(tmp),
         )
     t2 = time.monotonic()
@@ -748,8 +794,10 @@ def precheck_payload(run: PeriodRun) -> dict[str, Any]:
         "end": run.period.end.isoformat(),
         "positions": len(run.positions),
         "clusters": cluster_counts(run.positions),
+        "unreplayable": len(run.unreplayable),
+        "unreplayable_share": run.unreplayable_share,
+        "unreplayable_detail": run.unreplayable,
         "parity_mismatches": len(run.mismatches),
-        "parity_mismatch_share": run.mismatch_share,
         "parity_mismatch_detail": run.mismatches,
         "sanity_violations": len(run.sanity),
         "sanity_detail": run.sanity,
@@ -886,7 +934,9 @@ def _format_precheck(pre: Mapping[str, Any]) -> list[str]:
     return [
         f"  pencere ({pre.get('start')}, {pre.get('end')}], sinyal kesimi {pre.get('signal_cutoff')}",
         f"  P = {pre.get('positions')} pozisyon; küme {pre.get('clusters')}",
-        f"  parite: {pre.get('parity_mismatches')} eşleşmeyen (pay {_fmt(pre.get('parity_mismatch_share'))}); "
+        f"  oynatılamayan (veri eksik, iki koldan çıkarıldı): {pre.get('unreplayable')} "
+        f"(pay {_fmt(pre.get('unreplayable_share'))}, sınır {UNREPLAYABLE_MAX_SHARE})",
+        f"  parite uyuşmazlığı (tolerans yok): {pre.get('parity_mismatches')}; "
         f"sağlama ihlali {pre.get('sanity_violations')}; eşleşen {pre.get('paired')}",
         f"  kapı hataları: {pre.get('gate_failures') or 'yok'}",
         f"  süre (sn): {pre.get('seconds')}",

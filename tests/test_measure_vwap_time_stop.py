@@ -65,12 +65,12 @@ def portfolio_run() -> dict[str, Any]:
     positions = [
         p for p in m.portfolio_positions(ledger.read_trades(strategy.name)) if p.opened_at < horizon
     ]
-    pairs, mismatches, sanity = m.pair_positions(
+    pairs, unreplayable, mismatches, sanity = m.pair_positions(
         positions, market=market, config=config, workdir=tmp / "replay"
     )
     return {
         "market": market, "positions": positions, "pairs": pairs,
-        "mismatches": mismatches, "sanity": sanity,
+        "unreplayable": unreplayable, "mismatches": mismatches, "sanity": sanity,
     }
 
 
@@ -81,6 +81,7 @@ def test_replay_reproduces_the_portfolio_run_exactly(portfolio_run: dict[str, An
     """16 barlık yeniden oynatma portföy koşusunun R'sini BİREBİR üretir (§6x > 2)."""
     assert len(portfolio_run["positions"]) >= 10, "sentetik koşu yeterli pozisyon üretmedi"
     assert portfolio_run["mismatches"] == []
+    assert portfolio_run["unreplayable"] == []
     for pair in portfolio_run["pairs"]:
         assert m.parity_ok(pair.position, pair.base)
         assert str(pair.base.merged["closed_at"]) == str(pair.position.row["closed_at"])
@@ -107,10 +108,10 @@ def test_the_variant_really_holds_longer(portfolio_run: dict[str, Any]) -> None:
         assert variant_close <= pair.position.opened_at + (m.VARIANT_BARS + 1) * step
 
 
-def test_parity_gate_counts_a_replay_failure_instead_of_aborting(
+def test_missing_data_makes_a_position_unreplayable_not_a_mismatch(
     portfolio_run: dict[str, Any], tmp_path: Path
 ) -> None:
-    """Yeniden oynatılamayan pozisyon (ör. sembolün mumu yok) bir parite ihlalidir."""
+    """Veri eksik pozisyon OYNATILAMAZ: iki koldan çıkarılır, uyuşmazlık sayılmaz."""
     position = portfolio_run["positions"][0]
     market = portfolio_run["market"]
     broken = MarketData(
@@ -119,11 +120,44 @@ def test_parity_gate_counts_a_replay_failure_instead_of_aborting(
         },
         btc=market.btc, funding={}, as_of=market.as_of,
     )
-    pairs, mismatches, _ = m.pair_positions(
+    pairs, unreplayable, mismatches, _ = m.pair_positions(
         [position], market=broken, config=m.layer_config(), workdir=tmp_path
     )
-    assert pairs == []
-    assert len(mismatches) == 1 and "replay_error" in mismatches[0]
+    assert pairs == [] and mismatches == []
+    assert len(unreplayable) == 1 and "eksik" in unreplayable[0]["reason"]
+
+
+def test_a_single_gap_bar_inside_the_variant_window_is_unreplayable(
+    portfolio_run: dict[str, Any], tmp_path: Path
+) -> None:
+    """Varyantın penceresindeki tek bir eksik bar da oynatmayı geçersiz kılar."""
+    position = portfolio_run["positions"][0]
+    market = portfolio_run["market"]
+    frame = market.ohlcv[position.symbol]
+    hole = position.opened_at + 25 * pd.Timedelta("15min")
+    gapped = MarketData(
+        ohlcv={**market.ohlcv, position.symbol: frame.drop(index=hole)},
+        btc=market.btc, funding={}, as_of=market.as_of,
+    )
+    gap = m.replay_data_gap(position, market=gapped, step=pd.Timedelta("15min"))
+    assert gap is not None and hole.isoformat() in gap
+
+
+def _run_with(n: int, *, unreplayable: int = 0, mismatches: int = 0) -> m.PeriodRun:
+    run = m.PeriodRun(period=m.periods()["A"], positions=[object()] * n)  # type: ignore[list-item]
+    run.unreplayable = [{}] * unreplayable
+    run.mismatches = [{}] * mismatches
+    return run
+
+
+def test_unreplayable_is_tolerated_up_to_one_percent() -> None:
+    assert _run_with(1000, unreplayable=10).gate_failures == []
+    assert _run_with(1000, unreplayable=11).gate_failures
+
+
+def test_a_single_parity_mismatch_stops_the_measurement() -> None:
+    failures = _run_with(1000, mismatches=1).gate_failures
+    assert failures and "uyuşmazlığı" in failures[0]
 
 
 def test_only_the_time_stop_key_changes() -> None:

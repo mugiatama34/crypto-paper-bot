@@ -9267,9 +9267,18 @@ dönemleri ya da varyantın tanımını DEĞİŞTİRMEZ; (1) ve (2) kullanıcın
    17. barın açılışında dolar; o andan önce iki kolun yolu aynıdır. **Sağlama** bunun
    tümleyenidir: zaman stop'uyla kapanmayan her pozisyonda `ΔR = 0` TAM ve kapanış damgası
    aynı olmalıdır.
-4. **Yeniden oynatılamayan pozisyon bir PARİTE ihlalidir:** dolum barı eksik, model aynı
-   pozisyonu açmadı ya da pencere sonunda pozisyon açık kaldıysa pozisyon eşleştirmeye
-   GİRMEZ, sebebiyle listelenir ve %1 kapısına sayılır. Dönemi tek başına düşürmez.
+4. **Parite iki AYRI olguyu sayar (kullanıcı kararı, 2026-10-03):**
+   - **Oynatılamayan (veri eksik):** yeniden oynatmanın ihtiyaç duyduğu bir bar — sembolün
+     ya da çıpanın sinyal barı, ya da dolumdan varyantın kapanış dolumuna kadarki
+     (`opened_at` … `opened_at + 33 bar`) herhangi bir bar — yoksa pozisyon oynatılmaz.
+     **≤ %1 tolere edilir**, pozisyon **iki koldan da çıkarılır** ve sayısı sebepleriyle
+     raporlanır. Pay %1'i aşarsa dönem ölçülmez.
+   - **Uyuşmazlık (oynatıldı, R farklı):** veri tamken 16 barlık oynatmanın R'si portföyün
+     R'sinden farklı çıktıysa ya da oynatma aynı pozisyonu kuramadıysa (başka bir pozisyon,
+     hiç pozisyon, pencere sonunda açık kalma). **Tolerans YOKTUR:** tek bir uyuşmazlık
+     ölçümü durdurur (çıkış 3). Tek istisna sayısal hassasiyettir — göreli 1e-6; defter CSV'si
+     kayan noktayı ~1e-9 göreli ile yuvarlar ve bu bir uyuşmazlık değildir.
+   Bu madde §6x > 2'deki "eşleşmeyen pay > %1" kuralının YERİNE geçer.
 5. **Yeniden oynatma penceresi:** sinyal barından önce 200 bar (gün-çapalı VWAP ≤ 96 bar ve
    ATR(14) için fazlasıyla yeter; yetmeseydi parite kapısı yakalardı), sonra 38 bar (dolum +
    azami tutuş 33 + pay). İzole hesabın sermayesi `initial_capital`dır: R ölçekten
@@ -9282,7 +9291,12 @@ dönemleri ya da varyantın tanımını DEĞİŞTİRMEZ; (1) ve (2) kullanıcın
 7. **Yol istatistiği yöne çevrildi:** `scripts/diagnose_ema_exits.py::position_paths`
    long-only yazılmıştı (`ema_trend`). Short pozisyonlarda lehte hareket aşağı olacak şekilde
    genelleştirildi; long satırlar için sayılar birebir aynıdır (test + `ema_trend`
-   determinizm kapısı). MFE kovaları `< 0.5R`, `0.5–1R`, `1–1.5R`, `≥ 1.5R`; yüzdelikler
+   determinizm kapısı). **Kayıtlı hiçbir sonuç short yollarına dayanmıyordu, errata
+   gerekmez:** fonksiyonun bu değişiklikten önceki tek çağıranı
+   `diagnose_ema_exits.py::diagnose`tır ve yalnızca `ema_trend` defterini okur
+   (`read_trades(MODEL)`); `ema_trend` long-only'dir (`allowed_directions = ["long"]`), yani
+   §6e'nin teşhis koşuları (#35435506689, #35983894505) ve karar 49/58/59'daki yol
+   istatistikleri hiçbir short satır içermez. MFE kovaları `< 0.5R`, `0.5–1R`, `1–1.5R`, `≥ 1.5R`; yüzdelikler
    `core/metrics.py::_percentile`ten.
 8. **Tohumlar ve bağlayıcı MDE:** bootstrap tohumu `{random_seed}:vwap_time_stop:{dönem}:
    {ölçü}:{küme tanımı}`; 10 000 çekiliş, tek yönlü p aynı çekilişlerden. Bağlayıcı MDE iki
