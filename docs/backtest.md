@@ -9246,6 +9246,67 @@ açık pozisyonların payı iki dönemde raporlanır (4). **Tahmin:** 8'deki kul
 (Claude Code tahmini ayrı satırda). MFE bölümü (7) tanımlandığı gibi. Birleştirme
 kullanıcı onayıyla; betik birleştirmeden SONRA.
 
+### 14. TADİLAT-1 — betikten ÖNCE, hiçbir getiri görülmeden *(2026-10-03; kullanıcı kararı + uygulama netleştirmeleri)*
+
+Ön-kayıt birleştikten sonra (PR #77), betik yazılırken eklenenler. Hiçbiri kapıyı, eşiği,
+dönemleri ya da varyantın tanımını DEĞİŞTİRMEZ; (1) ve (2) kullanıcının açık kararıdır,
+(3)–(8) betiğin uygulamasını yazıya döker.
+
+1. **B'nin koşulu (kullanıcı):** dönem B **yalnızca A'da ΔR kapısı ve C-1 BİRLİKTE geçerse**
+   koşar. A kalırsa **B'nin verisi ÇEKİLMEZ** — betik B için ne portföy koşusu yapar ne mum
+   indirir; rapor "B KOŞULMADI, veri çekilmedi" yazar (test). Buna bağlı olarak `preflight`
+   **yalnızca dönem A'yı** kapsar (11'deki "A ve B'de" ifadesinin yerine geçer): B'nin
+   kapsamı ancak B koşarsa, `measure`ın içinde yazılır.
+2. **Rapor sırası (kullanıcı):** (1) ön-kontrol — 16 barlık yeniden oynatmanın portföyle
+   birebirliği, sağlama; (2) C-1, A; (3) ΔR, A + MDE + 16. barda açık pozisyonların payı;
+   (4) çıkış sebepleri; (5) MFE; (6) portföy etkisi; (7) gerekirse B. Betimsel yön / yıl /
+   sembol ve brüt ΔR (3)'ün kuyruğunda, 16–32 alt kümesi ve kural 13 sayımı (4)'ün içinde
+   durur. Sıra bir testle sabittir.
+3. **"16. barda hâlâ açık" tanımı:** 16 barlık kolda pozisyonu **zaman stop'unun kapatması**
+   (`exit_rule_of` = `signal:time_stop`). Zaman stop'u 16. barın kapanışında karar verir ve
+   17. barın açılışında dolar; o andan önce iki kolun yolu aynıdır. **Sağlama** bunun
+   tümleyenidir: zaman stop'uyla kapanmayan her pozisyonda `ΔR = 0` TAM ve kapanış damgası
+   aynı olmalıdır.
+4. **Parite iki AYRI olguyu sayar (kullanıcı kararı, 2026-10-03):**
+   - **Oynatılamayan (veri eksik):** yeniden oynatmanın ihtiyaç duyduğu bir bar — sembolün
+     ya da çıpanın sinyal barı, ya da dolumdan varyantın kapanış dolumuna kadarki
+     (`opened_at` … `opened_at + 33 bar`) herhangi bir bar — yoksa pozisyon oynatılmaz.
+     **≤ %1 tolere edilir**, pozisyon **iki koldan da çıkarılır** ve sayısı sebepleriyle
+     raporlanır. Pay %1'i aşarsa dönem ölçülmez.
+   - **Uyuşmazlık (oynatıldı, R farklı):** veri tamken 16 barlık oynatmanın R'si portföyün
+     R'sinden farklı çıktıysa ya da oynatma aynı pozisyonu kuramadıysa (başka bir pozisyon,
+     hiç pozisyon, pencere sonunda açık kalma). **Tolerans YOKTUR:** tek bir uyuşmazlık
+     ölçümü durdurur (çıkış 3). Tek istisna sayısal hassasiyettir — göreli 1e-6; defter CSV'si
+     kayan noktayı ~1e-9 göreli ile yuvarlar ve bu bir uyuşmazlık değildir.
+   Bu madde §6x > 2'deki "eşleşmeyen pay > %1" kuralının YERİNE geçer.
+5. **Yeniden oynatma penceresi:** sinyal barından önce 200 bar (gün-çapalı VWAP ≤ 96 bar ve
+   ATR(14) için fazlasıyla yeter; yetmeseydi parite kapısı yakalardı), sonra 38 bar (dolum +
+   azami tutuş 33 + pay). İzole hesabın sermayesi `initial_capital`dır: R ölçekten
+   bağımsızdır ve %1 stop tabanıyla notional ≤ özsermaye olduğu için izole hesapta kaldıraç
+   kırpması doğmaz. Portföyde kırpma olduysa parite onu yakalar (2'deki beklenen sebep).
+6. **Kuyruk:** her dönemde sinyal kesiminden sonra **12 saat** işlenir (yeni sinyal yok;
+   yalnızca kesimden önce açılan pozisyonlar kapanır). B'nin kuyruğu 2026-07-19 12:00'ye
+   kadar uzanır, yani görülmüş pencereye (5) en fazla bu kadar taşar ve yalnızca kesimden
+   önce açılmış pozisyonların kapanışı için.
+7. **Yol istatistiği yöne çevrildi:** `scripts/diagnose_ema_exits.py::position_paths`
+   long-only yazılmıştı (`ema_trend`). Short pozisyonlarda lehte hareket aşağı olacak şekilde
+   genelleştirildi; long satırlar için sayılar birebir aynıdır (test + `ema_trend`
+   determinizm kapısı). **Kayıtlı hiçbir sonuç short yollarına dayanmıyordu, errata
+   gerekmez:** fonksiyonun bu değişiklikten önceki tek çağıranı
+   `diagnose_ema_exits.py::diagnose`tır ve yalnızca `ema_trend` defterini okur
+   (`read_trades(MODEL)`); `ema_trend` long-only'dir (`allowed_directions = ["long"]`), yani
+   §6e'nin teşhis koşuları (#35435506689, #35983894505) ve karar 49/58/59'daki yol
+   istatistikleri hiçbir short satır içermez. MFE kovaları `< 0.5R`, `0.5–1R`, `1–1.5R`, `≥ 1.5R`; yüzdelikler
+   `core/metrics.py::_percentile`ten.
+8. **Tohumlar ve bağlayıcı MDE:** bootstrap tohumu `{random_seed}:vwap_time_stop:{dönem}:
+   {ölçü}:{küme tanımı}`; 10 000 çekiliş, tek yönlü p aynı çekilişlerden. Bağlayıcı MDE iki
+   küme tanımının BÜYÜĞÜDÜR (`backtest_dc`'nin güç tarafı kuralı).
+
+Araç: `scripts/measure_vwap_time_stop.py`, tetikleyici `.github/workflows/measure-vwap-time-stop.yml`
+(`.github/triggers/vts-preflight*.run` / `vts-measure*.run`), sonuç `docs/data/vwap_time_stop*`.
+Sentetik bir rastgele yürüyüşte gerçek `vwap_managed` ile koşulan portföyün her pozisyonu
+yeniden oynatmada birebir üretildi (test) — bu, yöntemin sınamasıdır, sonucun değil.
+
 ---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR

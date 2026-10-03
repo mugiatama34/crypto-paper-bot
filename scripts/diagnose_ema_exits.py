@@ -148,6 +148,11 @@ def position_paths(
     Mum içi sıralama bilinemez (kural 13): `mfe_r` ile `mae_r` aynı barda gerçekleşmiş
     olabilir ve hangisinin önce olduğu bu veriyle söylenemez. Bu yüzden buradaki hiçbir
     sayı bir kuralın "ne kazandıracağı" değildir — yalnızca yolun şeklidir.
+
+    **Yön:** her ölçü pozisyonun YÖNÜNE çevrilir (short'ta lehte hareket aşağıdır). Long
+    satırlar için sayılar yön eklenmeden önceki tanımın birebir aynısıdır (`ema_trend`
+    long-only'dir ve determinizm kapısı onun sayılarını sabitler); short desteği
+    `vwap_managed`in MFE teşhisi (docs/backtest.md > 6x > 7) için eklendi.
     """
     paths: list[dict[str, Any]] = []
     for row in trades:
@@ -173,11 +178,20 @@ def position_paths(
             logger.warning("%s: %s..%s aralığında bar yok", symbol, opened, closed)
             continue
         prior = window.iloc[:-1]
+        short = str(row.get("direction") or "long") == "short"
+        sign = -1.0 if short else 1.0
+        favourable, adverse = ("low", "high") if short else ("high", "low")
+
+        def _best(frame_part: pd.DataFrame) -> float:
+            return float(frame_part[favourable].min() if short else frame_part[favourable].max())
+
+        def _worst(frame_part: pd.DataFrame) -> float:
+            return float(frame_part[adverse].max() if short else frame_part[adverse].min())
 
         after = frame.loc[frame.index > closed]
         continuation = {
             str(horizon): (
-                (float(after["high"].iloc[:horizon].max()) - exit_price) / unit
+                sign * (_best(after.iloc[:horizon]) - exit_price) / unit
                 if exit_price is not None and len(after) > 0
                 else float("nan")
             )
@@ -188,7 +202,7 @@ def position_paths(
         # pozisyona değiştirip medyanı kısa kuyruğa doğru çekerdi.
         drift = {
             str(horizon): (
-                (float(after["close"].iloc[horizon - 1]) - exit_price) / unit
+                sign * (float(after["close"].iloc[horizon - 1]) - exit_price) / unit
                 if exit_price is not None and len(after) >= horizon
                 else float("nan")
             )
@@ -203,13 +217,13 @@ def position_paths(
                 "exit_reason": str(row.get("exit_reason") or ""),
                 "bars_held": int(len(window) - 1),
                 "r_multiple": _ratio(_float(row.get("pnl")), _float(row.get("risk_amount"))),
-                "mfe_r": (float(window["high"].max()) - entry) / unit,
-                "mae_r": (float(window["low"].min()) - entry) / unit,
+                "mfe_r": sign * (_best(window) - entry) / unit,
+                "mae_r": sign * (_worst(window) - entry) / unit,
                 "mfe_r_prior": (
-                    (float(prior["high"].max()) - entry) / unit if not prior.empty else float("nan")
+                    sign * (_best(prior) - entry) / unit if not prior.empty else float("nan")
                 ),
                 "mae_r_prior": (
-                    (float(prior["low"].min()) - entry) / unit if not prior.empty else float("nan")
+                    sign * (_worst(prior) - entry) / unit if not prior.empty else float("nan")
                 ),
                 "continuation_r": continuation,
                 "drift_r": drift,
