@@ -35,14 +35,18 @@ aynıdır (`ΔR = 0` TAM). Tek ihlal → alet hatası.
 
 - `preflight`: YALNIZCA dönem A — kapsam, P'nin büyüklüğü, küme SAYILARI, parite ve sağlama
   ihlal SAYILARI, koşu süresi. Hiçbir ΔR, R ortalaması, MFE ya da çıkış dağılımı ÜRETMEZ (test).
-- `measure`: TEK SEFER. A; A'da iki kapı geçerse B.
-- `0` rapor yazıldı · `2` kullanım hatası · `3` veri/alet kapısı.
+- `measure`: TEK SEFER, YALNIZCA dönem A (TADİLAT-1 > 9). Yük `vwap_time_stop_a.json` ve
+  onun SHA256'sı yazılır; workflow ikisini `docs/data/`a pin'ler.
+- `measure-b`: pin'lenmiş A yükünü okur ve hash'ini doğrular; ΔR kapısı ∧ C-1 A'da birlikte
+  geçmediyse (programatik, `b_decision`) hiçbir veri çekmeden "B koşulmadı" yazar.
+- `0` rapor yazıldı · `2` kullanım hatası · `3` veri/alet kapısı (hash tutmazsa da).
 """
 
 from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import logging
 import math
@@ -58,7 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd  # noqa: E402
 
-from core.config import get_setting, load_config  # noqa: E402
+from core.config import PROJECT_ROOT, get_setting, load_config  # noqa: E402
 from core.data import bar_duration, load_market_data  # noqa: E402
 from core.engine import Engine  # noqa: E402
 from core.layers import resolve_layer  # noqa: E402
@@ -114,6 +118,15 @@ REPLAY_LOOKBACK_BARS = 200
 REPLAY_TAIL_BARS = VARIANT_BARS + 6
 # MFE kovaları (R): breakeven 1R ve kısmi 1.5R'ye hizalı (§6x > 7).
 MFE_EDGES: tuple[float, ...] = (0.5, 1.0, 1.5)
+
+# Pin'lenmiş A yükü (TADİLAT-1 > 9): `measure` yazar, workflow commit eder, `measure-b` okur.
+PINNED_A = PROJECT_ROOT / "docs" / "data" / "vwap_time_stop_a.json"
+PINNED_A_SHA = PROJECT_ROOT / "docs" / "data" / "vwap_time_stop_a.json.sha256"
+STAGE_FILES = {
+    "preflight": "vwap_time_stop_preflight",
+    "measure": "vwap_time_stop_a",
+    "measure-b": "vwap_time_stop_b",
+}
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -820,32 +833,114 @@ def preflight(out_dir: Path) -> tuple[int, dict[str, Any]]:
     return (EXIT_GATE if run.gate_failures else EXIT_OK), payload
 
 
-def measure(out_dir: Path) -> tuple[int, dict[str, Any]]:
+def _measured_section(
+    run: PeriodRun, market: MarketData, *, seed: int, step: pd.Timedelta, with_mfe: bool
+) -> dict[str, Any]:
+    section: dict[str, Any] = {
+        "gates": gates(run, seed=seed),
+        "descriptive": descriptive(run),
+        "portfolio": run.portfolio,
+    }
+    if with_mfe:
+        section["mfe"] = mfe_diagnosis(run, market, step)
+    return section
+
+
+def measure_a(out_dir: Path) -> tuple[int, dict[str, Any]]:
+    """`measure` aşaması: YALNIZCA dönem A (TADİLAT-1 > 9). B ayrı aşamadır (`measure-b`)."""
     config = layer_config()
     seed = int(get_setting(config, "random_seed"))
     step = bar_duration(str(get_setting(config, "timeframe")))
     payload: dict[str, Any] = {"stage": "measure", "periods": {}}
-    for name in ("A", "B"):
-        period = periods()[name]
-        try:
-            run, market = run_period(period, out_dir=out_dir, config=config, full=True)
-        except (GateError, WindowCoverageError) as exc:
-            payload["periods"][name] = {"error": str(exc)}
-            return EXIT_GATE, payload
-        section: dict[str, Any] = {"precheck": precheck_payload(run)}
-        payload["periods"][name] = section
-        if run.gate_failures:
-            return EXIT_GATE, payload
-        section["gates"] = gates(run, seed=seed)
-        section["descriptive"] = descriptive(run)
-        if name == "A":
-            section["mfe"] = mfe_diagnosis(run, market, step)
-        section["portfolio"] = run.portfolio
-        if name == "A" and not section["gates"]["passed"]:
-            # TADİLAT-1: A'da ΔR ∧ C-1 birlikte geçmezse B KOŞULMAZ ve verisi ÇEKİLMEZ.
-            payload["periods"]["B"] = {"skipped": "A'da ΔR kapısı ve C-1 birlikte geçmedi"}
-            break
-    return EXIT_OK, payload
+    try:
+        run, market = run_period(periods()["A"], out_dir=out_dir, config=config, full=True)
+    except (GateError, WindowCoverageError) as exc:
+        payload["periods"]["A"] = {"error": str(exc)}
+        payload["b_decision"] = b_decision(payload)
+        return EXIT_GATE, payload
+    section: dict[str, Any] = {"precheck": precheck_payload(run)}
+    payload["periods"]["A"] = section
+    if not run.gate_failures:
+        section.update(_measured_section(run, market, seed=seed, step=step, with_mfe=True))
+    payload["b_decision"] = b_decision(payload)
+    return (EXIT_GATE if run.gate_failures else EXIT_OK), payload
+
+
+def b_decision(payload_a: Mapping[str, Any]) -> dict[str, Any]:
+    """B koşar mı — PROGRAMATİK karar (TADİLAT-1 > 9): A'da ΔR kapısı ∧ C-1, ikisi de geçmiş olmalı.
+
+    Eksik/bozuk bir A yükü (hata, kapı hatası, kapı alanı yok) "geçti" sayılmaz.
+    """
+    gates_a = ((payload_a.get("periods") or {}).get("A") or {}).get("gates") or {}
+    c1 = bool((gates_a.get("c1") or {}).get("passed") is True)
+    delta = bool((gates_a.get("delta") or {}).get("passed") is True)
+    eligible = payload_a.get("stage") == "measure" and c1 and delta and gates_a.get("passed") is True
+    return {
+        "eligible": eligible,
+        "c1_passed": c1,
+        "delta_passed": delta,
+        "reason": (
+            "A'da ΔR kapısı ve C-1 birlikte geçti" if eligible
+            else "A'da ΔR kapısı ve C-1 birlikte geçmedi (ya da A yükü eksik)"
+        ),
+    }
+
+
+def sha256_of(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def read_pinned_a(pinned: Path, sha_file: Path) -> tuple[dict[str, Any], str]:
+    """Pin'lenmiş A yükü ve hash'i; hash TUTMAZSA `GateError` (B'nin verisi çekilmeden)."""
+    if not pinned.is_file() or not sha_file.is_file():
+        raise GateError(f"pin'lenmiş A yükü ya da hash'i yok: {pinned} / {sha_file}")
+    expected = sha_file.read_text(encoding="utf-8").split()[0].strip().lower()
+    actual = sha256_of(pinned)
+    if actual != expected:
+        raise GateError(f"A yükünün hash'i tutmuyor: {actual} ≠ {expected}")
+    return json.loads(pinned.read_text(encoding="utf-8")), actual
+
+
+def measure_b(
+    out_dir: Path, *, pinned: Path | None = None, sha_file: Path | None = None,
+    run_b: Callable[[Path], tuple[int, dict[str, Any]]] | None = None,
+) -> tuple[int, dict[str, Any]]:
+    """`measure-b` aşaması: pin'lenmiş A'yı okur, hash'i doğrular, B'yi YALNIZCA A geçtiyse koşar.
+
+    Karar `b_decision`dandır ve A yükünün kendisinden yeniden kurulur — A'nın yazdığı bayrağa
+    güvenilmez. B koşmazsa hiçbir portföy koşusu yapılmaz ve hiçbir mum indirilmez.
+    """
+    pinned = pinned if pinned is not None else PINNED_A
+    sha_file = sha_file if sha_file is not None else PINNED_A_SHA
+    payload: dict[str, Any] = {"stage": "measure-b", "periods": {}}
+    try:
+        payload_a, digest = read_pinned_a(pinned, sha_file)
+    except (GateError, ValueError) as exc:
+        payload["periods"]["B"] = {"error": str(exc)}
+        return EXIT_GATE, payload
+    decision = b_decision(payload_a)
+    payload["a_source"] = {"path": str(pinned), "sha256": digest, "decision": decision}
+    if not decision["eligible"]:
+        payload["periods"]["B"] = {"skipped": f"B koşulmadı: {decision['reason']}"}
+        return EXIT_OK, payload
+    code, section = (run_b or _run_period_b)(out_dir)
+    payload["periods"]["B"] = section
+    return code, payload
+
+
+def _run_period_b(out_dir: Path) -> tuple[int, dict[str, Any]]:
+    config = layer_config()
+    seed = int(get_setting(config, "random_seed"))
+    step = bar_duration(str(get_setting(config, "timeframe")))
+    try:
+        run, market = run_period(periods()["B"], out_dir=out_dir, config=config, full=True)
+    except (GateError, WindowCoverageError) as exc:
+        return EXIT_GATE, {"error": str(exc)}
+    section: dict[str, Any] = {"precheck": precheck_payload(run)}
+    if run.gate_failures:
+        return EXIT_GATE, section
+    section.update(_measured_section(run, market, seed=seed, step=step, with_mfe=False))
+    return EXIT_OK, section
 
 
 # --------------------------------------------------------------------------- #
@@ -912,6 +1007,12 @@ def format_report(payload: Mapping[str, Any]) -> str:
                     f"  kol {arm}: pozisyon {v['positions']} · R̄ {_fmt(v['avg_r'])} · getiri "
                     f"{_fmt(v['total_return'])} · maxDD {_fmt(v['max_drawdown'])} · ret {v['rejections']}"
                 )
+    decision = payload.get("b_decision")
+    if decision is not None:
+        lines += [
+            "", "## 7. Dönem B — ayrı aşama (`vts-measure-b`)",
+            f"  programatik karar: {'B KOŞULACAK' if decision['eligible'] else 'B KOŞULMAYACAK'} — {decision['reason']}",
+        ]
     b = periods_payload.get("B")
     if b is not None:
         lines += ["", "## 7. Dönem B"]
@@ -1010,18 +1111,23 @@ def _jsonable(value: Any) -> Any:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--stage", required=True, choices=("preflight", "measure"))
+    parser.add_argument("--stage", required=True, choices=tuple(STAGE_FILES))
     parser.add_argument("--out-dir", required=True, type=Path)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logger.setLevel(logging.INFO)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    code, payload = preflight(args.out_dir) if args.stage == "preflight" else measure(args.out_dir)
-    name = "vwap_time_stop_preflight" if args.stage == "preflight" else "vwap_time_stop"
-    (args.out_dir / f"{name}.json").write_text(
-        json.dumps(_jsonable(payload), ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    stage_fn = {"preflight": preflight, "measure": measure_a, "measure-b": measure_b}[args.stage]
+    code, payload = stage_fn(args.out_dir)
+    name = STAGE_FILES[args.stage]
+    json_path = args.out_dir / f"{name}.json"
+    json_path.write_text(json.dumps(_jsonable(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+    if args.stage == "measure":
+        # Hash yazılan BAYTLARIN hash'idir; `measure-b` pin'lenmiş kopyayı buna karşı doğrular.
+        (args.out_dir / f"{name}.json.sha256").write_text(
+            f"{sha256_of(json_path)}  {json_path.name}\n", encoding="utf-8"
+        )
     text = format_report(payload)
     (args.out_dir / f"{name}.txt").write_text(text, encoding="utf-8")
     print(text)

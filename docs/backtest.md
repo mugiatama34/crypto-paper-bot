@@ -9302,8 +9302,26 @@ dönemleri ya da varyantın tanımını DEĞİŞTİRMEZ; (1) ve (2) kullanıcın
    {ölçü}:{küme tanımı}`; 10 000 çekiliş, tek yönlü p aynı çekilişlerden. Bağlayıcı MDE iki
    küme tanımının BÜYÜĞÜDÜR (`backtest_dc`'nin güç tarafı kuralı).
 
+9. **`measure` A ve B olarak iki aşamaya bölündü (kullanıcı kararı, 2026-10-03; ölçümden ÖNCE,
+   hiçbir R görülmeden).** Gerekçe süredir: preflight (#37122883865) 132 dakika sürdü — 16 barlık
+   portföy koşusu 97, 2.600 yeniden oynatma 35 dakika. A'nın tam ölçümü (32 barlık portföy dâhil)
+   ~3,5–4 saat, A + B tek işte workflow sınırını (350 dk) aşar.
+   - **`measure`** YALNIZCA dönem A'yı ölçer; yük (`vwap_time_stop_a.json`) ve yazılan
+     baytların SHA256'sı (`vwap_time_stop_a.json.sha256`) `pin-results` ile `docs/data/`a commit
+     edilir.
+   - **`measure-b`** pin'lenmiş A yükünü okur ve hash'ini doğrular (tutmazsa çıkış 3, hiçbir veri
+     çekilmez). B'nin koşup koşmayacağı PROGRAMATİKTİR (`b_decision`): A yükünde ΔR kapısı **ve**
+     C-1 birlikte `passed` değilse — eksik ya da hata vermiş bir A yükü dâhil — betik hiçbir
+     portföy koşusu yapmadan ve hiçbir mum indirmeden "B koşulmadı" yazar. Karar A'nın yazdığı
+     bayraktan değil, A yükündeki kapılardan yeniden kurulur. Elle karar yoktur.
+   - Kapılar, dönemler, eşikler ve rapor sırası DEĞİŞMEZ; B'nin raporu (7. bölüm) ayrı dosyadadır
+     (`vwap_time_stop_b.*`) ve A'nın raporu 7. bölümde programatik kararı yazar.
+   - Tetikleyiciler `vts-measure-a*.run` / `vts-measure-b*.run`dir (tek bir `vts-measure*` kalıbı
+     iki aşamayı birden yakalardı). B tetikleyicisi A'nın pin commit'ini içeren commit'e eklenir.
+
 Araç: `scripts/measure_vwap_time_stop.py`, tetikleyici `.github/workflows/measure-vwap-time-stop.yml`
-(`.github/triggers/vts-preflight*.run` / `vts-measure*.run`), sonuç `docs/data/vwap_time_stop*`.
+(`.github/triggers/vts-preflight*.run` / `vts-measure-a*.run` / `vts-measure-b*.run`), sonuç
+`docs/data/vwap_time_stop_a*` ve `vwap_time_stop_b*`.
 Sentetik bir rastgele yürüyüşte gerçek `vwap_managed` ile koşulan portföyün her pozisyonu
 yeniden oynatmada birebir üretildi (test) — bu, yöntemin sınamasıdır, sonucun değil.
 
