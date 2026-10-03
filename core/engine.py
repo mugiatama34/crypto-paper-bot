@@ -638,7 +638,13 @@ class Engine:
             funding={symbol: series.loc[:ts] for symbol, series in market.funding.items()},
             as_of=ts,
         )
-        self._snapshots[ts] = snapshot
+        # Önbellek TEK girdilidir: barlar sırayla işlenir ve geçmiş bir barın görüntüsü bir
+        # daha istenmez. Hepsini tur boyunca tutmak belleği bar sayısının KARESİYLE büyütüyordu
+        # — her görüntünün dilim indeksi pandas'ın kendi arama tablosunu kurar ve görüntü
+        # yaşadıkça o tablo da yaşar (ölçüldü: 15m'de 8.000 bar ≈ 13 GB; §6x'in 2,5 yıllık
+        # preflight'ı runner'ı bu yüzden düşürdü). Davranış değişmez: aynı bardaki modeller
+        # aynı görüntüyü paylaşmaya devam eder.
+        self._snapshots = {ts: snapshot}
         return snapshot
 
     def _timeline(self, run: _ModelRun, market: MarketData) -> list[pd.Timestamp]:

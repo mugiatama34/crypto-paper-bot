@@ -433,3 +433,17 @@ def test_each_recovered_bar_records_its_own_emitted_signal(tmp_path: Path) -> No
     assert [record.fills_at for record in emitted] == list(INDEX[2:5])
     # Her kayıt KENDİ barının kapanışını taşır, turun `as_of` kapanışını değil.
     assert [record.close for record in emitted] == [101.0, 102.0, 103.0]
+
+
+def test_snapshot_cache_holds_only_the_current_bar(tmp_path: Path) -> None:
+    """Anlık görüntü önbelleği TEK girdilidir: telafi turu bar sayısı kadar görüntü biriktirmez.
+
+    Biriktirmek belleği bar sayısının karesiyle büyütüyordu (her dilim indeksinin kendi arama
+    tablosu); uzun bir backtest runner'ı düşürdü. Davranışın aynı kaldığını bu dosyanın öteki
+    testleri sınar — burada yalnızca önbelleğin boyu.
+    """
+    ledger = Ledger(tmp_path)
+    engine = _engine(_EveryBar(), ledger, _config())
+    engine.run_round(_market(1))
+    engine.run_round(_market(7))
+    assert len(engine._snapshots) <= 1
