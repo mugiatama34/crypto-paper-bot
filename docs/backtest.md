@@ -408,6 +408,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **(1) TUTTU, (2) DÜŞTÜ — dönem A'da, 21 hücrede** (koşu #36435759788, `45fde50`; kullanıcı onayı 2026-09-28): (1) melez − taker bahçe ortalaması üç kolda A ve B'de pozitif, CI sıfırın üstünde — A haftalık 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60, +14.05]; kazanç ücret farkının aritmetiği (dolum oranı %96–99.6, dolan emir taker fiyatından girer), kaçırma bedeli tasarrufun %9–19'u. (2) hedge'li melez net hiçbir hücrede BH'yi geçmedi (en yakın 1D/F6 p 0.029, CI alt −1.8); B'de doğrulanacak hücre yok → kârlı aile yok. Kesinlik penceresi hariç satır sonucu değiştirmiyor. Dolum modelinin iyimserliği (kitap sırası yok) kayıtlı — §6s > SONUÇ |
 | 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | **DEĞERLENDİRİLEMEZ** (koşu #36577992025, `b8fd615`): taker kuralı 90 günde 0 pozisyon açtı (eşik %0.0714/gün hiç aşılmadı) → < 70 pozisyon-gün ∧ < 10 giriş; M1 KALICI (ρ̄ +0.196, CI [+0.099, +0.292]). Maker betimsel +%1.66 ama baz +%1.49, fonlama +%0.38, 1 likidasyon (yeniden koşu: likidasyon bazın tamamı, +%1.50). **TADİLAT-2** (sonuç sonrası sıkılaştırma): likidasyonda spot çıkışı `min(kapanış, P_liq × S₀/P₀)`, lehte baz yok — maker betimsel +%0.16. Kural (TADİLAT-2 dâhil) DONDURULDU, kasada ilk ölçüm — §6t > SONUÇ, karar 71 |
 | 15 | PO3 / AMD, Varyant A2: Asya aralığı (00–08 UTC) Londra penceresinde (08–13) süpürülüp aralığa geri dönünce süpürmenin TERSİNE girmek (hedef aralığın karşı tarafı, stop süpürme ucu ≥ %1.40, zaman çıkışı 24:00), AYNI yöne girmekten (kırılım devam, yansıtılmış geometri) iyi mi — 15m, `ema` evreni — **model DEĞİL, ölçüm** (dış kaynak) | §6u, bu commit | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı ve Claude: ort. R ~0, ayırt edilemez, ΔR işareti negatif olabilir; kapı: C-1 (PO3 bacağı) ∧ E (½·ΔR ≥ 0.15R ∧ ΔR bağlayıcı CI alt > 0), köken başına eşit ağırlık, gün ∧ hafta küme bootstrap'ı (küçüğü), A ∧ B | **DÜŞTÜ — dönem A'da** (koşu #36774716786, `147574f3`): C-1 R̄_PO3 −0.109 (bağlayıcı alt −0.264); E ½·ΔR +0.035 (marj 0.15; ΔR bağlayıcı alt −0.188, üst ½·ΔR ≈ 0.15–0.16); MDE ΔR 0.372 (½·ΔR 0.186); B koşulmadı → **"ayırt edilemedi"**; aralığın üst ucu marja denk, MDE(½·ΔR) 0.186 > marj — test marj düzeyindeki etkiyi görecek güçte değildi. Köken içi işaretler zıt (U −0.05, L +0.19) ve sürüklenmeyle tutarlı; brüt ≈ net (+0.071); kural 13 çift-stop 1 kurulum; 4H "uyumlu" grup en kötüsü (betimsel) — §6u > SONUÇ, karar 72 |
+| 16 | `vwap_managed` zaman stop'u varyantı: 16 yerine 32 bar, aynı girişlerde (mevcut modelin portföy dolumları, motorla izole yeniden oynatma) gerçekleşen R'yi artırır — giriş, stop, hedef ve üç aşamalı çıkış aynı | §6x (onay 2026-10-03) | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → 2026-07-19 (07-19 → kasa bu model için görülmüş veri); kasa penceresi 2026-10-04'ten, ayrı ön-kayıtla | kullanıcı: ΔR küçük pozitif, ayırt edilemez; varyant R̄ negatif, C-1 kalır; Claude: ΔR ≈ 0; kapı: (ΔR̄ > 0 ∧ alt sınır > 0) ∧ C-1 (varyant R̄ > 0 ∧ alt sınır > 0), gün/hafta küme bootstrap (küçük alt sınır), A ∧ B | **KOŞULMADI** — ön-kayıt açık |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -450,6 +451,9 @@ düzeltilir; sicile tek satır olarak girer.
 **Sicildeki 12. satır (doku rejimi) ev içi BH paydasına GİRER** — tez kullanıcının kendi
 tezidir, dış bir sistemin kuralları değil. Satırın kendi ailesi (m = 3 kol) §6r > 8'de
 düzeltilir; sicile tek satır olarak girer.
+
+**Sicildeki 16. satır (`vwap_managed` zaman stop'u varyantı) ev içi BH paydasına GİRER** —
+tez kullanıcının kendi tezidir. Tek test (m = 1), satır içinde düzeltme yok (§6x > 1).
 
 **Sicildeki 4. satır (`xsec_mom`) BH paydasına GİRER.** Gerekçe 2. satırın tersidir: bu
 hipotez dış bir sistemden gelmedi, ev içi bir tezdir — yani "kaç deneme yapıldı"
@@ -9016,6 +9020,233 @@ birebir değilse durur. Yerelde yeniden seçim bu listeyi birebir üretti.
 | **V5** | Evren | onaydan sonra sabitlenir; liste ve hash bu ön-kayda (9) |
 | **V6** | Tahmin | 10'daki metin |
 | **V7** | Başlangıç | 2026-09-28T00:00Z |
+
+## 6x. ÖN-KAYIT — `vwap_managed` ZAMAN STOP'U VARYANTI: 16 yerine 32 bar, aynı girişlerde R'yi artırıyor mu? *(2026-10-03)*
+
+**Bu belge hiçbir getiri görülmeden yazıldı ve AYRI bir commit olarak işlendi** — ölçüm
+betiği, workflow ve testler SONRAKİ commit'lerdedir ve **kullanıcı onayından ÖNCE yazılmaz**
+(bkz. 13). §7'nin tamamı ve §7.8 (KASA) bu bölüme uygulanır.
+
+**Yazılırken neye bakıldı (ve neye BAKILMADI).** Yalnızca kod ve config okundu
+(`strategies/vwap_managed.py`, `strategies/time_stop.py`, `config.yaml > scalp`,
+`vwap.managed`) ve daha önce kayda geçmiş kararlar (26, 37, 38). `vwap_managed`in hiçbir
+defteri (canlı ya da backtest), hiçbir çıkış kırılımı ve hiçbir tutuş süresi dağılımı bu
+belge için AÇILMADI.
+
+### 1. Köken, statü, kapsam
+
+**Tez (kullanıcı):** `vwap_managed`in kurulumlarına hedefine varacak süreyi vermek —
+zaman stop'unu 16 bardan 32 bara uzatmak — aynı girişlerde gerçekleşen R'yi artırır.
+
+**Varyant (TEK değişken):** `scalp.time_stop_bars` 16 → **32** (`vwap_managed` için).
+Giriş, sinyal, stop (2.5×ATR, %1 taban), hedef (projeksiyon ile VWAP'in yakını, ≥ 1.5R),
+breakeven 1R, kısmi %50 @ 1.5R, geri verme takibi (`exit_management.*`), maliyet, kayma,
+fonlama, likidasyon ve dolum kuralı (kural 13) **birebir aynıdır.** Kural `strategies/time_stop.py`
+tek kopyasından okunur; değişen yalnızca sınırdır (`scalp_patient`in deseni: aynı kural,
+farklı anahtar).
+
+**Sayının teoriyle ilişkisi (kayıt, gerekçe DEĞİL):** 32 kullanıcının seçimidir. Karar 30'un
+yürüyüş aritmetiğiyle (`N = (hedef/ATR)²`) karşılaştırması: stop 2.5×ATR, hedef 1.5–2.0R →
+3.75–5.0×ATR → N ≈ 14–25 bar. 16 bu aralığın alt ucunda, 32 üstündedir. Birkaç değer
+denenip en iyisi SEÇİLMEZ (§7.1): yalnızca 32 ölçülür.
+
+**Statü: ölçüm; canlı model DEĞİŞMEZ.** `REGISTRY`, katmanların `models` listeleri,
+`config.yaml`, defterler, `strategies/` ve `core/` bu ön-kayıtla değişmez. Varyant geçse bile
+`vwap_managed`e OTOMATİK girmez (bkz. 10).
+
+**Sicil:** §6c'de **16. satır.** Kullanıcının kendi tezi → **ev içi BH paydasına girer**;
+tek test (m = 1), satır içinde düzeltme yok.
+
+**Kapsam:** `scalp` katmanı (15m, SABİT 13 sembol), yalnızca `vwap_managed`.
+
+### 2. Eşleştirme — "aynı girişler" nasıl kurulur
+
+**Sorun:** iki varyantı ayrı portföy koşusu olarak koşturmak eşleştirme VERMEZ. %1 stop
+tabanı ile kural 11 birlikte pratikte ~1 eşzamanlı pozisyon dayatır
+(`strategies/time_stop.py`); 32 barlık varyant pozisyonları daha uzun tutar, sonraki
+sinyalleri kotayla (`max_positions`, `duplicate_position`) reddeder ve iki koşunun giriş
+kümeleri ayrışır. O zaman fark çıkış kuralının değil "hangi işlemlerin açıldığı"nın ölçüsü
+olurdu.
+
+**Yöntem (iki adım, ikinci motor YOK):**
+
+1. **Giriş kümesi `P`:** mevcut modelin (16 bar) her dönemdeki PORTFÖY koşusu
+   (`scripts/backtest.py::run_backtest`, `--models vwap_managed`, `signals_per_bar: true` —
+   katmanın kendi ayarı). `P` = o koşunun DOLAN pozisyonları. Kümeyi mevcut model belirler,
+   çünkü canlıda koşan ve kasaya taşınacak kıyas odur.
+2. **Yeniden oynatma:** `P`'nin her pozisyonu, giriş barı, giriş fiyatı, ilk stop, hedef ve
+   çıkış yönetimi alanları AYNI kalarak, **tek pozisyonluk izole bir hesapta** iki kez
+   motorun kendisinden (`core/engine.py` + `core/portfolio.py`; yönetim
+   `strategies/exit_management.py` + `strategies/time_stop.py`) geçirilir: `bars = 16` ve
+   `bars = 32`. İzole hesabın sermayesi portföy koşusunun o bardaki özsermayesidir (kaldıraç ve
+   likidasyon geometrisi aynı kalsın). Fiyat yolu, stop hareketi, kısmi dolum, kural 13 ve
+   likidasyon önceliği motorun kodudur — bu betik yeniden YAZMAZ.
+
+**Parite kapısı (alet kapısı):** 16 barlık yeniden oynatmanın her pozisyon için ürettiği R,
+portföy koşusunun aynı pozisyonu için ürettiği R'ye eşit olmalıdır (göreli ≤ 1e-6). Eşleşmeyen
+pozisyonlar SEBEPLERİYLE listelenir (beklenen tek sebep: eşzamanlı başka bir pozisyonun nakdi
+tükettiği ve kaldıraç tavanının boyutu küçülttüğü barlar). Eşleşmeyen pay **> %1** ise o dönem
+ölçülmez, çıkış **3**.
+
+**Sağlama:** 16. bardan ÖNCE kapanmış her pozisyonda iki varyant birebir aynıdır, yani
+`ΔR_i = 0` TAM olmalıdır. Sıfır olmayan tek satır alet hatasıdır → çıkış 3.
+
+### 3. Birincil ölçü ve kapı
+
+- `ΔR_i = R_i(32) − R_i(16)`, `i ∈ P`; R `core/metrics.py`nin tek tanımından (`Σpnl / Σrisk`,
+  pozisyon birimi — `merge_fills`; kısmi çıkış ve son dilim TEK pozisyondur).
+- **Bağlayıcı ölçü:** `ΔR̄` — `P`'nin TAMAMI üzerinden ortalama (16. bardan önce çözülen ve
+  `ΔR = 0` olan pozisyonlar DÂHİL; onları atmak etkiyi şişirir ve ölçeği canlı pozisyon başı
+  beklentiden koparırdı).
+- **Kapı 1 — ΔR:** `ΔR̄ > 0` **ve** küme bootstrap aralığının bağlayıcı alt sınırı **> 0**.
+- **Kapı 2 — C-1 (varyantın kendisi):** varyantın (32 bar) `P` üzerindeki kendi ortalama
+  R'si `R̄(32) > 0` **ve** küme bootstrap aralığının bağlayıcı alt sınırı **> 0** (aynı küme
+  tanımları, aynı kural: gün ve ISO hafta, küçük alt sınır bağlar). Mevcut kolun `R̄(16)`'sı
+  ve aralığı betimsel olarak yanında yazılır, kapı almaz.
+- İki kapı **A'da ve B'de AYRI AYRI** değerlendirilir ve raporlanır; biri diğerinin yerine
+  geçmez. Gerekçe (kullanıcı kararı, O4): `ΔR̄ > 0` tek başına "daha az kötü" bir varyantı da
+  geçirirdi (karar 37: bu modelin temiz penceresinde brüt sürüklenme negatifti).
+- **Geçme:** **dönem A'da ölç, B'de doğrula.** A'da İKİ kapı birlikte geçmezse B KOŞULMAZ.
+  Kasaya geçiş için ΔR kapısı ve C-1, **A'da ve B'de, birlikte** geçmelidir.
+
+### 4. İstatistik
+
+- **Küme bootstrap**, iki tanım ayrı ayrı: **takvim günü** (UTC) ve **ISO hafta**; küme
+  pozisyonun `opened_at`ından. **Bağlayıcı alt sınır iki tanımın KÜÇÜĞÜDÜR.** %95 yüzdelik
+  aralık, 10 000 çekiliş, tohum `random_seed`den; çekilişler `scripts/backtest_dc.py`den
+  İTHAL EDİLİR (`cluster_mean_draws`; ikinci kopya yok). Tek yönlü p de aynı çekilişlerden.
+- Bir tanımda **< 10 küme** → o dönem **DEĞERLENDİRİLEMEZ** (geçmiş sayılmaz); iki kapı
+  için de geçerlidir.
+- **Güç:** MDE = `2.802 × SE_küme` (bağlayıcı tanım), etkin küme sayısı ve DEFF ile birlikte —
+  `ΔR̄` ve `R̄(32)` için ayrı ayrı.
+- **16. barda hâlâ açık olan pozisyonlar** (`ΔR ≠ 0` olabilen tek kısım): `n_açık` ve
+  `P` içindeki payı **A'da ve B'de ayrı ayrı** raporlanır (kullanıcı kararı, O5'e ek), koşullu
+  `ΔR̄` ile birlikte — kapı değil; marjın neden uygulanmadığının (O5) ve etkinin nereden
+  geldiğinin okunması için. `ΔR̄ ≈ pay × koşullu ΔR̄` özdeşliği raporda sağlanır.
+- **⚠ Güç uyarısı:** *GEÇMEDİ, "etki yok" diye okunmaz.* Aralığın üst sınırı ve MDE hangi
+  büyüklükteki etkinin dışlandığını söyler.
+
+### 5. Dönemler — ve neden B kasadan önce, Temmuz'da biter
+
+| | Pencere | Gerekçe |
+|---|---|---|
+| **A** | 2022-01-01 → 2024-06-30 (sinyal kesimi) | Projenin standart A'sı (`scripts/backtest_ema.py`den İTHAL). |
+| **B** | 2024-07-01 → **2026-07-19T00:00Z** (sinyal kesimi) | Embargo ≥ 33 bar (varyantın azami tutuşu, §6.1) A'nın son pozisyonlarını kapatır; 2024-07-01 bunu fazlasıyla karşılar. |
+| **dışarıda** | 2026-07-19 → 2026-10-04 | `vwap_managed` için GÖRÜLMÜŞ veri: 07-19 → 08-17 C-5 koşusu (karar 37, R ve kırılımları okundu), 08-17 → 09-16 `atr_multiple` kalibrasyon penceresi (§6, IN-SAMPLE), 09-15 → canlı defter (dashboard'da görüldü), 09-27 → kasa. |
+
+- Kasanın ilk haftası (2026-09-27 → 10-04) **bu test için** görülmüş sayılır: canlı
+  `vwap_managed` defteri o hafta dashboard'da açıktı. `KASA_START` DEĞİŞMEZ; yalnızca bu
+  testin kasa penceresi daha geç başlar (bkz. 10).
+- Mumlar OKX 15m, koşuya özel önbellek; B'nin mumları yalnızca A GEÇERSE çekilir. PENGU A'da
+  listelenmemiş olabilir; sembol başına kapsam `preflight`te yazılır.
+
+### 6. Betimsel çıktılar (kapı DEĞİL)
+
+1. **Çıkış sebebi dağılımı, iki kolda**, `core/metrics.py::exit_rule_of` birimiyle: `tp`,
+   `stop` (ilk), `stop:breakeven`, `stop:partial`, `stop:giveback`, `partial`,
+   `signal:time_stop`, `liquidation` — sayı, pay, ort. R. Birim DİLİMDİR (CLAUDE.md > kırılımlar).
+2. **16–32 bar arasında sonuçlanan pozisyonlar AYRI:** 16. barda açık olup varyantta 17–33.
+   bar arasında kapanan pozisyonların sayısı, varyanttaki çıkış sebebi dağılımı, `R(16)` ↔
+   `R(32)` ve `ΔR̄`; varyantta da zaman stop'una düşenler ayrıca (32. barda hâlâ açık).
+3. Kural 13'ün aynı barda stop+hedef belirsizliğinin iki koldaki sayısı
+   (`ambiguous_stop_exits`) — uzun tutuş bu varsayımın bağlama sıklığını artırabilir.
+4. **Brüt ΔR** (maliyetsiz) netin yanında.
+5. **Yön kırılımı** (long / short `ΔR̄`, grup aralığıyla) — projenin ana sorusu; yıl ve sembol
+   başına sayılar ve `ΔR̄`. Kırılımlar yeni kapı ya da filtre DOĞURMAZ (§7).
+6. **Portföy etkisi (eşleştirilmemiş):** varyantın kendi PORTFÖY koşusu (koşuya özel config:
+   yalnızca `scalp.time_stop_bars: 32`, yalnızca `vwap_managed`; parmak izi `manifest.json`da)
+   — pozisyon sayısı, kotayla reddedilen sinyaller (`rejections` sebep koduyla), ort. R, hesap
+   getirisi, maxDD; mevcut koşunun yanında. **Neden gerekli:** eşleştirilmiş `ΔR̄` pozisyon
+   BAŞINA etkidir ve kotanın bedelini görmez — 32 bar her pozisyonu daha uzun tutar ve
+   sonraki sinyalleri bloklar. Pozisyon başı `ΔR̄ > 0` iken hesap düzeyi sonuç kötüleşebilir;
+   ikisi yan yana okunur, biri ötekinin yerine geçmez.
+
+### 7. MFE teşhisi — bu testten BAĞIMSIZ (kapı DEĞİL, karar ÜRETMEZ)
+
+Kullanıcının isteğiyle aynı koşuda, aynı `P` üzerinde, **mevcut kol (16)** için:
+
+- Yol istatistiği `scripts/diagnose_ema_exits.py::position_paths`ten İTHAL EDİLİR (tanımlar
+  tek kopya): **MFE / MAE, R cinsinden, kapanış barı HARİÇ** (kural 13b: stop hareketleri bar
+  kapandıktan sonra uygulanır, kapanış barının içi bir kurala görünmezdi) ve dahil hâli yanında.
+- Çıkış sebebine göre dağılım (medyan, p25/p75/p90) ve kovalar (`< 0.5R`, `0.5–1R`, `1–1.5R`,
+  `≥ 1.5R`) — breakeven (1R) ve kısmi (1.5R) eşiklerine göre hizalı.
+- Zaman stop'una düşenler için: 16. bardaki R ve 17–32. barlardaki MFE (varyantın "kaçırdığı"
+  ya da "kurtardığı" hareketin büyüklüğü).
+- **Bağımsızlık:** bu teşhis kapıyı, eşiği, varyantın tanımını DEĞİŞTİRMEZ ve ondan türetilen
+  bir eşik bu testin ikinci bir varyantı olamaz — o, yeni bir ön-kayıttır (§7). Dönem B'de
+  koşulmaz (B'nin teşhis için açılması onu doğrulama dönemi olmaktan çıkarırdı).
+
+### 8. Tahmin (koşudan ÖNCE)
+
+- **Kullanıcı (Ferhat, 2026-10-03):** "ΔR küçük pozitif ve ayırt edilemez; varyantın kendi
+  ortalama R'si negatif kalır, C-1 kalır."
+- **Claude Code:** `ΔR̄` ayırt edilemez, nokta tahmini ≈ 0. Gerekçe karar 37: aynı modelin temiz
+  penceresinde brüt sürüklenme NEGATİFTİ (n = 25, sonuç değil) — sürüklenmesi negatif bir
+  sinyalde maruziyeti uzatmak, hedefe varanları artırdığı kadar stop'a varanları da artırır.
+  Portföy etkisinin (6.6) pozisyon başı etkiden kötü olmasını bekliyorum.
+
+### 9. Kabul edilen sapmalar (yönleri önceden yazılı)
+
+- **S1 — fonlama yok:** OKX fonlama geçmişini ~3 aylık kayan pencerede tutuyor (karar 50);
+  A ve B'de `core/funding.py::rate_at` None döner, maliyet işlenmez. İki kol da iyimser,
+  ama **varyant daha uzun tuttuğu için sapma VARYANTIN LEHİNEDİR.** Büyüklük: ek 16 bar = 4
+  saat → en fazla bir ödeme (~%0.01) ↔ stop medyanı ~%1.4–2.0 → etkilenen pozisyon başına
+  ≲ 0.007R. `ΔR̄` bu mertebedeyse sonuç bu sapmadan ayırt edilemez sayılır.
+- **S2 — izole hesap:** yeniden oynatma kota etkileşimini taşımaz; bu, eşleştirmenin TANIMIDIR
+  ve bedeli 6.6'da ayrıca raporlanır.
+- **S3 — kitap sırası yok:** motorun kendi dolum varsayımları (kural 13) iki kola aynı uygulanır.
+
+### 10. Kasa bağlantısı (§7.8)
+
+- Kasa yalnızca **ΔR kapısı ve C-1 A'da ve B'de birlikte geçerse** ve betik + ön-kayıt + TADİLAT'lar bir dondurma kaydında
+  sabitlenirse açılır (§7.8). Kasa sınaması **ayrı bir ön-kayıtla** gelir (§6w'nin deseni:
+  asgari uzunluk, kontrol takvimi, "değerlendirilemez" eşiği, kasaya dokunmadan ÖNCE yazılır).
+- **Bu testin kasa penceresi 2026-10-04T00:00Z'de başlar** (kullanıcı kararı). Önceki canlı
+  işlemler — 2026-09-27 → 10-03 dahil — dışarıdadır (bkz. 5).
+- Önerilen kasa kaynağı (o ön-kayıtta kesinleşir): canlı `ledgers_scalp/vwap_managed`in
+  2026-10-04'ten sonra AÇILAN pozisyonları, aynı yeniden oynatmayla 32 bara karşı. Böylece
+  canlı katmana varyant modeli eklemek gerekmez ve canlı ölçüm değişmez.
+- Bu ön-kaydın A/B sonucu görülene kadar canlı `vwap_managed` defteri bu tez için
+  OKUNMAZ (kasa verisi; §7.8 > canlı defterden tez türetmek).
+
+### 11. Aşamalar ve çıkış kodları
+
+- `preflight`: kapsam (sembol başına 15m bar), A ve B'de `P`'nin büyüklüğü ve küme SAYILARI,
+  parite kapısı ve sağlama — hiçbir `ΔR`, R ortalaması, MFE ya da çıkış dağılımı üretmez
+  (test). Koşu süresini de raporlar (15m × 2.5 yıl motor koşusu); süre workflow sınırını
+  aşarsa pencere değil koşu bölünür ve bu karar `measure`dan ÖNCE kullanıcıya gelir.
+- `measure`: TEK SEFER; önce A, A geçerse B.
+- Çıkış: `0` ölçüm yazıldı (kapı sonucundan bağımsız), `2` kullanım hatası, `3` veri/alet
+  kapısı (parite > %1, sağlama ihlali, pencere kapısı — karar 51, 59).
+- Betik `core/metrics.py`den R'yi, `scripts/backtest.py`den koşuyu, `scripts/backtest_dc.py`den
+  bootstrap'ı, `scripts/diagnose_ema_exits.py`den yol istatistiğini İTHAL EDER.
+
+### 12. Sonucu gördükten sonra YAPILMAYACAKLAR (§7'ye ek)
+
+32 değiştirilmez; 24/48 gibi komşu değerler "bir de bunu deneyelim" diye koşulmaz; yön,
+sembol, yıl ya da MFE kırılımından bir filtre türetilip yeniden koşulmaz; pencereler ve küme
+tanımları değiştirilmez. Her biri yeni bir ön-kayıttır, sicile yeni satır olarak girer ve
+penceresi bu testin görmediği veri olmak zorundadır.
+
+### 13. ONAY BEKLEYEN noktalar — kullanıcının tanımına bu bölümün EKLEDİKLERİ
+
+| # | Nokta | Öneri | Gerekçe |
+|---|---|---|---|
+| **O1** | Eşleştirme yöntemi | 2'deki iki adım: `P` = mevcut modelin portföy dolumları, motorla izole yeniden oynatma, parite kapısı | İki portföy koşusu giriş kümesini ayrıştırır; ikinci bir motor yazmak kural dışı |
+| **O2** | Dönem B | **EKLENDİ** (2024-07-01 → 2026-07-19) | Taslakta yalnızca A vardı; §7.8 kasayı yalnızca A ∧ B'yi geçmiş teze açar |
+| **O3** | B'nin sonu | 2026-07-19 (kasa başlangıcı değil) | 07-19 → kasa `vwap_managed` için görülmüş veri (5'teki tablo) |
+| **O4** | C-1 | **EKLENDİ** (3 > Kapı 2): varyantın `R̄(32) > 0` ∧ küme bootstrap bağlayıcı alt sınırı > 0, A ve B'de ayrı ayrı; kasaya geçiş ΔR ∧ C-1 | `ΔR̄ > 0` tek başına "daha az kötü" bir varyantı geçirirdi (karar 37). İlk ön-kaydın parçası, TADİLAT değil |
+| **O5** | Marj | **Yok** (`edge_margin_r` 0.15 uygulanmaz) | Bu bir model ↔ kontrol kıyası değil, aynı modelin iki çıkışı; `ΔR` yalnızca 16. barda açık pozisyonlarda sıfırdan farklı, 0.15'lik ortalama marj fiilen ulaşılamaz olurdu. MDE ile okunur |
+| **O6** | MFE teşhisi | 7'deki tanım (mevcut kol, yalnızca A) | Depoda `vwap_managed` için daha önce yazılmış bir MFE teşhisi bulunamadı; "önceki" ile kastedilen başka bir ölçümse 7 ona göre düzeltilir |
+| **O7** | Kasa kaynağı | 10'daki öneri (canlı defter + yeniden oynatma, ayrı ön-kayıt) | Canlı katman değişmeden |
+
+**ONAYLANDI (kullanıcı, 2026-10-03):** O1, O2, O3, O5, O6, O7 önerildiği gibi. **O4 →
+C-1 EKLENDİ** (ilk ön-kaydın parçası, TADİLAT değil): 3 > Kapı 2. **O5'e ek:** 16. barda
+açık pozisyonların payı iki dönemde raporlanır (4). **Tahmin:** 8'deki kullanıcı satırı
+(Claude Code tahmini ayrı satırda). MFE bölümü (7) tanımlandığı gibi. Birleştirme
+kullanıcı onayıyla; betik birleştirmeden SONRA.
+
+---
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 
