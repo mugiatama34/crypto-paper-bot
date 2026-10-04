@@ -1,0 +1,79 @@
+# vwap_managed zaman stop'u 16 → 32 bar (§6x) — measure
+
+## 1. Ön-kontrol (16 bar birebir) — A
+  pencere (2022-01-01T00:00:00+00:00, 2024-06-30T12:00:00+00:00], sinyal kesimi 2024-06-30T00:00:00+00:00
+  P = 1300 pozisyon; küme {'day': 595, 'week': 131}
+  oynatılamayan (veri eksik, iki koldan çıkarıldı): 0 (pay +0.0000, sınır 0.01)
+  parite uyuşmazlığı (tolerans yok): 0; sağlama ihlali 0; eşleşen 1300
+  kapı hataları: yok
+  süre (sn): {'portfolio_16': 5070.380617944, 'replays': 1974.7510259680002, 'portfolio_32': 3063.8816101899993}
+
+## 2. C-1 — A (varyantın kendi ortalama R'si)
+  n=1300 ort -0.1820 · bağlayıcı alt -0.2440 · MDE +0.0892 · GEÇMEDİ
+    day: küme 595 [-0.2440, -0.1207] p₁ +1.0000
+    week: küme 131 [-0.2426, -0.1188] p₁ +1.0000
+
+mevcut kol (16, betimsel): -0.1506
+
+## 3. ΔR — A
+  n=1300 ort -0.0315 · bağlayıcı alt -0.0614 · MDE +0.0426 · GEÇMEDİ
+    day: küme 595 [-0.0614, -0.0009] p₁ +0.9778
+    week: küme 131 [-0.0612, -0.0020] p₁ +0.9806
+16. barda hâlâ açık: 697 / 1300 (pay +0.5362), koşullu ΔR̄ -0.0587, özdeşlik artığı +0.0000
+A sonucu: C-1 GEÇMEDİ · ΔR GEÇMEDİ → B KOŞULMAZ
+
+yön / yıl / sembol (betimsel):
+  long: n=576 ΔR̄=-0.0275 alt=-0.0775
+  short: n=724 ΔR̄=-0.0346 alt=-0.0734
+  2022: n=610 ΔR̄=-0.0524
+  2023: n=395 ΔR̄=-0.0211
+  2024: n=295 ΔR̄=-0.0023
+  ADA-USDT-SWAP: n=141 ΔR̄=-0.0131
+  AVAX-USDT-SWAP: n=167 ΔR̄=-0.0443
+  BNB-USDT-SWAP: n=39 ΔR̄=+0.0646
+  BTC-USDT-SWAP: n=47 ΔR̄=-0.1217
+  DOGE-USDT-SWAP: n=106 ΔR̄=+0.0028
+  ETH-USDT-SWAP: n=94 ΔR̄=-0.0323
+  ETHFI-USDT-SWAP: n=26 ΔR̄=+0.1656
+  LINK-USDT-SWAP: n=160 ΔR̄=-0.0699
+  NEAR-USDT-SWAP: n=182 ΔR̄=-0.0203
+  SOL-USDT-SWAP: n=149 ΔR̄=-0.0689
+  SUI-USDT-SWAP: n=77 ΔR̄=-0.0346
+  XRP-USDT-SWAP: n=112 ΔR̄=-0.0200
+brüt: R̄16 -0.0202 · R̄32 -0.0466 · ΔR̄ -0.0264
+
+## 4. Çıkış sebepleri — A (birim: dilim)
+  kol 16:
+    partial: 129 (pay +0.0903) R̄ +1.4059
+    signal:time_stop: 697 (pay +0.4878) R̄ +0.1582
+    stop: 424 (pay +0.2967) R̄ -1.1271
+    stop:breakeven: 50 (pay +0.0350) R̄ -0.1407
+    stop:partial: 54 (pay +0.0378) R̄ +1.2063
+    tp: 75 (pay +0.0525) R̄ +1.4887
+  kol 32:
+    partial: 226 (pay +0.1481) R̄ +1.4063
+    signal:time_stop: 401 (pay +0.2628) R̄ +0.2006
+    stop: 553 (pay +0.3624) R̄ -1.1235
+    stop:breakeven: 116 (pay +0.0760) R̄ -0.1318
+    stop:partial: 101 (pay +0.0662) R̄ +1.2228
+    tp: 129 (pay +0.0845) R̄ +1.4942
+  16–32 alt kümesi: n=697, 17–33. barda çözülen 296, 32'de de zaman stop'u 401; R̄16 +0.1582 → R̄32 +0.0995
+    varyant çıkışları: {'signal:time_stop': 401, 'tp': 54, 'stop:partial': 47, 'stop:breakeven': 66, 'stop': 129}
+  kural 13 belirsizliği: {'16': 14, '32': 24, 'stop_exits_16': 528, 'stop_exits_32': 770}
+
+## 5. MFE teşhisi — A, mevcut kol (bağımsız, kapı DEĞİL)
+  tümü: MFE* n=1287 med +0.5519 p75 +0.9514 p90 +1.3284
+  signal:time_stop: MFE* n=697 med +0.6402 p75 +0.9123 p90 +1.2091
+  stop: MFE* n=411 med +0.2004 p75 +0.3868 p90 +0.6397
+  stop:breakeven: MFE* n=50 med +1.1466 p75 +1.2661 p90 +1.4173
+  stop:partial: MFE* n=54 med +1.5633 p75 +1.6234 p90 +1.7094
+  tp: MFE* n=75 med +1.1906 p75 +1.3638 p90 +1.4714
+  kovalar (tümü): [-inf,0.5): 585, [0.5,1.0): 401, [1.0,1.5): 241, [1.5,inf): 60
+  zaman stop'u (n=697): R@16 n=697 med +0.1617 p75 +0.4821 p90 +0.7475; MFE 17–32 n=697 med +0.7657 p75 +1.2237 p90 +1.7426
+
+## 6. Portföy etkisi — A (eşleştirilmemiş)
+  kol 16: pozisyon 1300 · R̄ -0.1506 · getiri -0.8603 · maxDD -0.8755 · ret {'duplicate_position': 793, 'max_short_positions': 50, 'zero_size': 127}
+  kol 32: pozisyon 1267 · R̄ -0.1759 · getiri -0.8892 · maxDD -0.9102 · ret {'duplicate_position': 786, 'max_short_positions': 68, 'zero_size': 149}
+
+## 7. Dönem B — ayrı aşama (`vts-measure-b`)
+  programatik karar: B KOŞULMAYACAK — A'da ΔR kapısı ve C-1 birlikte geçmedi (ya da A yükü eksik)
