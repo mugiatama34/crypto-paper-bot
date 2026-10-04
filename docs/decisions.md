@@ -5712,3 +5712,54 @@ bir örneklem kapısı, sonucu "ayırt edilemedi" olacak bir ölçümü koştura
 hemen üstünde kaldı (0.166 ↔ 0.15); bu bir yakın ıska değil, kuralın tanımıdır — eşik sonuç
 görüldükten sonra tartışılmaz.
 
+
+## 74. `vwap_managed` zaman stop'u 32 bar: R'yi artırmıyor, azaltıyor — A'da KALDI, B koşulmadı, model DEĞİŞMEZ; ön-kayıt §6x *(2026-10-03)*
+
+**Bağlam.** Kullanıcının tezi: `vwap_managed`in kurulumlarına hedefine varacak süreyi vermek —
+zaman stop'unu 16 bardan 32 bara uzatmak — aynı girişlerde gerçekleşen R'yi artırır. Tek
+değişken `scalp.time_stop_bars`; giriş, stop, hedef ve üç aşamalı çıkış aynı. Ölçüm ikinci bir
+motor yazmadan kuruldu: mevcut modelin dönem A portföy dolumları (`P` = 1300) motorun kendisiyle
+izole hesapta 16 ve 32 barla yeniden oynatıldı; 16 barlık oynatma portföyü birebir üretti
+(oynatılamayan 0, uyuşmazlık 0, sağlama ihlali 0). Kapılar: ΔR (`ΔR̄ > 0` ∧ küme alt sınırı > 0)
+∧ C-1 (`R̄(32) > 0` ∧ alt sınır > 0), gün ∧ ISO hafta küme bootstrap'ı, A'da ölç B'de doğrula;
+B yalnızca A'da ikisi birlikte geçerse ve programatik kararla koşar (§6x > 14, TADİLAT-1 > 1, 9).
+
+**Sonuç** (koşu #37145551210; B kararı #37158940151):
+- **C-1 KALDI:** `R̄(32)` −0.182, bağlayıcı alt −0.244 (MDE 0.089).
+- **ΔR KALDI ve işaret ters:** `ΔR̄` −0.031, aralık gün [−0.061, −0.001], hafta [−0.061, −0.002]
+  — iki tanımda da tamamen sıfırın altında, yani **ayırt edilebilir negatif** (MDE 0.043). Fark
+  tamamen 16. barda hâlâ açık olan %53.6'lık dilimde (koşullu −0.059) ve büyük ölçüde yoldan
+  (brüt −0.026).
+- **B programatik olarak KOŞULMADI:** `measure-b` pin'lenmiş A'nın hash'ini doğruladı, kapıları
+  A yükünden yeniden kurdu ve hiçbir veri çekmedi. Kasa açılmaz.
+- Mekanizma (betimsel): ek süre hedefe varanları artırdı (tp +54, kısmi +97 dilim) ama stop'a
+  varanları daha çok artırdı (ilk stop +129). Zaman stop'uyla kapananlar 17–32. barlarda medyan
+  +0.77R'lik lehte hareket görüyor, ama 32 barlık kolda gerçekleşen R'leri +0.100 — yol açılıp
+  geri dönüyor.
+
+**Karar.**
+1. `vwap_managed` DEĞİŞMEZ: zaman stop'u 16 bar kalır; `config.yaml`, `REGISTRY`, katmanın
+   `models` listesi, defter ve motor değişmez. **Model kâğıt üzerinde koşmaya devam eder**
+   (durumu `DOĞRULANMAMIŞ`, §7.8).
+2. **MFE bulgusu yeni bir varyant AÇMAZ** (kullanıcı kararı): görülmüş lehte hareketten bir çıkış
+   eşiği ya da süre türetmek, bu testin verisinden kural yazmaktır (§6x > 7, 12). 24/48 gibi
+   komşu değerler de koşulmaz.
+3. **Not (betimsel, kapı DEĞİL):** mevcut 16 barlık kol dönem A'da **−0.151R** (1300 pozisyon,
+   gün aralığı [−0.201, −0.099]). §6x mevcut kolu sınamadı; bu satır yalnızca okunuştur. Sitede
+   `vwap_managed` kartı "dönem A backtest: −0.15R / 1.300 işlem (§6x)" notunu taşır — sunum
+   bilgisidir, sıralamayı, kapıları ve defteri değiştirmez.
+
+**Tahminler (§6x > 8'den aynen).** Kullanıcı: "ΔR küçük pozitif ve ayırt edilemez; varyantın kendi
+ortalama R'si negatif kalır, C-1 kalır." → C-1 kısmı tuttu, ΔR kısmı tutmadı. Claude Code:
+"`ΔR̄` ayırt edilemez, nokta tahmini ≈ 0. […] Portföy etkisinin (6.6) pozisyon başı etkiden kötü
+olmasını bekliyorum." → nokta tahmini tutmadı (ayırt edilebilir negatif); gerekçenin yönü (stop'a
+varanlar hedefe varanlardan çok artar) tuttu; portföy cümlesi R ölçeğinde tutmadı (portföy R̄
+farkı −0.025 ↔ eşleştirilmiş −0.031). Oturum içi raporda Claude Code tahmini yanlışlıkla "daha
+yüksek R" diye anılmıştı; kayıtlı tahmin "≈ 0"dır (§6x > 15).
+
+**Ne öğrenildi (kayıt, kural değil).** (1) Karar 37'nin uyarısı yineleniyor: sürüklenmesi
+negatif bir sinyalde maruziyeti uzatmak "hedefe varmaya zaman tanımak" değil, aynı sapmayı daha
+uzun taşımaktır. (2) Eşleştirilmiş tasarım küçük bir farkı (0.03R) ayırt edilebilir kıldı:
+aynı girişlerde fark SD'si 0.50, iki bağımsız kolun R SD'sinin (≈ 0.85–0.97) yarısı. (3) A/B
+bölünmesi ve pin + hash tasarımı ilk kullanımında işini yaptı: B'nin koşmama kararı elle değil
+yükten verildi.

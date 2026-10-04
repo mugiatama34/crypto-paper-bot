@@ -275,6 +275,7 @@
   .mcard-row > div { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
   .mcard-row span { color: var(--ink-dim); }
   .mcard-badges { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
+  .mcard-note { color: var(--ink-dim); font-size: 11.5px; font-variant-numeric: tabular-nums; }
   /* Açık pozisyon sayısı tabloda nötr bir rozet: bir performans sayısı DEĞİLDİR
      (sonucu yok), bu yüzden getiri/R gibi işaret rengi almaz. */
   .mt-open {
@@ -919,6 +920,14 @@ const REFERENCE_GROUP = {
      düştüğünü söyler — bir tez değil, bir referans. Katmanın kontrolü katmanın kendi
      geometrisini taşımak zorundadır, bu yüzden iki ad da listede durur. */
   models: ["buyhold", "random_ctrl", "scalp_coinflip", "vwap_clone"],
+};
+
+/* Ön-kayıtlı bir backtest'in KAYITLI sonucu, model kartında tek satır. Sunum bilgisidir:
+   sayı burada HESAPLANMAZ (kural 7), kararın kendisinden (docs/decisions.md) aynen
+   alınır ve referansını taşır; sıralamayı, kapıları ve defteri değiştirmez. Canlı
+   sayılarla karışmasın diye kart onu "dönem A backtest" diye ayrıca etiketler. */
+const BACKTEST_NOTES = {
+  vwap_managed: { text: "dönem A backtest: −0.15R / 1.300 işlem", ref: "§6x", decision: "karar 74" },
 };
 
 /* ------------------------------------------------------------------ *
@@ -2240,6 +2249,7 @@ function renderGroups() {
       '<div class="mcard-row">' +
         stats.map(([k, v]) => "<div><span>" + esc(k) + "</span> " + esc(v) + "</div>").join("") +
       "</div>" +
+      backtestNote(nameOf(key)) +
       '<div class="mcard-badges">' + badges(FLAGS[key], false) + "</div>" +
       filterBtn +
       '<span class="iso-mark" hidden>◉ eğride yalnız bu model</span>' +
@@ -2251,6 +2261,14 @@ function renderGroups() {
       "</details>" +
       "</div>";
   }
+}
+
+function backtestNote(name) {
+  const note = BACKTEST_NOTES[name];
+  if (!note) return "";
+  return '<div class="mcard-note" title="' + esc("Ön-kayıtlı backtest sonucu, betimsel; " +
+    note.decision + " (docs/decisions.md). Canlı ölçüm değildir.") + '">' +
+    esc(note.text) + " (" + esc(note.ref) + ")</div>";
 }
 
 /* ---------------------------- korelasyon ----------------------------

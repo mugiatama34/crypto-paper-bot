@@ -953,7 +953,13 @@ def format_report(payload: Mapping[str, Any]) -> str:
         return "\n".join(lines)
     periods_payload = payload.get("periods", {})
     a = periods_payload.get("A", {})
-    lines += ["## 1. Ön-kontrol (16 bar birebir) — A"] + _format_precheck(a.get("precheck") or a)
+    if "A" in periods_payload:
+        lines += ["## 1. Ön-kontrol (16 bar birebir) — A"] + _format_precheck(a.get("precheck") or a)
+    source = payload.get("a_source")
+    if source is not None:
+        # measure-b A'yı ölçmez; ön-kontrolü yeniden basmak yükte olmayan alanları "None" diye
+        # yazardı. A'nın kaynağı ve hash'i, kararın neye dayandığını söyler.
+        lines += ["## A kaynağı (pin)", f"  {source.get('path')}", f"  sha256 {source.get('sha256')}"]
     if "gates" in a:
         g = a["gates"]
         lines += ["", "## 2. C-1 — A (varyantın kendi ortalama R'si)"] + _format_gate(g["c1"])

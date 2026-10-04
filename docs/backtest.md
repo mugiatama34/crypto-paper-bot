@@ -408,7 +408,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 13 | Maker yürütme: aynı sinyaller (§6r'nin kol bahçesi, 59 taban × 1D/4H/15m, ters yok) taker yerine limit emirle (limit = sinyal barının kapanışı, KESİN geçişte dolum, fiyat = limit; (a) melez: N bar içinde dolmazsa taker — 1D 1, 4H 2, 15m 4; (b) saf maker betimsel) yürütülürse net sonuç iyileşir mi, ve maker'la net pozitif aile var mı — OKX maliyetleri (taker %0.05 + kayma, maker %0.02) — **model DEĞİL, ölçüm** | §6s, commit `e06cf1e` (TADİLAT-1: O1–O12 önerildiği gibi kabul — (2)'nin kapısı hedge'li net, (1) kol başına düzeltmesiz; §6r'ye bağımlı: PR #65) | A: 2022-01-03 → 2024-06-23 (129 hafta); B: 2024-07-01 → 2026-09-20 (**kasa başlangıcı**, §7.8) | kullanıcı: (1) üç kolda da geçer, en büyük 15m'de; (2) hiçbir hücre A ∧ B'de geçmez, en yakın 15m/4H F4/F7; kapı: (1) strateji başına melez − taker, kol başına bahçe ortalaması, hafta kümeli bootstrap CI alt sınırı > 0, A ∧ B; (2) aile × kol = 21 hücre HEDGE'Lİ net > 0, BH q = 0.05 m = 21, A ∧ B — geçse bile kasada sınanmadan kabul EDİLMEZ | **(1) TUTTU, (2) DÜŞTÜ — dönem A'da, 21 hücrede** (koşu #36435759788, `45fde50`; kullanıcı onayı 2026-09-28): (1) melez − taker bahçe ortalaması üç kolda A ve B'de pozitif, CI sıfırın üstünde — A haftalık 1D +%0.134 [+0.112, +0.152], 4H +%0.850 [+0.801, +0.894], 15m +%13.82 [+13.60, +14.05]; kazanç ücret farkının aritmetiği (dolum oranı %96–99.6, dolan emir taker fiyatından girer), kaçırma bedeli tasarrufun %9–19'u. (2) hedge'li melez net hiçbir hücrede BH'yi geçmedi (en yakın 1D/F6 p 0.029, CI alt −1.8); B'de doğrulanacak hücre yok → kârlı aile yok. Kesinlik penceresi hariç satır sonucu değiştirmiyor. Dolum modelinin iyimserliği (kitap sırası yok) kayıtlı — §6s > SONUÇ |
 | 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | **DEĞERLENDİRİLEMEZ** (koşu #36577992025, `b8fd615`): taker kuralı 90 günde 0 pozisyon açtı (eşik %0.0714/gün hiç aşılmadı) → < 70 pozisyon-gün ∧ < 10 giriş; M1 KALICI (ρ̄ +0.196, CI [+0.099, +0.292]). Maker betimsel +%1.66 ama baz +%1.49, fonlama +%0.38, 1 likidasyon (yeniden koşu: likidasyon bazın tamamı, +%1.50). **TADİLAT-2** (sonuç sonrası sıkılaştırma): likidasyonda spot çıkışı `min(kapanış, P_liq × S₀/P₀)`, lehte baz yok — maker betimsel +%0.16. Kural (TADİLAT-2 dâhil) DONDURULDU, kasada ilk ölçüm — §6t > SONUÇ, karar 71 |
 | 15 | PO3 / AMD, Varyant A2: Asya aralığı (00–08 UTC) Londra penceresinde (08–13) süpürülüp aralığa geri dönünce süpürmenin TERSİNE girmek (hedef aralığın karşı tarafı, stop süpürme ucu ≥ %1.40, zaman çıkışı 24:00), AYNI yöne girmekten (kırılım devam, yansıtılmış geometri) iyi mi — 15m, `ema` evreni — **model DEĞİL, ölçüm** (dış kaynak) | §6u, bu commit | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı ve Claude: ort. R ~0, ayırt edilemez, ΔR işareti negatif olabilir; kapı: C-1 (PO3 bacağı) ∧ E (½·ΔR ≥ 0.15R ∧ ΔR bağlayıcı CI alt > 0), köken başına eşit ağırlık, gün ∧ hafta küme bootstrap'ı (küçüğü), A ∧ B | **DÜŞTÜ — dönem A'da** (koşu #36774716786, `147574f3`): C-1 R̄_PO3 −0.109 (bağlayıcı alt −0.264); E ½·ΔR +0.035 (marj 0.15; ΔR bağlayıcı alt −0.188, üst ½·ΔR ≈ 0.15–0.16); MDE ΔR 0.372 (½·ΔR 0.186); B koşulmadı → **"ayırt edilemedi"**; aralığın üst ucu marja denk, MDE(½·ΔR) 0.186 > marj — test marj düzeyindeki etkiyi görecek güçte değildi. Köken içi işaretler zıt (U −0.05, L +0.19) ve sürüklenmeyle tutarlı; brüt ≈ net (+0.071); kural 13 çift-stop 1 kurulum; 4H "uyumlu" grup en kötüsü (betimsel) — §6u > SONUÇ, karar 72 |
-| 16 | `vwap_managed` zaman stop'u varyantı: 16 yerine 32 bar, aynı girişlerde (mevcut modelin portföy dolumları, motorla izole yeniden oynatma) gerçekleşen R'yi artırır — giriş, stop, hedef ve üç aşamalı çıkış aynı | §6x (onay 2026-10-03) | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → 2026-07-19 (07-19 → kasa bu model için görülmüş veri); kasa penceresi 2026-10-04'ten, ayrı ön-kayıtla | kullanıcı: ΔR küçük pozitif, ayırt edilemez; varyant R̄ negatif, C-1 kalır; Claude: ΔR ≈ 0; kapı: (ΔR̄ > 0 ∧ alt sınır > 0) ∧ C-1 (varyant R̄ > 0 ∧ alt sınır > 0), gün/hafta küme bootstrap (küçük alt sınır), A ∧ B | **KOŞULMADI** — ön-kayıt açık |
+| 16 | `vwap_managed` zaman stop'u varyantı: 16 yerine 32 bar, aynı girişlerde (mevcut modelin portföy dolumları, motorla izole yeniden oynatma) gerçekleşen R'yi artırır — giriş, stop, hedef ve üç aşamalı çıkış aynı | §6x (onay 2026-10-03) | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → 2026-07-19 (07-19 → kasa bu model için görülmüş veri); kasa penceresi 2026-10-04'ten, ayrı ön-kayıtla | kullanıcı: ΔR küçük pozitif, ayırt edilemez; varyant R̄ negatif, C-1 kalır; Claude: ΔR ≈ 0; kapı: (ΔR̄ > 0 ∧ alt sınır > 0) ∧ C-1 (varyant R̄ > 0 ∧ alt sınır > 0), gün/hafta küme bootstrap (küçük alt sınır), A ∧ B | **DÜŞTÜ — dönem A'da** (koşu #37145551210, `dd943bd8`): C-1 R̄(32) −0.182 (bağlayıcı alt −0.244); ΔR̄ **−0.031** (gün [−0.061, −0.001], hafta [−0.061, −0.002] — ayırt edilebilir NEGATİF), MDE 0.043; 16. barda açık %53.6; mevcut kol −0.151 (betimsel); B programatik olarak koşulmadı (#37158940151, veri çekilmedi); MFE: lehte hareket 17–32'de görülüyor (medyan +0.77R) ama gerçekleşmiyor — yeni varyant açmaz — §6x > 15, karar 74 |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -9324,6 +9324,81 @@ Araç: `scripts/measure_vwap_time_stop.py`, tetikleyici `.github/workflows/measu
 `docs/data/vwap_time_stop_a*` ve `vwap_time_stop_b*`.
 Sentetik bir rastgele yürüyüşte gerçek `vwap_managed` ile koşulan portföyün her pozisyonu
 yeniden oynatmada birebir üretildi (test) — bu, yöntemin sınamasıdır, sonucun değil.
+
+### 15. SONUÇ — koşuldu, dönem A'da GEÇMEDİ: 32 bar R'yi artırmıyor, ΔR AYIRT EDİLEBİLİR biçimde NEGATİF; B programatik olarak KOŞULMADI *(2026-10-03, `measure` #37145551210, tetikleyici `06a9731e`, sonuç `dd943bd8`; `measure-b` #37158940151, tetikleyici `dd0e2600`, sonuç `6c6929c6`)*
+
+Yük `docs/data/vwap_time_stop_a.json` (SHA256 `c48210c6…59d4`, `.sha256` dosyasıyla birebir),
+rapor `vwap_time_stop_a.txt`; B kararı `vwap_time_stop_b.json`. Sayılar raporun sırasıyla
+(TADİLAT-1 > 2):
+
+**1. Ön-kontrol (16 bar birebir) — A.** Pencere (2022-01-01, 2024-06-30 12:00], sinyal kesimi
+2024-06-30 00:00. `P` = **1300** pozisyon; küme gün 595 / hafta 131. Oynatılamayan **0**, parite
+uyuşmazlığı **0**, sağlama ihlali **0**, eşleşen 1300 — preflight'ın (#37122883865) sayılarıyla
+aynı. Eşleştirme temiz; aşağıdaki her fark yalnızca zaman stop'unun sınırından gelir.
+
+**2. C-1 (varyantın kendi R̄'si) — A: KALDI.** `R̄(32)` **−0.182**; aralık gün [−0.244, −0.121],
+hafta [−0.243, −0.119] → bağlayıcı alt **−0.244**; MDE 0.089. Varyant sıfırın altında ve bu
+ayırt edilebilir. Mevcut kol (16, betimsel): **−0.151** (gün [−0.201, −0.099]).
+
+**3. ΔR (32 − 16) — A: KALDI, işaret ters ve AYIRT EDİLEBİLİR.** `ΔR̄` **−0.031**; aralık gün
+[−0.061, −0.001], hafta [−0.061, −0.002] → bağlayıcı alt **−0.061**; MDE 0.043 (gün; hafta 0.042).
+İki küme tanımında da %95 aralığı **tamamen sıfırın altında** — üst uç sıfıra çok yakın (gün
+−0.0009), yani etki küçük ama yönü belirsiz değil. **Kapının sorusu "artırıyor mu"ydu; cevap
+"hayır, azaltıyor".** Ön-kayıt negatif yön için bir kapı tanımlamadığından bu bir "kanıtlanmış
+zarar" kapısı değil, aralığın okunuşudur. Brüt `ΔR̄` −0.026: farkın ~%84'ü yoldan, kalanı ek
+dolumların maliyetinden. S1 (fonlama yok, varyant lehine ≲ 0.007R) sonucun yönünü değiştiremez;
+düzeltilse fark büyür.
+16. barda hâlâ açık: **697 / 1300 (%53.6)**; bu alt kümede koşullu `ΔR̄` −0.059 (özdeşlik artığı
+0 — fark tamamen bu pozisyonlarda). Betimsel kırılımların (yön, yıl, sembol) hiçbiri bir filtre
+gerekçesi DEĞİLDİR (12): long −0.028, short −0.035; 2022 −0.052, 2023 −0.021, 2024 −0.002;
+13 sembolün 10'unda negatif.
+
+**4. Çıkış sebepleri (birim: dilim).** 32 barda zaman stop'u payı %48.8 → %26.3; serbest kalan
+pozisyonlar hedefe de gidiyor (tp %5.3 → %8.5, kısmi %9.0 → %14.8) ama stop'a daha çok gidiyor
+(ilk stop %29.7 → %36.2; ilk stop dilimi 424 → 553). 16–32 alt kümesi (n = 697): 17–33. barda
+çözülen 296, 32'de de zaman stop'u 401; alt kümenin R̄'si +0.158 → +0.100. Kural 13 belirsizliği
+16'da 14 / 528 stop çıkışı, 32'de 24 / 770 — varsayım sonucu bağlamıyor.
+
+**5. MFE teşhisi (mevcut kol, bağımsız, kapı DEĞİL).** Tüm pozisyonlarda kapanış barı hariç MFE
+medyanı +0.55R (p75 +0.95, p90 +1.33). Zaman stop'uyla kapananlar (n = 697): 16. barda R medyanı
++0.16; aynı pozisyonların 17–32. barlardaki MFE medyanı +0.77R (p75 +1.22). **Lehte hareket
+ek sürede GÖRÜLÜYOR ama gerçekleşmiyor:** aynı pozisyonların 32 barlık kolda gerçekleşen R'si
++0.100 — yol önce lehte açılıp sonra stop'a ya da breakeven'a dönüyor. Bu bulgu **yeni bir varyant
+AÇMAZ** (kullanıcı kararı; 7 ve 12): MFE'den bir çıkış eşiği türetmek bu testin görülmüş verisinden
+kural yazmaktır.
+
+**6. Portföy etkisi (eşleştirilmemiş).** 16 bar: 1300 pozisyon, R̄ −0.151, getiri −%86.0, maxDD
+−%87.6. 32 bar: 1267 pozisyon, R̄ −0.176, getiri −%88.9, maxDD −%91.0. Uzun tutuş kotayı daha
+çok bağlıyor (`max_short_positions` reti 50 → 68, `zero_size` 127 → 149).
+
+**7. Dönem B: KOŞULMADI (programatik).** `measure-b` pin'lenmiş A yükünü okudu, hash'ini doğruladı
+(`c48210c6…`) ve kararı A yükündeki kapılardan yeniden kurdu (`c1_passed: false`,
+`delta_passed: false`, `eligible: false`); hiçbir portföy koşusu yapılmadı, hiçbir mum çekilmedi
+(TADİLAT-1 > 1, 9). Kasa açılmaz (10).
+
+**Karar (mekanik): KALDI — dönem A'da (B KOŞULMADI).** `vwap_managed` değişmez; 16 barlık zaman
+stop'u yerinde kalır, model kâğıtta koşmaya devam eder (karar 74).
+
+**Tahminler (8'den aynen):**
+- Kullanıcı (Ferhat, 2026-10-03): "ΔR küçük pozitif ve ayırt edilemez; varyantın kendi ortalama
+  R'si negatif kalır, C-1 kalır." → **C-1 kısmı TUTTU** (R̄(32) −0.182, C-1 kaldı); **ΔR kısmı
+  TUTMADI** — küçük ama negatif ve ayırt edilebilir.
+- Claude Code: "`ΔR̄` ayırt edilemez, nokta tahmini ≈ 0. Gerekçe karar 37: aynı modelin temiz
+  penceresinde brüt sürüklenme NEGATİFTİ (n = 25, sonuç değil) — sürüklenmesi negatif bir sinyalde
+  maruziyeti uzatmak, hedefe varanları artırdığı kadar stop'a varanları da artırır. Portföy
+  etkisinin (6.6) pozisyon başı etkiden kötü olmasını bekliyorum." → **Nokta tahmini TUTMADI**
+  (ΔR̄ −0.031, ayırt edilebilir). Gerekçenin YÖNÜ tuttu: ek süre stop'a varanları hedefe
+  varanlardan çok artırdı (ilk stop +129 dilim ↔ tp +54, kısmi +97). Portföy cümlesi R ölçeğinde
+  TUTMADI: portföy R̄ farkı −0.025, eşleştirilmiş −0.031'den küçük (getiri −2.9 puan, maxDD −3.5
+  puan).
+- ⚠ Kayıt düzeltmesi: sonuç raporunda (oturum içi, 2026-10-03) Claude Code tahmini yanlışlıkla
+  "daha yüksek R" diye anıldı; o ifade kullanıcının §6x taslağındaki tez satırıdır. Kayıtlı tahmin
+  yukarıdaki "≈ 0"dır.
+
+**Not (betimsel):** mevcut 16 barlık kol dönem A'da **−0.151R** (1300 pozisyon, gün aralığı
+[−0.201, −0.099]). Bu bir kapı DEĞİLDİR — §6x mevcut kolu sınamadı — ama okunuşu açıktır:
+`vwap_managed` geliştirme penceresinde sıfırın altında. Sitede modelin kartı bu satırı taşır
+("dönem A backtest: −0.15R / 1.300 işlem (§6x)").
 
 ---
 

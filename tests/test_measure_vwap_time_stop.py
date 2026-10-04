@@ -350,6 +350,19 @@ def test_report_sections_follow_the_preregistered_order() -> None:
     assert "B verisi çekilmedi" in text
 
 
+def test_measure_b_report_does_not_reprint_a_precheck() -> None:
+    """measure-b A'yı ölçmez: ön-kontrol bölümü yükte yok, "None" satırları basılmaz."""
+    payload = {
+        "stage": "measure-b",
+        "periods": {"B": {"skipped": "B koşulmadı: x"}},
+        "a_source": {"path": "docs/data/vwap_time_stop_a.json", "sha256": "ab" * 32,
+                     "decision": {"eligible": False}},
+    }
+    text = m.format_report(payload)
+    assert "## 1. Ön-kontrol" not in text and "None" not in text
+    assert "ab" * 32 in text and "B verisi çekilmedi" in text
+
+
 # --------------------------------------------------------------------------- #
 # Yol istatistiği yöne çevrilir (long değişmez)
 # --------------------------------------------------------------------------- #
