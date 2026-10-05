@@ -34,6 +34,7 @@ README = PROJECT_ROOT / "README.md"
 _ACTIVE_HEADINGS = {
     "base": "### Aktif lig — `base`",
     "scalp": "### Aktif lig — `scalp`",
+    "daily": "### Aktif lig — `daily`",
     # `ema` katmanı TANIMLI ama tetikleyicisi yok (run-ema.yml henüz eklenmedi): kadro
     # backtest'in ölçtüğü kümedir, koşan bir lig değil. Başlık, kapılar geçilip workflow
     # eklendiğinde "Aktif lig" olarak yeniden adlandırılacak.

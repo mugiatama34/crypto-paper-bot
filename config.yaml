@@ -424,6 +424,71 @@ layers:
 
     breakdowns: ["symbol", "exit_rule", "session", "loss_streak"]
 
+  daily:
+    # Günlük (1D, UTC çapalı) trend katmanı — `daily_trend` (27) ve kontrolü
+    # `daily_trend_random` (28). Ön-kayıt: docs/backtest.md > 6y; kaynak backtest bu deponun
+    # DIŞINDADIR (mugiatama34/trading-premium > arastirma/trend/, PR #5).
+    #
+    # NEDEN AYRI KATMAN: kural günlük mumlarda ve sabit bir evrende seçildi. 4H'lik `base`e
+    # almak hem barı hem evreni değiştirmek, yani backtest'in cevapladığından başka bir soru
+    # sormak olurdu (`ema` katmanının varlık sebebiyle aynı gerekçe).
+    #
+    # "1Dutc": OKX'in "1D" barı Hong Kong saatine (UTC+8) çapalıdır; kaynak kural 00:00 UTC
+    # günlerinde ölçüldü. Süre `core/data.py::bar_duration`da ekten bağımsız okunur.
+    timeframe: "1Dutc"
+
+    # Telafi edilen gün KENDİ sinyalini üretir: tetikleme bir gün kaçarsa o günün kırılımı
+    # kaybolmasın. Defter bu katmanda sıfırdan başladığı için dönem ayrışması (kökte kapalı
+    # tutulmasının gerekçesi) burada doğmaz.
+    signals_per_bar: true
+
+    models: ["buyhold", "daily_trend", "daily_trend_random"]
+
+    # SABİT evren: kaynak backtest'in 17 coininden OKX'te USDT perpetual'ı olan 16'sı. MMT
+    # listede DEĞİLDİR — OKX'te varlığı bu commit'te doğrulanamadı ve evrende olmayan bir
+    # sembol her turda veri çekiminden düşerdi (TON'un dersi, docs/decisions.md > 24).
+    universe:
+      - "BTC-USDT-SWAP"
+      - "ETH-USDT-SWAP"
+      - "SOL-USDT-SWAP"
+      - "XRP-USDT-SWAP"
+      - "DOGE-USDT-SWAP"
+      - "BNB-USDT-SWAP"
+      - "AVAX-USDT-SWAP"
+      - "LINK-USDT-SWAP"
+      - "ADA-USDT-SWAP"
+      - "SUI-USDT-SWAP"
+      - "NEAR-USDT-SWAP"
+      - "PENGU-USDT-SWAP"
+      - "ETHFI-USDT-SWAP"
+      - "DOT-USDT-SWAP"
+      - "LTC-USDT-SWAP"
+      - "CRV-USDT-SWAP"
+
+    ledger_dir: "ledgers_daily"
+    metrics_file: "docs/data/metrics_daily.json"
+
+    # Stop sinyal barının kapanışından 3×ATR'dir ve tavan da o barın kapanışına göre ölçülür
+    # (`core/engine.py::_within_stop_band`): mesafe tam 3.0×ATR'dir ve kök tavan (3.0) kayan
+    # nokta kıl payıyla sinyali eleyebilirdi. 4.0 bu payı bırakır ama tavanı bir kural olmaktan
+    # çıkarmaz. Sayı sonuç görülmeden yazıldı (§6y).
+    max_stop_atr_multiple: 4.0
+
+    acceptance:
+      control_model: "daily_trend_random"
+
+    data:
+      # 20 günlük kanal + ATR(14) için fazlasıyla yeterli; ~10 aylık pencere.
+      history_bars: 300
+
+    retention:
+      # Günde bir bar: equity.csv yavaş büyür, sıkıştırma gereksiz.
+      equity_compaction_days: null
+      model_trade_limit: 100
+
+    # exit_rule: çıkışların kaçı ilk stop, kaçı trailing (kaynakta kazanç trailing'den geliyordu).
+    breakdowns: ["symbol", "exit_rule", "loss_streak"]
+
   scalp:
     # 15 dakikalık scalp katmanı: iki model (model 11 adaptif, model 12 kontrol).
     timeframe: "15m"

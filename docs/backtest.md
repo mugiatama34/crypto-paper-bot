@@ -409,6 +409,7 @@ onu üretecek olan tek şey bu tabloyu düzenlemektir.
 | 14 | Fonlama taşıması (delta-nötr): fonlamanın 7 günlük ortalaması maliyetten türetilmiş eşiği aşınca long spot + short perp (histerezis, çıkış 0, K = 5, eşit nominal), fonlama + baz + maliyet ayrı — **model DEĞİL, ölçüm** | §6t, commit `bfd46b0` (TADİLAT-1: portal kapandı; birincil evren 2026-06-22 öncesi 30 günün perp hacmine göre ilk 20, spot karşılığı olanlar; < 70 pozisyon-gün ya da < 10 giriş → DEĞERLENDİRİLEMEZ, §7.6'dan sapma) | tek geliştirme dönemi 2026-06-29 → **kasa başlangıcı** (2026-09-27; 13 hafta, A/B yok — portal kapalı, §6t > TADİLAT-1); kasa ≥ 13 hafta | kullanıcı: mekanizma güçlü tutar; net günlük getiri küçük pozitif, taker'la sınırda, maker'la açık pozitif; asıl risk baz; kapı: taker net günlük getiri, gün ∧ hafta küme bootstrap'ı, bağlayıcı alt sınır (küçüğü) > 0, m = 1 | **DEĞERLENDİRİLEMEZ** (koşu #36577992025, `b8fd615`): taker kuralı 90 günde 0 pozisyon açtı (eşik %0.0714/gün hiç aşılmadı) → < 70 pozisyon-gün ∧ < 10 giriş; M1 KALICI (ρ̄ +0.196, CI [+0.099, +0.292]). Maker betimsel +%1.66 ama baz +%1.49, fonlama +%0.38, 1 likidasyon (yeniden koşu: likidasyon bazın tamamı, +%1.50). **TADİLAT-2** (sonuç sonrası sıkılaştırma): likidasyonda spot çıkışı `min(kapanış, P_liq × S₀/P₀)`, lehte baz yok — maker betimsel +%0.16. Kural (TADİLAT-2 dâhil) DONDURULDU, kasada ilk ölçüm — §6t > SONUÇ, karar 71 |
 | 15 | PO3 / AMD, Varyant A2: Asya aralığı (00–08 UTC) Londra penceresinde (08–13) süpürülüp aralığa geri dönünce süpürmenin TERSİNE girmek (hedef aralığın karşı tarafı, stop süpürme ucu ≥ %1.40, zaman çıkışı 24:00), AYNI yöne girmekten (kırılım devam, yansıtılmış geometri) iyi mi — 15m, `ema` evreni — **model DEĞİL, ölçüm** (dış kaynak) | §6u, bu commit | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → **kasa başlangıcı** (2026-09-27; §7.8) | kullanıcı ve Claude: ort. R ~0, ayırt edilemez, ΔR işareti negatif olabilir; kapı: C-1 (PO3 bacağı) ∧ E (½·ΔR ≥ 0.15R ∧ ΔR bağlayıcı CI alt > 0), köken başına eşit ağırlık, gün ∧ hafta küme bootstrap'ı (küçüğü), A ∧ B | **DÜŞTÜ — dönem A'da** (koşu #36774716786, `147574f3`): C-1 R̄_PO3 −0.109 (bağlayıcı alt −0.264); E ½·ΔR +0.035 (marj 0.15; ΔR bağlayıcı alt −0.188, üst ½·ΔR ≈ 0.15–0.16); MDE ΔR 0.372 (½·ΔR 0.186); B koşulmadı → **"ayırt edilemedi"**; aralığın üst ucu marja denk, MDE(½·ΔR) 0.186 > marj — test marj düzeyindeki etkiyi görecek güçte değildi. Köken içi işaretler zıt (U −0.05, L +0.19) ve sürüklenmeyle tutarlı; brüt ≈ net (+0.071); kural 13 çift-stop 1 kurulum; 4H "uyumlu" grup en kötüsü (betimsel) — §6u > SONUÇ, karar 72 |
 | 16 | `vwap_managed` zaman stop'u varyantı: 16 yerine 32 bar, aynı girişlerde (mevcut modelin portföy dolumları, motorla izole yeniden oynatma) gerçekleşen R'yi artırır — giriş, stop, hedef ve üç aşamalı çıkış aynı | §6x (onay 2026-10-03) | A: 2022-01-01 → 2024-06-30; B: 2024-07-01 → 2026-07-19 (07-19 → kasa bu model için görülmüş veri); kasa penceresi 2026-10-04'ten, ayrı ön-kayıtla | kullanıcı: ΔR küçük pozitif, ayırt edilemez; varyant R̄ negatif, C-1 kalır; Claude: ΔR ≈ 0; kapı: (ΔR̄ > 0 ∧ alt sınır > 0) ∧ C-1 (varyant R̄ > 0 ∧ alt sınır > 0), gün/hafta küme bootstrap (küçük alt sınır), A ∧ B | **DÜŞTÜ — dönem A'da** (koşu #37145551210, `dd943bd8`): C-1 R̄(32) −0.182 (bağlayıcı alt −0.244); ΔR̄ **−0.031** (gün [−0.061, −0.001], hafta [−0.061, −0.002] — ayırt edilebilir NEGATİF), MDE 0.043; 16. barda açık %53.6; mevcut kol −0.151 (betimsel); B programatik olarak koşulmadı (#37158940151, veri çekilmedi); MFE: lehte hareket 17–32'de görülüyor (medyan +0.77R) ama gerçekleşmiyor — yeni varyant açmaz — §6x > 15, karar 74 |
+| 17 | `daily_trend`: günlük 20 bar Donchian kırılımı, yalnızca long, 3×ATR stop + 3×ATR trailing — DIŞ backtest'te (trading-premium, 18 aday, 2024-06 öncesi seçim) örneklem dışında +0.27R/işlem, PF 1.63 (motor varyantı +0.22R, PF 1.62) | §6y, bu commit | kâğıt: `daily` katmanının ilk barından 50 kapanmış işleme (kasa; kaynağın verisi 2026-09-30'da biter) | kaynak: ileriye dönük R̄ ≥ +0.15, PF ≥ 1.3; kapı: katmanın C-1 ∧ E'si (`daily_trend_random`) VE kaynağın eşikleri | **KOŞUYOR** — sonuç bekleniyor |
 
 **3. satır BH paydasına GİRMEZ ve bu bir muafiyet değil bir tanımdır:** hipotez bir
 model koşusuna hiç dönüşmedi, yani ortada düzeltilecek bir `p` değeri yok. Satırın
@@ -9401,6 +9402,69 @@ stop'u yerinde kalır, model kâğıtta koşmaya devam eder (karar 74).
 ("dönem A backtest: −0.15R / 1.300 işlem (§6x)").
 
 ---
+
+## 6y. ÖN-KAYIT — `daily_trend`: DIŞ bir backtest'te seçilmiş günlük kırılım kuralının kâğıt (kasa) ölçümü *(2026-10-05)*
+
+**Bu bölüm canlı defterin hiçbir satırı görülmeden, katman koşmaya başlamadan yazıldı.** Model
+ve katman AYNI PR'da gelir; birleştirme kullanıcı onayına bağlıdır (PR Birleştirme Kuralı:
+model/kapı tasarımı). §7'nin tamamı uygulanır.
+
+### 1. Köken ve statü
+
+- **Kaynak:** `mugiatama34/trading-premium > arastirma/trend/` (PR #5). Binance USDT-M vadeli,
+  5 dk mumlardan üretilen 00:00 UTC günlük mumlar, 17 coin, 2021-01 → 2026-09. 18 aday
+  (Donchian N ∈ {20, 50, 100} × trailing k ∈ {2, 3, 4} × {iki yön, yalnızca long}) yalnızca
+  **2024-06-01 öncesinde** tarandı; seçilen: N = 20, k = 3, yalnızca long.
+- **Kaynaktaki sonuç (maliyetler dahil, o projenin eşikleriyle):** örneklem dışı 2024-06 →
+  2026-09, 202 işlem, +0.272R/işlem (açık pozisyonlar stoplarından kapanmış sayılırsa +0.184R),
+  PF 1.63, %1 riskte portföy düşüşü %10.3; aynı günlerde rastgele yönlü kıyasa karşı p = 0.045
+  (sınırda); 18 adayın 18'i örneklem dışında pozitif.
+- **Bu depoda statü:** ev içi A/B kapılarından geçmedi → **"Doğrulanmamış"** (§7.8 sunumu;
+  `docs/data/model_status.json`e yazılmaz). Sicil §6c'de **17. satır**; hipotez dış kaynaklıdır,
+  ev içi BH paydasına girmez (2. satırın gerekçesi).
+
+### 2. Kural (dondurulmuş)
+
+Günlük kapanış, son 20 günün (o gün HARİÇ) en yüksek high'ının üstündeyse ertesi günün
+açılışında long (kural 13). Stop: sinyal kapanışı − 3×ATR(14). Trailing: motorun Chandelier
+kuralı, `zirve − 3×ATR(14)` (kural 9). Hedef, rejim filtresi, zaman stop'u YOK. Short YOK.
+Sabitler `strategies/daily_trend.py` modül düzeyindedir ve bu bölümle donar.
+
+### 3. Kaynaktan sapmalar (sonuç görülmeden yazıldı; varyant kaynakta AYRICA koşuldu)
+
+| # | Kaynak | Burada | Neden | Kaynakta ölçülen etki (örneklem dışı) |
+|---|---|---|---|---|
+| S1 | ATR(20) | ATR(14) | `trailing.atr_period` projenin tek ATR periyodu | S1+S2 birlikte: 232 işlem, +0.222R (temkinli +0.173R), PF 1.62 |
+| S2 | trailing `kapanış − 3×ATR` | `zirve − 3×ATR` (Chandelier) | trailing motorundur (kural 9) | (yukarıda) |
+| S3 | Binance, taker %0.05 + kayma %0.01–0.05 | OKX verisi, Bybit taker %0.055 + kayma %0.05 | kural 6: maliyetler kökten | ölçülmedi; kaynakta medyan stop fiyatın %16'sı olduğundan işlem başına < 0.01R ek maliyet beklenir |
+| S4 | 17 coin | 16 coin (MMT yok) | OKX'te doğrulanamadı | ihmal edilebilir (MMT'nin kaynakta 2025-11'den beri verisi var) |
+| S5 | aynı yönde toplam risk ≤ %3 (3 pozisyon) | `max_positions` 5 | kota sabitleri katmanlar arası paylaşılır | toplam getiri ölçeği değişir, işlem başına R değişmez |
+
+S1–S2 varyantı kaynakta seçim için değil BEKLENTİ için koşuldu; parametre seçimi yine
+yalnızca 2024-06 öncesindeki 18 adaydandır.
+
+### 4. Katman
+
+`config.yaml > layers.daily`: `1Dutc` bar, sabit 16 sembol, modeller `buyhold`,
+`daily_trend`, `daily_trend_random`; kontrol `daily_trend_random` (`acceptance.control_model`),
+stop tavanı 4.0×ATR (stop tam 3.0×ATR; tavan kayan nokta payı içindir), `signals_per_bar: true`,
+`run-daily.yml` iki saatte bir. Kontrol: `strategies/random_entry.py` gövdesi, yalnızca long,
+`daily_trend`in çıkış geometrisi.
+
+### 5. Kasa sınaması (tek seferlik; pencere ve okuma sonuç görülmeden)
+
+- **Pencere:** katmanın ilk işlenen barından başlar. Kaynağın verisi 2026-09-30'da biter;
+  kâğıt penceresi bütünüyle kaynağın görmediği veridir.
+- **Asgari örneklem:** `daily_trend`in **50** kapanmış işlemi (kaynak projenin paper trading
+  kuralı). `acceptance.min_trades` (30) dolduğunda tablo rozeti kendiliğinden okunur ama
+  **bağlayıcı okuma 50. kapanmış işlemdedir**; daha erken hüküm yok.
+- **Geçme:** (a) katmanın kendi kabul çıtası — C-1 ve E (`daily_trend_random`e karşı marj
+  0.15R ∧ bootstrap alt sınırı > 0), maliyetler dahil; VE (b) kaynak projenin eşikleri:
+  ortalama net R ≥ +0.15, PF ≥ 1.3, hesap düşüşü ≤ %20.
+- **Etiket:** ikisi de geçerse "Doğrulandı" (karar numarasıyla `model_status.json`e); (a) geçip
+  (b) geçmezse ya da tersi → "geçmedi", kural değiştirilmez (§7.8: değiştirilmiş hâli yeni
+  tezdir, kasa ona kapalıdır).
+- **Yasak:** kâğıt defterinden (sembol, ay, kırılım) yeni filtre TÜRETMEK (§7.8, karar 27/28).
 
 ## 7. Sonucu gördükten sonra YAPILMAYACAKLAR
 

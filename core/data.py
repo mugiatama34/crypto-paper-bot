@@ -92,6 +92,11 @@ def bar_duration(timeframe: str) -> pd.Timedelta:
     OKX bar kodu büyük harfli birim bekler ("4H"), pandas 2.2+ ise "H" birimini
     deprecate etti — dönüşüm tek yerde yapılır ki iki taraf da doğru kalsın.
     """
+    # OKX'in günlük ve haftalık barı varsayılan olarak Hong Kong saatine (UTC+8) çapalıdır;
+    # UTC çapası için bar kodu "utc" son ekini taşır ("1Dutc"). Süre ekten bağımsızdır, kod
+    # ise borsaya OLDUĞU GİBİ gider — tek kaynak config'in `timeframe` değeri kalır.
+    if timeframe.endswith("utc"):
+        timeframe = timeframe[: -len("utc")]
     if not timeframe or not timeframe[:-1].isdigit():
         raise ValueError(f"geçersiz timeframe: {timeframe!r}")
     amount, unit = timeframe[:-1], timeframe[-1]

@@ -448,6 +448,20 @@ pozisyonları donar (kural 1).
 | 13 | `vwap_clone` | long + short | **dış sistem kopyası** (kural 15b), yarışmacı değil |
 | 14 | `vwap_managed` | long + short | VWAP sapma-dönüş sinyali, ev kurallarıyla (risk boyutlandırma, %1 taban, 1.5R) |
 
+### Aktif lig — `daily` (1D UTC, `config.yaml > layers.daily.models`)
+
+Günlük bar (`1Dutc`: 00:00 UTC çapalı), **sabit 16 sembol** (BTC, ETH, SOL, XRP, DOGE, BNB,
+AVAX, LINK, ADA, SUI, NEAR, PENGU, ETHFI, DOT, LTC, CRV), defter `ledgers_daily/`, rapor
+`docs/data/metrics_daily.json`, workflow `run-daily.yml` (iki saatte bir; yeni gün yoksa
+commit yok). Model DIŞ bir backtest'ten gelir (`mugiatama34/trading-premium > arastirma/trend/`)
+ve bu katman onun ileriye dönük ölçümüdür; ön-kayıt `docs/backtest.md > 6y`, karar 75.
+
+| # | Strateji | Yön | Tez |
+|---|---|---|---|
+| — | `buyhold` | long | **referans çıpası** (kural 15), yarışmacı değil |
+| 27 | `daily_trend` | **yalnızca long** | günlük kapanış son 20 günün tepesini kırınca long; stop 3×ATR, trailing 3×ATR (motorun Chandelier kuralı), hedef yok |
+| 28 | `daily_trend_random` | **yalnızca long** | **kabul çıtasının KONTROLÜ** (`acceptance.control_model`): bilgisiz giriş (barda tek çekiliş, yalnızca long) + `daily_trend`in çıkışı |
+
 ### Kadro — `ema` (tanımlı, tetikleyicisi YOK)
 
 4H, **sabit 13 sembol** (scalp katmanının evreninin aynısı), `config.yaml > layers.ema`.

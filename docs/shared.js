@@ -152,6 +152,8 @@ const SITE_LAYERS = [
     long: "4 saatlik ana yarışma" },
   { key: "scalp", file: "data/metrics_scalp.json", label: "Scalp",
     long: "15 dakikalık scalp katmanı" },
+  { key: "daily", file: "data/metrics_daily.json", label: "1g",
+    long: "günlük (UTC) trend katmanı — trading-premium'un trend modeli" },
 ];
 const layerDef = (key) =>
   SITE_LAYERS.find((l) => l.key === key) || { key, label: key, long: key };
