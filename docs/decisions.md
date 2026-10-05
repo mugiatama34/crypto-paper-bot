@@ -5763,3 +5763,24 @@ uzun taşımaktır. (2) Eşleştirilmiş tasarım küçük bir farkı (0.03R) ay
 aynı girişlerde fark SD'si 0.50, iki bağımsız kolun R SD'sinin (≈ 0.85–0.97) yarısı. (3) A/B
 bölünmesi ve pin + hash tasarımı ilk kullanımında işini yaptı: B'nin koşmama kararı elle değil
 yükten verildi.
+
+## 75. `daily` katmanı: trading-premium'un günlük trend modeli kâğıtta ölçülüyor — yeni katman, model 27 + kontrol 28; ön-kayıt §6y *(2026-10-05, kullanıcı isteği; birleştirme onayı bekleniyor)*
+
+**Bağlam.** `mugiatama34/trading-premium` projesinde bir trend takibi modeli (günlük 20 bar
+Donchian kırılımı, yalnızca long, 3×ATR iz süren stop) o projenin örneklem dışı eşiklerini
+geçen ilk model oldu. O projenin kuralı, bir yöntemin gerçek parayla kullanılmadan önce paper
+trading ile denenmesini şart koşar; kullanıcı bunun bu deponun takip sayfasına eklenmesini
+istedi.
+
+**Karar.**
+- Ayrı katman `daily` (1D UTC, sabit 16 sembol): kural günlük barda ve sabit evrende seçildi;
+  4H `base`e almak başka bir soruyu sormak olurdu (karar 45'in gerekçesi).
+- Kontrol katmanın İÇİNDE: `daily_trend_random` (bilgisiz giriş, yalnızca long, aynı çıkış).
+  Kaynakta rastgele kıyas sınırdaydı (p = 0.045), yani asıl soru tam olarak bu fark.
+- Motorun ortak kuralları değişmedi: ATR periyodu 14 ve Chandelier trailing kaynaktan
+  sapmadır; varyant kaynakta ayrıca koşuldu ve eşikleri yine geçiyor (§6y > 3).
+- Çekirdeğe iki dar ekleme: `core/data.py::bar_duration` "utc" son ekini okur (OKX `1Dutc`),
+  `strategies/random_entry.py` tek yönlü kontrol için çekilişin yön uzayını daraltabilir
+  (varsayılan değişmez; `random_ctrl`in altın değer testi korunur).
+- Okuma: 50 kapanmış işlemde, katmanın C-1 ∧ E'si VE kaynağın eşikleri birlikte (§6y > 5).
+

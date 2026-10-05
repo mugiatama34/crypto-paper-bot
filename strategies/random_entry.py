@@ -14,6 +14,8 @@ stratejiye çevirir.
 
 **Alt sınıfın değiştirebileceği iki nokta vardır ve ikisi de ölçülen eksendir (çıkış):**
 `_setup` (geometrinin girdisi; kurulamıyorsa None) ve `_signal` (stop/hedef/trailing).
+Üçüncü nokta `directions` bir override değil bir DARALTMADIR: tek yönlü modelin kontrolü
+(`daily_trend_random`) çekilişi o modelin yönüyle sınırlar; varsayılan iki yön değişmez.
 Çekiliş sırası (`rng.choice(uygunlar)` sonra `rng.choice(yönler)`) ve RNG kimliği gövdededir;
 `random_ctrl` tarihli defterini bölmesin diye kendi eski tohum biçimini (`_rng_key`) korur.
 
@@ -40,6 +42,9 @@ SIGNALS_PER_ROUND = 1
 
 class RandomEntryControl(Strategy):
     allowed_directions: list[Direction] = ["long", "short"]
+    # Çekilişin yön uzayı. Tek yönlü bir modelin kontrolü onu kendi yönüne daraltır
+    # (`daily_trend_random`): iki yönlü bir kontrol, farkı girişin değil yönün ölçüsü yapardı.
+    directions: tuple[Direction, ...] = DIRECTIONS
 
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:
         settings = dict(config) if config is not None else load_config()
@@ -64,7 +69,7 @@ class RandomEntryControl(Strategy):
         signals: list[Signal] = []
         for _ in range(SIGNALS_PER_ROUND):
             symbol, close, atr, setup = rng.choice(eligible)
-            direction = rng.choice(DIRECTIONS)
+            direction = rng.choice(self.directions)
             signals.append(
                 self._signal(
                     market,

@@ -26,7 +26,7 @@ SHARED_KEYS = (
 
 
 def test_repository_defines_its_layers() -> None:
-    assert layer_names(load_config()) == ["base", "dc", "ema", "scalp", "xsec"]
+    assert layer_names(load_config()) == ["base", "daily", "dc", "ema", "scalp", "xsec"]
 
 
 def test_base_layer_matches_the_root_config() -> None:
@@ -137,6 +137,22 @@ def test_ema_layer_pins_its_universe_and_carries_its_own_comparison_rows() -> No
     assert ema.metrics_path.name == "metrics_ema.json"
     assert {"ema_trend", "trend", "random_ctrl", "buyhold"} == set(ema.models)
     assert ema.config["signals_per_bar"] is False
+
+
+def test_daily_layer_runs_utc_days_with_its_own_control() -> None:
+    """`daily` katmanı (§6y): UTC çapalı günlük bar, sabit 16 sembol, kontrol katmanın İÇİNDE."""
+    config = load_config()
+    daily = resolve_layer(config, "daily")
+
+    assert daily.timeframe == "1Dutc"
+    assert daily.models == ["buyhold", "daily_trend", "daily_trend_random"]
+    assert get_setting(daily.config, "acceptance.control_model") == "daily_trend_random"
+    assert get_setting(daily.config, "signals_per_bar") is True
+    assert get_setting(daily.config, "max_stop_atr_multiple") == 4.0
+    assert daily.symbols is not None and len(daily.symbols) == 16
+    assert "BTC-USDT-SWAP" in daily.symbols and "ETH-USDT-SWAP" in daily.symbols
+    assert daily.ledger_root.name == "ledgers_daily"
+    assert daily.metrics_path.name == "metrics_daily.json"
 
 
 def test_scalp_universe_is_fixed_and_complete() -> None:

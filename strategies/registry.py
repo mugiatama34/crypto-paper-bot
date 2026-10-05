@@ -19,6 +19,8 @@ from strategies.avwap import Avwap
 from strategies.base import Strategy
 from strategies.buyhold import BuyHold
 from strategies.confluence import Confluence
+from strategies.daily_trend import DailyTrend
+from strategies.daily_trend_random import DailyTrendRandom
 from strategies.dc_coinflip import DcCoinflip
 from strategies.dc_short import DcShort
 from strategies.downtrend_rally import DowntrendRally
@@ -64,6 +66,8 @@ REGISTRY: Mapping[str, StrategyFactory] = {
     # modelin ÇIKIŞ geometrisi; `acceptance.control_for` her yarışmacıyı kendi kontrolüne bağlar.
     TrendRandom.name: TrendRandom,
     MeanrevRandom.name: MeanrevRandom,
+    DailyTrend.name: DailyTrend,
+    DailyTrendRandom.name: DailyTrendRandom,
     # ema_trend — `ema` katmanının (4H, sabit 13 sembol) ölçtüğü model. Kuralları dış bir
     # sistemden gelir ama KOPYA değildir (kural 15b): dışarıdan gelen yalnızca sinyal,
     # boyutlandırma ve maliyet evin. Ön-kayıt: docs/backtest.md > 6d.
