@@ -77,6 +77,7 @@ logger = logging.getLogger(__name__)
 
 class VwapManaged(Strategy):
     name = "vwap_managed"
+    arms = (vwap_signal.ARM_NAME,)
     allowed_directions: list[Direction] = ["long", "short"]
 
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:

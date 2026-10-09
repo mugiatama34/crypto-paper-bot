@@ -154,6 +154,19 @@ class DirectionStats:
     funding: float
     liquidations: int
     unmeasured: int  # risk_amount'ı olmayan, R'ye giremeyen POZİSYON sayısı
+    # BAĞIMSIZ OLAY sayısı: tutuş pencereleri zamanda örtüşen pozisyonların bağlı
+    # bileşenleri (sembolden bağımsız; bkz. `independent_events`). `trades` örneklemin
+    # büyüklüğünü söyler, bu ise o örneklemin kaç AYRI piyasa anından geldiğini: aynı
+    # saatlerde açık duran beş pozisyon aynı hareketi beş kez ölçer. Bir KAPI değildir —
+    # örneklem kapısı pozisyon sayısında kalır; bu sayı onun nasıl okunacağını söyler.
+    # Damgası okunamayan bir pozisyon varsa None: tahmini bir bileşen sayısı, "ölçemedik"
+    # ile "şu kadar olay var"ı aynı hücreye yazardı.
+    events: int | None
+    # İlk ve son pozisyonun AÇILIŞ damgası (ISO, UTC). Ölçüt `opened_at`tır (seans ve
+    # kayıp serisi kırılımlarıyla aynı): sorulan "bu grup ne zamandan beri ve en son ne
+    # zaman işlem AÇTI". Pozisyon yoksa None.
+    first_opened_at: str | None
+    last_opened_at: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -425,6 +438,9 @@ def direction_stats(
     notional = _sum_column(rows, "notional")
     cost = _sum_column(rows, "fee") + _sum_column(rows, "slippage_cost")
     tailwind, market_r, market_measured = _market_context(rows, reference=reference)
+    opened = sorted(
+        stamp for stamp in (_utc_stamp(row.get("opened_at")) for row in rows) if stamp is not None
+    )
     # Tohuma yön karıştırılır: long, short ve toplam aynı tohumla yeniden örneklenseydi
     # üç aralık aynı çekiliş desenini paylaşır, bağımsız birer ölçü olmaktan çıkardı.
     ci_low, ci_high = bootstrap_mean_ci(
@@ -473,7 +489,35 @@ def direction_stats(
         funding=_sum_column(rows, "funding"),
         liquidations=sum(1 for row in rows if row.get("exit_reason") == "liquidation"),
         unmeasured=len(rows) - len(r_values),
+        events=independent_events(rows),
+        first_opened_at=opened[0].isoformat() if opened else None,
+        last_opened_at=opened[-1].isoformat() if opened else None,
     )
+
+
+def independent_events(rows: Sequence[Mapping[str, Any]]) -> int | None:
+    """Tutuş pencereleri `[opened_at, closed_at)` örtüşen pozisyonların bağlı bileşen sayısı.
+
+    Tanım §6m > M4'ün olay kümesiyle aynıdır (`scripts/measure_market_direction.py::events`;
+    o betik koşmuş bir ölçümün sabit kopyasıdır ve buraya bağlanmadı): sembolden bağımsız,
+    bir pozisyon tam ötekinin kapandığı anda açılıyorsa örtüşme YOKTUR. Birim pozisyondur
+    (`merge_fills`ten geçmiş satırlar).
+    """
+    spans: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    for row in rows:
+        opened, closed = _utc_stamp(row.get("opened_at")), _utc_stamp(row.get("closed_at"))
+        if opened is None or closed is None:
+            return None
+        spans.append((opened, closed))
+    count = 0
+    reach: pd.Timestamp | None = None
+    for opened, closed in sorted(spans):
+        if reach is not None and opened < reach:
+            reach = max(reach, closed)
+        else:
+            count += 1
+            reach = closed
+    return count
 
 
 def normalize_reference(reference: Any) -> "pd.Series | None":

@@ -577,8 +577,15 @@
           <p class="note" id="breakdown-gate-note" hidden></p>
           <h3 class="sub">Kol kırılımı</h3>
           <p class="note">
-            Hangi kolun kaç işlem yaptığı ve ne ürettiği. Tahsisi öğrenen modelde kol
-            dağılımının eşitten sapması beklenir; kontrol modelinde sapmaması.
+            Hangi kolun kaç işlem yaptığı ve ne ürettiği, model başına. Modelin bildirdiği
+            her kol listelenir: <b>hiç tetiklenmemiş kol 0 işlemle durur</b>, tablodan
+            düşmez — "ölçtük, sıfır" ile "böyle bir kol yok" ayrı bilgilerdir (karar 48).
+            <b>Olay</b> = tutuş süreleri zamanda örtüşen pozisyonların tek sayıldığı bağımsız
+            piyasa anı sayısı; işlem sayısından çok küçükse örneklem göründüğünden daha
+            dardır. <b>Ödeme</b> = ort. kazanç% / |ort. kayıp%| (yüzde birimi).
+            <b>İlk / son</b> = ilk ve son pozisyonun açılışı (UTC). n &lt; örneklem
+            kapısı olan satırlar <b>yetersiz örneklem</b> etiketiyle solgun çizilir,
+            gizlenmez: ortalamaları bir ölçüm değil gürültüdür.
           </p>
           <div id="scalp-arms"></div>
           <h3 class="sub">Sembol kırılımı</h3>
@@ -2367,12 +2374,59 @@ function renderBreakdowns() {
   const gateNote = el("breakdown-gate-note");
   gateNote.hidden = gate === null || gate === undefined;
   if (!gateNote.hidden) {
-    gateNote.innerHTML = "Aşağıdaki üç kırılımda <b>Ö</b> = örneklem kapısının altında (n &lt; " +
-      gate + "): satır gizlenmez ve solgun çizilir, ama ortalaması bir ölçüm değil gürültüdür.";
+    gateNote.innerHTML = "Örneklem kapısı n &lt; " + gate + ": kol kırılımında <b>yetersiz örneklem</b>, " +
+      "sembol ve çıkış kuralı kırılımlarında <b>Ö</b> etiketi. Satır gizlenmez ve solgun çizilir, " +
+      "ama ortalaması bir ölçüm değil gürültüdür.";
   }
-  renderBreakdown("scalp-arms", (d.breakdowns || {}).arm, "kol", gate);
+  renderArmBreakdown("scalp-arms", (d.breakdowns || {}).arm, gate);
   renderBreakdown("scalp-symbols", (d.breakdowns || {}).symbol, "sembol", gate);
   renderBreakdown("scalp-exit-rules", (d.breakdowns || {}).exit_rule, "çıkış kuralı", gate);
+}
+
+/* KOL kırılımı kendi tablosudur: olay sayısı, ödeme oranı ve tarih aralığı yalnızca
+   burada sorulur. Her sayı YÜKTEN okunur (kural 7) — olay sayısı ve tarihler de
+   core/metrics.py::direction_stats'ın alanlarıdır, sayfa hiçbirini türetmez. Bildirilen
+   ama hiç tetiklenmemiş kol yükte 0 pozisyonlu bir satır olarak gelir
+   (core/report.py::model_breakdowns). */
+const ARM_COLUMNS = ["işlem", "olay", "ort. R", "%95 aralık", "kazanma", "ödeme", "maliyet/R",
+  "toplam R", "ilk işlem", "son işlem"];
+
+function renderArmBreakdown(hostId, byModel, gate) {
+  const host = el(hostId);
+  if (!byModel || !Object.keys(byModel).length) {
+    host.innerHTML = '<p class="empty">Henüz kırılım üretecek model yok.</p>';
+    return;
+  }
+  const day = (s) => (s ? esc(dayKey(s)) : DASH);
+  host.innerHTML = Object.keys(byModel).sort().map((model) => {
+    const groups = byModel[model] || {};
+    const names = Object.keys(groups).sort();
+    if (!names.length) {
+      return '<div class="card"><b>' + esc(model) + "</b> — kol bildirmiyor ve kapanmış işlemi yok.</div>";
+    }
+    return '<div class="card"><b>' + esc(model) + "</b>" +
+      '<div class="tablewrap fade"><table class="grid"><thead><tr><th>kol</th>' +
+      ARM_COLUMNS.map((c) => "<th>" + esc(c) + "</th>").join("") + "</tr></thead><tbody>" +
+      names.map((name) => {
+        const g = groups[name] || {};
+        const n = num(g.trades);
+        const short = gate !== null && gate !== undefined && n !== null && n < gate;
+        const tag = (n === 0 ? ' <span class="badge off" title="bu kol defterde hiç pozisyon açmadı">tetiklenmedi</span>' : "") +
+          (short ? ' <span class="badge warn" title="örneklem kapısının altında (n &lt; ' + gate +
+            '): bu ortalama bir ölçüm değil">yetersiz örneklem</span>' : "");
+        return '<tr class="data' + (short ? " below-gate" : "") + '"><td>' + esc(name) + tag + "</td>" +
+          "<td>" + (g.trades ?? DASH) + "</td>" +
+          "<td>" + (g.events ?? DASH) + "</td>" +
+          '<td class="' + signClass(g.avg_r) + '">' + fmtSigned(g.avg_r) + "</td>" +
+          "<td>" + ciBand(g.avg_r_ci_low, g.avg_r_ci_high) + "</td>" +
+          "<td>" + pct(g.win_rate) + "</td>" +
+          "<td>" + fmt(g.payoff) + "</td>" +
+          "<td>" + fmt(g.cost_per_r, 3) + "</td>" +
+          '<td class="' + signClass(g.total_r) + '">' + fmtSigned(g.total_r, 1) + "</td>" +
+          "<td>" + day(g.first_opened_at) + "</td>" +
+          "<td>" + day(g.last_opened_at) + "</td></tr>";
+      }).join("") + "</tbody></table></div></div>";
+  }).join("");
 }
 
 /* Kırılım grubu, örneklem kapısını (acceptance.min_trades) MODEL SATIRIYLA aynı

@@ -465,3 +465,41 @@ def test_concentration_is_zero_without_open_positions(tmp_path: Path) -> None:
     ledger.reset_model("m", initial_capital=10_000.0)
     rows = concentration(["m"], ledger=ledger, config=load_config(), marks={})["m"]
     assert rows == {"net_exposure": 0.0, "gross_exposure": 0.0, "top_symbol_share": 0.0}
+
+
+# --------------------------------------------------------------------------- #
+# Kol kırılımı: bildirilen ama hiç tetiklenmemiş kol, olay sayısı, tarih aralığı
+# --------------------------------------------------------------------------- #
+def test_arm_breakdown_lists_declared_arms_that_never_fired() -> None:
+    from core.report import model_breakdowns
+
+    trades = {"m": [_trade(signal_reason="kurulum | arm=a")]}
+    groups = model_breakdowns(trades, kinds=["arm"], arms={"m": ("a", "dead")})["arm"]["m"]
+
+    assert list(groups) == ["a", "dead"]
+    assert groups["dead"]["trades"] == 0
+    assert groups["dead"]["events"] == 0
+    # Sıfır pozisyonun ortalaması 0.0 DEĞİL, tanımsızdır.
+    assert math.isnan(groups["dead"]["avg_r"])
+    assert groups["dead"]["first_opened_at"] is None
+    assert groups["a"]["trades"] == 1
+
+
+def test_arm_breakdown_keeps_undeclared_arms_from_the_ledger() -> None:
+    """Bildirim tabloyu genişletir, daraltmaz: defterde olan kol düşmez."""
+    from core.report import model_breakdowns
+
+    trades = {"m": [_trade(signal_reason="kurulum | arm=legacy")]}
+    groups = model_breakdowns(trades, kinds=["arm"], arms={"m": ("a",)})["arm"]["m"]
+
+    assert set(groups) == {"a", "legacy"}
+
+
+def test_scalp_models_declare_every_arm_including_dead_ones() -> None:
+    from strategies.registry import REGISTRY
+    from strategies.scalp.arms import ARM_NAMES
+
+    for name in ("scalp_fixed", "scalp_patient", "scalp_coinflip"):
+        assert REGISTRY[name].arms == ARM_NAMES
+    assert REGISTRY["vwap_managed"].arms == ("vwap_revert",)
+    assert REGISTRY["vwap_clone"].arms == ("vwap_revert_src",)
