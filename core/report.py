@@ -38,6 +38,8 @@ from core.metrics import (
     breakdown,
     exit_rule_of,
     loss_streak_of,
+    TOTAL,
+    direction_stats,
     pooled_direction_stats,
     r_series,
     return_correlation,
@@ -74,6 +76,7 @@ def build_dashboard(
     market: MarketData,
     model_trade_limit: int = MODEL_TRADE_LIMIT,
     breakdowns: Sequence[str] = (),
+    arms: Mapping[str, Sequence[str]] | None = None,
 ) -> dict[str, Any]:
     """`docs/data/metrics.json`'a eklenen dashboard bölümleri.
 
@@ -177,6 +180,7 @@ def build_dashboard(
         "breakdowns": model_breakdowns(
             trades,
             kinds=breakdowns,
+            arms=arms,
             ci_alpha=ci_alpha,
             bootstrap_samples=bootstrap_samples,
             seed=int(get_setting(config_dict, "random_seed")),
@@ -212,6 +216,7 @@ def model_breakdowns(
     trades: Mapping[str, Sequence[Mapping[str, Any]]],
     *,
     kinds: Sequence[str],
+    arms: Mapping[str, Sequence[str]] | None = None,
     ci_alpha: float = float("nan"),
     bootstrap_samples: int = 0,
     seed: int = 0,
@@ -227,6 +232,12 @@ def model_breakdowns(
     Çıkış kuralı kırılımı (`exit_rule`) aynı statüdedir: üç aşamalı çıkış yönetiminin
     katkısı (modeller 13/14/15), üç aşamanın kaç kez tetiklendiği bilinmeden okunamaz.
     Birimi DİLİMDİR, pozisyon değil — bkz. `core/metrics.py::exit_rule_of`.
+
+    `arms` (model -> bildirdiği kollar, `Strategy.arms`) verilirse kol kırılımı defterde
+    HİÇ görünmeyen kolu da sıfır pozisyonlu bir satırla taşır. Defter yalnızca tetiklenmiş
+    kolları bilir; ölü bir kolu tablodan düşürmek "ölçtük, sıfır işlem" ile "böyle bir kol
+    yok"u aynı boşluğa yazardı (karar 48). Bildirilmeyen ama defterde olan kol yine
+    görünür — bildirim tabloyu GENİŞLETİR, daraltmaz.
     """
     result: dict[str, dict[str, dict[str, Any]]] = {}
     for kind in kinds:
@@ -247,6 +258,13 @@ def model_breakdowns(
             }
             for model, rows in trades.items()
         }
+        if kind == "arm" and arms:
+            for model, names in arms.items():
+                groups = result[kind].setdefault(model, {})
+                for name in names:
+                    if name not in groups:
+                        groups[name] = asdict(direction_stats([], direction=TOTAL))
+                result[kind][model] = dict(sorted(groups.items()))
     return result
 
 

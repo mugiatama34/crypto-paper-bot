@@ -123,6 +123,7 @@ class ComboStats:
 
 class VwapClone(Strategy):
     name = "vwap_clone"
+    arms = (clone_signal.ARM_NAME,)
     allowed_directions: list[Direction] = ["long", "short"]
     is_replica = True
 

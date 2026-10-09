@@ -1816,3 +1816,37 @@ def test_buy_hold_return_reads_the_injected_series_only() -> None:
     assert math.isnan(
         buy_hold_return(series, start=pd.Timestamp("2025-01-01", tz="UTC"), end=index[-1])
     )
+
+
+# --------------------------------------------------------------------------- #
+# Bağımsız olay sayısı ve tarih aralığı
+# --------------------------------------------------------------------------- #
+def _span(symbol: str, opened: str, closed: str) -> dict[str, Any]:
+    return _trade(pnl=10.0, symbol=symbol, opened_at=f"2026-01-01T{opened}:00+00:00",
+                  closed_at=f"2026-01-01T{closed}:00+00:00")
+
+
+def test_overlapping_positions_count_as_one_event_regardless_of_symbol() -> None:
+    from core.metrics import direction_stats, independent_events
+
+    rows = [
+        _span("BTC-USDT-SWAP", "00:00", "02:00"),
+        _span("ETH-USDT-SWAP", "01:00", "04:00"),   # birinciyle örtüşür
+        _span("SOL-USDT-SWAP", "03:00", "05:00"),   # zincirle aynı olay
+        _span("BTC-USDT-SWAP", "05:00", "06:00"),   # tam kapanışta açılır: örtüşme YOK
+        _span("XRP-USDT-SWAP", "08:00", "09:00"),
+    ]
+    assert independent_events(rows) == 3
+    stats = direction_stats(rows)
+    assert stats.trades == 5 and stats.events == 3
+    assert stats.first_opened_at == "2026-01-01T00:00:00+00:00"
+    assert stats.last_opened_at == "2026-01-01T08:00:00+00:00"
+
+
+def test_events_are_unmeasured_when_a_stamp_is_unreadable() -> None:
+    """Okunamayan damga tahmin edilmez: "ölçemedik" ≠ "şu kadar olay"."""
+    from core.metrics import independent_events
+
+    assert independent_events([_span("BTC-USDT-SWAP", "00:00", "01:00"),
+                               _trade(pnl=1.0, opened_at="", closed_at="")]) is None
+    assert independent_events([]) == 0

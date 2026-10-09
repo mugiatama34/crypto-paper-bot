@@ -136,6 +136,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 market=market,
                 model_trade_limit=layer.retention.model_trade_limit,
                 breakdowns=layer.breakdowns,
+                arms={s.name: s.arms for s in strategies if s.arms},
             )
         )
 

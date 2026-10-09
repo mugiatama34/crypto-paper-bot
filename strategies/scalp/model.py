@@ -131,6 +131,7 @@ class ScalpModel(Strategy):
     # (`strategies/time_stop.py`); ayrışan yalnızca sınırın kaç bar olduğudur ve bu,
     # `scalp_fixed ↔ scalp_patient` ekseninin ölçtüğü tek değişkendir.
     time_stop_key: str = TIME_STOP_KEY
+    arms: tuple[str, ...] = ARM_NAMES
 
     def __init__(self, *, config: Mapping[str, Any] | None = None) -> None:
         settings = dict(config) if config is not None else load_config()

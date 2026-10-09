@@ -224,6 +224,11 @@ class Strategy(ABC):
     is_replica: bool = False
     # Yalnızca is_replica modellerde dolu olabilir (kapı: core/validate.py).
     limits: "ModelLimits | None" = None
+    # Modelin `arm=` etiketiyle yazabileceği KOLLAR (bir BİLDİRİM, davranış değil). Kol
+    # kırılımı defterden kurulur ve defter yalnızca tetiklenmiş kolları bilir; hiç
+    # tetiklenmemiş bir kol tablodan sessizce düşerdi — oysa "ölçtük, sıfır işlem" ile
+    # "böyle bir kol yok" ayrı bilgilerdir (karar 48). Boş = kolsuz model.
+    arms: tuple[str, ...] = ()
 
     @abstractmethod
     def generate_signals(
