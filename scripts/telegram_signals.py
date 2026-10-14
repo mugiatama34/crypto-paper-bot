@@ -40,6 +40,17 @@ açılacak bir emir) tutuyorsa mesaja tek satırlık bir uyarı girer. Bilgi def
 `positions.json`ından OKUNUR, hesaplanmaz (kural 7) ve yalnızca sinyali üreten MODELİN
 kendi dosyasından (kural 4). Uyarı hiçbir sinyali elemez — bkz. docs/decisions.md > 52.
 
+**Kol susturma (`telegram_muted_arms`).** `config.yaml > telegram_muted_arms` listesindeki
+bir kolun sinyal ve ret mesajları yollanmaz. Susturma model susturmasıyla (`--mute`) aynı
+statüdedir ve onunla birleşebilir: BİLDİRİM ayarıdır, ölçüm değil — kolun sinyali üretilir,
+emri dolar, işlemi defterde/metriklerde/sitede durur ve sinyal ya da emir mantığı hiç
+değişmez. Süzgeç susturma penceresinden ÖNCE uygulanır, yani susturulan sinyal durum
+dosyasına girmez (bildirilmemiş bir şey "bildirildi" sayılmaz). Atlanan her sinyal
+`logger.info` ile yazılır. Anahtar OPSİYONELDİR ve config okunamazsa hiçbir kol
+susturulmaz: hata yönü gürültüdür, sessizlik değil (`--mute` ile aynı tercih).
+Kapanış mesajı diye bir mesaj türü yoktur (yukarıda: kapanış mesaj üretmez); yalnızca
+sinyal ve "sinyal açılamadı" mesajları kol süzgecinden geçer.
+
 **Bu script koşuyu ASLA düşürmez** — `scripts/telegram_report.py` ile aynı söz: eksik
 token, ağ hatası, Telegram 4xx'i, bozuk JSON ya da bozuk durum dosyası loglanır ve
 geçilir, her yol 0 ile biter. Bildirim ölçümün parçası değildir.
@@ -69,6 +80,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # mesajın sessizce "kol yok" demeye başlaması demekti.
 from core.tags import find_tag  # noqa: E402 — sys.path yukarıda kuruluyor
 
+# Susturulan kollar config'ten, `core/config.py` üzerinden OKUNUR: config.yaml'ı okuyan
+# ikinci bir yol (kendi yaml.safe_load'u) tek kapıyı delerdi. Katman yolları config'ten
+# okunmaz (bkz. `metrics_path_for`) ve o karar DEĞİŞMEDİ — yalnızca bu tek bildirim
+# tercihi config'te yaşar, çünkü kullanıcının elle düzenlediği yer orasıdır.
+from core.config import DEFAULT_CONFIG_PATH, ConfigError, load_config  # noqa: E402
+
 # Dashboard adresi günlük özetle AYNI yerden kurulur: iki script ayrı işler yapar ama
 # adres tek bir şeydir ve ikinci bir kopya, depo taşındığında bir mesajın kırık link
 # taşıması demekti. İçe aktarılan tek şey adres yardımcısıdır — mesaj üretimi, filtreler
@@ -77,6 +94,7 @@ from scripts.telegram_report import dashboard_url  # noqa: E402
 
 API_TEMPLATE = "https://api.telegram.org/bot{token}/sendMessage"
 DEFAULT_LAYER = "scalp"
+MUTED_ARMS_KEY = "telegram_muted_arms"
 
 
 def metrics_path_for(layer: str) -> Path:
@@ -182,7 +200,7 @@ def _run(args: argparse.Namespace) -> int:
 
     as_of = _stamp(payload.get("as_of"))
     state = _load_state(Path(args.state))
-    roster = _roster_from(args)
+    roster = _roster_from(args, mute_arms=_muted_arms_from(Path(args.config)))
     logger.info("bildirim kadrosu (%s katmanı): %s", layer, roster.describe())
 
     signals = _last_bar_signals(payload, as_of=as_of, roster=roster)
@@ -312,6 +330,10 @@ class Roster:
 
     allow: frozenset[str] = frozenset()
     mute: frozenset[str] = frozenset()
+    # Susturulan KOLLAR (`telegram_muted_arms`). Model kipinden bağımsızdır ve ikisiyle de
+    # birleşir: "bu modeli sustur" ile "bu kolu sustur" ayrı sorulardır (kol birden çok
+    # modelde koşar) ve biri ötekinin yerine geçmez.
+    mute_arms: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.allow and self.mute:
@@ -321,16 +343,57 @@ class Roster:
         name = str(model or "")
         return name not in self.mute if not self.allow else name in self.allow
 
+    def wants_arm(self, item: Mapping[str, Any]) -> bool:
+        """Kaydın kolu susturulmamışsa True. Etiketsiz kayıt (`—`) hiçbir zaman susturulmaz:
+        hangi kola ait olduğu bilinmeyen bir sinyali sessizce düşürmek, susturmanın değil
+        bir kayıp olurdu."""
+        return not self.mute_arms or _arm(item) not in self.mute_arms
+
     def describe(self) -> str:
         if self.allow:
-            return "yalnızca " + ", ".join(sorted(self.allow))
-        if self.mute:
-            return "şunlar hariç hepsi: " + ", ".join(sorted(self.mute))
-        return "tüm modeller"
+            text = "yalnızca " + ", ".join(sorted(self.allow))
+        elif self.mute:
+            text = "şunlar hariç hepsi: " + ", ".join(sorted(self.mute))
+        else:
+            text = "tüm modeller"
+        if self.mute_arms:
+            text += "; susturulan kollar: " + ", ".join(sorted(self.mute_arms))
+        return text
 
 
-def _roster_from(args: argparse.Namespace) -> Roster:
-    return Roster(allow=frozenset(_names(args.models)), mute=frozenset(_names(args.mute)))
+def _roster_from(
+    args: argparse.Namespace, *, mute_arms: frozenset[str] = frozenset()
+) -> Roster:
+    return Roster(
+        allow=frozenset(_names(args.models)),
+        mute=frozenset(_names(args.mute)),
+        mute_arms=mute_arms,
+    )
+
+
+def _muted_arms_from(config_path: Path) -> frozenset[str]:
+    """`config.yaml > telegram_muted_arms`. Okunamayan config ya da bozuk değer HİÇBİR kolu
+    susturmaz ve uyarıyla söylenir: bildirimi düşürmek, bir kolu yanlışlıkla bildirmekten
+    pahalıdır (kadro körlüğü; `Roster` docstring'indeki `mute` gerekçesi).
+
+    Anahtar `REQUIRED_KEYS`te değildir ve yokluğu normaldir — bir bildirim tercihi ölçümün
+    config kapısını daraltmamalı.
+    """
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        logger.warning("config okunamadı, hiçbir kol susturulmuyor: %s", exc)
+        return frozenset()
+    raw = config.get(MUTED_ARMS_KEY)
+    if raw is None:
+        return frozenset()
+    if not isinstance(raw, list) or not all(isinstance(name, str) for name in raw):
+        logger.warning(
+            "%s bir kol adı LİSTESİ olmalı, %r geldi: hiçbir kol susturulmuyor",
+            MUTED_ARMS_KEY, raw,
+        )
+        return frozenset()
+    return frozenset(name.strip() for name in raw if name.strip())
 
 
 def _names(value: str | None) -> list[str]:
@@ -371,6 +434,12 @@ def _last_bar_signals(
         for item in model.get("emitted") or ():
             bar = _stamp(item.get("bar"))
             if bar is None or bar != as_of:
+                continue
+            if not roster.wants_arm(item):
+                # Susturma sessiz olmaz (model susturmasıyla aynı kural): kolun sinyal
+                # ÜRETTİĞİ ve yalnızca telefona düşmediği loglanır.
+                logger.info("%s / %s kolu susturulmuş: %s %s sinyali bildirilmiyor",
+                            name, _arm(item), item.get("symbol"), item.get("direction"))
                 continue
             signals.append({**item, "model": item.get("model") or name})
     # Sıra deterministik: aynı rapor iki kez okunduğunda mesaj da birebir aynı olsun.
@@ -458,6 +527,8 @@ def _followup_rejects(
             continue
         for item in model.get("rejected") or ():
             row = {**item, "model": item.get("model") or model.get("model")}
+            if not roster.wants_arm(row):
+                continue
             key, bar = _key(row), _stamp(row.get("bar"))
             notified = _stamp(state.sent.get(key))
             if bar is None or notified is None or bar != notified:
@@ -1049,6 +1120,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     # elle hizalamak, bir katmanın ötekinin durum dosyasına yazması ya da başka bir
     # katmanın defterinden karşı pozisyon okuması demekti.
     parser.add_argument("--metrics", default=None, help="katmanın rapor dosyası")
+    parser.add_argument(
+        "--config", default=str(DEFAULT_CONFIG_PATH),
+        help=f"{MUTED_ARMS_KEY} buradan okunur (varsayılan depodaki config.yaml)",
+    )
     parser.add_argument("--state", default=None, help="susturma penceresi durumu")
     parser.add_argument(
         "--ledgers", default=None,
@@ -1089,6 +1164,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     # Telegram, bozuk JSON) — yanlış yazılmış bir bayrak bir arıza değil bir yazım
     # hatasıdır ve bilinmelidir.
     try:
+        # Yalnızca model kipi çakışması sınanır; susturulan kollar çalışma zamanında
+        # okunur (config hatası bir kullanım hatası değil, bir uyarıdır).
         _roster_from(args)
     except ValueError as exc:
         parser.error(str(exc))

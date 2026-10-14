@@ -60,3 +60,19 @@ def test_missing_key_raises_instead_of_defaulting(tmp_path: Path) -> None:
 def test_unknown_dotted_key_raises() -> None:
     with pytest.raises(ConfigError, match="config anahtarı yok"):
         get_setting(load_config(), "exchange.nope")
+
+
+def test_telegram_muted_arms_are_real_arm_names() -> None:
+    """`telegram_muted_arms` opsiyoneldir (REQUIRED_KEYS'te değil), ama içindeki her ad
+    bir modelin `arms` bildiriminde bulunmalı: yazım hatası sessizce hiçbir şeyi
+    susturmaz ve kullanıcı kolun neden hâlâ bildirildiğini anlayamazdı."""
+    from strategies.registry import REGISTRY
+
+    muted = load_config().get("telegram_muted_arms", [])
+    assert isinstance(muted, list) and all(isinstance(name, str) for name in muted)
+
+    known: set[str] = set()
+    for factory in REGISTRY.values():
+        known.update(getattr(factory, "arms", ()) or ())
+    unknown = sorted(set(muted) - known)
+    assert not unknown, f"telegram_muted_arms'ta hiçbir modelin bildirmediği kol(lar): {unknown}"
