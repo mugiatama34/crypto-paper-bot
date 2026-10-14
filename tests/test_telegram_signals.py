@@ -217,6 +217,38 @@ def _run(
     return code, state_path
 
 
+@pytest.fixture(autouse=True)
+def _no_muted_arms_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Depodaki GERÇEK config.yaml kol susturur (`telegram_muted_arms`) ve bu testlerin
+    varsayılan kolu tam o koldur: config'e bağlı kalsalardı, config'te bir kolu
+    susturmak yüzlerce ilgisiz testi kırardı. Susturma testleri `--config` verir."""
+    monkeypatch.setattr(
+        telegram_signals, "DEFAULT_CONFIG_PATH", tmp_path / "yok" / "config.yaml"
+    )
+    original = telegram_signals._parse_args
+
+    def parse(argv: Sequence[str] | None) -> Any:
+        args = list(argv or ())
+        if "--config" not in args:
+            args += ["--config", str(tmp_path / "yok" / "config.yaml")]
+        return original(args)
+
+    monkeypatch.setattr(telegram_signals, "_parse_args", parse)
+
+
+def _config(tmp_path: Path, muted: Any) -> Path:
+    """Gerçek config.yaml'ın kopyası + `telegram_muted_arms`: `load_config` şemayı ister."""
+    import yaml
+
+    from core.config import DEFAULT_CONFIG_PATH as real
+
+    raw = yaml.safe_load(real.read_text(encoding="utf-8"))
+    raw["telegram_muted_arms"] = muted
+    path = tmp_path / "config_muted.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
 def _messages(fake: _FakeRequests) -> list[str]:
     return [call["text"] for call in fake.calls]
 
@@ -1078,3 +1110,203 @@ def test_counter_warning_does_not_change_which_signals_are_sent(
     (message,) = _messages(telegram)
     assert "⚡ YENİ SİNYAL" in message
     assert "R:R 2.00" in message
+
+
+# --------------------------------------------------------------------------- #
+# Kol susturma (`telegram_muted_arms`) — BİLDİRİM ayarı, ölçüm değil
+# --------------------------------------------------------------------------- #
+def test_muted_arm_produces_no_message_but_other_arms_do(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    config = _config(tmp_path, ["rsi2_reversal"])
+    code, _ = _run(
+        tmp_path,
+        _payload([
+            _signal(arm="rsi2_reversal"),
+            _signal(arm="opening_range_breakout", symbol="ETH-USDT-SWAP"),
+        ]),
+        args=["--config", str(config)],
+    )
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "opening_range_breakout" in message and "rsi2_reversal" not in message
+
+
+def test_muted_arm_is_muted_in_every_model(tmp_path: Path, telegram: _FakeRequests) -> None:
+    """Kol birden çok modelde koşar (11, 12, 15, 16, 23): susturma kolun kendisine bağlıdır."""
+    config = _config(tmp_path, ["rsi2_reversal"])
+    code, _ = _run(
+        tmp_path,
+        _payload([
+            _signal(model="scalp_fixed", arm="rsi2_reversal"),
+            _signal(model="scalp_patient", arm="rsi2_reversal", symbol="ETH-USDT-SWAP"),
+        ]),
+        args=["--config", str(config)],
+    )
+
+    assert code == 0
+    assert telegram.calls == []
+
+
+def test_muted_arm_signal_does_not_enter_the_state_file(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Bildirilmemiş bir sinyal "bildirildi" sayılmaz: susturmayı kaldırınca aynı kurulum
+    susturma penceresine takılmadan bildirilebilmeli."""
+    config = _config(tmp_path, ["rsi2_reversal"])
+    code, state_path = _run(
+        tmp_path, _payload([_signal(arm="rsi2_reversal")]), args=["--config", str(config)]
+    )
+
+    assert code == 0
+    assert telegram.calls == []
+    assert not state_path.exists()
+
+
+def test_muted_arm_also_filters_the_rejection_followup(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """İki mesaj türü de aynı süzgeçten geçer: kolu sessize aldıktan sonra o koldan ret
+    mesajı gelmesi "sessize aldım ama hâlâ geliyor" olurdu (eski durum dosyası bile
+    olsa)."""
+    prior = AS_OF - BAR
+    config = _config(tmp_path, ["rsi2_reversal"])
+    code, _ = _run(
+        tmp_path,
+        _payload(rejected=[_reject(bar=prior)]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+        args=["--config", str(config)],
+    )
+
+    assert code == 0
+    assert telegram.calls == []
+
+
+def test_unmuted_arm_rejection_still_gets_its_followup(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    prior = AS_OF - BAR
+    config = _config(tmp_path, ["rsi2_reversal"])
+    code, _ = _run(
+        tmp_path,
+        _payload(rejected=[_reject(bar=prior, reason="ORB | arm=opening_range_breakout")]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+        args=["--config", str(config)],
+    )
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "SİNYAL AÇILAMADI" in message
+
+
+def test_muted_arm_combines_with_the_model_mute(tmp_path: Path, telegram: _FakeRequests) -> None:
+    config = _config(tmp_path, ["rsi2_reversal"])
+    code, _ = _run(
+        tmp_path,
+        _payload([
+            _signal(model="vwap_clone", arm="vwap_revert_src"),
+            _signal(model="scalp_fixed", arm="rsi2_reversal", symbol="ETH-USDT-SWAP"),
+            _signal(model="scalp_fixed", arm="vwap_pullback", symbol="SOL-USDT-SWAP"),
+        ]),
+        args=["--config", str(config), "--mute", "vwap_clone"],
+    )
+
+    assert code == 0
+    (message,) = _messages(telegram)
+    assert "vwap_pullback" in message
+    assert "vwap_clone" not in message and "rsi2_reversal" not in message
+
+
+def test_muting_an_arm_does_not_change_the_signals_of_other_arms(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Süzgeç yalnızca bildirim listesini daraltır: kalan sinyaller ve mesajları, kol
+    susturulmamış bir koşudakiyle birebir aynı olmalı."""
+    other = _signal(arm="opening_range_breakout", symbol="ETH-USDT-SWAP")
+    plain_dir = tmp_path / "plain"
+    plain_dir.mkdir()
+    _run(plain_dir, _payload([other]))
+    plain = _messages(telegram)
+    telegram.calls.clear()
+
+    muted_dir = tmp_path / "muted"
+    muted_dir.mkdir()
+    config = _config(tmp_path, ["rsi2_reversal"])
+    _run(muted_dir, _payload([_signal(arm="rsi2_reversal"), other]), args=["--config", str(config)])
+
+    assert _messages(telegram) == plain
+
+
+def test_an_entry_without_an_arm_tag_is_never_muted(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    """Kolu bilinmeyen sinyali sessizce düşürmek susturma değil kayıp olurdu."""
+    config = _config(tmp_path, ["rsi2_reversal"])
+    code, _ = _run(
+        tmp_path,
+        _payload([_signal(reason="kolsuz sinyal")]),
+        args=["--config", str(config)],
+    )
+
+    assert code == 0
+    assert len(telegram.calls) == 1
+
+
+def test_the_skip_is_logged_not_silent(
+    tmp_path: Path, telegram: _FakeRequests, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = _config(tmp_path, ["rsi2_reversal"])
+    with caplog.at_level("INFO", logger="telegram_signals"):
+        _run(tmp_path, _payload([_signal(arm="rsi2_reversal")]), args=["--config", str(config)])
+
+    assert "rsi2_reversal kolu susturulmuş" in caplog.text
+    assert "susturulan kollar: rsi2_reversal" in caplog.text
+
+
+@pytest.mark.parametrize("value", [None, []])
+def test_missing_or_empty_muted_arms_mutes_nothing(
+    tmp_path: Path, telegram: _FakeRequests, value: Any
+) -> None:
+    import yaml
+
+    from core.config import DEFAULT_CONFIG_PATH as real
+
+    raw = yaml.safe_load(real.read_text(encoding="utf-8"))
+    raw.pop("telegram_muted_arms", None)
+    if value is not None:
+        raw["telegram_muted_arms"] = value
+    config = tmp_path / "config_plain.yaml"
+    config.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    code, _ = _run(tmp_path, _payload([_signal()]), args=["--config", str(config)])
+
+    assert code == 0
+    assert len(telegram.calls) == 1
+
+
+@pytest.mark.parametrize("bad", ["rsi2_reversal", {"rsi2_reversal": True}, [1, 2]])
+def test_a_malformed_muted_arms_value_mutes_nothing_and_warns(
+    tmp_path: Path, telegram: _FakeRequests, caplog: pytest.LogCaptureFixture, bad: Any
+) -> None:
+    """Bozuk değer bildirimi düşürmez (hata yönü gürültü) ve sessiz geçmez."""
+    config = _config(tmp_path, bad)
+    with caplog.at_level("WARNING", logger="telegram_signals"):
+        code, _ = _run(tmp_path, _payload([_signal()]), args=["--config", str(config)])
+
+    assert code == 0
+    assert len(telegram.calls) == 1
+    assert "LİSTESİ olmalı" in caplog.text
+
+
+def test_an_unreadable_config_mutes_nothing_and_still_returns_zero(
+    tmp_path: Path, telegram: _FakeRequests, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("WARNING", logger="telegram_signals"):
+        code, _ = _run(
+            tmp_path, _payload([_signal()]), args=["--config", str(tmp_path / "yok.yaml")]
+        )
+
+    assert code == 0
+    assert len(telegram.calls) == 1
+    assert "hiçbir kol susturulmuyor" in caplog.text

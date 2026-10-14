@@ -202,6 +202,15 @@ data:
   # (Diğer semboller tolere edilmez: as_of barına sahip olmayan sembol o tur dışlanır.)
   max_staleness_bars: 2
 
+# --- Bildirim (ÖLÇÜM değil) ---
+# Telegram anlık sinyal bildiriminde (scripts/telegram_signals.py) SUSTURULAN kollar.
+# Yalnızca telefona düşmeyi etkiler: susturulan kolun sinyali ve emri aynen üretilir, işlemler
+# defterde, metriklerde ve sitede aynen kalır. Bu yüzden `core/config.py::REQUIRED_KEYS`te
+# DEĞİLDİR — eksik anahtar "kimse susturulmadı" demektir ve bir bildirim tercihi yüzünden
+# ölçümün config'i reddetmesi olmaz. Adlar `Strategy.arms` bildirimlerinden biri olmalıdır
+# (tests/test_config.py): yazım hatası sessizce hiçbir şeyi susturmazdı.
+telegram_muted_arms: [rsi2_reversal]
+
 # --- Katmanlar (core/layers.py) ---
 # Proje İKİ zaman diliminde ölçüm yapar ve ikisi de AYNI çekirdeği kullanır: engine,
 # portfolio, ledger, funding, metrics tek kopyadır. Katmanın değiştirebildiği şey ölçümün
