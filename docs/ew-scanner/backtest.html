@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EW Dalga-3 Backtest</title>
+    <meta name="description" content="EW dalga-3 setup tarayıcısının geçmiş OKX verisiyle backtest'i; çalışmalar tarayıcıda saklanır." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M2 24 L9 12 L13 18 L22 4 L30 14' fill='none' stroke='%233987e5' stroke-width='3' stroke-linejoin='round'/></svg>" />
+    <link rel="stylesheet" href="src/ui/styles.css?v=dev" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <h1>Backtest</h1>
+        <p class="sub">Tarayıcının geçmişte her mum kapanışında göreceği setup'lar, aynı kurallarla simüle edilir · OKX geçmiş veri</p>
+      </div>
+      <nav class="nav"><a href="./">← Tarayıcı</a> <a href="../index.html">Skorboard</a></nav>
+    </header>
+
+    <section class="bt-form" aria-label="Backtest ayarları">
+      <div class="seg" role="group" aria-label="Zaman dilimi" id="tf">
+        <button type="button" data-tf="15m">15m</button>
+        <button type="button" data-tf="4H">4H</button>
+        <button type="button" data-tf="1D">1D</button>
+      </div>
+      <label class="field"><span>Başlangıç</span><input type="date" id="from" /></label>
+      <label class="field"><span>Bitiş</span><input type="date" id="to" /></label>
+      <div class="field"><span>Hızlı aralık</span>
+        <div class="quick" id="quick"></div>
+      </div>
+      <label class="field"><span>Coinler</span>
+        <select id="topN">
+          <option value="10">Hacme göre ilk 10</option>
+          <option value="20">İlk 20</option>
+          <option value="50">İlk 50</option>
+          <option value="0">Elle liste (tarayıcı ayarı)</option>
+        </select>
+      </label>
+      <label class="field"><span>Mod</span>
+        <select id="mode">
+          <option value="wave3">Dalga-3 setup</option>
+          <option value="triangle">Üçgen kırılımı</option>
+        </select>
+      </label>
+      <label class="field wave-only"><span>Giriş tipi</span>
+        <select id="entryType">
+          <option value="both">İkisi birden</option>
+          <option value="break">B kırılımı (onaylı)</option>
+          <option value="zone">Limit bölge (erken)</option>
+        </select>
+      </label>
+      <label class="field wave-only"><span>Çıkış hedefi</span>
+        <select id="exitTarget">
+          <option value="0">Hedef 1</option>
+          <option value="1">Hedef 2</option>
+          <option value="2">Hedef 3</option>
+        </select>
+      </label>
+      <label class="field"><span>Evren</span>
+        <select id="universe">
+          <option value="period">Dönem başındaki hacim</option>
+          <option value="today">Bugünkü hacim</option>
+        </select>
+      </label>
+      <label class="field"><span>Komisyon (% / işlem tarafı)</span><input type="number" id="feePct" step="0.01" min="0" /></label>
+      <label class="field"><span>Kayma (% / piyasa-stop dolumu)</span><input type="number" id="slipPct" step="0.01" min="0" /></label>
+      <label class="field"><span>Funding</span>
+        <select id="funding">
+          <option value="1">Uygula (perp)</option>
+          <option value="0">Uygulama</option>
+        </select>
+      </label>
+      <label class="field"><span>Emir geçerlilik (mum)</span><input type="number" id="maxPending" step="1" min="1" /></label>
+      <label class="field"><span>Maks. pozisyon süresi (mum)</span><input type="number" id="maxHold" step="1" min="1" /></label>
+      <label class="field wave-only"><span>Setup seçimi</span>
+        <select id="onlyPerfect">
+          <option value="">Tüm setup'lar</option>
+          <option value="1">★ Sadece mükemmel</option>
+        </select>
+      </label>
+      <label class="field"><span>Not (isteğe bağlı)</span><input type="text" id="note" placeholder="ör. dalga 1 en geniş" /></label>
+      <div class="bt-actions">
+        <button type="button" id="settingsBtn" class="ghost" aria-expanded="false" aria-controls="settings">Tarama ayarları</button>
+        <button type="button" id="runBtn" class="primary">Backtest'i başlat</button>
+        <button type="button" id="stopBtn" class="ghost" hidden>Durdur</button>
+      </div>
+      <p class="muted estimate" id="estimate"></p>
+    </section>
+
+    <section id="settings" class="settings" hidden aria-label="Tarama ayarları"></section>
+
+    <section class="summary" id="status" aria-live="polite"></section>
+
+    <section class="bt-results" id="results" hidden>
+      <div class="bt-title"><h2 id="resTitle">Sonuç</h2><span class="muted" id="resMeta"></span></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="chart eq" id="equity"></div>
+      <div class="legend" id="eqLegend"></div>
+      <div id="reach"></div>
+      <div class="breakdowns" id="breakdowns"></div>
+      <details class="trades-box">
+        <summary>İşlem listesi</summary>
+        <div class="table-wrap"><table class="trades" id="trades"></table></div>
+      </details>
+    </section>
+
+    <section class="runs-box">
+      <div class="bt-title">
+        <h2>Kayıtlı backtest'ler</h2>
+        <span class="muted" id="usage"></span>
+        <span class="spacer"></span>
+        <button type="button" id="exportBtn" class="ghost">Dışa aktar (JSON)</button>
+        <label class="ghost filebtn">İçe aktar<input type="file" id="importFile" accept="application/json,.json" hidden /></label>
+      </div>
+      <p class="muted small">Çalışmalar bu tarayıcıda saklanır (başka cihazda görünmez). Taşımak için dışa/içe aktar kullan.</p>
+      <div class="table-wrap"><table class="runs" id="runs"></table></div>
+    </section>
+
+    <footer class="foot muted">
+      Veri OKX USDT perp'lerinden gelir. Evren varsayılan olarak başlangıçtan önceki 30 günün hacmiyle seçilir; bugün listede olmayan coinler yine dahil edilemez.
+      Dolum varsayımları: piyasa ve stop dolumları seçilen kayma kadar aleyhe kayar; limit emir (bölge girişi, hedef) kaymasızdır ama ancak fiyat seviyeyi
+      <em>geçerse</em> dolar (dokunuş yetmez). Aynı mumda stop ve hedef görülürse stop sayılır, dolum mumunda hedef sayılmaz. Funding her ödeme anında
+      pozisyonun yönüne göre R'den düşülür/eklenir; OKX yalnızca son ~3 ayın funding geçmişini verir, daha eski işlemlerde funding uygulanamaz ve raporda ayrıca gösterilir.
+      1R = planlanan giriş-stop mesafesi; komisyon, kayma ve funding R'den düşülür.
+      Bu sayfa <a href="https://github.com/klonnist/ew-setup-scanner">klonnist/ew-setup-scanner</a>'ın (MIT) değiştirilmiş kopyasıdır — <a href="https://github.com/mugiatama34/crypto-paper-bot/blob/main/docs/ew-scanner/CHANGES.md">değişiklikler</a>.
+      <strong>Geçmiş sonuç gelecek garantisi değildir; yatırım tavsiyesi değildir.</strong>
+    </footer>
+
+    <script src="lib/lightweight-charts.standalone.production.js"></script>
+    <script type="module" src="src/backtest/ui.js?v=dev"></script>
+  </body>
+</html>

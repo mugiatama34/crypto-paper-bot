@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EW Dalga-3 Tarayıcı</title>
+    <meta name="description" content="OKX'te hacme göre ilk 50 kripto parada Elliott Wave dalga-3 giriş setup'larını tarar." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M2 24 L9 12 L13 18 L22 4 L30 14' fill='none' stroke='%233987e5' stroke-width='3' stroke-linejoin='round'/></svg>" />
+    <link rel="stylesheet" href="src/ui/styles.css?v=dev" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <h1>EW Dalga-3 Tarayıcı</h1>
+        <p class="sub">Dalga-3 setup'ları (dalga 2 = ABC) ve üçgen kırılımları · OKX canlı veri</p>
+      </div>
+      <nav class="nav"><a href="../index.html">← Skorboard</a><a href="backtest.html">Backtest →</a><a class="link" href="https://klonnist.github.io/ew-chart-reader/" target="_blank" rel="noopener">Kural kitabı ↗</a></nav>
+    </header>
+
+    <section class="toolbar" aria-label="Tarama ayarları">
+      <div class="seg" role="group" aria-label="Zaman dilimi" id="tf">
+        <button type="button" data-tf="15m">15m</button>
+        <button type="button" data-tf="4H">4H</button>
+        <button type="button" data-tf="1D">1D</button>
+      </div>
+      <label class="field inline">
+        <span>Mod</span>
+        <select id="mode">
+          <option value="wave3">Dalga-3 setup</option>
+          <option value="triangle">Üçgen kırılımı</option>
+        </select>
+      </label>
+      <label class="field inline wave-only">
+        <span>Kural seti</span>
+        <select id="ruleSet">
+          <option value="course">Kurs (Rules.docx)</option>
+          <option value="fp">Frost &amp; Prechter</option>
+          <option value="neely">Neely</option>
+        </select>
+      </label>
+      <label class="field inline wave-only">
+        <span>Giriş tipi</span>
+        <select id="entryType">
+          <option value="both">İkisi birden</option>
+          <option value="break">B kırılımı (onaylı)</option>
+          <option value="zone">Limit bölge (erken)</option>
+        </select>
+      </label>
+      <button type="button" id="scanBtn" class="primary">Tara</button>
+      <button type="button" id="settingsBtn" class="ghost" aria-expanded="false" aria-controls="settings">Ayarlar</button>
+      <div class="progress" id="progress" hidden>
+        <div class="bar"><span id="progressBar"></span></div>
+        <span id="progressText"></span>
+      </div>
+    </section>
+
+    <section id="settings" class="settings" hidden aria-label="Gelişmiş ayarlar"></section>
+
+    <section class="summary" id="summary" aria-live="polite">
+      <p class="muted">“Tara”ya basınca OKX'teki 24 saatlik hacme göre ilk 50 kripto para (stablecoin, tokenize hisse ve altın hariç) seçilen zaman diliminde taranır.</p>
+    </section>
+
+    <main class="layout">
+      <section class="list" aria-label="Setup listesi">
+        <div class="list-head">
+          <h2 id="listTitle">Setup'lar</h2>
+          <label class="check perfect-toggle wave-only"><input type="checkbox" id="onlyPerfect" /> ★ Sadece mükemmel</label>
+          <label class="check"><input type="checkbox" id="showAll" /> Kaçan / bozulanları da göster</label>
+        </div>
+        <div id="cards" class="cards"></div>
+      </section>
+      <section class="detail" id="detail" aria-label="Setup ayrıntısı">
+        <div class="empty muted">Bir setup seçince grafik ve kural kontrolleri burada görünür.</div>
+      </section>
+    </main>
+
+    <footer class="foot muted">
+      Kural motoru: <a href="https://github.com/klonnist/ew-chart-reader" target="_blank" rel="noopener">ew-chart-reader</a> (Rules.docx / Guidelines.docx, F&amp;P, Neely).
+      Grafik: <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a>.
+      Veri: OKX USDT perp. Bu sayfa <a href="https://github.com/klonnist/ew-setup-scanner">klonnist/ew-setup-scanner</a>'ın (MIT) değiştirilmiş kopyasıdır — <a href="https://github.com/mugiatama34/crypto-paper-bot/blob/main/docs/ew-scanner/CHANGES.md">değişiklikler</a>.
+      Veri: OKX Public API. <strong>Yatırım tavsiyesi değildir</strong>; otomatik dalga sayımı hatalı olabilir, grafiği kendin kontrol et.
+    </footer>
+
+    <script src="lib/lightweight-charts.standalone.production.js"></script>
+    <script type="module" src="src/ui/app.js?v=dev"></script>
+  </body>
+</html>
