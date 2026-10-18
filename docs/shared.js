@@ -177,8 +177,8 @@ const SITE_NAV = [
     title: "Açık pozisyonlar, kapanmış işlemler ve son turun denetim izi" },
   { key: "backtest", href: "backtest.html", label: "Backtest",
     title: "ema_trend'in ön-kayıtlı koşusu — canlı defter değil, geçmiş bir pencerede bir DENEME" },
-  { key: "ewscanner", href: "ew-scanner.html", label: "EW inceleme",
-    title: "Dış bir Elliott Wave tarayıcısının kod incelemesi — ölçüm değil" },
+  { key: "ewscanner", href: "ew-scanner/index.html", label: "EW tarayıcı",
+    title: "klonnist/ew-setup-scanner'ın değiştirilmiş kopyası — ölçümün parçası değil" },
 ];
 
 function renderSiteNav(current) {
