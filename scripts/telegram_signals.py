@@ -90,7 +90,7 @@ from core.config import DEFAULT_CONFIG_PATH, ConfigError, load_config  # noqa: E
 # adres tek bir şeydir ve ikinci bir kopya, depo taşındığında bir mesajın kırık link
 # taşıması demekti. İçe aktarılan tek şey adres yardımcısıdır — mesaj üretimi, filtreler
 # ve durum dosyası PAYLAŞILMAZ (bkz. modül docstring).
-from scripts.telegram_report import dashboard_url  # noqa: E402
+from scripts.telegram_report import dashboard_url, telegram_enabled  # noqa: E402
 
 API_TEMPLATE = "https://api.telegram.org/bot{token}/sendMessage"
 DEFAULT_LAYER = "scalp"
@@ -234,6 +234,12 @@ def _run(args: argparse.Namespace) -> int:
         # Durum dosyasına YAZILMAZ: yollanmamış bir mesajı "bildirildi" saymak, gerçek
         # koşuda aynı sinyali susturur ve bildirimi sessizce kaybederdi.
         print("\n\n---\n\n".join(text for text, _ in [*messages, *reject_messages]))
+        return 0
+
+    # Ana anahtar günlük özetle ORTAKTIR (`telegram_enabled`). Kapalıyken durum dosyasına
+    # da yazılmaz: yollanmamış bir mesajı "bildirildi" saymak, anahtar açıldığında aynı
+    # kurulumu susturma penceresinde tutardı.
+    if not telegram_enabled(Path(args.config), logger):
         return 0
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
