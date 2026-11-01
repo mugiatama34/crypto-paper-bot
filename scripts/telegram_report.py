@@ -39,7 +39,10 @@ from typing import Any, Mapping, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core.config import DEFAULT_CONFIG_PATH, ConfigError, load_config  # noqa: E402
+
 METRICS_PATH = Path("docs/data/metrics.json")
+TELEGRAM_ENABLED_KEY = "telegram_enabled"
 API_TEMPLATE = "https://api.telegram.org/bot{token}/sendMessage"
 DEFAULT_HOUR = 20
 # Rapor bu yaştan eskiyse özet yollanmaz. Tur düşerse depodaki metrics.json bir önceki
@@ -99,6 +102,9 @@ def _run(args: argparse.Namespace) -> int:
         print(message)
         return 0
 
+    if not telegram_enabled(Path(args.config), logger):
+        return 0
+
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat_id:
@@ -108,6 +114,34 @@ def _run(args: argparse.Namespace) -> int:
 
     _send(token=token, chat_id=chat_id, message=message)
     return 0
+
+
+def telegram_enabled(config_path: Path, log: logging.Logger) -> bool:
+    """`config.yaml > telegram_enabled`: repodaki TÜM Telegram mesajlarının ana anahtarı.
+
+    İki betik de (günlük özet ve anlık sinyal) bu tek fonksiyondan okur: iki kopya, bir
+    gün birinin susup ötekinin konuşmaya devam etmesi demekti. Bildirim ayarıdır, ölçüm
+    değil — kapalıyken turlar, defter, metrik ve site aynen sürer, yalnızca mesaj gitmez.
+
+    Anahtar OPSİYONELDİR (`REQUIRED_KEYS`te değil): yokluğu "açık" demektir. Okunamayan
+    config ya da bool olmayan değer de "açık" sayılır ve uyarıyla söylenir — hata yönü
+    gürültüdür, sessizlik değil (`telegram_muted_arms` ile aynı tercih). Gönderim
+    kararından ÖNCE değil, yalnızca YOLLAMADAN önce sorulur: `--dry-run` kapalıyken de
+    mesajı basar, yani susturma neyin susturulduğunu görmeyi engellemez.
+    """
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        log.warning("config okunamadı, Telegram açık sayılıyor: %s", exc)
+        return True
+    value = config.get(TELEGRAM_ENABLED_KEY, True)
+    if not isinstance(value, bool):
+        log.warning("%s true/false olmalı, %r geldi: Telegram açık sayılıyor",
+                    TELEGRAM_ENABLED_KEY, value)
+        return True
+    if not value:
+        log.info("%s: false — Telegram mesajları kapalı, yollanmıyor", TELEGRAM_ENABLED_KEY)
+    return value
 
 
 def _send(*, token: str, chat_id: str, message: str) -> None:
@@ -493,6 +527,10 @@ def _as_of_hour(payload: Mapping[str, Any]) -> int | None:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Günlük Telegram özeti yollar.")
     parser.add_argument("--metrics", default=str(METRICS_PATH), help="metrics.json yolu")
+    parser.add_argument(
+        "--config", default=str(DEFAULT_CONFIG_PATH),
+        help=f"{TELEGRAM_ENABLED_KEY} buradan okunur (varsayılan depodaki config.yaml)",
+    )
     parser.add_argument(
         "--hour", type=int, default=DEFAULT_HOUR,
         help=f"özetin yollanacağı as_of saati (UTC, varsayılan {DEFAULT_HOUR})",

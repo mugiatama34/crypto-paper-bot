@@ -244,6 +244,9 @@ def _config(tmp_path: Path, muted: Any) -> Path:
 
     raw = yaml.safe_load(real.read_text(encoding="utf-8"))
     raw["telegram_muted_arms"] = muted
+    # Kol süzgecini ölçen testler ana anahtardan bağımsız olmalı: depodaki config onu
+    # kapatabilir.
+    raw["telegram_enabled"] = True
     path = tmp_path / "config_muted.yaml"
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
     return path
@@ -1274,6 +1277,7 @@ def test_missing_or_empty_muted_arms_mutes_nothing(
 
     raw = yaml.safe_load(real.read_text(encoding="utf-8"))
     raw.pop("telegram_muted_arms", None)
+    raw["telegram_enabled"] = True
     if value is not None:
         raw["telegram_muted_arms"] = value
     config = tmp_path / "config_plain.yaml"
@@ -1310,3 +1314,57 @@ def test_an_unreadable_config_mutes_nothing_and_still_returns_zero(
     assert code == 0
     assert len(telegram.calls) == 1
     assert "hiçbir kol susturulmuyor" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
+# Ana anahtar (`telegram_enabled`) — günlük özetle ORTAK
+# --------------------------------------------------------------------------- #
+def _switch_config(tmp_path: Path, enabled: Any) -> Path:
+    import yaml
+
+    from core.config import DEFAULT_CONFIG_PATH as real
+
+    raw = yaml.safe_load(real.read_text(encoding="utf-8"))
+    raw["telegram_enabled"] = enabled
+    raw["telegram_muted_arms"] = []
+    path = tmp_path / "config_switch.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
+def test_disabled_switch_sends_no_signal_and_writes_no_state(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    code, state_path = _run(
+        tmp_path, _payload([_signal()]),
+        args=["--config", str(_switch_config(tmp_path, False))],
+    )
+
+    assert code == 0
+    assert telegram.calls == []
+    assert not state_path.exists()
+
+
+def test_disabled_switch_also_silences_rejection_followups(
+    tmp_path: Path, telegram: _FakeRequests
+) -> None:
+    prior = AS_OF - BAR
+    code, _ = _run(
+        tmp_path,
+        _payload(rejected=[_reject(bar=prior)]),
+        state={"scalp_bandit|BTC-USDT-SWAP|long": prior.isoformat()},
+        args=["--config", str(_switch_config(tmp_path, False))],
+    )
+
+    assert code == 0
+    assert telegram.calls == []
+
+
+def test_enabled_switch_sends(tmp_path: Path, telegram: _FakeRequests) -> None:
+    code, _ = _run(
+        tmp_path, _payload([_signal()]),
+        args=["--config", str(_switch_config(tmp_path, True))],
+    )
+
+    assert code == 0
+    assert len(telegram.calls) == 1

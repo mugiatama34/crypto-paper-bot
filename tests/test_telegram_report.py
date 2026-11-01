@@ -91,6 +91,53 @@ def _write(tmp_path: Path, payload: dict[str, Any]) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def _telegram_on_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Depodaki GERÇEK config.yaml Telegram'ı kapatabilir (`telegram_enabled`): testler
+    ona bağlı kalsaydı, anahtarı çevirmek gönderim testlerini kırardı. Okunamayan config
+    "açık" sayılır; ana anahtar testleri `--config` verir."""
+    original = telegram_report._parse_args
+
+    def parse(argv: Any) -> Any:
+        args = list(argv or ())
+        if "--config" not in args:
+            args += ["--config", str(tmp_path / "yok" / "config.yaml")]
+        return original(args)
+
+    monkeypatch.setattr(telegram_report, "_parse_args", parse)
+
+
+def _config(tmp_path: Path, enabled: Any) -> Path:
+    import yaml
+
+    from core.config import DEFAULT_CONFIG_PATH as real
+
+    raw = yaml.safe_load(real.read_text(encoding="utf-8"))
+    raw.pop("telegram_enabled", None)
+    if enabled is not None:
+        raw["telegram_enabled"] = enabled
+    path = tmp_path / "config_switch.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
+def _capture(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
+    sent: list[dict[str, Any]] = []
+
+    class _Response:
+        status_code = 200
+        text = "{}"
+
+    def _post(url: str, **kwargs: Any) -> _Response:
+        sent.append(kwargs)
+        return _Response()
+
+    monkeypatch.setitem(sys.modules, "requests", type("M", (), {"post": staticmethod(_post)}))
+    return sent
+
+
 def _run(tmp_path: Path, payload: dict[str, Any], *args: str) -> int:
     return telegram_report.main([*args, "--metrics", str(_write(tmp_path, payload))])
 
@@ -327,3 +374,40 @@ def test_replicas_are_not_ranked_as_competitors() -> None:
     competitors = telegram_report._competitors(payload)
 
     assert {row["model"] for row in competitors} == {"trend", "random_ctrl"}
+
+
+# --------------------------------------------------------------------------- #
+# Ana anahtar (`telegram_enabled`) — BİLDİRİM ayarı, ölçüm değil
+# --------------------------------------------------------------------------- #
+def test_disabled_switch_sends_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent = _capture(monkeypatch)
+    assert _run(tmp_path, _payload(), "--config", str(_config(tmp_path, False))) == 0
+    assert sent == []
+
+
+def test_disabled_switch_still_allows_a_dry_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Susturma neyin susturulduğunu görmeyi engellemez."""
+    assert _run(tmp_path, _payload(), "--dry-run", "--config", str(_config(tmp_path, False))) == 0
+    assert "LONG vs SHORT" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("enabled", [True, None])
+def test_enabled_or_missing_switch_sends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, enabled: Any
+) -> None:
+    sent = _capture(monkeypatch)
+    assert _run(tmp_path, _payload(), "--config", str(_config(tmp_path, enabled))) == 0
+    assert len(sent) == 1
+
+
+@pytest.mark.parametrize("bad", ["false", 0, ["x"]])
+def test_malformed_switch_counts_as_on_and_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bad: Any
+) -> None:
+    sent = _capture(monkeypatch)
+    with caplog.at_level("WARNING"):
+        assert _run(tmp_path, _payload(), "--config", str(_config(tmp_path, bad))) == 0
+    assert len(sent) == 1
+    assert "true/false olmalı" in caplog.text

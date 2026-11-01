@@ -76,3 +76,10 @@ def test_telegram_muted_arms_are_real_arm_names() -> None:
         known.update(getattr(factory, "arms", ()) or ())
     unknown = sorted(set(muted) - known)
     assert not unknown, f"telegram_muted_arms'ta hiçbir modelin bildirmediği kol(lar): {unknown}"
+
+
+def test_telegram_enabled_is_a_bool_when_present() -> None:
+    """Opsiyonel ana anahtar; "false" metni gibi bir yazım hatası betikte "açık" sayılır,
+    yani kullanıcı susturduğunu sanırken mesaj gelmeye devam ederdi — CI yakalasın."""
+    value = load_config().get("telegram_enabled", True)
+    assert isinstance(value, bool), f"telegram_enabled true/false olmalı, {value!r} geldi"
